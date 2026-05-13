@@ -1,3 +1,28 @@
 {
-  "placeholderImages": []
+  "placeholderImages": [
+    {
+      "id": "hero-bg",
+      "description": "Futuristic abstract digital network",
+      "imageUrl": "https://picsum.photos/seed/legacy-hero/1920/1080",
+      "imageHint": "futuristic network"
+    },
+    {
+      "id": "avatar-mentor",
+      "description": "Sleek AI avatar",
+      "imageUrl": "https://picsum.photos/seed/mentor/400/400",
+      "imageHint": "digital avatar"
+    },
+    {
+      "id": "market-funnel",
+      "description": "Digital marketing funnel template",
+      "imageUrl": "https://picsum.photos/seed/funnel/600/400",
+      "imageHint": "marketing funnel"
+    },
+    {
+      "id": "user-profile",
+      "description": "Professional profile photo",
+      "imageUrl": "https://picsum.photos/seed/profile/200/200",
+      "imageHint": "profile portrait"
+    }
+  ]
 }
