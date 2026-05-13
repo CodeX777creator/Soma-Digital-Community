@@ -66,6 +66,35 @@
   .text-gradient {
     @apply text-transparent bg-clip-text bg-gradient-to-r from-primary via-accent to-primary bg-[length:200%_auto] animate-gradient-flow;
   }
+
+  /* AI Orb Animation */
+  .ai-orb {
+    @apply relative w-32 h-32 rounded-full;
+    background: radial-gradient(circle at 30% 30%, hsl(var(--primary)), hsl(var(--accent)));
+    box-shadow: 0 0 40px hsl(var(--primary) / 0.4), 0 0 80px hsl(var(--accent) / 0.2);
+    animation: orb-float 6s ease-in-out infinite, orb-pulse 4s ease-in-out infinite;
+  }
+
+  .ai-orb::after {
+    content: '';
+    @apply absolute inset-0 rounded-full border-2 border-white/10;
+    animation: orb-spin 10s linear infinite;
+  }
+
+  @keyframes orb-float {
+    0%, 100% { transform: translateY(0) scale(1); }
+    50% { transform: translateY(-10px) scale(1.05); }
+  }
+
+  @keyframes orb-pulse {
+    0%, 100% { filter: brightness(1) contrast(1); }
+    50% { filter: brightness(1.2) contrast(1.1); }
+  }
+
+  @keyframes orb-spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+  }
 }
 
 .animated-bg {
