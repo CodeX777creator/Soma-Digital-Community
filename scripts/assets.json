@@ -1,0 +1,44 @@
+[
+  {
+    "id": "starter-sales-funnel-template",
+    "title": "Starter Sales Funnel Template",
+    "description": "A plug-and-play sales funnel template for validating and launching a digital offer.",
+    "type": "template",
+    "category": "Sales",
+    "tags": ["sales", "funnel", "conversion"],
+    "thumbnailUrl": "/images/marketplace/sales-funnel-template.png",
+    "assetUrl": "https://example.com/assets/starter-sales-funnel-template",
+    "storagePath": null,
+    "price": 0,
+    "tier": "free",
+    "isPublished": true
+  },
+  {
+    "id": "pro-growth-dashboard-notion",
+    "title": "Pro Growth Dashboard",
+    "description": "A Notion dashboard for tracking weekly growth metrics, experiments, and revenue goals.",
+    "type": "notion",
+    "category": "Operations",
+    "tags": ["notion", "growth", "dashboard"],
+    "thumbnailUrl": "/images/marketplace/pro-growth-dashboard.png",
+    "assetUrl": "https://example.com/assets/pro-growth-dashboard-notion",
+    "storagePath": null,
+    "price": 49,
+    "tier": "pro",
+    "isPublished": true
+  },
+  {
+    "id": "elite-ai-automation-code-kit",
+    "title": "Elite AI Automation Code Kit",
+    "description": "A code starter kit for building AI-powered workflows, lead routing, and customer follow-up automations.",
+    "type": "code",
+    "category": "Automation",
+    "tags": ["ai", "automation", "code"],
+    "thumbnailUrl": "/images/marketplace/ai-automation-code-kit.png",
+    "assetUrl": null,
+    "storagePath": "marketplace/elite-ai-automation-code-kit.zip",
+    "price": 197,
+    "tier": "elite",
+    "isPublished": true
+  }
+]

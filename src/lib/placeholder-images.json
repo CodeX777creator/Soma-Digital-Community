@@ -3,25 +3,25 @@
     {
       "id": "hero-bg",
       "description": "Futuristic abstract digital network",
-      "imageUrl": "https://picsum.photos/seed/legacy-hero/1920/1080",
+      "imageUrl": "/images/mission_statement_visual_1778931888346.png",
       "imageHint": "futuristic network"
     },
     {
       "id": "avatar-mentor",
       "description": "Sleek AI avatar",
-      "imageUrl": "https://picsum.photos/seed/mentor/400/400",
+      "imageUrl": "/images/entrepreneur_face_1_1778931265581.png",
       "imageHint": "digital avatar"
     },
     {
       "id": "market-funnel",
       "description": "Digital marketing funnel template",
-      "imageUrl": "https://picsum.photos/seed/funnel/600/400",
+      "imageUrl": "/images/soma_dashboard_preview_1778930730029.png",
       "imageHint": "marketing funnel"
     },
     {
       "id": "user-profile",
       "description": "Professional profile photo",
-      "imageUrl": "https://picsum.photos/seed/profile/200/200",
+      "imageUrl": "/images/founder_portrait_1778931116526.png",
       "imageHint": "profile portrait"
     }
   ]

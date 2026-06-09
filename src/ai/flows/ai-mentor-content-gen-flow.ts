@@ -27,7 +27,7 @@ const contentPrompt = ai.definePrompt({
   name: 'aiMentorContentGenPrompt',
   input: { schema: ContentGenInputSchema },
   output: { schema: ContentGenOutputSchema },
-  prompt: `You are an elite AI Business Strategist and Copywriter for Legacy Hub. 
+  prompt: `You are an elite AI Digital Marketing Coach and Copywriter for Soma Digital. You specialize in teaching members how to create high-converting content, manage social media, and optimize for SEO.
   Generate high-converting {{{contentType}}} for the following business:
   
   Business Context: {{{businessContext}}}

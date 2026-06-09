@@ -1,0 +1,135 @@
+0 verbose cli C:\Program Files\nodejs\node.exe C:\Program Files\nodejs\node_modules\npm\bin\npm-cli.js
+1 info using npm@10.9.2
+2 info using node@v22.16.0
+3 silly config load:file:C:\Program Files\nodejs\node_modules\npm\npmrc
+4 silly config load:file:D:\Community\functions\.npmrc
+5 silly config load:file:C:\Users\User\.npmrc
+6 silly config load:file:C:\Users\User\AppData\Roaming\npm\etc\npmrc
+7 verbose title npm install
+8 verbose argv "install" "--cache" "D:\\Community\\.npm-cache"
+9 verbose logfile logs-max:10 dir:D:\Community\.npm-cache\_logs\2026-06-01T14_26_21_215Z-
+10 verbose logfile D:\Community\.npm-cache\_logs\2026-06-01T14_26_21_215Z-debug-0.log
+11 silly logfile done cleaning log files
+12 silly packumentCache heap:2197815296 maxSize:549453824 maxEntrySize:274726912
+13 silly idealTree buildDeps
+14 silly fetch manifest @google/genai@^1.28.0
+15 silly packumentCache full:https://registry.npmjs.org/@google%2fgenai cache-miss
+16 http fetch GET 200 https://registry.npmjs.org/npm 1701ms
+17 http fetch GET 200 https://registry.npmjs.org/@google%2fgenai 1630ms (cache miss)
+18 silly packumentCache full:https://registry.npmjs.org/@google%2fgenai set size:undefined disposed:false
+19 silly fetch manifest @modelcontextprotocol/sdk@^1.25.2
+20 silly packumentCache full:https://registry.npmjs.org/@modelcontextprotocol%2fsdk cache-miss
+21 http fetch GET 200 https://registry.npmjs.org/@modelcontextprotocol%2fsdk 499ms (cache miss)
+22 silly packumentCache full:https://registry.npmjs.org/@modelcontextprotocol%2fsdk set size:undefined disposed:false
+23 silly fetch manifest @cfworker/json-schema@^4.1.1
+24 silly packumentCache full:https://registry.npmjs.org/@cfworker%2fjson-schema cache-miss
+25 http fetch GET 200 https://registry.npmjs.org/@cfworker%2fjson-schema 884ms (cache miss)
+26 silly packumentCache full:https://registry.npmjs.org/@cfworker%2fjson-schema set size:undefined disposed:false
+27 silly placeDep ROOT @google/genai@1.52.0 OK for:  want: ^1.28.0
+28 silly fetch manifest ws@^8.18.0
+29 silly packumentCache full:https://registry.npmjs.org/ws cache-miss
+30 silly fetch manifest p-retry@^4.6.2
+31 silly packumentCache full:https://registry.npmjs.org/p-retry cache-miss
+32 silly fetch manifest google-auth-library@^10.3.0
+33 silly packumentCache full:https://registry.npmjs.org/google-auth-library cache-miss
+34 http fetch GET 200 https://registry.npmjs.org/p-retry 306ms (cache miss)
+35 silly packumentCache full:https://registry.npmjs.org/p-retry set size:undefined disposed:false
+36 http fetch GET 200 https://registry.npmjs.org/ws 320ms (cache miss)
+37 silly packumentCache full:https://registry.npmjs.org/ws set size:undefined disposed:false
+38 http fetch GET 200 https://registry.npmjs.org/google-auth-library 693ms (cache miss)
+39 silly packumentCache full:https://registry.npmjs.org/google-auth-library set size:undefined disposed:false
+40 silly fetch manifest bufferutil@^4.0.1
+41 silly packumentCache full:https://registry.npmjs.org/bufferutil cache-miss
+42 http fetch GET 200 https://registry.npmjs.org/bufferutil 448ms (cache miss)
+43 silly packumentCache full:https://registry.npmjs.org/bufferutil set size:undefined disposed:false
+44 silly fetch manifest utf-8-validate@>=5.0.2
+45 silly packumentCache full:https://registry.npmjs.org/utf-8-validate cache-miss
+46 http fetch GET 200 https://registry.npmjs.org/utf-8-validate 598ms (cache miss)
+47 silly packumentCache full:https://registry.npmjs.org/utf-8-validate set size:undefined disposed:false
+48 silly placeDep node_modules/@google/genai google-auth-library@10.6.2 OK for: @google/genai@1.52.0 want: ^10.3.0
+49 silly placeDep ROOT p-retry@4.6.2 OK for: @google/genai@1.52.0 want: ^4.6.2
+50 silly placeDep ROOT ws@8.21.0 OK for: @google/genai@1.52.0 want: ^8.18.0
+51 silly fetch manifest gaxios@^7.1.4
+52 silly packumentCache full:https://registry.npmjs.org/gaxios cache-miss
+53 silly fetch manifest gcp-metadata@8.1.2
+54 silly packumentCache full:https://registry.npmjs.org/gcp-metadata cache-miss
+55 silly fetch manifest google-logging-utils@1.1.3
+56 silly packumentCache full:https://registry.npmjs.org/google-logging-utils cache-miss
+57 http fetch GET 200 https://registry.npmjs.org/google-logging-utils 486ms (cache miss)
+58 silly packumentCache full:https://registry.npmjs.org/google-logging-utils set size:undefined disposed:false
+59 silly fetch manifest @types/retry@0.12.0
+60 silly packumentCache full:https://registry.npmjs.org/@types%2fretry cache-miss
+61 http fetch GET 200 https://registry.npmjs.org/gaxios 530ms (cache miss)
+62 silly packumentCache full:https://registry.npmjs.org/gaxios set size:undefined disposed:false
+63 http fetch GET 200 https://registry.npmjs.org/gcp-metadata 534ms (cache miss)
+64 silly packumentCache full:https://registry.npmjs.org/gcp-metadata set size:undefined disposed:false
+65 http fetch GET 200 https://registry.npmjs.org/@types%2fretry 891ms (cache miss)
+66 silly packumentCache full:https://registry.npmjs.org/@types%2fretry set size:undefined disposed:false
+67 silly placeDep ROOT @types/retry@0.12.0 OK for: p-retry@4.6.2 want: 0.12.0
+68 silly placeDep node_modules/@google/genai gaxios@7.1.4 OK for: google-auth-library@10.6.2 want: ^7.1.4
+69 silly placeDep node_modules/@google/genai gcp-metadata@8.1.2 OK for: google-auth-library@10.6.2 want: 8.1.2
+70 silly placeDep node_modules/@google/genai google-logging-utils@1.1.3 OK for: google-auth-library@10.6.2 want: 1.1.3
+71 silly fetch manifest node-fetch@^3.3.2
+72 silly packumentCache full:https://registry.npmjs.org/node-fetch cache-miss
+73 silly fetch manifest google-logging-utils@^1.0.0
+74 silly packumentCache full:https://registry.npmjs.org/google-logging-utils cache-miss
+75 http cache https://registry.npmjs.org/google-logging-utils 75ms (cache hit)
+76 silly packumentCache full:https://registry.npmjs.org/google-logging-utils set size:21694 disposed:false
+77 http fetch GET 200 https://registry.npmjs.org/node-fetch 1212ms (cache miss)
+78 silly packumentCache full:https://registry.npmjs.org/node-fetch set size:undefined disposed:false
+79 silly placeDep node_modules/@google/genai node-fetch@3.3.2 OK for: gaxios@7.1.4 want: ^3.3.2
+80 warn EBADENGINE Unsupported engine {
+80 warn EBADENGINE   package: undefined,
+80 warn EBADENGINE   required: { node: '20' },
+80 warn EBADENGINE   current: { node: 'v22.16.0', npm: '10.9.2' }
+80 warn EBADENGINE }
+81 silly reify moves {}
+82 verbose stack Error: EPERM: operation not permitted, mkdir 'D:\Community\functions\node_modules\@google'
+82 verbose stack     at async mkdir (node:internal/fs/promises:852:10)
+82 verbose stack     at async C:\Program Files\nodejs\node_modules\npm\node_modules\@npmcli\arborist\lib\arborist\reify.js:624:20
+82 verbose stack     at async Promise.allSettled (index 0)
+82 verbose stack     at async [reifyPackages] (C:\Program Files\nodejs\node_modules\npm\node_modules\@npmcli\arborist\lib\arborist\reify.js:325:11)
+82 verbose stack     at async Arborist.reify (C:\Program Files\nodejs\node_modules\npm\node_modules\@npmcli\arborist\lib\arborist\reify.js:142:5)
+82 verbose stack     at async Install.exec (C:\Program Files\nodejs\node_modules\npm\lib\commands\install.js:150:5)
+82 verbose stack     at async Npm.exec (C:\Program Files\nodejs\node_modules\npm\lib\npm.js:207:9)
+82 verbose stack     at async module.exports (C:\Program Files\nodejs\node_modules\npm\lib\cli\entry.js:74:5)
+83 error code EPERM
+84 error syscall mkdir
+85 error path D:\Community\functions\node_modules\@google
+86 error errno -4048
+87 error Error: EPERM: operation not permitted, mkdir 'D:\Community\functions\node_modules\@google'
+87 error     at async mkdir (node:internal/fs/promises:852:10)
+87 error     at async C:\Program Files\nodejs\node_modules\npm\node_modules\@npmcli\arborist\lib\arborist\reify.js:624:20
+87 error     at async Promise.allSettled (index 0)
+87 error     at async [reifyPackages] (C:\Program Files\nodejs\node_modules\npm\node_modules\@npmcli\arborist\lib\arborist\reify.js:325:11)
+87 error     at async Arborist.reify (C:\Program Files\nodejs\node_modules\npm\node_modules\@npmcli\arborist\lib\arborist\reify.js:142:5)
+87 error     at async Install.exec (C:\Program Files\nodejs\node_modules\npm\lib\commands\install.js:150:5)
+87 error     at async Npm.exec (C:\Program Files\nodejs\node_modules\npm\lib\npm.js:207:9)
+87 error     at async module.exports (C:\Program Files\nodejs\node_modules\npm\lib\cli\entry.js:74:5) {
+87 error   errno: -4048,
+87 error   code: 'EPERM',
+87 error   syscall: 'mkdir',
+87 error   path: 'D:\\Community\\functions\\node_modules\\@google'
+87 error }
+88 error
+88 error The operation was rejected by your operating system.
+88 error It's possible that the file was already in use (by a text editor or antivirus),
+88 error or that you lack permissions to access it.
+88 error
+88 error If you believe this might be a permissions issue, please double-check the
+88 error permissions of the file and its containing directories, or try running
+88 error the command again as root/Administrator.
+89 silly unfinished npm timer reify 1780323983803
+90 silly unfinished npm timer reify:createSparse 1780323992004
+91 verbose cwd D:\Community\functions
+92 verbose os Windows_NT 10.0.19045
+93 verbose node v22.16.0
+94 verbose npm  v10.9.2
+95 notice
+95 notice New major version of npm available! 10.9.2 -> 11.16.0
+95 notice Changelog: https://github.com/npm/cli/releases/tag/v11.16.0
+95 notice To update run: npm install -g npm@11.16.0
+95 notice  { force: true, [Symbol(proc-log.meta)]: true }
+96 verbose exit -4048
+97 verbose code -4048
+98 error A complete log of this run can be found in: D:\Community\.npm-cache\_logs\2026-06-01T14_26_21_215Z-debug-0.log

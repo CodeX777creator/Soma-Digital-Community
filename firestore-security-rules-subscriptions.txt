@@ -1,0 +1,20 @@
+// Firestore Security Rules - Subscriptions
+// Add this to your firestore.rules
+
+match /subscriptions/{subscriptionId} {
+  // Users can read their own subscription records
+  allow read: if request.auth.uid != null && 
+              request.auth.uid == resource.data.userId;
+  
+  // Only backend can write to subscriptions (via webhook)
+  allow write: if false;
+  
+  // Admins can read all subscriptions
+  allow read: if request.auth.token.admin == true;
+}
+
+match /webhook_events/{eventId} {
+  // Only backend writes webhook events
+  allow write: if false;
+  allow read: if request.auth.token.admin == true;
+}

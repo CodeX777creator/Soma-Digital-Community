@@ -17,6 +17,18 @@ export type BusinessGoalsInput = z.infer<typeof BusinessGoalsInputSchema>;
 
 const PersonalizedRoadmapOutputSchema = z.object({
   roadmapTitle: z.string().describe('A title for the personalized business roadmap.'),
+  primaryOpportunity: z.string().describe('The single biggest business opportunity for the user.'),
+  fastestRevenuePath: z.string().describe('The quickest way for the user to start earning income.'),
+  recommendedContentStrategy: z.string().describe('How the user should approach content to grow their audience.'),
+  monetizationStrategy: z.string().describe('Specific ways the user will turn their efforts into wealth.'),
+  aiGrowthForecast: z.string().describe('How AI will accelerate their business over the next 12 months.'),
+  thirtyDayExecutionPlan: z.array(
+    z.object({
+      day: z.string().describe('Day or period (e.g. Day 1-7)'),
+      task: z.string().describe('The primary focus or task'),
+      outcome: z.string().describe('The expected result')
+    })
+  ).describe('A structured 30-day plan.'),
   steps: z.array(
     z.object({
       title: z.string().describe('The title of a roadmap step.'),
@@ -38,13 +50,24 @@ const roadmapPrompt = ai.definePrompt({
   name: 'aiMentorPersonalizedRoadmapPrompt',
   input: { schema: BusinessGoalsInputSchema },
   output: { schema: PersonalizedRoadmapOutputSchema },
-  prompt: `You are an expert AI business mentor on the "Legacy Hub" platform. Your role is to help new members create a personalized initial roadmap to achieve their business goals.
+  prompt: `You are a high-level Digital Wealth Strategist for the "Soma Digital Community". You are a hybrid of a ChatGPT expert, a McKinsey consultant, and a startup incubator mentor.
 
-Based on the following business goals, create a structured, actionable, and personalized roadmap. The roadmap should consist of a title and a series of distinct steps, where each step has a title and a detailed description of the actions required.
+Your mission is to generate a premium "Digital Wealth Roadmap" that is emotionally powerful, strategically sound, and highly actionable.
 
-Business Goals: {{{businessGoals}}}
+Based on the following user profile, generate a comprehensive roadmap:
+User Profile: {{{businessGoals}}}
 
-Ensure the roadmap is realistic, strategic, and broken down into manageable stages. Focus on digital marketing, AI business, online income, entrepreneurship, branding, funnels, and the creator economy where applicable.`,
+Please provide:
+1. A compelling title for the roadmap.
+2. The Primary Opportunity: A high-level strategic "Big Win".
+3. Fastest Revenue Path: How they get paid immediately.
+4. Recommended Content Strategy: How to build authority and traffic.
+5. Monetization Strategy: The long-term wealth engine.
+6. AI Growth Forecast: How AI specifically will multiply their efforts.
+7. A 30-Day Execution Plan: Broken down into phases.
+8. Core Strategic Steps: Deep dives into the architecture.
+
+Maintain a tone that is futuristic, intelligent, and luxurious. Avoid generic advice; be specific to their skills and niche.`,
 });
 
 const aiMentorPersonalizedRoadmapFlow = ai.defineFlow(

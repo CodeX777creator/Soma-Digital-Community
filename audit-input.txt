@@ -1,0 +1,4140 @@
+
+=== package.json ===
+
+{
+  "name": "nextn",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev --turbopack -p 9002",
+    "genkit:dev": "genkit start -- tsx src/ai/dev.ts",
+    "genkit:watch": "genkit start -- tsx --watch src/ai/dev.ts",
+    "build": "cross-env NODE_ENV=production next build",
+    "start": "next start",
+    "lint": "next lint",
+    "typecheck": "tsc --noEmit",
+    "functions:build": "cd functions && npm run build",
+    "seed:marketplace": "tsx -r dotenv/config scripts/seedMarketplace.ts"
+  },
+  "dependencies": {
+    "@genkit-ai/google-genai": "^1.28.0",
+    "@hookform/resolvers": "^4.1.3",
+    "@paypal/react-paypal-js": "^8.9.2",
+    "@radix-ui/react-accordion": "^1.2.3",
+    "@radix-ui/react-alert-dialog": "^1.1.6",
+    "@radix-ui/react-avatar": "^1.1.3",
+    "@radix-ui/react-checkbox": "^1.1.4",
+    "@radix-ui/react-collapsible": "^1.1.11",
+    "@radix-ui/react-dialog": "^1.1.6",
+    "@radix-ui/react-dropdown-menu": "^2.1.6",
+    "@radix-ui/react-label": "^2.1.2",
+    "@radix-ui/react-menubar": "^1.1.6",
+    "@radix-ui/react-popover": "^1.1.6",
+    "@radix-ui/react-progress": "^1.1.2",
+    "@radix-ui/react-radio-group": "^1.2.3",
+    "@radix-ui/react-scroll-area": "^1.2.3",
+    "@radix-ui/react-select": "^2.1.6",
+    "@radix-ui/react-separator": "^1.1.2",
+    "@radix-ui/react-slider": "^1.2.3",
+    "@radix-ui/react-slot": "^1.2.3",
+    "@radix-ui/react-switch": "^1.1.3",
+    "@radix-ui/react-tabs": "^1.1.3",
+    "@radix-ui/react-toast": "^1.2.6",
+    "@radix-ui/react-tooltip": "^1.1.8",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "date-fns": "^3.6.0",
+    "dotenv": "^16.6.1",
+    "embla-carousel-react": "^8.6.0",
+    "firebase": "^11.9.1",
+    "firebase-admin": "^13.10.0",
+    "framer-motion": "^11.18.2",
+    "genkit": "^1.28.0",
+    "lucide-react": "^0.475.0",
+    "next": "15.5.9",
+    "patch-package": "^8.0.0",
+    "react": "^19.2.1",
+    "react-day-picker": "^9.11.3",
+    "react-dom": "^19.2.1",
+    "react-hook-form": "^7.54.2",
+    "recharts": "^2.15.1",
+    "tailwind-merge": "^3.0.1",
+    "tailwindcss-animate": "^1.0.7",
+    "zod": "^3.24.2",
+    "zustand": "^4.5.2"
+  },
+  "devDependencies": {
+    "@types/node": "^20",
+    "@types/react": "^19.2.1",
+    "@types/react-dom": "^19.2.1",
+    "cross-env": "^10.1.0",
+    "genkit-cli": "^1.28.0",
+    "postcss": "^8",
+    "tailwindcss": "^3.4.1",
+    "typescript": "^5"
+  }
+}
+
+=== next.config.ts ===
+
+import type {NextConfig} from 'next';
+
+const nextConfig: NextConfig = {
+  /* config options here */
+  typescript: {
+    ignoreBuildErrors: false,
+  },
+  eslint: {
+    ignoreDuringBuilds: false,
+  },
+  images: {
+    remotePatterns: [
+      {
+        protocol: 'https',
+        hostname: 'placehold.co',
+        port: '',
+        pathname: '/**',
+      },
+      {
+        protocol: 'https',
+        hostname: 'images.unsplash.com',
+        port: '',
+        pathname: '/**',
+      },
+      {
+        protocol: 'https',
+        hostname: 'picsum.photos',
+        port: '',
+        pathname: '/**',
+      },
+    ],
+  },
+};
+
+export default nextConfig;
+
+=== .env.example ===
+
+# Frontend Environment Variables
+NEXT_PUBLIC_PAYPAL_CLIENT_ID=your_paypal_client_id_here
+
+# Firebase Configuration (if needed for development)
+# NEXT_PUBLIC_FIREBASE_API_KEY=
+# NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=
+# NEXT_PUBLIC_FIREBASE_PROJECT_ID=
+# NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=
+# NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=
+# NEXT_PUBLIC_FIREBASE_APP_ID=
+
+=== src/app/layout.tsx ===
+
+import type {Metadata} from 'next';
+import './globals.css';
+
+export const metadata: Metadata = {
+  title: 'Soma Digital Community | AI-Powered Business Growth',
+  description: 'The premier community for digital entrepreneurs. AI coaching, networking, and exclusive business resources.',
+};
+
+import { AuthProvider } from '@/providers/AuthProvider';
+import { PayPalProvider } from '@/providers/PayPalProvider';
+
+export default function RootLayout({
+  children,
+}: Readonly<{
+  children: React.ReactNode;
+}>) {
+  return (
+    <html lang="en" className="dark" suppressHydrationWarning>
+      <head>
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Space+Grotesk:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+      </head>
+      <body className="font-body antialiased bg-background text-foreground overflow-x-hidden">
+        <AuthProvider>
+          <PayPalProvider>
+            {children}
+          </PayPalProvider>
+        </AuthProvider>
+      </body>
+    </html>
+  );
+}
+
+=== src/app/page.tsx ===
+
+"use client";
+
+import { AppLayout } from "@/components/layout/AppLayout";
+import { Button } from "@/components/ui/button";
+import { GlassCard } from "@/components/ui/glass-card";
+import { Badge } from "@/components/ui/badge";
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger
+} from "@/components/ui/accordion";
+import {
+  Zap,
+  Rocket,
+  Globe,
+  Shield,
+  Star,
+  ArrowRight,
+  Play,
+  Users,
+  TrendingUp,
+  Bot,
+  CheckCircle2,
+  ChevronRight,
+  Target,
+  Quote
+} from "lucide-react";
+import { PricingSection } from "@/components/landing/PricingSection";
+import Link from "next/link";
+import { useEffect, useState } from "react";
+import { dbService } from "@/lib/db";
+import {
+  Calendar,
+  History,
+  ArrowUpRight,
+  Heart,
+  MessageSquare,
+  Sparkles,
+  Trophy,
+  Activity
+} from "lucide-react";
+import { VisionModal } from "@/components/landing/VisionModal";
+import { useAuth } from "@/providers/AuthProvider";
+
+function timeAgo(ts: any): string {
+  if (!ts?.toDate) return "just now";
+  const diff = Date.now() - ts.toDate().getTime();
+  const m = Math.floor(diff / 60000);
+  if (m < 1) return "just now";
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  return `${Math.floor(h / 24)}d ago`;
+}
+
+export default function Home() {
+  const { user } = useAuth();
+  const [mounted, setMounted] = useState(false);
+  const [stats, setStats] = useState({ memberCount: 0, discussionCount: 0, revenueGenerated: 0 });
+  const [pulse, setPulse] = useState<any[]>([]);
+  const [isVisionOpen, setIsVisionOpen] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+    const fetchAllData = async () => {
+      const [statsData, recentActivity, recentMembers] = await Promise.all([
+        dbService.getGlobalStats(),
+        dbService.getRecentActivity(2),
+        dbService.getRecentMembers(2)
+      ]);
+      setStats(statsData);
+
+      // Combine and sort by time
+      const combined = [...recentActivity, ...recentMembers].sort((a, b) => {
+        const timeA = a.time?.toDate?.()?.getTime() || 0;
+        const timeB = b.time?.toDate?.()?.getTime() || 0;
+        return timeB - timeA;
+      });
+      setPulse(combined);
+    };
+    fetchAllData();
+  }, []);
+
+  if (!mounted) return null;
+
+  return (
+    <AppLayout>
+      <div className="flex flex-col gap-32 pb-32">
+        {/* Hero Section */}
+        <section id="hero" className="relative min-h-[85vh] flex flex-col items-center justify-center text-center px-4 overflow-hidden pt-12">
+          <div className="animate-reveal opacity-0 animation-delay-100">
+            <Badge variant="outline" className="mb-8 border-primary/30 text-primary bg-primary/5 py-1.5 px-4 rounded-full font-bold uppercase tracking-widest text-[10px] blue-glow">
+              <Zap className="w-3.5 h-3.5 mr-2 fill-primary" />
+              The Smart Business Layer
+            </Badge>
+          </div>
+
+          <h1 className="text-6xl md:text-9xl font-bold font-headline leading-[0.95] mb-8 tracking-tighter animate-reveal opacity-0 animation-delay-300">
+            Grow Your Online <br />
+            <span className="text-gradient">Business with AI</span>
+          </h1>
+
+          <p className="max-w-2xl mx-auto text-muted-foreground text-lg md:text-2xl mb-12 leading-relaxed animate-reveal opacity-0 animation-delay-500">
+            Join a next-generation community powered by
+            <span className="text-white font-medium"> AI coaching</span>,
+            <span className="text-white font-medium"> time-saving tools</span>, and
+            <span className="text-white font-medium"> top-tier learning</span>.
+          </p>
+
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-6 animate-reveal opacity-0 animation-delay-700">
+            <Link href="/open?plan=explorer">
+              <Button className="h-16 px-10 rounded-full bg-primary hover:bg-primary/90 text-xl font-bold blue-glow group transition-all">
+                Get Started
+                <ArrowRight className="ml-2 group-hover:translate-x-1 transition-transform" />
+              </Button>
+            </Link>
+            <Button
+              onClick={() => setIsVisionOpen(true)}
+              variant="ghost"
+              className="h-16 px-10 rounded-full border border-white/10 bg-white/5 hover:bg-white/10 text-xl font-semibold backdrop-blur-sm"
+            >
+              <Play className="mr-3 fill-white w-5 h-5" />
+              Watch Vision
+            </Button>
+          </div>
+
+          <div className="mt-20 flex flex-wrap justify-center gap-8 md:gap-16 opacity-60 animate-reveal opacity-0 animation-delay-900">
+            <div className="flex flex-col items-center">
+              <span className="text-2xl md:text-3xl font-bold font-headline">{stats.memberCount}</span>
+              <span className="text-[10px] uppercase tracking-widest font-bold text-muted-foreground whitespace-nowrap">Founding Entrepreneurs</span>
+            </div>
+            <div className="flex flex-col items-center">
+              <span className="text-2xl md:text-3xl font-bold font-headline">${stats.revenueGenerated}</span>
+              <span className="text-[10px] uppercase tracking-widest font-bold text-muted-foreground whitespace-nowrap">Community Revenue</span>
+            </div>
+            <div className="flex flex-col items-center">
+              <span className="text-2xl md:text-3xl font-bold font-headline">{stats.discussionCount}</span>
+              <span className="text-[10px] uppercase tracking-widest font-bold text-muted-foreground whitespace-nowrap">Active Discussions</span>
+            </div>
+          </div>
+
+          {/* Floating Dashboard Preview */}
+          <div className="mt-24 relative w-full max-w-5xl mx-auto animate-reveal opacity-0 animation-delay-1100">
+            <div className="absolute -inset-4 bg-primary/20 blur-[120px] rounded-full pointer-events-none opacity-50" />
+            <GlassCard className="p-1 rounded-[2rem] border-white/10 overflow-hidden relative blue-glow">
+              <img
+                src="/dashboard_preview.png"
+                alt="Dashboard Preview"
+                className="w-full rounded-[1.8rem] object-cover aspect-video"
+                data-ai-hint="dashboard screen"
+              />
+            </GlassCard>
+
+            {/* Floating UI Elements */}
+            <GlassCard className="absolute -top-12 -left-12 p-4 w-48 hidden lg:block animate-float" style={{ animationDuration: '8s' }}>
+              <div className="flex items-center gap-2 mb-2">
+                <div className="w-8 h-8 rounded-full bg-accent flex items-center justify-center">
+                  <TrendingUp className="w-4 h-4 text-white" />
+                </div>
+                <span className="text-xs font-bold">Progress Tip</span>
+              </div>
+              <div className="h-2 w-full bg-white/5 rounded-full overflow-hidden">
+                <div className="h-full w-[70%] bg-accent cyan-glow" />
+              </div>
+            </GlassCard>
+
+            <GlassCard className="absolute -bottom-8 -right-8 p-4 w-56 hidden lg:block animate-float" style={{ animationDuration: '12s', animationDelay: '1s' }}>
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full border-2 border-primary p-0.5">
+                  <img src="/face1.png" alt="Latest Member" title="Latest Member" className="rounded-full w-full h-full object-cover" />
+                </div>
+                <div>
+                  <p className="text-[10px] font-bold text-primary italic">LATEST MEMBER</p>
+                  <p className="text-xs font-semibold">
+                    {stats.memberCount > 0 ? `Join the ${stats.memberCount} Founders` : "Be among the first Founders"}
+                  </p>
+                </div>
+              </div>
+            </GlassCard>
+          </div>
+        </section>
+
+        {/* Feature Grid */}
+        <section id="features" className="max-w-7xl mx-auto px-6 grid grid-cols-1 md:grid-cols-3 gap-8">
+          <div className="flex flex-col gap-6 p-8 rounded-[2rem] border border-white/5 bg-white/[0.02] hover:bg-white/[0.04] transition-all group">
+            <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center border border-primary/20 group-hover:scale-110 transition-transform">
+              <Bot className="w-8 h-8 text-primary" />
+            </div>
+            <h3 className="text-3xl font-bold font-headline">AI Business Coach</h3>
+            <p className="text-muted-foreground text-lg leading-relaxed">
+              Personalized business advice, research help, and step-by-step plans created in seconds.
+            </p>
+            <ul className="space-y-3 mt-4">
+              {['24/7 Expert Support', 'Plan Generation', 'Competitor Help'].map(f => (
+                <li key={f} className="flex items-center gap-2 text-sm text-white/80">
+                  <CheckCircle2 className="w-4 h-4 text-primary" /> {f}
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          <div className="flex flex-col gap-6 p-8 rounded-[2rem] border border-white/5 bg-white/[0.02] hover:bg-white/[0.04] transition-all group">
+            <div className="w-16 h-16 rounded-2xl bg-accent/10 flex items-center justify-center border border-accent/20 group-hover:scale-110 transition-transform">
+              <Globe className="w-8 h-8 text-accent" />
+            </div>
+            <h3 className="text-3xl font-bold font-headline">Private Network</h3>
+            <p className="text-muted-foreground text-lg leading-relaxed">
+              A private group of successful business owners. Connect, collaborate, and grow with the best.
+            </p>
+            <ul className="space-y-3 mt-4">
+              {['Mastermind Groups', 'Expert Q&A Sessions', 'Global Feed Access'].map(f => (
+                <li key={f} className="flex items-center gap-2 text-sm text-white/80">
+                  <CheckCircle2 className="w-4 h-4 text-accent" /> {f}
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          <div className="flex flex-col gap-6 p-8 rounded-[2rem] border border-white/5 bg-white/[0.02] hover:bg-white/[0.04] transition-all group">
+            <div className="w-16 h-16 rounded-2xl bg-purple-500/10 flex items-center justify-center border border-purple-500/20 group-hover:scale-110 transition-transform">
+              <Star className="w-8 h-8 text-purple-400" />
+            </div>
+            <h3 className="text-3xl font-bold font-headline">Resource Center</h3>
+            <p className="text-muted-foreground text-lg leading-relaxed">
+              Exclusive tools, proven sales templates, and branding kits to help you grow.
+            </p>
+            <ul className="space-y-3 mt-4">
+              {['Proven Sales Templates', 'Exclusive AI Prompts', 'Legal & Sales Kits'].map(f => (
+                <li key={f} className="flex items-center gap-2 text-sm text-white/80">
+                  <CheckCircle2 className="w-4 h-4 text-purple-400" /> {f}
+                </li>
+              ))}
+            </ul>
+          </div>
+        </section>
+
+        {/* Founder's Story & Transparency Section */}
+        <section className="max-w-7xl mx-auto px-6 grid grid-cols-1 lg:grid-cols-2 gap-16 items-center">
+          <div className="relative">
+            <div className="absolute -inset-4 bg-primary/20 blur-[100px] rounded-full opacity-30" />
+            <img
+              src="/founder_portrait.png"
+              alt="Founder of Soma Digital"
+              className="rounded-[3rem] w-full h-[600px] object-cover border border-white/10 shadow-2xl relative z-10"
+            />
+            <GlassCard className="absolute -bottom-8 -right-8 p-6 w-72 z-20 animate-float" style={{ animationDuration: '10s' }}>
+              <Quote className="w-8 h-8 text-primary mb-4 opacity-50" />
+              <p className="text-sm italic text-white/90 leading-relaxed mb-4">
+                "We aren't here to fake success. We're here to build it, brick by brick, together."
+              </p>
+              <p className="font-bold text-sm">Founder, Soma Digital</p>
+            </GlassCard>
+          </div>
+
+          <div className="flex flex-col gap-8">
+            <Badge variant="outline" className="w-fit border-primary/30 text-primary bg-primary/5 uppercase tracking-widest text-[10px] font-bold py-1 px-3">
+              Transparent Mission
+            </Badge>
+            <h2 className="text-5xl md:text-7xl font-bold font-headline leading-tight">
+              Built for <br /> <span className="text-gradient">Real Growth.</span>
+            </h2>
+            <p className="text-muted-foreground text-xl leading-relaxed">
+              Most communities use fake numbers to lure you in. We do things differently. Soma Digital is a
+              living organism. You are seeing our growth in real-time because we believe in radical transparency.
+            </p>
+
+            <div className="space-y-6 mt-4">
+              <div className="flex gap-4">
+                <div className="w-12 h-12 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center shrink-0">
+                  <Target className="w-6 h-6 text-primary" />
+                </div>
+                <div>
+                  <h4 className="font-bold text-lg">The Mission</h4>
+                  <p className="text-muted-foreground">To empower 1,000 digital entrepreneurs with AI-human hybrid coaching by 2026.</p>
+                </div>
+              </div>
+              <div className="flex gap-4">
+                <div className="w-12 h-12 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center shrink-0">
+                  <Shield className="w-6 h-6 text-accent" />
+                </div>
+                <div>
+                  <h4 className="font-bold text-lg">The Promise</h4>
+                  <p className="text-muted-foreground">No fluff. No fake gurus. Just tools, data, and a network of serious builders.</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* Pulse of the Community (Recent Activity) */}
+        <section id="results" className="max-w-7xl mx-auto px-6 w-full">
+          <div className="flex flex-col md:flex-row justify-between items-end mb-12 gap-6">
+            <div className="text-left">
+              <Badge variant="outline" className="mb-4 border-accent/30 text-accent bg-accent/5">LIVE ACTIVITY</Badge>
+              <h2 className="text-4xl md:text-6xl font-bold font-headline">Community Pulse</h2>
+            </div>
+            <p className="text-muted-foreground max-w-md text-left md:text-right">
+              Real-time updates from our founding members. See the network in action.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            {pulse.length > 0 ? pulse.map((activity, i) => (
+              <GlassCard key={i} className="flex flex-col gap-4 p-6 hover:border-primary/30 transition-all cursor-default group">
+                <div className="flex justify-between items-start">
+                  <div className={`p-2 rounded-lg ${activity.type === 'join' ? 'bg-blue-500/10 text-blue-400' :
+                      activity.type === 'post' ? 'bg-purple-500/10 text-purple-400' :
+                        activity.type === 'win' ? 'bg-green-500/10 text-green-400' :
+                          'bg-accent/10 text-accent'
+                    }`}>
+                    {activity.type === 'join' && <Users className="w-4 h-4" />}
+                    {activity.type === 'post' && <MessageSquare className="w-4 h-4" />}
+                    {activity.type === 'win' && <Trophy className="w-4 h-4" />}
+                    {activity.type === 'update' && <Activity className="w-4 h-4" />}
+                  </div>
+                  <span className="text-[10px] font-bold text-muted-foreground uppercase">{timeAgo(activity.time)}</span>
+                </div>
+                <div>
+                  <p className="font-bold group-hover:text-primary transition-colors">{activity.user}</p>
+                  <p className="text-sm text-muted-foreground">{activity.detail}</p>
+                </div>
+              </GlassCard>
+            )) : (
+              <div className="col-span-full py-12 text-center border border-dashed border-white/10 rounded-3xl opacity-50">
+                <p className="text-sm">Waiting for the first founding members to take action...</p>
+              </div>
+            )}
+          </div>
+        </section>
+        <section className="max-w-7xl mx-auto px-6 w-full">
+          <GlassCard className="p-0 overflow-hidden border-white/10 rounded-[3rem]">
+            <div className="grid grid-cols-1 lg:grid-cols-2">
+              <div className="p-12 md:p-20 flex flex-col justify-center gap-8">
+                <Badge variant="outline" className="w-fit border-accent/30 text-accent bg-accent/5">
+                  AI CAPABILITIES
+                </Badge>
+                <h2 className="text-4xl md:text-6xl font-bold font-headline leading-tight">
+                  Your Personal <br /> <span className="text-accent">Business Assistant.</span>
+                </h2>
+                <p className="text-muted-foreground text-xl leading-relaxed">
+                  Soma AI doesn't just chat. It looks at your business, finds what's slowing you down,
+                  and suggests clear steps to grow your income.
+                </p>
+                <div className="flex flex-col gap-4">
+                  <div className="flex items-center gap-4 p-4 rounded-2xl bg-white/5 border border-white/10">
+                    <div className="w-10 h-10 rounded-xl bg-accent flex items-center justify-center shrink-0">
+                      <Target className="w-5 h-5 text-white" />
+                    </div>
+                    <div>
+                      <p className="font-bold">Customer Research</p>
+                      <p className="text-sm text-muted-foreground">Deep dives into your target audience.</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-4 p-4 rounded-2xl bg-white/5 border border-white/10">
+                    <div className="w-10 h-10 rounded-xl bg-primary flex items-center justify-center shrink-0">
+                      <Zap className="w-5 h-5 text-white" />
+                    </div>
+                    <div>
+                      <p className="font-bold">Time-Saving Steps</p>
+                      <p className="text-sm text-muted-foreground">Custom steps to reclaim your time.</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-gradient-to-br from-accent/20 to-primary/20 p-8 md:p-12 flex items-center justify-center">
+                <GlassCard className="w-full max-w-md p-6 border-white/20 shadow-2xl relative animate-float" style={{ animationDuration: '15s' }}>
+                  <div className="flex items-center gap-3 mb-6">
+                    <div className="w-10 h-10 rounded-xl bg-accent flex items-center justify-center cyan-glow">
+                      <Bot className="w-6 h-6 text-white" />
+                    </div>
+                    <div>
+                      <h4 className="font-bold">Soma AI</h4>
+                      <div className="flex items-center gap-1.5">
+                        <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+                        <span className="text-[10px] uppercase font-bold text-muted-foreground">Online</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="space-y-4 mb-8">
+                    <div className="p-4 rounded-2xl bg-white/5 border border-white/5 text-sm text-muted-foreground">
+                      How can I scale my agency to $50k MRR this quarter?
+                    </div>
+                    <div className="p-4 rounded-2xl bg-accent/10 border border-accent/20 text-sm">
+                      Based on your current data, the fastest path is improving your customer
+                      referrals and testing ads on social media. I've prepared a 30-day
+                      step-by-step plan for you.
+                    </div>
+                    <div className="flex gap-2">
+                      <Link href="/open">
+                        <Badge variant="secondary" className="bg-white/5 hover:bg-white/10 cursor-pointer">View Plan</Badge>
+                      </Link>
+                      <Link href="/open">
+                        <Badge variant="secondary" className="bg-white/5 hover:bg-white/10 cursor-pointer">Run Analysis</Badge>
+                      </Link>
+                    </div>
+                  </div>
+
+                  <div className="relative">
+                    <div className="h-12 w-full bg-white/5 border border-white/10 rounded-xl px-4 flex items-center justify-between text-muted-foreground text-sm italic">
+                      Type your business goal...
+                      <ArrowRight className="w-4 h-4" />
+                    </div>
+                  </div>
+                </GlassCard>
+              </div>
+            </div>
+          </GlassCard>
+        </section>
+
+        {/* Pricing Section */}
+        <div id="pricing">
+          <PricingSection />
+        </div>
+
+        <section className="max-w-7xl mx-auto px-6 w-full">
+          <div className="flex flex-col gap-12 p-12 md:p-20 rounded-[3rem] border border-white/10 bg-white/[0.02] relative overflow-hidden">
+            <div className="absolute top-0 right-0 w-96 h-96 bg-primary/10 blur-[120px] rounded-full -translate-y-1/2 translate-x-1/2" />
+
+            <div className="text-center space-y-6 relative z-10">
+              <Badge variant="outline" className="border-primary/30 text-primary bg-primary/5">OUR PATH FORWARD</Badge>
+              <h2 className="text-4xl md:text-6xl font-bold font-headline">Transparent Roadmap</h2>
+              <p className="text-muted-foreground text-xl max-w-2xl mx-auto">
+                We are just getting started. Here is exactly what we are building and when you can expect it.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-8 relative z-10">
+              {[
+                { phase: "Phase 1: Foundation", status: "Active", items: ["Custom AI Business Coaching", "Founding 100 Members", "Private Community Feed"] },
+                { phase: "Phase 2: Acceleration", status: "Coming Q3 2026", items: ["Revenue Tracking Dashboard", "Exclusive Sales Templates", "Expert Mentorship Program"] },
+                { phase: "Phase 3: Scale", status: "Planned 2027", items: ["Venture Partner Network", "Automated Business Kits", "Global Founders Summit"] }
+              ].map((p, i) => (
+                <div key={i} className="flex flex-col gap-6 p-8 rounded-3xl bg-white/5 border border-white/5">
+                  <div className="flex justify-between items-center">
+                    <span className="text-[10px] font-bold text-primary uppercase tracking-widest">{p.status}</span>
+                    <div className={`w-2 h-2 rounded-full ${p.status === 'Active' ? 'bg-green-500 animate-pulse' : 'bg-white/20'}`} />
+                  </div>
+                  <h4 className="text-2xl font-bold font-headline">{p.phase}</h4>
+                  <ul className="space-y-4">
+                    {p.items.map((item, j) => (
+                      <li key={j} className="flex items-start gap-3 text-sm text-muted-foreground">
+                        <div className="w-1.5 h-1.5 rounded-full bg-primary mt-1.5 shrink-0" />
+                        {item}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        {/* FAQ Section */}
+        <section className="max-w-3xl mx-auto px-6 w-full">
+          <h2 className="text-4xl font-bold font-headline mb-12 text-center">Frequently Asked Questions</h2>
+          <Accordion type="single" collapsible className="w-full space-y-4">
+            <AccordionItem value="item-1" className="border-white/5 bg-white/[0.02] rounded-2xl px-6">
+              <AccordionTrigger className="text-lg font-bold hover:no-underline">What exactly is Soma Digital Community?</AccordionTrigger>
+              <AccordionContent className="text-muted-foreground text-base leading-relaxed">
+                Soma Digital Community is a premium membership for digital entrepreneurs that uses AI to provide business coaching, tools, and support.
+              </AccordionContent>
+            </AccordionItem>
+            <AccordionItem value="item-2" className="border-white/5 bg-white/[0.02] rounded-2xl px-6">
+              <AccordionTrigger className="text-lg font-bold hover:no-underline">How does the AI Coach work?</AccordionTrigger>
+              <AccordionContent className="text-muted-foreground text-base leading-relaxed">
+                The AI Coach uses your business goals and challenges to give you personalized advice, plans, and clear steps to grow. It's like having a 24/7 consultant.
+              </AccordionContent>
+            </AccordionItem>
+            <AccordionItem value="item-3" className="border-white/5 bg-white/[0.02] rounded-2xl px-6">
+              <AccordionTrigger className="text-lg font-bold hover:no-underline">Is this for beginners or experts?</AccordionTrigger>
+              <AccordionContent className="text-muted-foreground text-base leading-relaxed">
+                Both. Our Explorer tier is perfect for those just starting, while our Pro and Elite tiers are designed for scaling existing businesses into the 7 and 8-figure range.
+              </AccordionContent>
+            </AccordionItem>
+          </Accordion>
+        </section>
+
+        {/* Footer */}
+        <footer className="border-t border-white/5 pt-20">
+          <div className="max-w-7xl mx-auto px-6 grid grid-cols-1 md:grid-cols-4 gap-12 mb-20">
+            <div className="flex flex-col gap-6">
+              <Link href="/" className="flex items-center gap-2 group">
+                <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center blue-glow group-hover:scale-110 transition-transform">
+                  <Zap className="text-white w-5 h-5 fill-white" />
+                </div>
+                <span className="font-headline font-bold text-2xl tracking-tighter text-white">SOMA DIGITAL COMMUNITY</span>
+              </Link>
+              <p className="text-muted-foreground text-sm">
+                Empowering the next generation of digital giants with the intelligence of tomorrow.
+              </p>
+            </div>
+
+            <div className="flex flex-col gap-4">
+              <h4 className="font-bold uppercase tracking-widest text-xs text-muted-foreground">Ecosystem</h4>
+              {user ? (
+                <>
+                  <Link href="/dashboard" className="text-sm text-muted-foreground hover:text-white transition-colors">Dashboard</Link>
+                  <Link href="/community" className="text-sm text-muted-foreground hover:text-white transition-colors">Community</Link>
+                  <Link href="/mentor" className="text-sm text-muted-foreground hover:text-white transition-colors">AI Coach</Link>
+                  <Link href="/marketplace" className="text-sm text-muted-foreground hover:text-white transition-colors">Resource Center</Link>
+                </>
+              ) : (
+                <>
+                  <Link href="/#features" className="text-sm text-muted-foreground hover:text-white transition-colors">Features</Link>
+                  <Link href="/#results" className="text-sm text-muted-foreground hover:text-white transition-colors">Results</Link>
+                  <Link href="/#pricing" className="text-sm text-muted-foreground hover:text-white transition-colors">Pricing</Link>
+                  <Link href="/open" className="text-sm text-muted-foreground hover:text-white transition-colors">Start Onboarding</Link>
+                </>
+              )}
+            </div>
+
+            <div className="flex flex-col gap-4">
+              <h4 className="font-bold uppercase tracking-widest text-xs text-muted-foreground">Resources</h4>
+              <Link href="/blog" className="text-sm text-muted-foreground hover:text-white transition-colors">Founders Blog</Link>
+              <Link href="/case-studies" className="text-sm text-muted-foreground hover:text-white transition-colors">Case Studies</Link>
+              <Link href="/partners" className="text-sm text-muted-foreground hover:text-white transition-colors">Partner Program</Link>
+              <Link href="/support" className="text-sm text-muted-foreground hover:text-white transition-colors">Support Center</Link>
+            </div>
+
+            <div className="flex flex-col gap-6">
+              <h4 className="font-bold uppercase tracking-widest text-xs text-muted-foreground">Stay Connected</h4>
+              <div className="flex gap-4">
+                <Link href="/open" aria-label="Join Soma Digital" className="w-10 h-10 rounded-full bg-white/5 border border-white/10 flex items-center justify-center hover:bg-primary/20 hover:border-primary/30 transition-all">
+                  <Users className="w-4 h-4" />
+                </Link>
+                <Link href="/support" aria-label="Support Center" className="w-10 h-10 rounded-full bg-white/5 border border-white/10 flex items-center justify-center hover:bg-primary/20 hover:border-primary/30 transition-all">
+                  <Globe className="w-4 h-4" />
+                </Link>
+              </div>
+              <p className="text-[10px] text-muted-foreground leading-relaxed">
+                © 2026 Soma Digital. <br /> All rights reserved. Built for you.
+              </p>
+            </div>
+          </div>
+        </footer>
+      </div>
+      <VisionModal isOpen={isVisionOpen} onClose={() => setIsVisionOpen(false)} />
+    </AppLayout>
+  );
+}
+
+=== src/components/auth/TierGuard.tsx ===
+
+"use client";
+
+import React from "react";
+import { useUserStore, UserTier } from "@/store/useUserStore";
+import { GlassCard } from "@/components/ui/glass-card";
+import { Button } from "@/components/ui/button";
+import { Lock, Zap, Shield, Trophy, ArrowRight } from "lucide-react";
+import Link from "next/link";
+import { motion } from "framer-motion";
+
+interface TierGuardProps {
+  children: React.ReactNode;
+  minTier: UserTier;
+  fallback?: React.ReactNode;
+}
+
+/**
+ * TierGuard: Hard gate for routes or sections. 
+ * If the user doesn't meet the tier, it shows a "Locked" placeholder or custom fallback.
+ */
+export const TierGuard = ({ children, minTier, fallback }: TierGuardProps) => {
+  const { tier } = useUserStore();
+  
+  const tierWeights = { explorer: 0, pro: 1, elite: 2 };
+  const hasAccess = tierWeights[tier] >= tierWeights[minTier];
+
+  if (hasAccess) return <>{children}</>;
+
+  if (fallback) return <>{fallback}</>;
+
+  return (
+    <div className="w-full py-12 px-6">
+      <GlassCard className="max-w-2xl mx-auto p-12 text-center flex flex-col items-center gap-8 border-primary/20 bg-primary/5">
+        <div className="w-20 h-20 rounded-3xl bg-primary/10 flex items-center justify-center blue-glow">
+          <Lock className="w-10 h-10 text-primary" />
+        </div>
+        
+        <div className="space-y-4">
+          <h2 className="text-3xl font-bold font-headline">Access Restricted</h2>
+          <p className="text-muted-foreground text-lg">
+            This feature is exclusive to <span className="text-white font-bold uppercase">{minTier}</span> members.
+            Upgrade your membership to unlock the full potential of SOMA.
+          </p>
+        </div>
+
+        <Link href="/#pricing">
+          <Button className="h-14 px-8 rounded-full bg-primary hover:bg-primary/90 text-lg font-bold blue-glow group">
+            Upgrade to {minTier}
+            <ArrowRight className="ml-2 group-hover:translate-x-1 transition-transform" />
+          </Button>
+        </Link>
+      </GlassCard>
+    </div>
+  );
+};
+
+interface FeatureGateProps {
+  children: React.ReactNode;
+  featureId: string;
+  preview?: React.ReactNode;
+}
+
+/**
+ * FeatureGate: Soft gate for UI elements.
+ * Shows a blurred preview with an "Unlock" overlay if the user doesn't have the feature.
+ */
+export const FeatureGate = ({ children, featureId, preview }: FeatureGateProps) => {
+  const { unlockedFeatures } = useUserStore();
+  const hasFeature = unlockedFeatures.includes(featureId);
+
+  if (hasFeature) return <>{children}</>;
+
+  return (
+    <div className="relative group overflow-hidden rounded-[2rem]">
+      <div className="blur-xl opacity-40 pointer-events-none grayscale select-none">
+        {preview || children}
+      </div>
+      
+      <div className="absolute inset-0 flex flex-col items-center justify-center z-20 p-8 text-center bg-black/40 backdrop-blur-[2px]">
+        <motion.div
+          initial={{ scale: 0.9, opacity: 0 }}
+          whileInView={{ scale: 1, opacity: 1 }}
+          className="flex flex-col items-center gap-4"
+        >
+          <div className="w-12 h-12 rounded-2xl bg-accent/20 flex items-center justify-center border border-accent/30 cyan-glow">
+            <Zap className="w-6 h-6 text-accent" />
+          </div>
+          <h4 className="text-xl font-bold font-headline">Premium Feature</h4>
+          <p className="text-xs text-muted-foreground max-w-[200px]">
+            Unlocked for Pro and Elite members.
+          </p>
+          <Link href="/#pricing">
+            <Button size="sm" variant="outline" className="rounded-full border-accent/30 text-accent hover:bg-accent/10 mt-2">
+              Learn More
+            </Button>
+          </Link>
+        </motion.div>
+      </div>
+    </div>
+  );
+};
+
+=== src/lib/entitlements.ts ===
+
+import type { DocumentData } from 'firebase-admin/firestore';
+
+export type SubscriptionPlan = 'explorer' | 'pro' | 'elite';
+export type SubscriptionStatus = 'active' | 'cancelled' | 'past_due' | 'expired';
+
+export const subscriptionWeights: Record<SubscriptionPlan, number> = {
+  explorer: 0,
+  pro: 1,
+  elite: 2,
+};
+
+export interface SubscriptionRecord {
+  provider: string;
+  subscriptionPlan: SubscriptionPlan;
+  subscriptionStatus: SubscriptionStatus;
+  subscriptionId: string;
+  userId?: string;
+  planId?: SubscriptionPlan;
+  plan?: SubscriptionPlan;
+  status?: SubscriptionStatus;
+  currentPeriodEnd?: string | null;
+}
+
+export interface UserEntitlements {
+  uid: string;
+  isAdmin: boolean;
+  subscription: SubscriptionRecord;
+  roles: string[];
+  profile: DocumentData;
+}
+
+export function getSubscriptionPlan(plan: unknown): SubscriptionPlan {
+  if (plan === 'enterprise') {
+    return 'elite';
+  }
+
+  if (plan === 'elite' || plan === 'pro' || plan === 'explorer') {
+    return plan;
+  }
+
+  if (typeof plan === 'object' && plan !== null && 'subscriptionPlan' in plan) {
+    const candidate = (plan as any).subscriptionPlan;
+    if (candidate === 'enterprise') {
+      return 'elite';
+    }
+    if (candidate === 'elite' || candidate === 'pro' || candidate === 'explorer') {
+      return candidate;
+    }
+  }
+
+  return 'explorer';
+}
+
+export function isSubscriptionActive(subscription?: SubscriptionRecord | null): boolean {
+  return Boolean(
+    subscription && subscription.subscriptionStatus === 'active'
+  );
+}
+
+export function hasPlan(subscription: SubscriptionRecord | null | undefined, minimumPlan: SubscriptionPlan): boolean {
+  if (!subscription) return false;
+  return subscriptionWeights[getSubscriptionPlan(subscription.subscriptionPlan)] >= subscriptionWeights[minimumPlan];
+}
+
+export function normalizeSubscription(subscription: Partial<SubscriptionRecord> | null | undefined): SubscriptionRecord {
+  const subscriptionPlan = getSubscriptionPlan(
+    subscription?.subscriptionPlan ?? subscription?.planId ?? subscription?.plan
+  );
+
+  const rawStatus = subscription?.subscriptionStatus ?? subscription?.status;
+  const subscriptionStatus =
+    rawStatus === 'active' || rawStatus === 'cancelled' || rawStatus === 'past_due' || rawStatus === 'expired'
+      ? rawStatus
+      : 'expired';
+  const subscriptionId =
+    typeof subscription?.subscriptionId === 'string' && subscription.subscriptionId
+      ? subscription.subscriptionId
+      : '';
+
+  return {
+    provider: subscription?.provider || 'paypal',
+    subscriptionPlan,
+    planId: subscriptionPlan,
+    plan: subscriptionPlan,
+    subscriptionStatus,
+    status: subscriptionStatus,
+    subscriptionId,
+    userId: subscription?.userId,
+    currentPeriodEnd: subscription?.currentPeriodEnd || null,
+  };
+}
+
+=== src/hooks/useSubscription.ts ===
+
+"use client";
+
+import { useCallback, useMemo, useState } from "react";
+import { getFunctions, httpsCallable } from "firebase/functions";
+import { app, auth } from "@/lib/firebase";
+import { useAuth } from "@/providers/AuthProvider";
+import { useUserStore, type UserTier } from "@/store/useUserStore";
+
+type PaidSubscriptionPlan = "pro" | "elite";
+export type SubscriptionPlan = "explorer" | PaidSubscriptionPlan;
+
+interface CreatePayPalSubscriptionRequest {
+  planId: PaidSubscriptionPlan;
+  userId: string;
+}
+
+interface CreatePayPalSubscriptionResponse {
+  approvalUrl: string;
+}
+
+interface InitializePaystackTransactionRequest {
+  email: string;
+  amount: number;
+  plan?: string;
+  metadata?: { userId: string; planId: string };
+}
+
+interface InitializePaystackTransactionResponse {
+  authorization_url: string;
+  access_code: string;
+  reference: string;
+}
+
+interface CheckSubscriptionStatusRequest {
+  userId: string;
+}
+
+interface CheckSubscriptionStatusResponse {
+  tier: string;
+  expiresAt: Date | string | number | null | { seconds: number; nanoseconds?: number };
+}
+
+interface CancelSubscriptionRequest {
+  userId: string;
+}
+
+interface CancelSubscriptionResponse {
+  success?: boolean;
+}
+
+interface SubscriptionStatus {
+  tier: string;
+  expiresAt: Date | null;
+}
+
+interface UseSubscriptionResult {
+  createPayPalSubscription: (planId: SubscriptionPlan) => Promise<{ approvalUrl: string }>;
+  initializePaystackTransaction: (
+    planId: SubscriptionPlan,
+    email?: string
+  ) => Promise<{ authorizationUrl: string }>;
+  checkSubscriptionStatus: () => Promise<SubscriptionStatus>;
+  cancelSubscription: () => Promise<void>;
+  loading: boolean;
+  paypalLoading: boolean;
+  paystackLoading: boolean;
+  statusLoading: boolean;
+  cancelLoading: boolean;
+  error: string | null;
+  paypalError: string | null;
+  paystackError: string | null;
+  setPaypalError: (message: string | null) => void;
+  setPaystackError: (message: string | null) => void;
+  refreshUserToken: () => Promise<void>;
+}
+
+const PAYSTACK_PLAN_AMOUNTS: Record<PaidSubscriptionPlan, number> = {
+  pro: Number(process.env.NEXT_PUBLIC_PAYSTACK_AMOUNT_PRO || 970000),
+  elite: Number(process.env.NEXT_PUBLIC_PAYSTACK_AMOUNT_ELITE || 2970000),
+};
+
+function getFriendlyErrorMessage(error: unknown, fallback: string): string {
+  if (error instanceof Error && error.message.trim().length > 0) {
+    return error.message;
+  }
+
+  if (typeof error === "object" && error !== null && "message" in error) {
+    const message = (error as { message?: unknown }).message;
+    if (typeof message === "string" && message.trim().length > 0) {
+      return message;
+    }
+  }
+
+  return fallback;
+}
+
+function normalizeExpiresAt(value: CheckSubscriptionStatusResponse["expiresAt"]): Date | null {
+  if (!value) return null;
+  if (value instanceof Date) return value;
+
+  if (typeof value === "string" || typeof value === "number") {
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? null : date;
+  }
+
+  const date = new Date(value.seconds * 1000);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function normalizeTier(tier: string): UserTier {
+  if (tier === "pro" || tier === "elite") {
+    return tier;
+  }
+
+  return "explorer";
+}
+
+function assertPaidPlan(planId: SubscriptionPlan): asserts planId is PaidSubscriptionPlan {
+  if (planId !== "pro" && planId !== "elite") {
+    throw new Error("Please choose Pro or Elite to start a paid subscription.");
+  }
+}
+
+function redirectTo(url: string): void {
+  if (typeof window !== "undefined") {
+    window.location.href = url;
+  }
+}
+
+export function useSubscription(): UseSubscriptionResult {
+  const { user } = useAuth();
+  const setTier = useUserStore((state) => state.setTier);
+
+  const [paypalLoading, setPaypalLoading] = useState(false);
+  const [paystackLoading, setPaystackLoading] = useState(false);
+  const [statusLoading, setStatusLoading] = useState(false);
+  const [cancelLoading, setCancelLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [paypalError, setPaypalError] = useState<string | null>(null);
+  const [paystackError, setPaystackError] = useState<string | null>(null);
+
+  const functions = useMemo(() => getFunctions(app), []);
+  const loading = paypalLoading || paystackLoading || statusLoading || cancelLoading;
+
+  const requireCurrentUser = useCallback(() => {
+    if (!user?.uid) {
+      throw new Error("Please sign in to manage your subscription.");
+    }
+
+    return user;
+  }, [user]);
+
+  const createPayPalSubscription = useCallback(
+    async (planId: SubscriptionPlan): Promise<{ approvalUrl: string }> => {
+      setPaypalLoading(true);
+      setError(null);
+      setPaypalError(null);
+
+      try {
+        assertPaidPlan(planId);
+        const currentUser = requireCurrentUser();
+        const createSubscription = httpsCallable<
+          CreatePayPalSubscriptionRequest,
+          CreatePayPalSubscriptionResponse
+        >(functions, "createPayPalSubscription");
+
+        const result = await createSubscription({
+          planId,
+          userId: currentUser.uid,
+        });
+
+        if (!result.data.approvalUrl) {
+          throw new Error("PayPal did not return an approval link. Please try again.");
+        }
+
+        redirectTo(result.data.approvalUrl);
+        return { approvalUrl: result.data.approvalUrl };
+      } catch (err: unknown) {
+        const message = getFriendlyErrorMessage(
+          err,
+          "We could not start your PayPal subscription. Please try again."
+        );
+        setError(message);
+        setPaypalError(message);
+        throw new Error(message);
+      } finally {
+        setPaypalLoading(false);
+      }
+    },
+    [functions, requireCurrentUser]
+  );
+
+  const initializePaystackTransaction = useCallback(
+    async (planId: SubscriptionPlan, email?: string): Promise<{ authorizationUrl: string }> => {
+      setPaystackLoading(true);
+      setError(null);
+      setPaystackError(null);
+
+      try {
+        assertPaidPlan(planId);
+        const currentUser = requireCurrentUser();
+        const checkoutEmail = email || currentUser.email;
+
+        if (!checkoutEmail) {
+          throw new Error("Your account needs an email address before starting Paystack checkout.");
+        }
+
+        const amount = PAYSTACK_PLAN_AMOUNTS[planId];
+        if (!Number.isFinite(amount) || amount <= 0) {
+          throw new Error("This Paystack plan is not configured yet. Please try another payment method.");
+        }
+
+        const initializeTransaction = httpsCallable<
+          InitializePaystackTransactionRequest,
+          InitializePaystackTransactionResponse
+        >(functions, "initializePaystackTransaction");
+
+        const result = await initializeTransaction({
+          email: checkoutEmail,
+          amount,
+          metadata: {
+            userId: currentUser.uid,
+            planId,
+          },
+        });
+
+        if (!result.data.authorization_url) {
+          throw new Error("Paystack did not return a checkout link. Please try again.");
+        }
+
+        redirectTo(result.data.authorization_url);
+        return { authorizationUrl: result.data.authorization_url };
+      } catch (err: unknown) {
+        const message = getFriendlyErrorMessage(
+          err,
+          "We could not start your Paystack checkout. Please try again."
+        );
+        setError(message);
+        setPaystackError(message);
+        throw new Error(message);
+      } finally {
+        setPaystackLoading(false);
+      }
+    },
+    [functions, requireCurrentUser]
+  );
+
+  const checkSubscriptionStatus = useCallback(async (): Promise<SubscriptionStatus> => {
+    setStatusLoading(true);
+    setError(null);
+
+    try {
+      const currentUser = requireCurrentUser();
+      const checkStatus = httpsCallable<CheckSubscriptionStatusRequest, CheckSubscriptionStatusResponse>(
+        functions,
+        "checkSubscriptionStatus"
+      );
+
+      const result = await checkStatus({ userId: currentUser.uid });
+      const status = {
+        tier: result.data.tier,
+        expiresAt: normalizeExpiresAt(result.data.expiresAt),
+      };
+
+      setTier(normalizeTier(status.tier));
+      return status;
+    } catch (err: unknown) {
+      const message = getFriendlyErrorMessage(
+        err,
+        "We could not refresh your subscription status. Please try again."
+      );
+      setError(message);
+      throw new Error(message);
+    } finally {
+      setStatusLoading(false);
+    }
+  }, [functions, requireCurrentUser, setTier]);
+
+  const cancelSubscription = useCallback(async (): Promise<void> => {
+    setCancelLoading(true);
+    setError(null);
+
+    try {
+      const currentUser = requireCurrentUser();
+      const cancel = httpsCallable<CancelSubscriptionRequest, CancelSubscriptionResponse>(
+        functions,
+        "cancelSubscription"
+      );
+
+      await cancel({ userId: currentUser.uid });
+      await checkSubscriptionStatus();
+    } catch (err: unknown) {
+      const message = getFriendlyErrorMessage(
+        err,
+        "We could not cancel your subscription. Please try again."
+      );
+      setError(message);
+      throw new Error(message);
+    } finally {
+      setCancelLoading(false);
+    }
+  }, [checkSubscriptionStatus, functions, requireCurrentUser]);
+
+  const refreshUserToken = useCallback(async (): Promise<void> => {
+    try {
+      await auth.currentUser?.getIdToken(true);
+      await checkSubscriptionStatus();
+    } catch (err: unknown) {
+      const message = getFriendlyErrorMessage(
+        err,
+        "We could not refresh your account access. Please try again."
+      );
+      setError(message);
+      throw new Error(message);
+    }
+  }, [checkSubscriptionStatus]);
+
+  return {
+    createPayPalSubscription,
+    initializePaystackTransaction,
+    checkSubscriptionStatus,
+    cancelSubscription,
+    loading,
+    paypalLoading,
+    paystackLoading,
+    statusLoading,
+    cancelLoading,
+    error,
+    paypalError,
+    paystackError,
+    setPaypalError,
+    setPaystackError,
+    refreshUserToken,
+  };
+}
+
+=== src/components/premium/PayPalSubscribeButtons.tsx ===
+
+'use client';
+
+import { useEffect, useState } from 'react';
+import { PayPalButtons, usePayPalScriptReducer } from '@paypal/react-paypal-js';
+import { useSubscription, type SubscriptionPlan } from '@/hooks/useSubscription';
+import { useToast } from '@/hooks/use-toast';
+import { Button } from '@/components/ui/button';
+import { Loader2 } from 'lucide-react';
+
+interface PayPalSubscribeButtonsProps {
+  planId: SubscriptionPlan;
+  planName: string;
+  onSuccess?: () => void;
+  onError?: (error: string) => void;
+  onCancel?: () => void;
+}
+
+export function PayPalSubscribeButtons({
+  planId,
+  planName,
+  onSuccess,
+  onError,
+  onCancel,
+}: PayPalSubscribeButtonsProps) {
+  const {
+    createPayPalSubscription,
+    paypalLoading: loading,
+    paypalError: error,
+    setPaypalError: setError,
+    refreshUserToken,
+  } = useSubscription();
+  const { toast } = useToast();
+  const [{ isPending }] = usePayPalScriptReducer();
+  const [localError, setLocalError] = useState<string | null>(null);
+
+  // Check for successful return from PayPal
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const subscriptionSuccess = params.get('subscription');
+    
+    if (subscriptionSuccess === 'success') {
+      toast({
+        title: 'Subscription activated!',
+        description: `You are now on the ${planName} plan.`,
+      });
+      
+      // Clear the URL parameter
+      window.history.replaceState({}, document.title, window.location.pathname);
+      
+      // Refresh user token and call success callback
+      refreshUserToken().then(() => {
+        onSuccess?.();
+      });
+    } else if (subscriptionSuccess === 'cancelled') {
+      setLocalError('Subscription was cancelled. Please try again.');
+    }
+  }, [planName, onSuccess, refreshUserToken, toast]);
+
+  const handleCreateSubscription = async () => {
+    setLocalError(null);
+    setError(null);
+
+    const result = await createPayPalSubscription(planId);
+    if (!result?.approvalUrl) {
+      const errorMsg = error || 'Failed to create subscription. Please try again.';
+      setLocalError(errorMsg);
+      onError?.(errorMsg);
+    }
+  };
+
+  const displayError = localError || error;
+
+  if (isPending) {
+    return (
+      <div className="flex items-center justify-center py-8">
+        <Loader2 className="w-6 h-6 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-4">
+      {displayError && (
+        <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/20">
+          <p className="text-sm text-red-400">{displayError}</p>
+        </div>
+      )}
+
+      <Button
+        onClick={handleCreateSubscription}
+        disabled={loading}
+        className="w-full h-12 bg-primary hover:bg-primary/90 font-bold text-lg rounded-xl blue-glow"
+      >
+        {loading ? (
+          <>
+            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+            Processing...
+          </>
+        ) : (
+          `Subscribe to ${planName}`
+        )}
+      </Button>
+
+      <p className="text-xs text-muted-foreground text-center">
+        You will be redirected to PayPal to complete your subscription
+      </p>
+    </div>
+  );
+}
+
+=== src/components/premium/PaystackSubscribeButtons.tsx ===
+
+'use client';
+
+import { useState, useEffect } from 'react';
+import { useSubscription, type SubscriptionPlan } from '@/hooks/useSubscription';
+import { useAuth } from '@/providers/AuthProvider';
+import { useToast } from '@/hooks/use-toast';
+import { Button } from '@/components/ui/button';
+import { Loader2 } from 'lucide-react';
+
+interface PaystackSubscribeButtonsProps {
+  planId: SubscriptionPlan;
+  planName: string;
+  onSuccess?: () => void;
+  onError?: (error: string) => void;
+  onCancel?: () => void;
+}
+
+export function PaystackSubscribeButtons({
+  planId,
+  planName,
+  onSuccess,
+  onError,
+  onCancel,
+}: PaystackSubscribeButtonsProps) {
+  const { initializePaystackTransaction, refreshUserToken, paystackLoading: loading, paystackError: error, setPaystackError: setError } =
+    useSubscription();
+  const { user } = useAuth();
+  const { toast } = useToast();
+  const [authorizationUrl, setAuthorizationUrl] = useState<string | null>(null);
+  const [localError, setLocalError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const subscriptionSuccess = params.get('subscription');
+
+    if (subscriptionSuccess === 'success') {
+      toast({
+        title: 'Subscription activated!',
+        description: `You are now on the ${planName} plan.`,
+      });
+      window.history.replaceState({}, document.title, window.location.pathname);
+      refreshUserToken().then(() => {
+        onSuccess?.();
+      });
+    } else if (subscriptionSuccess === 'cancelled') {
+      setLocalError('Subscription was cancelled. Please try again.');
+      onCancel?.();
+    }
+  }, [planName, onSuccess, onCancel, refreshUserToken, toast]);
+
+  const handleCreateSubscription = async () => {
+    setLocalError(null);
+    setError(null);
+
+    const result = await initializePaystackTransaction(planId, user?.email || undefined);
+    if (!result?.authorizationUrl) {
+      const errorMsg = error || 'Failed to create subscription. Please try again.';
+      setLocalError(errorMsg);
+      onError?.(errorMsg);
+    }
+  };
+
+  const displayError = localError || error;
+
+  return (
+    <div className="flex flex-col gap-4">
+      {displayError && (
+        <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/20">
+          <p className="text-sm text-red-400">{displayError}</p>
+        </div>
+      )}
+
+      <Button
+        onClick={handleCreateSubscription}
+        disabled={loading}
+        className="w-full h-12 bg-primary hover:bg-primary/90 font-bold text-lg rounded-xl blue-glow"
+      >
+        {loading ? (
+          <>
+            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+            Processing...
+          </>
+        ) : (
+          `Subscribe with Paystack`
+        )}
+      </Button>
+
+      <p className="text-xs text-muted-foreground text-center">
+        You will be redirected to Paystack to complete your subscription.
+      </p>
+    </div>
+  );
+}
+'use client';
+
+import { useEffect, useState } from 'react';
+import { useAuth } from '@/providers/AuthProvider';
+import { collection, query, where, onSnapshot, QueryConstraint } from 'firebase/firestore';
+import { db } from '@/lib/firebase';
+import { GlassCard } from '@/components/ui/glass-card';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
+import { format } from 'date-fns';
+import { usePayPalSubscription } from '@/hooks/usePayPalSubscription';
+import { useToast } from '@/hooks/use-toast';
+import { AlertCircle, CheckCircle2, Loader2, Trash2 } from 'lucide-react';
+
+interface Subscription {
+  id: string;
+  planId: string;
+  status: string;
+  currentPeriodStart?: any;
+  currentPeriodEnd?: any;
+  createdAt: any;
+  cancelledAt?: any;
+}
+
+export function SubscriptionManager() {
+  const { user } = useAuth();
+  const [subscriptions, setSubscriptions] = useState<Subscription[]>([]);
+  const [loading, setLoading] = useState(true);
+  const { cancel, loading: cancelLoading } = usePayPalSubscription();
+  const { toast } = useToast();
+
+  useEffect(() => {
+    if (!user?.uid) {
+      setLoading(false);
+      return;
+    }
+
+    const constraints: QueryConstraint[] = [where('userId', '==', user.uid)];
+    const q = query(collection(db, 'subscriptions'), ...constraints);
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const subs = snapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+      })) as Subscription[];
+
+      setSubscriptions(subs);
+      setLoading(false);
+    });
+
+    return unsubscribe;
+  }, [user?.uid]);
+
+  const handleCancelSubscription = async (subscriptionId: string) => {
+    const success = await cancel(subscriptionId);
+    if (success) {
+      toast({
+        title: 'Subscription cancelled',
+        description: 'Your subscription has been cancelled. You will retain access until the end of your billing period.',
+      });
+    } else {
+      toast({
+        title: 'Failed to cancel',
+        description: 'Please try again or contact support.',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <Loader2 className="w-6 h-6 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  if (subscriptions.length === 0) {
+    return (
+      <GlassCard className="p-8 text-center">
+        <p className="text-muted-foreground">No active subscriptions. Upgrade to Pro to unlock premium features.</p>
+      </GlassCard>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      {subscriptions.map((sub) => {
+        const isActive = sub.status === 'active';
+        const endDate = sub.currentPeriodEnd?.toDate?.() || new Date();
+
+        return (
+          <GlassCard
+            key={sub.id}
+            className="p-6 border-l-4 border-l-primary flex flex-col md:flex-row md:items-center md:justify-between gap-6"
+          >
+            <div className="flex-1">
+              <div className="flex items-center gap-3 mb-2">
+                <h3 className="text-lg font-bold capitalize">{sub.planId} Plan</h3>
+                <Badge
+                  className={`${
+                    isActive
+                      ? 'bg-green-500/20 text-green-300 border-green-500/30'
+                      : 'bg-red-500/20 text-red-300 border-red-500/30'
+                  }`}
+                >
+                  {isActive ? (
+                    <>
+                      <CheckCircle2 className="w-3 h-3 mr-1" />
+                      Active
+                    </>
+                  ) : (
+                    <>
+                      <AlertCircle className="w-3 h-3 mr-1" />
+                      {sub.status}
+                    </>
+                  )}
+                </Badge>
+              </div>
+
+              <div className="space-y-1 text-sm text-muted-foreground">
+                {isActive && sub.currentPeriodEnd && (
+                  <p>
+                    Renews on{' '}
+                    <span className="text-foreground font-medium">
+                      {format(endDate, 'MMM d, yyyy')}
+                    </span>
+                  </p>
+                )}
+                {sub.createdAt && (
+                  <p>
+                    Started on{' '}
+                    <span className="text-foreground font-medium">
+                      {format(sub.createdAt.toDate?.() || new Date(), 'MMM d, yyyy')}
+                    </span>
+                  </p>
+                )}
+              </div>
+            </div>
+
+            {isActive && (
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    className="border border-red-500/20 hover:bg-red-500/10 text-red-400 hover:text-red-300"
+                  >
+                    <Trash2 className="w-4 h-4 mr-2" />
+                    Cancel Subscription
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogTitle>Cancel Subscription?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    You will lose access to premium features at the end of your current billing period.
+                    This action cannot be undone.
+                  </AlertDialogDescription>
+                  <div className="flex gap-3 justify-end">
+                    <AlertDialogCancel>Keep Subscription</AlertDialogCancel>
+                    <AlertDialogAction
+                      onClick={() => handleCancelSubscription(sub.id)}
+                      disabled={cancelLoading}
+                      className="bg-red-500 hover:bg-red-600"
+                    >
+                      {cancelLoading ? (
+                        <>
+                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                          Cancelling...
+                        </>
+                      ) : (
+                        'Cancel'
+                      )}
+                    </AlertDialogAction>
+                  </div>
+                </AlertDialogContent>
+              </AlertDialog>
+            )}
+          </GlassCard>
+        );
+      })}
+    </div>
+  );
+}
+
+=== src/app/api/entitlements/route.ts ===
+
+import { NextResponse } from 'next/server';
+import { requireUserEntitlements } from '@/lib/serverAuth';
+
+export async function GET(req: Request) {
+  try {
+    const { subscription, isAdmin, roles, profile, uid } = await requireUserEntitlements(req as any);
+    return NextResponse.json({
+      uid,
+      isAdmin,
+      roles,
+      subscription,
+      profile,
+    });
+  } catch (error: any) {
+    return NextResponse.json(
+      { error: error.message || 'Unauthorized' },
+      { status: error.status || 401 }
+    );
+  }
+}
+
+=== src/app/api/community/posts/route.ts ===
+
+import { NextResponse } from 'next/server';
+import { requireAuth } from '@/lib/serverAuth';
+import { adminDb } from '@/lib/firebaseAdmin';
+import { Timestamp } from 'firebase-admin/firestore';
+import { DEFAULT_POST_CHANNEL, isPostChannel } from '@/lib/communityChannels';
+import type { PostType } from '@/lib/db';
+
+type CreateCommunityPostRequest = {
+  content?: unknown;
+  channel?: unknown;
+  tags?: unknown;
+  type?: unknown;
+  imageUrl?: unknown;
+  linkUrl?: unknown;
+};
+
+const POST_TYPES: PostType[] = ['win', 'insight', 'mentorship', 'announcement', 'question'];
+
+function normalizeTags(tags: unknown): string[] {
+  if (!Array.isArray(tags)) return [];
+  return tags
+    .filter((tag): tag is string => typeof tag === 'string')
+    .map((tag) => tag.trim())
+    .filter(Boolean)
+    .slice(0, 10);
+}
+
+function isValidUrl(value: unknown): boolean {
+  if (typeof value !== 'string') return false;
+  try {
+    const parsed = new URL(value.trim());
+    return parsed.protocol === 'https:' || parsed.protocol === 'http:';
+  } catch {
+    return false;
+  }
+}
+
+export async function POST(req: Request) {
+  try {
+    const { uid, email } = await requireAuth(req as any);
+    const body = (await req.json()) as CreateCommunityPostRequest;
+
+    const rawContent = typeof body.content === 'string' ? body.content : '';
+    const content = rawContent.trim();
+    const imageUrl = body.imageUrl;
+    const linkUrl = body.linkUrl;
+
+    if (!content && !imageUrl && !linkUrl) {
+      return NextResponse.json({ error: 'Post content, image, or link is required' }, { status: 400 });
+    }
+
+    if (imageUrl !== undefined && imageUrl !== null && !isValidUrl(imageUrl)) {
+      return NextResponse.json({ error: 'Invalid image URL' }, { status: 400 });
+    }
+
+    if (linkUrl !== undefined && linkUrl !== null && !isValidUrl(linkUrl)) {
+      return NextResponse.json({ error: 'Invalid link URL' }, { status: 400 });
+    }
+
+    const channel = isPostChannel(body.channel) ? body.channel : DEFAULT_POST_CHANNEL;
+    const type = POST_TYPES.includes(body.type as PostType) ? (body.type as PostType) : 'insight';
+    const tags = normalizeTags(body.tags);
+
+    const userSnap = await adminDb.collection('users').doc(uid).get();
+    const userData = userSnap.exists ? userSnap.data() : null;
+    const authorName = userData?.name || userData?.displayName || email || 'Member';
+    const authorAvatar = userData?.photoURL || userData?.avatarURL || userData?.avatarUrl || '';
+    const tier = userData?.tier || userData?.subscription?.subscriptionPlan || userData?.subscription?.plan || 'explorer';
+    const authorTier = ['explorer', 'pro', 'elite'].includes(tier) ? tier : 'explorer';
+
+    const postRef = adminDb.collection('posts').doc();
+    await postRef.set({
+      authorId: uid,
+      authorName,
+      authorAvatar,
+      authorTier,
+      authorRole: userData?.selectedIdentity || userData?.role || 'Entrepreneur',
+      isFounder: false,
+      content,
+      channel,
+      tags,
+      type,
+      isPinned: false,
+      likeCount: 0,
+      commentCount: 0,
+      reactionCounts: {},
+      imageUrl: typeof imageUrl === 'string' ? imageUrl.trim() : null,
+      linkUrl: typeof linkUrl === 'string' ? linkUrl.trim() : null,
+      createdAt: Timestamp.now(),
+    });
+
+    return NextResponse.json({ id: postRef.id });
+  } catch (error: any) {
+    return NextResponse.json(
+      { error: error.message || 'Unauthorized' },
+      { status: error.status || 401 }
+    );
+  }
+}
+
+=== src/app/community/page.tsx ===
+
+"use client";
+
+import React, { useEffect, useState } from "react";
+import { motion, AnimatePresence } from "framer-motion";
+import { AppLayout } from "@/components/layout/AppLayout";
+import { GlassCard } from "@/components/ui/glass-card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Progress } from "@/components/ui/progress";
+import { cn } from "@/lib/utils";
+import {
+  Users, Trophy, Sparkles, MessageSquare, Zap,
+  Star, ChevronRight, Cpu, Loader2, Briefcase,
+} from "lucide-react";
+import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
+import { PostCard } from "@/components/community/PostCard";
+import { CreatePostBox } from "@/components/community/CreatePostBox";
+import { Post, postService } from "@/lib/db";
+import { COMMUNITY_CHANNELS, CommunityChannel } from "@/lib/communityChannels";
+
+// ─── Static AI Intel Sections ─────────────────────────────────────────────────
+
+
+const CHANNEL_NAV = [
+  { ...COMMUNITY_CHANNELS[0], icon: <Users className="w-4 h-4 text-primary" /> },
+  { ...COMMUNITY_CHANNELS[1], icon: <MessageSquare className="w-4 h-4 text-primary" /> },
+  { ...COMMUNITY_CHANNELS[2], icon: <Trophy className="w-4 h-4 text-yellow-500" /> },
+  { ...COMMUNITY_CHANNELS[3], icon: <Sparkles className="w-4 h-4 text-accent" /> },
+  { ...COMMUNITY_CHANNELS[4], icon: <Briefcase className="w-4 h-4 text-emerald-400" /> },
+  { ...COMMUNITY_CHANNELS[5], icon: <Cpu className="w-4 h-4 text-purple-400" /> },
+];
+
+const CHANNEL_MATCHERS: Record<Exclude<CommunityChannel, "all">, string[]> = {
+  general: ["general"],
+  showcase: ["showcase", "win"],
+  questions: ["questions", "question"],
+  jobs: ["jobs", "job"],
+  "ai-mentor": ["ai-mentor", "ai mentor", "mentorship"],
+};
+
+function normalizeValue(value: string) {
+  return value.trim().toLowerCase();
+}
+
+function postTimestamp(post: Post) {
+  if (post.createdAt?.toDate) return post.createdAt.toDate().getTime();
+  if (post.createdAt?.seconds) return post.createdAt.seconds * 1000;
+  return 0;
+}
+
+function matchesChannel(post: Post, channel: CommunityChannel) {
+  if (channel === "all") return true;
+  const matchers = CHANNEL_MATCHERS[channel];
+  const values = [
+    post.channel,
+    post.type,
+    ...(post.tags || []),
+  ].filter((value): value is string => typeof value === "string").map(normalizeValue);
+
+  if (channel === "general" && !post.channel) return true;
+  return values.some((value) => matchers.includes(value));
+}
+
+
+// ─── Empty State ──────────────────────────────────────────────────────────────
+
+function EmptyFeed({ message = "Be the first entrepreneur to spark this discussion. Share a win, insight, or question." }: { message?: string }) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="flex flex-col items-center justify-center py-20 gap-6 text-center"
+    >
+      <div className="w-20 h-20 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center">
+        <Sparkles className="w-9 h-9 text-primary/60" />
+      </div>
+      <div className="space-y-2 max-w-xs">
+        <h3 className="font-bold text-lg text-white/80">The stage is set.</h3>
+        <p className="text-muted-foreground text-sm leading-relaxed">
+          {message}
+        </p>
+      </div>
+    </motion.div>
+  );
+}
+
+// ─── Page ─────────────────────────────────────────────────────────────────────
+
+export default function CommunityPage() {
+  const [posts, setPosts] = useState<Post[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [activeChannel, setActiveChannel] = useState<CommunityChannel>("all");
+
+  useEffect(() => {
+    const unsub = postService.subscribeToPosts((fetched) => {
+      setPosts(fetched);
+      setLoading(false);
+    });
+    return unsub;
+  }, []);
+
+  // Derived: win posts from today
+  const founderWins = posts.filter(p => p.type === "win").slice(0, 5);
+  const tagCounts = posts.reduce<Record<string, number>>((acc, post) => {
+    post.tags?.forEach((tag) => {
+      acc[tag] = (acc[tag] || 0) + 1;
+    });
+    return acc;
+  }, {});
+  const trendingTags = Object.entries(tagCounts).sort((a, b) => b[1] - a[1]).slice(0, 8);
+  const sortedPosts = [...posts].sort((a, b) => postTimestamp(b) - postTimestamp(a));
+  const filteredPosts = sortedPosts.filter((post) => matchesChannel(post, activeChannel));
+  const channelCounts = CHANNEL_NAV.reduce<Record<CommunityChannel, number>>((acc, channel) => {
+    acc[channel.id] = channel.id === "all"
+      ? posts.length
+      : posts.filter((post) => matchesChannel(post, channel.id)).length;
+    return acc;
+  }, {} as Record<CommunityChannel, number>);
+  const spotlight = posts.find(post => !!post.authorName);
+  const communityProgress = Math.min(100, Math.round((posts.length / 100) * 100));
+
+  return (
+    <ProtectedRoute>
+      <AppLayout>
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 animate-in fade-in duration-700">
+
+          {/* ── Left Sidebar ──────────────────────────────────────────────── */}
+          <div className="hidden lg:flex lg:col-span-3 flex-col gap-5 sticky top-24 h-fit">
+
+            {/* Channel nav */}
+            <GlassCard className="p-4 flex flex-col gap-1">
+              <h4 className="text-[10px] font-bold text-muted-foreground uppercase tracking-[0.2em] px-2 mb-3">
+                Ecosystem Channels
+              </h4>
+              {CHANNEL_NAV.map(ch => (
+                <Button
+                  key={ch.id}
+                  variant="ghost"
+                  onClick={() => setActiveChannel(ch.id)}
+                  className={cn(
+                    "justify-start gap-3 h-11 rounded-xl transition-all w-full",
+                    activeChannel === ch.id
+                      ? "bg-white/5 border border-white/5 text-white"
+                      : "hover:bg-white/5 text-muted-foreground hover:text-white"
+                  )}
+                >
+                  {ch.icon}
+                  <span className="flex-1 text-left">{ch.label}</span>
+                  <span className="text-[10px] font-bold text-muted-foreground">{channelCounts[ch.id] || 0}</span>
+                </Button>
+              ))}
+            </GlassCard>
+
+            {/* Trending tags */}
+            <GlassCard className="p-5 flex flex-col gap-4">
+              <h4 className="text-[10px] font-bold text-muted-foreground uppercase tracking-[0.2em]">Market Trends</h4>
+              <div className="flex flex-wrap gap-2">
+                {trendingTags.length > 0 ? trendingTags.map(([tag, count]) => (
+                  <Badge
+                    key={tag}
+                    variant="outline"
+                    className="cursor-pointer hover:bg-primary/10 hover:text-primary hover:border-primary/30 transition-all py-1.5 px-3 border-white/10 rounded-lg text-[10px] font-bold uppercase tracking-wider"
+                  >
+                    #{tag} {count > 1 ? count : ""}
+                  </Badge>
+                )) : (
+                  <p className="text-xs text-muted-foreground">Trends will appear as members tag their posts.</p>
+                )}
+              </div>
+            </GlassCard>
+
+            {/* Elite groups CTA */}
+            <GlassCard className="p-0 overflow-hidden relative group cursor-pointer border-primary/20 bg-gradient-to-br from-primary/10 to-transparent hover:border-primary/40 transition-all">
+              <div className="p-6">
+                <div className="w-10 h-10 rounded-xl bg-primary flex items-center justify-center blue-glow mb-4">
+                  <Star className="w-5 h-5 text-white" />
+                </div>
+                <h4 className="font-bold text-sm mb-1">Elite Groups</h4>
+                <p className="text-[10px] text-muted-foreground">Unlock private member circles with 6-7 figure founders.</p>
+              </div>
+              <div className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity">
+                <ChevronRight className="w-4 h-4 text-primary" />
+              </div>
+            </GlassCard>
+          </div>
+
+          {/* ── Main Feed ─────────────────────────────────────────────────── */}
+          <div className="lg:col-span-6 flex flex-col gap-6">
+
+            {/* TODAY'S MOMENTUM — AI intel bar */}
+            <div className="rounded-[2rem] bg-gradient-to-r from-primary/20 via-accent/20 to-primary/20 p-[1px] animate-pulse-glow">
+              <GlassCard className="rounded-[2rem] bg-card/90 border-none p-5">
+                <div className="flex items-center gap-3 mb-3">
+                  <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center shrink-0">
+                    <Cpu className="w-4 h-4 text-white" />
+                  </div>
+                  <div>
+                    <h3 className="text-xs font-bold uppercase tracking-widest text-primary">Today's Momentum</h3>
+                    <p className="text-[10px] text-muted-foreground">AI-curated community pulse · updated live</p>
+                  </div>
+                  <div className="ml-auto flex items-center gap-1.5">
+                    <div className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
+                    <span className="text-[10px] font-bold text-green-400 uppercase">Live</span>
+                  </div>
+                </div>
+                <p className="text-sm text-white/80 leading-relaxed italic">
+                  "{posts.length > 0
+                    ? `${filteredPosts.length} post${filteredPosts.length === 1 ? "" : "s"} in ${CHANNEL_NAV.find(channel => channel.id === activeChannel)?.label || "All"} · ${founderWins.length} founder wins recorded · community momentum is rising.`
+                    : "The community is warming up. Be the first to post and ignite the feed."}"
+                </p>
+              </GlassCard>
+            </div>
+
+            {/* FOUNDER WINS — horizontal scroll carousel */}
+            {founderWins.length > 0 && (
+              <div>
+                <div className="flex items-center gap-2 mb-3 px-1">
+                  <Trophy className="w-4 h-4 text-yellow-500" />
+                  <h3 className="text-[11px] font-bold text-muted-foreground uppercase tracking-widest">Founder Wins</h3>
+                </div>
+                <div className="flex gap-4 overflow-x-auto no-scrollbar pb-1">
+                  {founderWins.map(post => (
+                    <div
+                      key={post.id}
+                      className="shrink-0 w-56 rounded-2xl border border-yellow-400/15 bg-yellow-400/5 p-4 flex flex-col gap-2 hover:border-yellow-400/30 transition-all cursor-pointer"
+                    >
+                      <div className="flex items-center gap-2">
+                        <div className="w-8 h-8 rounded-xl overflow-hidden border border-yellow-400/20 shrink-0">
+                          <img src={post.authorAvatar} alt={post.authorName} title={post.authorName} className="w-full h-full object-cover" />
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-[11px] font-bold text-white truncate">{post.authorName}</p>
+                          <p className="text-[9px] text-yellow-500/80 uppercase font-bold">🏆 Win</p>
+                        </div>
+                      </div>
+                      <p className="text-[11px] text-white/75 leading-relaxed line-clamp-3">{post.content}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Create Post */}
+            <div className="lg:hidden flex gap-2 overflow-x-auto no-scrollbar pb-1">
+              {CHANNEL_NAV.map(ch => (
+                <Button
+                  key={ch.id}
+                  variant="ghost"
+                  onClick={() => setActiveChannel(ch.id)}
+                  className={cn(
+                    "shrink-0 gap-2 h-10 rounded-xl border transition-all",
+                    activeChannel === ch.id
+                      ? "bg-white/5 border-white/10 text-white"
+                      : "border-white/5 text-muted-foreground hover:bg-white/5 hover:text-white"
+                  )}
+                >
+                  {ch.icon}
+                  {ch.label}
+                  <span className="text-[10px] font-bold text-muted-foreground">{channelCounts[ch.id] || 0}</span>
+                </Button>
+              ))}
+            </div>
+
+            <CreatePostBox selectedChannel={activeChannel} />
+
+            {/* Feed */}
+            {loading ? (
+              <div className="flex flex-col items-center justify-center py-16 gap-4 text-muted-foreground">
+                <Loader2 className="w-8 h-8 animate-spin text-primary" />
+                <p className="text-sm">Loading the community feed...</p>
+              </div>
+            ) : filteredPosts.length === 0 ? (
+              <EmptyFeed message={activeChannel === "all" ? undefined : "No posts in this channel yet. Be the first!"} />
+            ) : (
+              <div className="flex flex-col gap-5">
+                <AnimatePresence initial={false}>
+                  {filteredPosts.map(post => (
+                    <PostCard key={post.id} post={post} />
+                  ))}
+                </AnimatePresence>
+              </div>
+            )}
+          </div>
+
+          {/* ── Right Sidebar ─────────────────────────────────────────────── */}
+          <div className="hidden lg:flex lg:col-span-3 flex-col gap-5 sticky top-24 h-fit">
+
+            {/* Member Spotlight */}
+            <GlassCard className="p-6 flex flex-col gap-5">
+              <div className="flex items-center justify-between">
+                <h4 className="text-[10px] font-bold text-muted-foreground uppercase tracking-[0.2em]">Member Spotlight</h4>
+                <Star className="w-3.5 h-3.5 text-yellow-500 fill-yellow-500" />
+              </div>
+              {spotlight ? (
+                <div className="flex flex-col items-center text-center gap-3">
+                  <div className="w-20 h-20 rounded-3xl border-2 border-accent p-1 cyan-glow overflow-hidden bg-white/5 flex items-center justify-center">
+                    {spotlight.authorAvatar ? (
+                      <img src={spotlight.authorAvatar} alt={spotlight.authorName} title={spotlight.authorName} className="w-full h-full rounded-2xl object-cover" />
+                    ) : (
+                      <Users className="w-8 h-8 text-accent" />
+                    )}
+                  </div>
+                  <div>
+                    <h5 className="font-bold text-lg">{spotlight.authorName}</h5>
+                    <p className="text-[10px] text-accent font-bold uppercase tracking-widest mt-1">{spotlight.authorRole || "Member"}</p>
+                  </div>
+                  <p className="text-xs text-muted-foreground leading-relaxed px-2 line-clamp-3">{spotlight.content}</p>
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground text-center py-8">Member spotlight appears after the first community post.</p>
+              )}
+            </GlassCard>
+
+            {/* Live community stats */}
+            <GlassCard className="p-6">
+              <h4 className="text-[10px] font-bold text-muted-foreground uppercase tracking-[0.2em] mb-5">Community Stats</h4>
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between text-[10px] font-bold uppercase">
+                    <span className="text-muted-foreground">Community Goal</span>
+                    <span className="text-primary">{communityProgress}%</span>
+                  </div>
+                  <Progress value={communityProgress} className="h-1.5 bg-white/5" />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="p-3 rounded-2xl bg-white/[0.02] border border-white/5">
+                    <p className="text-[10px] font-bold text-muted-foreground uppercase mb-1">Posts</p>
+                    <p className="text-lg font-bold">{loading ? "—" : posts.length}</p>
+                  </div>
+                  <div className="p-3 rounded-2xl bg-white/[0.02] border border-white/5">
+                    <p className="text-[10px] font-bold text-muted-foreground uppercase mb-1">Wins</p>
+                    <p className="text-lg font-bold text-yellow-400">{loading ? "—" : founderWins.length}</p>
+                  </div>
+                </div>
+              </div>
+            </GlassCard>
+
+            {/* Popular Tags */}
+            <GlassCard className="p-6">
+              <div className="flex items-center gap-2 mb-5">
+                <Zap className="w-3.5 h-3.5 text-primary" />
+                <h4 className="text-[10px] font-bold text-muted-foreground uppercase tracking-[0.2em]">Popular Tags</h4>
+              </div>
+              <div className="flex flex-col gap-4">
+                {trendingTags.length > 0 ? trendingTags.map(([tag, count]) => (
+                  <div key={tag} className="group space-y-1.5">
+                    <div className="flex items-start justify-between gap-2">
+                      <p className="text-[11px] font-medium text-white/80 group-hover:text-white transition-colors leading-snug">#{tag}</p>
+                      <span className="text-[10px] font-bold text-primary shrink-0">{count}</span>
+                    </div>
+                    <Progress value={Math.min(100, count * 10)} className="h-0.5 bg-white/5" />
+                  </div>
+                )) : (
+                  <p className="text-xs text-muted-foreground">No tag activity yet.</p>
+                )}
+              </div>
+            </GlassCard>
+
+          </div>
+        </div>
+      </AppLayout>
+    </ProtectedRoute>
+  );
+}
+
+=== src/components/community/PostCard.tsx ===
+
+
+=== src/app/admin/layout.tsx ===
+
+"use client";
+
+import Link from "next/link";
+import { usePathname, useRouter } from "next/navigation";
+import { ReactNode, useEffect, useMemo, useState } from "react";
+import { onAuthStateChanged, signOut, User } from "firebase/auth";
+import { doc, getDoc } from "firebase/firestore";
+import {
+  BarChart3,
+  Boxes,
+  CreditCard,
+  FileText,
+  LayoutDashboard,
+  LogOut,
+  Menu,
+  Settings,
+  Users,
+  X,
+} from "lucide-react";
+import { auth, db } from "@/lib/firebase";
+
+const navItems = [
+  { label: "Dashboard", href: "/admin/dashboard", icon: LayoutDashboard },
+  { label: "Marketplace", href: "/admin/marketplace", icon: Boxes },
+  { label: "Users", href: "/admin/users", icon: Users },
+  { label: "Subscriptions", href: "/admin/subscriptions", icon: CreditCard },
+  { label: "Content", href: "/admin/content", icon: FileText },
+  { label: "Settings", href: "/admin/settings", icon: Settings },
+];
+
+function getInitials(user: User | null) {
+  const source = user?.displayName || user?.email || "Admin";
+  return source
+    .split(/\s|@/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase())
+    .join("");
+}
+
+function hasAdminAccess(profile: Record<string, any> | undefined) {
+  const roles = Array.isArray(profile?.roles) ? profile.roles : [];
+  return profile?.isAdmin === true || profile?.role === "admin" || roles.includes("admin");
+}
+
+export default function AdminLayout({ children }: { children: ReactNode }) {
+  const pathname = usePathname();
+  const router = useRouter();
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const [checking, setChecking] = useState(true);
+  const [adminUser, setAdminUser] = useState<User | null>(null);
+
+  const isLoginRoute = pathname === "/admin/login";
+
+  const pageTitle = useMemo(() => {
+    const active = navItems.find((item) => pathname.startsWith(item.href));
+    return active?.label || "Admin";
+  }, [pathname]);
+
+  useEffect(() => {
+    if (isLoginRoute) {
+      setChecking(false);
+      return;
+    }
+
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      if (!user) {
+        setAdminUser(null);
+        setChecking(false);
+        router.replace("/admin/login");
+        return;
+      }
+
+      try {
+        const userSnap = await getDoc(doc(db, "users", user.uid));
+        const profile = userSnap.exists() ? userSnap.data() : undefined;
+
+        if (!hasAdminAccess(profile)) {
+          setAdminUser(null);
+          await signOut(auth);
+          router.replace("/admin/login");
+          return;
+        }
+
+        setAdminUser(user);
+        setChecking(false);
+      } catch {
+        setAdminUser(null);
+        setChecking(false);
+        router.replace("/admin/login");
+      }
+    });
+
+    return () => unsubscribe();
+  }, [isLoginRoute, router]);
+
+  useEffect(() => {
+    setMobileOpen(false);
+  }, [pathname]);
+
+  const handleLogout = async () => {
+    await signOut(auth);
+    router.replace("/admin/login");
+  };
+
+  if (isLoginRoute) {
+    return <>{children}</>;
+  }
+
+  if (checking) {
+    return (
+      <div className="min-h-screen bg-[#050609] text-white flex items-center justify-center">
+        <div className="flex items-center gap-3 rounded-lg border border-white/10 bg-white/[0.03] px-4 py-3 text-sm text-white/70">
+          <BarChart3 className="h-4 w-4 text-cyan-300 animate-pulse" />
+          Verifying admin access
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-[#050609] text-white">
+      {mobileOpen && (
+        <button
+          type="button"
+          aria-label="Close navigation"
+          className="fixed inset-0 z-30 bg-black/70 lg:hidden"
+          onClick={() => setMobileOpen(false)}
+        />
+      )}
+
+      <aside
+        className={`fixed inset-y-0 left-0 z-40 w-72 border-r border-white/10 bg-[#080a0f]/95 backdrop-blur-xl transition-transform duration-200 lg:translate-x-0 ${
+          mobileOpen ? "translate-x-0" : "-translate-x-full"
+        }`}
+      >
+        <div className="flex h-16 items-center justify-between border-b border-white/10 px-5">
+          <Link href="/admin/dashboard" className="flex items-center gap-3">
+            <div className="flex h-9 w-9 items-center justify-center rounded-lg border border-cyan-400/30 bg-cyan-400/10">
+              <BarChart3 className="h-5 w-5 text-cyan-300" />
+            </div>
+            <div>
+              <p className="text-sm font-semibold">Soma Digital</p>
+              <p className="text-[10px] uppercase tracking-widest text-white/45">Admin Console</p>
+            </div>
+          </Link>
+          <button
+            type="button"
+            aria-label="Close navigation"
+            onClick={() => setMobileOpen(false)}
+            className="rounded-md p-2 text-white/50 hover:bg-white/10 hover:text-white lg:hidden"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        <nav className="space-y-1 px-3 py-4">
+          {navItems.map((item) => {
+            const Icon = item.icon;
+            const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
+
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-colors ${
+                  active
+                    ? "bg-cyan-400/10 text-cyan-200 ring-1 ring-cyan-400/20"
+                    : "text-white/60 hover:bg-white/[0.06] hover:text-white"
+                }`}
+              >
+                <Icon className="h-4 w-4" />
+                {item.label}
+              </Link>
+            );
+          })}
+        </nav>
+      </aside>
+
+      <div className="lg:pl-72">
+        <header className="sticky top-0 z-20 flex h-16 items-center justify-between border-b border-white/10 bg-[#050609]/90 px-4 backdrop-blur-xl sm:px-6">
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              aria-label="Open navigation"
+              onClick={() => setMobileOpen(true)}
+              className="rounded-md p-2 text-white/60 hover:bg-white/10 hover:text-white lg:hidden"
+            >
+              <Menu className="h-5 w-5" />
+            </button>
+            <div>
+              <h1 className="text-base font-semibold">{pageTitle}</h1>
+              <p className="text-xs text-white/45">Realtime operations overview</p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <div className="hidden text-right sm:block">
+              <p className="text-sm font-medium">{adminUser?.displayName || "Admin"}</p>
+              <p className="text-xs text-white/45">{adminUser?.email}</p>
+            </div>
+            <div className="flex h-9 w-9 items-center justify-center rounded-full bg-white/10 text-xs font-semibold ring-1 ring-white/15">
+              {adminUser?.photoURL ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={adminUser.photoURL}
+                  alt=""
+                  className="h-9 w-9 rounded-full object-cover"
+                />
+              ) : (
+                getInitials(adminUser)
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={handleLogout}
+              className="inline-flex h-9 items-center gap-2 rounded-md border border-white/10 px-3 text-xs font-medium text-white/70 hover:bg-white/10 hover:text-white"
+            >
+              <LogOut className="h-4 w-4" />
+              <span className="hidden sm:inline">Logout</span>
+            </button>
+          </div>
+        </header>
+
+        <main className="min-h-[calc(100vh-4rem)] p-4 sm:p-6">{children}</main>
+      </div>
+    </div>
+  );
+}
+
+=== src/app/admin/users/page.tsx ===
+
+"use client";
+
+import { useEffect, useMemo, useState } from "react";
+import {
+  collection,
+  doc,
+  onSnapshot,
+  orderBy,
+  query,
+  serverTimestamp,
+  updateDoc,
+} from "firebase/firestore";
+import {
+  Ban,
+  ChevronLeft,
+  ChevronRight,
+  Download,
+  Eye,
+  Loader2,
+  Search,
+  ShieldCheck,
+} from "lucide-react";
+import { auth, db } from "@/lib/firebase";
+
+type Tier = "explorer" | "pro" | "elite";
+type StatusFilter = "all" | "active" | "banned";
+type UserRecord = {
+  id: string;
+  uid: string;
+  name: string;
+  displayName?: string;
+  email: string;
+  photoURL?: string;
+  tier: Tier;
+  status?: string;
+  disabled?: boolean;
+  createdAt: any;
+  updatedAt?: any;
+  lastLogin?: any;
+  subscription?: any;
+  [key: string]: any;
+};
+type RelatedRecord = { id: string; [key: string]: any };
+type ActivityRecord = RelatedRecord & {
+  activityType: string;
+  activityText: string;
+  createdAt?: any;
+};
+
+const PAGE_SIZE = 25;
+const TIERS: Tier[] = ["explorer", "pro", "elite"];
+
+function toDate(value: any): Date | null {
+  if (!value) return null;
+  if (typeof value.toDate === "function") return value.toDate();
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function dateLabel(value: any) {
+  const date = toDate(value);
+  if (!date) return "-";
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  }).format(date);
+}
+
+function normalizeTier(value: any): Tier {
+  if (value === "elite" || value === "pro" || value === "explorer") return value;
+  return "explorer";
+}
+
+function normalizeUser(id: string, data: Record<string, any>): UserRecord {
+  const subscriptionTier = data.subscription?.plan || data.subscription?.subscriptionPlan;
+  return {
+    id,
+    uid: data.uid || id,
+    name: data.name || data.displayName || data.email || "Unnamed user",
+    email: data.email || "",
+    photoURL: data.photoURL || data.avatarURL || data.avatarUrl || "",
+    tier: normalizeTier(data.tier || data.plan || subscriptionTier),
+    status: data.status || (data.disabled ? "banned" : "active"),
+    disabled: data.disabled === true,
+    createdAt: data.createdAt || null,
+    updatedAt: data.updatedAt || null,
+    lastLogin: data.lastLogin || null,
+    ...data,
+  };
+}
+
+function csvEscape(value: unknown) {
+  const text = String(value ?? "");
+  return `"${text.replace(/"/g, '""')}"`;
+}
+
+async function authedAdminFetch(path: string, body: Record<string, unknown>) {
+  const token = await auth.currentUser?.getIdToken();
+  if (!token) throw new Error("Admin session expired.");
+
+  const response = await fetch(path, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(payload?.error || "Admin action failed.");
+  }
+  return payload;
+}
+
+export default function AdminUsersPage() {
+  const [users, setUsers] = useState<UserRecord[]>([]);
+  const [subscriptions, setSubscriptions] = useState<RelatedRecord[]>([]);
+  const [purchases, setPurchases] = useState<RelatedRecord[]>([]);
+  const [posts, setPosts] = useState<RelatedRecord[]>([]);
+  const [mentorChats, setMentorChats] = useState<RelatedRecord[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
+  const [tierFilter, setTierFilter] = useState<"all" | Tier>("all");
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const [page, setPage] = useState(1);
+  const [selectedUser, setSelectedUser] = useState<UserRecord | null>(null);
+  const [overrideTier, setOverrideTier] = useState<Tier>("explorer");
+  const [overrideReason, setOverrideReason] = useState("");
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
+
+  useEffect(() => {
+    const unsubUsers = onSnapshot(
+      query(collection(db, "users"), orderBy("createdAt", "desc")),
+      (snapshot) => {
+        setUsers(snapshot.docs.map((userDoc) => normalizeUser(userDoc.id, userDoc.data())));
+        setLoading(false);
+      },
+      () => {
+        setError("Unable to load users.");
+        setLoading(false);
+      }
+    );
+
+    const unsubSubscriptions = onSnapshot(collection(db, "subscriptions"), (snapshot) => {
+      setSubscriptions(snapshot.docs.map((item) => ({ id: item.id, ...item.data() })));
+    });
+    const unsubPurchases = onSnapshot(collection(db, "assetPurchases"), (snapshot) => {
+      setPurchases(snapshot.docs.map((item) => ({ id: item.id, ...item.data() })));
+    });
+    const unsubPosts = onSnapshot(collection(db, "posts"), (snapshot) => {
+      setPosts(snapshot.docs.map((item) => ({ id: item.id, ...item.data() })));
+    });
+    const unsubMentorChats = onSnapshot(collection(db, "mentorChats"), (snapshot) => {
+      setMentorChats(snapshot.docs.map((item) => ({ id: item.id, ...item.data() })));
+    });
+
+    return () => {
+      unsubUsers();
+      unsubSubscriptions();
+      unsubPurchases();
+      unsubPosts();
+      unsubMentorChats();
+    };
+  }, []);
+
+  useEffect(() => {
+    setPage(1);
+  }, [search, statusFilter, tierFilter]);
+
+  useEffect(() => {
+    if (selectedUser) {
+      setOverrideTier(selectedUser.tier);
+      setOverrideReason("");
+    }
+  }, [selectedUser]);
+
+  const filteredUsers = useMemo(() => {
+    const term = search.trim().toLowerCase();
+    return users.filter((user) => {
+      const status = user.disabled ? "banned" : "active";
+      const matchesSearch =
+        !term ||
+        user.name.toLowerCase().includes(term) ||
+        user.email.toLowerCase().includes(term);
+      const matchesTier = tierFilter === "all" || user.tier === tierFilter;
+      const matchesStatus = statusFilter === "all" || status === statusFilter;
+      return matchesSearch && matchesTier && matchesStatus;
+    });
+  }, [search, statusFilter, tierFilter, users]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredUsers.length / PAGE_SIZE));
+  const visibleUsers = filteredUsers.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+
+  const selectedDetails = useMemo(() => {
+    if (!selectedUser) {
+      return { subscriptions: [], purchases: [], activity: [] as ActivityRecord[] };
+    }
+
+    const uid = selectedUser.uid;
+    const userSubscriptions = subscriptions.filter(
+      (item) => item.uid === uid || item.userId === uid || item.customerId === uid
+    );
+    const userPurchases = purchases.filter((item) => item.uid === uid || item.userId === uid);
+    const userPosts: ActivityRecord[] = posts
+      .filter((item) => item.authorId === uid || item.userId === uid)
+      .map((item) => ({ ...item, activityType: "Post", activityText: item.content || item.title }));
+    const userChats: ActivityRecord[] = mentorChats
+      .filter((item) => item.uid === uid || item.userId === uid)
+      .map((item) => ({ ...item, activityType: "Mentor chat", activityText: item.title || item.message }));
+    const loginActivity: ActivityRecord[] = selectedUser.lastLogin
+      ? [{ id: "last-login", activityType: "Login", activityText: "Recent login", createdAt: selectedUser.lastLogin }]
+      : [];
+
+    return {
+      subscriptions: userSubscriptions,
+      purchases: userPurchases,
+      activity: [...loginActivity, ...userPosts, ...userChats]
+        .sort((a, b) => (toDate(b.createdAt)?.getTime() || 0) - (toDate(a.createdAt)?.getTime() || 0))
+        .slice(0, 12),
+    };
+  }, [mentorChats, posts, purchases, selectedUser, subscriptions]);
+
+  const changeTier = async (user: UserRecord, tier: Tier, reason = "Admin tier change") => {
+    setActionLoading(`tier-${user.uid}`);
+    setError(null);
+    try {
+      await updateDoc(doc(db, "users", user.uid), {
+        tier,
+        plan: tier,
+        "subscription.plan": tier,
+        "subscription.subscriptionPlan": tier,
+        manualTierOverride: {
+          tier,
+          reason,
+          updatedAt: serverTimestamp(),
+          updatedBy: auth.currentUser?.uid || null,
+        },
+        updatedAt: serverTimestamp(),
+      });
+
+      await authedAdminFetch("/api/admin/users/update-tier", {
+        uid: user.uid,
+        tier,
+        reason,
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to change tier.");
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const toggleBan = async (user: UserRecord) => {
+    const disabled = !user.disabled;
+    const confirmed = window.confirm(`${disabled ? "Ban" : "Unban"} ${user.email || user.name}?`);
+    if (!confirmed) return;
+
+    setActionLoading(`ban-${user.uid}`);
+    setError(null);
+    try {
+      await authedAdminFetch("/api/admin/users/set-disabled", {
+        uid: user.uid,
+        disabled,
+      });
+      await updateDoc(doc(db, "users", user.uid), {
+        disabled,
+        status: disabled ? "banned" : "active",
+        updatedAt: serverTimestamp(),
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to update user status.");
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const exportCsv = () => {
+    const rows = filteredUsers.map((user) => [
+      user.name,
+      user.email,
+      user.tier,
+      user.disabled ? "banned" : "active",
+      dateLabel(user.createdAt),
+    ]);
+    const csv = [
+      ["Name", "Email", "Tier", "Status", "Joined"].map(csvEscape).join(","),
+      ...rows.map((row) => row.map(csvEscape).join(",")),
+    ].join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "soma-admin-users.csv";
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
+  return (
+    <div className="space-y-5">
+      <section className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+        <div>
+          <h2 className="text-xl font-semibold tracking-tight">Users</h2>
+          <p className="mt-1 text-sm text-white/45">Manage access, tiers, and account status.</p>
+        </div>
+        <button
+          type="button"
+          onClick={exportCsv}
+          className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-white/10 px-4 text-sm font-medium text-white/75 hover:bg-white/10"
+        >
+          <Download className="h-4 w-4" />
+          Export CSV
+        </button>
+      </section>
+
+      <section className="grid gap-3 rounded-lg border border-white/10 bg-white/[0.035] p-3 md:grid-cols-[1fr_150px_150px]">
+        <label className="relative">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-white/35" />
+          <input
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Search by name or email"
+            className="h-10 w-full rounded-md border border-white/10 bg-black/20 pl-9 pr-3 text-sm outline-none focus:border-cyan-400/50"
+          />
+        </label>
+        <select
+          value={tierFilter}
+          onChange={(event) => setTierFilter(event.target.value as "all" | Tier)}
+          className="h-10 rounded-md border border-white/10 bg-black/20 px-3 text-sm outline-none focus:border-cyan-400/50"
+        >
+          <option value="all">All tiers</option>
+          {TIERS.map((tier) => <option key={tier} value={tier}>{tier}</option>)}
+        </select>
+        <select
+          value={statusFilter}
+          onChange={(event) => setStatusFilter(event.target.value as StatusFilter)}
+          className="h-10 rounded-md border border-white/10 bg-black/20 px-3 text-sm outline-none focus:border-cyan-400/50"
+        >
+          <option value="all">All statuses</option>
+          <option value="active">Active</option>
+          <option value="banned">Banned</option>
+        </select>
+      </section>
+
+      {error && (
+        <div className="rounded-lg border border-red-500/25 bg-red-500/10 px-4 py-3 text-sm text-red-100">
+          {error}
+        </div>
+      )}
+
+      <section className="overflow-hidden rounded-lg border border-white/10 bg-white/[0.035]">
+        <div className="overflow-x-auto">
+          <table className="min-w-[980px] w-full text-left text-sm">
+            <thead className="border-b border-white/10 bg-white/[0.03] text-xs uppercase tracking-wider text-white/45">
+              <tr>
+                <th className="px-4 py-3 font-medium">Avatar</th>
+                <th className="px-4 py-3 font-medium">Name</th>
+                <th className="px-4 py-3 font-medium">Email</th>
+                <th className="px-4 py-3 font-medium">Tier</th>
+                <th className="px-4 py-3 font-medium">Status</th>
+                <th className="px-4 py-3 font-medium">Joined</th>
+                <th className="px-4 py-3 font-medium text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-white/10">
+              {loading && (
+                <tr>
+                  <td colSpan={7} className="px-4 py-12 text-center text-white/45">
+                    <span className="inline-flex items-center gap-2">
+                      <Loader2 className="h-4 w-4 animate-spin text-cyan-300" />
+                      Loading users
+                    </span>
+                  </td>
+                </tr>
+              )}
+              {!loading && visibleUsers.length === 0 && (
+                <tr>
+                  <td colSpan={7} className="px-4 py-12 text-center text-white/45">
+                    No users match the current filters.
+                  </td>
+                </tr>
+              )}
+              {visibleUsers.map((user) => (
+                <tr key={user.uid} className="hover:bg-white/[0.025]">
+                  <td className="px-4 py-3">
+                    <div className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-full bg-white/10 text-xs font-semibold">
+                      {user.photoURL ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={user.photoURL} alt="" className="h-full w-full object-cover" />
+                      ) : (
+                        user.name.slice(0, 2).toUpperCase()
+                      )}
+                    </div>
+                  </td>
+                  <td className="px-4 py-3 font-medium text-white/90">{user.name}</td>
+                  <td className="px-4 py-3 text-white/60">{user.email || "-"}</td>
+                  <td className="px-4 py-3">
+                    <select
+                      value={user.tier}
+                      disabled={actionLoading === `tier-${user.uid}`}
+                      onChange={(event) => changeTier(user, event.target.value as Tier)}
+                      className="h-8 rounded-md border border-white/10 bg-black/20 px-2 text-xs capitalize outline-none focus:border-cyan-400/50"
+                    >
+                      {TIERS.map((tier) => <option key={tier} value={tier}>{tier}</option>)}
+                    </select>
+                  </td>
+                  <td className="px-4 py-3">
+                    <span className={`rounded-full px-2 py-1 text-xs ${user.disabled ? "bg-red-500/10 text-red-200" : "bg-emerald-400/10 text-emerald-200"}`}>
+                      {user.disabled ? "Banned" : "Active"}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3 text-white/55">{dateLabel(user.createdAt)}</td>
+                  <td className="px-4 py-3">
+                    <div className="flex justify-end gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedUser(user)}
+                        className="rounded-md border border-white/10 p-2 text-white/60 hover:bg-white/10 hover:text-white"
+                        aria-label={`View ${user.name}`}
+                      >
+                        <Eye className="h-4 w-4" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => toggleBan(user)}
+                        disabled={actionLoading === `ban-${user.uid}`}
+                        className="rounded-md border border-red-400/20 p-2 text-red-200/70 hover:bg-red-500/10 hover:text-red-100 disabled:opacity-50"
+                        aria-label={user.disabled ? `Unban ${user.name}` : `Ban ${user.name}`}
+                      >
+                        {actionLoading === `ban-${user.uid}` ? <Loader2 className="h-4 w-4 animate-spin" /> : <Ban className="h-4 w-4" />}
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        <div className="flex flex-col gap-3 border-t border-white/10 px-4 py-3 text-sm text-white/55 sm:flex-row sm:items-center sm:justify-between">
+          <span>
+            Showing {visibleUsers.length ? (page - 1) * PAGE_SIZE + 1 : 0}-
+            {Math.min(page * PAGE_SIZE, filteredUsers.length)} of {filteredUsers.length}
+          </span>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setPage((value) => Math.max(1, value - 1))}
+              disabled={page === 1}
+              className="rounded-md border border-white/10 p-2 disabled:opacity-40"
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </button>
+            <span>Page {page} of {totalPages}</span>
+            <button
+              type="button"
+              onClick={() => setPage((value) => Math.min(totalPages, value + 1))}
+              disabled={page === totalPages}
+              className="rounded-md border border-white/10 p-2 disabled:opacity-40"
+            >
+              <ChevronRight className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+      </section>
+
+      {selectedUser && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4">
+          <div className="max-h-[92vh] w-full max-w-5xl overflow-y-auto rounded-lg border border-white/10 bg-[#080a0f] shadow-2xl">
+            <div className="sticky top-0 z-10 flex items-center justify-between border-b border-white/10 bg-[#080a0f] px-5 py-4">
+              <div>
+                <h3 className="text-lg font-semibold">{selectedUser.name}</h3>
+                <p className="text-sm text-white/45">{selectedUser.email}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedUser(null)}
+                className="rounded-md px-3 py-2 text-sm text-white/60 hover:bg-white/10 hover:text-white"
+              >
+                Close
+              </button>
+            </div>
+
+            <div className="grid gap-4 p-5 lg:grid-cols-2">
+              <DetailCard title="Profile">
+                <DetailRow label="UID" value={selectedUser.uid} />
+                <DetailRow label="Name" value={selectedUser.name} />
+                <DetailRow label="Email" value={selectedUser.email || "-"} />
+                <DetailRow label="Tier" value={selectedUser.tier} />
+                <DetailRow label="Status" value={selectedUser.disabled ? "Banned" : "Active"} />
+                <DetailRow label="Joined" value={dateLabel(selectedUser.createdAt)} />
+                <DetailRow label="Last login" value={dateLabel(selectedUser.lastLogin)} />
+              </DetailCard>
+
+              <DetailCard title="Manual Tier Override">
+                <div className="grid gap-3">
+                  <select
+                    value={overrideTier}
+                    onChange={(event) => setOverrideTier(event.target.value as Tier)}
+                    className="h-10 rounded-md border border-white/10 bg-black/20 px-3 text-sm outline-none focus:border-cyan-400/50"
+                  >
+                    {TIERS.map((tier) => <option key={tier} value={tier}>{tier}</option>)}
+                  </select>
+                  <textarea
+                    value={overrideReason}
+                    onChange={(event) => setOverrideReason(event.target.value)}
+                    placeholder="Reason for manual override"
+                    className="min-h-24 rounded-md border border-white/10 bg-black/20 px-3 py-2 text-sm outline-none focus:border-cyan-400/50"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => changeTier(selectedUser, overrideTier, overrideReason || "Manual admin override")}
+                    disabled={!overrideReason.trim() || actionLoading === `tier-${selectedUser.uid}`}
+                    className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-cyan-400 px-4 text-sm font-semibold text-black hover:bg-cyan-300 disabled:opacity-50"
+                  >
+                    <ShieldCheck className="h-4 w-4" />
+                    Apply Override
+                  </button>
+                </div>
+              </DetailCard>
+
+              <ListCard title="Subscription History" items={selectedDetails.subscriptions} empty="No subscription records.">
+                {(item) => (
+                  <CompactItem
+                    title={`${item.planId || item.plan || item.subscriptionPlan || "Plan"} - ${item.status || item.subscriptionStatus || "unknown"}`}
+                    meta={dateLabel(item.createdAt)}
+                  />
+                )}
+              </ListCard>
+
+              <ListCard title="Purchased Assets" items={selectedDetails.purchases} empty="No purchased assets.">
+                {(item) => (
+                  <CompactItem
+                    title={item.assetTitle || item.title || item.assetId || item.id}
+                    meta={dateLabel(item.createdAt || item.purchasedAt)}
+                  />
+                )}
+              </ListCard>
+
+              <ListCard title="Activity Log" items={selectedDetails.activity} empty="No recent activity." className="lg:col-span-2">
+                {(item) => (
+                  <CompactItem
+                    title={`${item.activityType}: ${item.activityText || item.id}`}
+                    meta={dateLabel(item.createdAt)}
+                  />
+                )}
+              </ListCard>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DetailCard({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <section className="rounded-lg border border-white/10 bg-white/[0.03] p-4">
+      <h4 className="mb-3 text-sm font-semibold">{title}</h4>
+      <div className="space-y-2">{children}</div>
+    </section>
+  );
+}
+
+function DetailRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="grid grid-cols-[120px_1fr] gap-3 text-sm">
+      <span className="text-white/40">{label}</span>
+      <span className="break-all text-white/80">{value}</span>
+    </div>
+  );
+}
+
+function ListCard({
+  title,
+  items,
+  empty,
+  children,
+  className = "",
+}: {
+  title: string;
+  items: RelatedRecord[];
+  empty: string;
+  children: (item: RelatedRecord) => React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <section className={`rounded-lg border border-white/10 bg-white/[0.03] p-4 ${className}`}>
+      <h4 className="mb-3 text-sm font-semibold">{title}</h4>
+      {items.length === 0 ? (
+        <p className="text-sm text-white/40">{empty}</p>
+      ) : (
+        <div className="space-y-2">{items.slice(0, 10).map((item) => <div key={item.id}>{children(item)}</div>)}</div>
+      )}
+    </section>
+  );
+}
+
+function CompactItem({ title, meta }: { title: string; meta: string }) {
+  return (
+    <div className="rounded-md border border-white/10 bg-black/20 px-3 py-2">
+      <p className="truncate text-sm text-white/80">{title}</p>
+      <p className="mt-1 text-xs text-white/40">{meta}</p>
+    </div>
+  );
+}
+
+=== src/app/admin/subscriptions/page.tsx ===
+
+
+=== src/app/onboarding/page.tsx ===
+
+"use client";
+
+import { useState, useEffect } from "react";
+import { GlassCard } from "@/components/ui/glass-card";
+import { Button } from "@/components/ui/button";
+import { Progress } from "@/components/ui/progress";
+import { Badge } from "@/components/ui/badge";
+import {
+  Zap,
+  Rocket,
+  Target,
+  Users,
+  ArrowRight,
+  ShieldCheck,
+  Star,
+  BrainCircuit,
+  Sparkles,
+  CheckCircle2,
+  Loader2,
+  Trophy,
+  Palette,
+  Terminal,
+  Cpu
+} from "lucide-react";
+import { generatePersonalizedRoadmap, PersonalizedRoadmapOutput } from "@/ai/flows/ai-mentor-personalized-roadmap-flow";
+import { cn } from "@/lib/utils";
+import { useOnboardingStore } from "@/store/useOnboardingStore";
+import { useRouter } from "next/navigation";
+
+const steps = [
+  {
+    id: 1,
+    title: "Start Your Journey",
+    subtitle: "Choose your business type.",
+    options: [
+      { id: 'saas', label: 'Apps / Software', icon: <Rocket className="w-6 h-6" />, desc: "Building software solutions." },
+      { id: 'creator', label: 'Content Creator', icon: <Star className="w-6 h-6" />, desc: "Earning from your audience." },
+      { id: 'agency', label: 'Service Agency', icon: <Users className="w-6 h-6" />, desc: "Selling expert services." },
+      { id: 'ecom', label: 'Online Store', icon: <Target className="w-6 h-6" />, desc: "Selling physical or digital goods." }
+    ]
+  },
+  {
+    id: 2,
+    title: "Target Income",
+    subtitle: "Set your goal.",
+    options: [
+      { id: 'launch', label: 'Starting Phase', icon: <Zap className="w-6 h-6" />, desc: "First $1k - $5k in income." },
+      { id: '10k', label: 'Grow to $10k/mo', icon: <ShieldCheck className="w-6 h-6" />, desc: "Keep growing steadily." },
+      { id: '100k', label: 'Elite Growth', icon: <Trophy className="w-6 h-6" />, desc: "Building a million-dollar business." }
+    ]
+  },
+  {
+    id: 3,
+    title: "Experience Level",
+    subtitle: "Where are you on the path?",
+    options: [
+      { id: 'novice', label: 'Beginner', icon: <Cpu className="w-6 h-6" />, desc: "Just starting out." },
+      { id: 'builder', label: 'Business Owner', icon: <Terminal className="w-6 h-6" />, desc: "Already have a business, looking to improve." },
+      { id: 'elite', label: 'Experienced Owner', icon: <BrainCircuit className="w-6 h-6" />, desc: "Scaling multiple businesses." }
+    ]
+  },
+  {
+    id: 4,
+    title: "Primary Interests",
+    subtitle: "Select topics for your AI Coach.",
+    isMulti: true,
+    options: [
+      { id: 'automation', label: 'AI Automation', icon: <BrainCircuit className="w-6 h-6" /> },
+      { id: 'funnels', label: 'High-Ticket Funnels', icon: <Sparkles className="w-6 h-6" /> },
+      { id: 'ads', label: 'Paid Acquisition', icon: <Zap className="w-6 h-6" /> },
+      { id: 'branding', label: 'Luxury Branding', icon: <Palette className="w-6 h-6" /> }
+    ]
+  },
+  {
+    id: 5,
+    title: "Creating Your Plan",
+    subtitle: "AI is building your roadmap...",
+    isSpecial: true
+  },
+  {
+    id: 6,
+    title: "Your Success Plan",
+    subtitle: "Your plan is ready.",
+    isFinal: true
+  }
+];
+
+export default function OnboardingPage() {
+  const [currentStep, setCurrentStep] = useState(1);
+  const [selections, setSelections] = useState<Record<string, any>>({});
+  const [isSynthesizing, setIsSynthesizing] = useState(false);
+  const { setRoadmap: setStoreRoadmap, setGoal, setSkillLevel, setIdentities } = useOnboardingStore();
+  const [roadmap, setRoadmap] = useState<PersonalizedRoadmapOutput | null>(null);
+  const router = useRouter();
+
+  useEffect(() => {
+    if (currentStep === 5) {
+      handleAISynthesis();
+    }
+  }, [currentStep]);
+
+  const handleAISynthesis = async () => {
+    setIsSynthesizing(true);
+    try {
+      // Build a prompt context from selections
+      const goalsText = `Archetype: ${selections[1]}, Goal: ${selections[2]}, Experience: ${selections[3]}, Interests: ${Array.isArray(selections[4]) ? selections[4].join(', ') : selections[4]}`;
+      const res = await generatePersonalizedRoadmap({ businessGoals: goalsText });
+      setRoadmap(res);
+      setStoreRoadmap(res); // Sync to global store for account creation
+      
+      // Sync selections to store for profile saving
+      setIdentities(Array.isArray(selections[1]) ? selections[1] : [selections[1]]);
+      setGoal(selections[2]);
+      setSkillLevel(selections[3]);
+      // Hold for dramatic effect
+      setTimeout(() => {
+        setIsSynthesizing(false);
+        setCurrentStep(6);
+      }, 3000);
+    } catch (error) {
+      console.error("AI Error:", error);
+      setIsSynthesizing(false);
+      setCurrentStep(6); // Fallback
+    }
+  };
+
+  const handleOptionSelect = (stepId: number, optionId: string) => {
+    const step = steps.find(s => s.id === stepId);
+    if (step?.isMulti) {
+      const current = selections[stepId] || [];
+      const next = current.includes(optionId)
+        ? current.filter((id: string) => id !== optionId)
+        : [...current, optionId];
+      setSelections({ ...selections, [stepId]: next });
+    } else {
+      setSelections({ ...selections, [stepId]: optionId });
+    }
+  };
+
+  const handleNext = () => {
+    if (currentStep < steps.length) {
+      setCurrentStep(currentStep + 1);
+    } else {
+      router.push('/signup');
+    }
+  };
+
+  const currentStepData = steps.find(s => s.id === currentStep);
+
+  return (
+    <div className="min-h-screen bg-background relative overflow-hidden flex flex-col items-center justify-center p-6 md:p-12">
+      {/* Cinematic Background */}
+      <div className="animated-bg">
+        <div className="glow-particle w-[800px] h-[800px] bg-primary top-[-30%] left-[-20%] opacity-20 animate-pulse-glow" />
+        <div className="glow-particle w-[600px] h-[600px] bg-accent bottom-[-20%] right-[-10%] opacity-20 animate-pulse-glow animation-delay-2000" />
+      </div>
+
+      <div className="max-w-4xl w-full flex flex-col gap-12 relative z-10">
+
+        {/* Progress Header */}
+        <div className="flex flex-col items-center gap-6">
+          <div className="w-16 h-16 bg-primary rounded-2xl flex items-center justify-center blue-glow animate-float">
+            <Cpu className="text-white w-8 h-8" />
+          </div>
+
+          <div className="flex justify-center gap-3 w-full max-w-xs">
+            {steps.map(s => (
+              <div
+                key={s.id}
+                className={cn(
+                  "h-1.5 rounded-full transition-all duration-700",
+                  currentStep === s.id ? 'bg-primary w-12 blue-glow' :
+                    currentStep > s.id ? 'bg-primary/40 w-6' : 'bg-white/5 w-6'
+                )}
+              />
+            ))}
+          </div>
+
+          <div className="text-center space-y-3">
+            <h1 className="text-5xl md:text-7xl font-bold font-headline tracking-tighter animate-in fade-in slide-in-from-bottom-4 duration-700">
+              {currentStepData?.title}
+            </h1>
+            <p className="text-muted-foreground text-xl md:text-2xl font-medium">
+              {currentStepData?.subtitle}
+            </p>
+          </div>
+        </div>
+
+        {/* Step Content */}
+        <div className="min-h-[400px]">
+          {currentStepData?.isSpecial ? (
+            <div className="flex flex-col items-center justify-center py-20 gap-8">
+              <div className="relative">
+                <div className="w-32 h-32 rounded-full bg-primary/20 flex items-center justify-center blue-glow animate-pulse">
+                  <BrainCircuit className="w-16 h-16 text-primary animate-spin-slow" />
+                </div>
+                <div className="absolute inset-0 border-4 border-dashed border-primary/30 rounded-full animate-spin-slow" />
+              </div>
+              <div className="space-y-2 text-center">
+                <p className="text-primary font-bold uppercase tracking-[0.3em] text-sm animate-pulse">Analyzing your goals</p>
+                <p className="text-muted-foreground text-sm italic">Matching your goals with the right strategy...</p>
+              </div>
+            </div>
+          ) : currentStepData?.isFinal ? (
+            <div className="space-y-6 animate-in fade-in zoom-in duration-1000">
+              <GlassCard className="p-8 border-primary/30 bg-primary/5 blue-glow">
+                <div className="flex items-center gap-4 mb-6">
+                  <div className="w-12 h-12 rounded-xl bg-primary flex items-center justify-center">
+                    <Sparkles className="text-white w-6 h-6" />
+                  </div>
+                  <div>
+                    <h3 className="text-2xl font-bold">{roadmap?.roadmapTitle || "Custom Growth Plan"}</h3>
+                    <Badge className="bg-primary/20 text-primary border-none text-[10px] uppercase font-bold px-3">AI Plan Generator</Badge>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {roadmap?.steps.map((step, idx) => (
+                    <div key={idx} className="p-5 rounded-2xl bg-white/5 border border-white/10 group hover:border-primary/50 transition-all">
+                      <div className="flex items-center gap-3 mb-3">
+                        <span className="text-primary font-bold font-headline text-lg">{idx + 1}.</span>
+                        <h4 className="font-bold text-white group-hover:text-primary transition-colors">{step.title}</h4>
+                      </div>
+                      <p className="text-sm text-muted-foreground leading-relaxed">{step.description}</p>
+                    </div>
+                  ))}
+                </div>
+              </GlassCard>
+            </div>
+          ) : (
+            <div className={cn(
+              "grid gap-4",
+              currentStepData?.isMulti ? "grid-cols-2 md:grid-cols-4" : "grid-cols-1 md:grid-cols-2 lg:grid-cols-3"
+            )}>
+              {currentStepData?.options?.map(opt => {
+                const isSelected = Array.isArray(selections[currentStep])
+                  ? selections[currentStep].includes(opt.id)
+                  : selections[currentStep] === opt.id;
+
+                return (
+                  <GlassCard
+                    key={opt.id}
+                    onClick={() => handleOptionSelect(currentStep, opt.id)}
+                    className={cn(
+                      "flex flex-col gap-4 p-6 cursor-pointer border-2 transition-all duration-500 group relative overflow-hidden",
+                      isSelected ? 'border-primary bg-primary/10 blue-glow scale-[1.02]' : 'border-white/5 hover:border-white/20'
+                    )}
+                  >
+                    <div className={cn(
+                      "w-12 h-12 rounded-xl flex items-center justify-center transition-all duration-500",
+                      isSelected ? 'bg-primary text-white' : 'bg-white/5 text-muted-foreground group-hover:text-white'
+                    )}>
+                      {opt.icon}
+                    </div>
+                    <div>
+                      <h3 className={cn(
+                        "text-xl font-bold transition-colors",
+                        isSelected ? 'text-white' : 'text-muted-foreground group-hover:text-white'
+                      )}>{opt.label}</h3>
+                      {'desc' in opt && <p className="text-xs text-muted-foreground mt-1 leading-relaxed">{opt.desc}</p>}
+                    </div>
+                    {isSelected && (
+                      <div className="absolute top-4 right-4 animate-in fade-in zoom-in">
+                        <CheckCircle2 className="w-5 h-5 text-primary" />
+                      </div>
+                    )}
+                  </GlassCard>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* Footer Navigation */}
+        {!currentStepData?.isSpecial && (
+          <div className="flex flex-col items-center gap-6 mt-8">
+            <Button
+              disabled={!selections[currentStep] && !currentStepData?.isFinal}
+              onClick={handleNext}
+              className="h-16 px-16 rounded-full bg-primary hover:bg-primary/90 text-2xl font-bold blue-glow group transition-all active:scale-95 disabled:opacity-30"
+            >
+              {currentStep === steps.length ? 'Finish Setup' : 'Next Step'}
+              <ArrowRight className="ml-3 group-hover:translate-x-2 transition-transform" />
+            </Button>
+
+            <p className="text-xs text-muted-foreground font-bold uppercase tracking-[0.2em] animate-pulse">
+              {currentStepData?.isFinal ? "Plan Ready" : `Step ${currentStep} of ${steps.length} • Setting up your account`}
+            </p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+=== src/store/useOnboardingStore.ts ===
+
+import { create } from 'zustand';
+import { persist } from 'zustand/middleware';
+
+export type PlanType = 'explorer' | 'pro' | 'elite' | null;
+
+interface OnboardingState {
+  currentStep: number;
+  plan: PlanType;
+  identities: string[];
+  goal: string | null;
+  skillLevel: string | null;
+  interests: string[];
+  budget: string | null;
+  availableTime: string | null;
+  roadmap: any | null;
+  
+  // Actions
+  setStep: (step: number) => void;
+  nextStep: () => void;
+  prevStep: () => void;
+  setPlan: (plan: PlanType) => void;
+  toggleIdentity: (identity: string) => void;
+  setIdentities: (identities: string[]) => void;
+  setGoal: (goal: string) => void;
+  setSkillLevel: (skill: string) => void;
+  setBudget: (budget: string) => void;
+  setAvailableTime: (time: string) => void;
+  toggleInterest: (interest: string) => void;
+  setRoadmap: (roadmap: any) => void;
+  reset: () => void;
+}
+
+export const useOnboardingStore = create<OnboardingState>()(
+  persist(
+    (set) => ({
+      currentStep: 1,
+      plan: null,
+      identities: [],
+      goal: null,
+      skillLevel: null,
+      interests: [],
+      budget: null,
+      availableTime: null,
+      roadmap: null,
+
+      setStep: (step) => set({ currentStep: step }),
+      nextStep: () => set((state) => ({ currentStep: state.currentStep + 1 })),
+      prevStep: () => set((state) => ({ currentStep: Math.max(1, state.currentStep - 1) })),
+      setPlan: (plan) => set({ plan }),
+      toggleIdentity: (id) => set((state) => ({
+        identities: state.identities.includes(id)
+          ? state.identities.filter(i => i !== id)
+          : [...state.identities, id]
+      })),
+      setIdentities: (identities) => set({ identities }),
+      setGoal: (goal) => set({ goal }),
+      setSkillLevel: (skillLevel) => set({ skillLevel }),
+      setBudget: (budget) => set({ budget }),
+      setAvailableTime: (availableTime) => set({ availableTime }),
+      toggleInterest: (interest) => set((state) => ({
+        interests: state.interests.includes(interest)
+          ? state.interests.filter(i => i !== interest)
+          : [...state.interests, interest]
+      })),
+      setRoadmap: (roadmap) => set({ roadmap }),
+      reset: () => set({
+        currentStep: 1,
+        plan: null,
+        identities: [],
+        goal: null,
+        skillLevel: null,
+        interests: [],
+        budget: null,
+        availableTime: null,
+        roadmap: null
+      }),
+    }),
+    {
+      name: 'soma-onboarding-storage',
+    }
+  )
+);
+
+=== src/ai/flows/ai-mentor-chat-flow.ts ===
+
+'use server';
+
+import { ai } from '@/ai/genkit';
+import { z } from 'genkit';
+
+const ChatMessageSchema = z.object({
+  role: z.enum(['user', 'assistant', 'system']),
+  content: z.string(),
+});
+
+const AIChatInputSchema = z.object({
+  history: z.array(ChatMessageSchema),
+  message: z.string(),
+  userGoals: z.string().optional(),
+  skillLevel: z.string().optional(),
+});
+
+const AIChatOutputSchema = z.string();
+
+export async function aiMentorChat(input: z.infer<typeof AIChatInputSchema>): Promise<string> {
+  const { text } = await ai.generate({
+    model: 'googleai/gemini-1.5-flash',
+    messages: [
+      { 
+        role: 'system', 
+        content: [{ text: `You are the Soma Digital AI Coach. 
+          User context:
+          Goals: ${input.userGoals || 'Not set'}
+          Skill Level: ${input.skillLevel || 'Not set'}` 
+        }] 
+      },
+      ...input.history.map(m => ({ 
+        role: m.role as any, 
+        content: [{ text: m.content }] 
+      })),
+      { 
+        role: 'user', 
+        content: [{ text: input.message }] 
+      }
+    ],
+  });
+  
+  return text || "I'm sorry, I couldn't process that.";
+}
+
+=== src/app/marketplace/page.tsx ===
+
+"use client";
+
+import { AppLayout } from "@/components/layout/AppLayout";
+import { GlassCard } from "@/components/ui/glass-card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Search, Download, Star, Filter, ShoppingBag, Zap, Lock } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import { useAuth } from "@/providers/AuthProvider";
+import { authFetch } from "@/lib/clientApi";
+import { getMarketplaceAssets, MarketplaceAsset } from "@/lib/marketplace";
+import { useToast } from "@/hooks/use-toast";
+
+import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
+
+export default function MarketplacePage() {
+  const [filter, setFilter] = useState("All Assets");
+  const [searchTerm, setSearchTerm] = useState("");
+  const [assets, setAssets] = useState<MarketplaceAsset[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
+  const { user } = useAuth();
+  const { toast } = useToast();
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadAssets() {
+      setLoading(true);
+      setLoadError("");
+      try {
+        const fetchedAssets = await getMarketplaceAssets();
+        if (!cancelled) setAssets(fetchedAssets);
+      } catch (err) {
+        console.error("Failed to load marketplace assets:", err);
+        if (!cancelled) setLoadError("Unable to load marketplace assets.");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+
+    loadAssets();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const categories = useMemo(() => {
+    return ["All Assets", ...Array.from(new Set(assets.map((asset) => asset.category))).sort()];
+  }, [assets]);
+
+  const visibleAssets = assets.filter((asset) => {
+    const matchesCategory = filter === "All Assets" || asset.category === filter;
+    const query = searchTerm.trim().toLowerCase();
+    const matchesSearch = !query
+      || asset.title.toLowerCase().includes(query)
+      || asset.category.toLowerCase().includes(query)
+      || asset.description.toLowerCase().includes(query)
+      || asset.tags.some((tag) => tag.toLowerCase().includes(query));
+    return matchesCategory && matchesSearch;
+  });
+
+  const handleAcquire = async (assetId: string) => {
+    if (!user) {
+      toast({ title: 'Sign in required', description: 'Please sign in to access assets.' });
+      return;
+    }
+
+    try {
+      const response = await authFetch('/api/marketplace/asset-access', {
+        method: 'POST',
+        body: JSON.stringify({ assetId }),
+      });
+
+      const payload = await response.json();
+      if (!response.ok) {
+        throw new Error(payload?.error || 'Unable to access asset');
+      }
+
+      toast({ title: 'Access granted', description: payload.asset.title });
+    } catch (err) {
+      toast({ title: 'Access denied', description: err instanceof Error ? err.message : 'Upgrade required' });
+    }
+  };
+
+  return (
+    <ProtectedRoute>
+      <AppLayout>
+        <div className="flex flex-col gap-8 animate-in fade-in duration-700">
+        <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
+          <div className="max-w-xl">
+            <h1 className="text-4xl font-bold font-headline tracking-tight">Resource Center</h1>
+            <p className="text-muted-foreground mt-2">Premium tools, templates, and high-performance resources to grow your business.</p>
+          </div>
+          <div className="flex items-center gap-3 w-full md:w-auto">
+            <div className="relative flex-1 md:w-[300px]">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+              <Input value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder="Search assets..." className="pl-10 bg-white/5 border-white/10" />
+            </div>
+            <Button onClick={() => { setFilter("All Assets"); setSearchTerm(""); }} variant="ghost" className="border border-white/10 bg-white/5">
+              <Filter className="w-4 h-4 mr-2" /> Reset
+            </Button>
+          </div>
+        </div>
+
+        <div className="flex gap-4 pb-2 overflow-x-auto no-scrollbar">
+          {categories.map((cat) => (
+            <Badge 
+              key={cat} 
+              onClick={() => setFilter(cat)}
+              variant={filter === cat ? "default" : "outline"} 
+              className={`px-4 py-2 text-[10px] font-bold uppercase tracking-widest cursor-pointer whitespace-nowrap transition-all ${filter === cat ? "bg-primary blue-glow border-none" : "border-white/10 hover:bg-white/5"}`}
+            >
+              {cat}
+            </Badge>
+          ))}
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">
+          {loading && Array.from({ length: 6 }).map((_, index) => (
+            <AssetSkeleton key={index} />
+          ))}
+          {!loading && loadError && (
+            <GlassCard className="p-10 text-center text-muted-foreground sm:col-span-2 lg:col-span-3">
+              {loadError}
+            </GlassCard>
+          )}
+          {!loading && !loadError && visibleAssets.map(asset => (
+            <div key={asset.id} className="relative group h-full">
+              <AssetCard asset={asset} onAcquire={() => handleAcquire(asset.id)} />
+            </div>
+          ))}
+          {!loading && !loadError && visibleAssets.length === 0 && (
+            <GlassCard className="p-10 text-center text-muted-foreground sm:col-span-2 lg:col-span-3">
+              No resources match that search.
+            </GlassCard>
+          )}
+        </div>
+
+        {/* Premium Upgrade CTA Section */}
+        <div className="mt-12 p-8 md:p-16 rounded-[3rem] bg-gradient-to-r from-[#0d1117] via-primary/10 to-[#0d1117] border border-primary/20 relative overflow-hidden flex flex-col items-center text-center gap-8 shadow-2xl">
+          <div className="absolute top-0 left-0 w-full h-full opacity-5 bg-grid-white/[0.02] bg-repeat" />
+          <div className="relative z-10 space-y-4 max-w-2xl">
+            <h2 className="text-4xl md:text-6xl font-bold font-headline leading-tight">Elite Tools. <br /><span className="text-gradient">Unlimited Access.</span></h2>
+            <p className="text-muted-foreground text-lg">
+              Unlock every single high-converting asset in the Resource Center, from advanced sales funnels to AI business systems.
+            </p>
+          </div>
+          <div className="relative z-10 flex flex-col sm:flex-row gap-4">
+             <Button asChild className="h-16 px-12 rounded-full bg-primary hover:bg-primary/90 text-xl font-bold blue-glow transition-all active:scale-95">
+               <Link href="/dashboard?upgrade=pro">Upgrade to Pro</Link>
+             </Button>
+             <Button asChild variant="ghost" className="h-16 px-12 rounded-full border border-white/10 hover:bg-white/5 text-xl font-semibold backdrop-blur-sm">
+               <Link href="/#pricing">View Membership Plans</Link>
+             </Button>
+          </div>
+        </div>
+      </div>
+    </AppLayout>
+    </ProtectedRoute>
+  );
+}
+
+function formatPrice(price: number, tier: MarketplaceAsset["tier"]) {
+  if (price === 0 && tier === "free") return "Free";
+  if (price === 0) return `Free for ${tier === "elite" ? "Elite" : "Pro"}`;
+  return `$${price}`;
+}
+
+function AssetSkeleton() {
+  return (
+    <GlassCard className="p-0 overflow-hidden h-full border-white/5">
+      <div className="aspect-[16/10] bg-white/5 animate-pulse" />
+      <div className="p-6 space-y-5">
+        <div className="h-6 bg-white/5 rounded-lg animate-pulse" />
+        <div className="h-4 bg-white/5 rounded-lg animate-pulse w-2/3" />
+        <div className="h-12 bg-white/5 rounded-xl animate-pulse" />
+      </div>
+    </GlassCard>
+  );
+}
+
+function AssetCard({ asset, onAcquire }: { asset: MarketplaceAsset; onAcquire: () => void }) {
+  const isPremium = asset.tier !== "free";
+  const isLocked = asset.tier !== "free";
+
+  return (
+    <GlassCard className="p-0 overflow-hidden flex flex-col group h-full border-white/5 hover:border-white/20 transition-all duration-500">
+      <div className="aspect-[16/10] relative overflow-hidden">
+        <img 
+          src={asset.thumbnailUrl} 
+          alt={asset.title} 
+          className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110" 
+        />
+        <div className="absolute top-4 right-4 flex flex-col gap-2">
+          {isPremium && (
+            <Badge className="bg-primary text-[9px] font-bold py-1 px-3 border-none blue-glow uppercase tracking-wider">PREMIUM</Badge>
+          )}
+          <Badge className="bg-black/60 backdrop-blur-md text-[9px] font-bold py-1 px-3 border-none uppercase tracking-wider">{asset.category}</Badge>
+        </div>
+        {isLocked && (
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-[2px] flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+            <Lock className="w-8 h-8 text-white/50" />
+          </div>
+        )}
+      </div>
+      <div className="p-6 flex-1 flex flex-col gap-6">
+        <div className="flex-1">
+          <h3 className="font-bold text-xl leading-tight group-hover:text-primary transition-colors">{asset.title}</h3>
+          <p className="text-sm text-muted-foreground line-clamp-2 mt-2">{asset.description}</p>
+          <div className="flex items-center gap-4 mt-3">
+            <div className="flex items-center gap-1.5 text-[10px] font-bold text-yellow-500 uppercase">
+              <Star className="w-3.5 h-3.5 fill-yellow-500" /> {asset.tier}
+            </div>
+            <div className="flex items-center gap-1.5 text-[10px] font-bold text-muted-foreground uppercase">
+              <Download className="w-3.5 h-3.5" /> {asset.type}
+            </div>
+          </div>
+        </div>
+        <div className="flex items-center justify-between pt-5 border-t border-white/5">
+           <span className="text-2xl font-bold font-headline">{formatPrice(asset.price, asset.tier)}</span>
+           <Button onClick={onAcquire} size="icon" variant="ghost" className="rounded-2xl w-12 h-12 bg-white/5 border border-white/5 hover:bg-primary hover:text-white hover:border-primary transition-all group/btn blue-glow">
+             <ShoppingBag className="w-5 h-5" />
+           </Button>
+        </div>
+      </div>
+    </GlassCard>
+  );
+}
+
+=== src/app/api/marketplace/asset-access/route.ts ===
+
+
+=== src/lib/firebase.ts ===
+
+import { initializeApp, getApps, getApp } from "firebase/app";
+import { getAuth } from "firebase/auth";
+import { getFirestore } from "firebase/firestore";
+import { getStorage } from "firebase/storage";
+
+const firebaseConfig = {
+  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY || "AIzaSyDummyKey",
+  authDomain: `${process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || 'studio-9700632586-9348e'}.firebaseapp.com`,
+  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || 'studio-9700632586-9348e',
+  storageBucket: `${process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || 'studio-9700632586-9348e'}.appspot.com`,
+  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID || "1058550448616",
+  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID || "1:1058550448616:web:dc7109c8e65747bbe3e45d"
+};
+
+const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+const storage = getStorage(app);
+
+export { app, auth, db, storage };
+
+=== src/lib/firebaseAdmin.ts ===
+
+import * as admin from 'firebase-admin';
+
+const projectId =
+  process.env.FIREBASE_PROJECT_ID ||
+  process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID;
+
+if (!admin.apps.length) {
+  admin.initializeApp({
+    projectId,
+    credential: admin.credential.applicationDefault(),
+    storageBucket: projectId ? `${projectId}.appspot.com` : undefined,
+  });
+}
+
+const adminApp = admin.app();
+
+export const adminDb = adminApp.firestore();
+export const adminAuth = adminApp.auth();
+export const adminStorage = adminApp.storage();
+
+=== src/lib/db.ts ===
+
+import { 
+  collection, 
+  doc, 
+  setDoc, 
+  getDoc, 
+  addDoc, 
+  query, 
+  orderBy, 
+  getDocs, 
+  updateDoc, 
+  serverTimestamp,
+  onSnapshot,
+  increment,
+  runTransaction,
+  getCountFromServer,
+  limit as firestoreLimit,
+  QuerySnapshot,
+  DocumentData
+} from "firebase/firestore";
+import { db } from "./firebase";
+
+// ─── Community Feed Types ─────────────────────────────────────────────────────
+
+export type ReactionType = 'like' | 'love' | 'funny' | 'wow' | 'sad' | 'fire';
+
+export interface PostReaction {
+  type: ReactionType;
+  userId: string;
+  createdAt: any;
+}
+
+export type PostType = 'win' | 'insight' | 'mentorship' | 'announcement' | 'question';
+
+export interface Post {
+  id: string;
+  authorId: string;
+  authorName: string;
+  authorAvatar: string;
+  authorTier: 'explorer' | 'pro' | 'elite';
+  authorRole: string;
+  isFounder?: boolean;
+  content: string;
+  channel?: string;
+  tags: string[];
+  type: PostType;
+  isPinned: boolean;
+  likeCount: number;
+  commentCount: number;
+  imageUrl?: string;
+  linkUrl?: string;
+  topReaction?: ReactionType;
+  reactionCounts?: Partial<Record<ReactionType, number>>;
+  createdAt: any;
+}
+
+export interface Comment {
+  id: string;
+  postId: string;
+  authorId: string;
+  authorName: string;
+  authorAvatar: string;
+  authorTier: 'explorer' | 'pro' | 'elite';
+  content: string;
+  createdAt: any;
+}
+
+// ─── Post Service ─────────────────────────────────────────────────────────────
+
+export const postService = {
+  // Create a new post
+  async createPost(
+    userId: string,
+    userData: { name: string; photoURL?: string; tier: string; selectedIdentity?: string },
+    content: string,
+    tags: string[],
+    type: PostType = 'insight',
+    channel = 'general',
+    imageUrl?: string,
+    linkUrl?: string
+  ): Promise<string> {
+    const postsRef = collection(db, 'posts');
+    const docRef = await addDoc(postsRef, {
+      authorId: userId,
+      authorName: userData.name || 'Anonymous',
+      authorAvatar: userData.photoURL || null,
+      authorTier: userData.tier || 'explorer',
+      authorRole: userData.selectedIdentity || 'Entrepreneur',
+      isFounder: false,
+      content,
+      channel,
+      tags,
+      type,
+      isPinned: false,
+      likeCount: 0,
+      commentCount: 0,
+      imageUrl: imageUrl || null,
+      linkUrl: linkUrl || null,
+      reactionCounts: {},
+      createdAt: serverTimestamp(),
+    });
+    return docRef.id;
+  },
+
+  // Subscribe to real-time feed updates
+  subscribeToPosts(
+    callback: (posts: Post[]) => void,
+    postLimit = 30
+  ): () => void {
+    const postsRef = collection(db, 'posts');
+    const q = query(postsRef, orderBy('createdAt', 'desc'), firestoreLimit(postLimit));
+    return onSnapshot(q, (snap: QuerySnapshot<DocumentData>) => {
+      const posts = snap.docs.map(d => ({ id: d.id, ...d.data() } as Post));
+      // Sort: pinned first, then by time
+      posts.sort((a, b) => {
+        if (a.isPinned && !b.isPinned) return -1;
+        if (!a.isPinned && b.isPinned) return 1;
+        return 0;
+      });
+      callback(posts);
+    });
+  },
+
+  async getPost(postId: string): Promise<Post | null> {
+    const postRef = doc(db, 'posts', postId);
+    const snap = await getDoc(postRef);
+    if (!snap.exists()) return null;
+    return { id: snap.id, ...snap.data() } as Post;
+  },
+
+  // Get the current user's reaction on a post (null = no reaction)
+  async getUserReaction(postId: string, userId: string): Promise<ReactionType | null> {
+    const reactionRef = doc(db, 'likes', `${postId}_${userId}`);
+    const snap = await getDoc(reactionRef);
+    if (snap.exists()) return (snap.data() as PostReaction).type;
+    return null;
+  },
+
+  // Subscribe to the current user's reaction for a given post
+  subscribeToUserReaction(
+    postId: string,
+    userId: string,
+    callback: (reaction: ReactionType | null) => void
+  ): () => void {
+    const reactionRef = doc(db, 'likes', `${postId}_${userId}`);
+    return onSnapshot(reactionRef, snap => {
+      callback(snap.exists() ? (snap.data() as PostReaction).type : null);
+    });
+  },
+
+  // Toggle / change reaction — Firestore is the eventual source of truth
+  async setReaction(postId: string, userId: string, newReaction: ReactionType | null): Promise<void> {
+    const reactionId = `${postId}_${userId}`;
+    const reactionRef = doc(db, 'likes', reactionId);
+    const postRef = doc(db, 'posts', postId);
+
+    await runTransaction(db, async (tx) => {
+      const existing = await tx.get(reactionRef);
+      const existingType: ReactionType | null = existing.exists()
+        ? (existing.data() as PostReaction).type
+        : null;
+
+      if (existingType === newReaction || newReaction === null) {
+        // Remove reaction
+        if (existing.exists()) {
+          tx.delete(reactionRef);
+          tx.update(postRef, {
+            likeCount: increment(-1),
+            [`reactionCounts.${existingType}`]: increment(-1),
+          });
+        }
+      } else {
+        // Add or swap reaction
+        tx.set(reactionRef, { type: newReaction, userId, createdAt: serverTimestamp() });
+        if (existingType) {
+          // Swap: decrement old, increment new
+          tx.update(postRef, {
+            [`reactionCounts.${existingType}`]: increment(-1),
+            [`reactionCounts.${newReaction}`]: increment(1),
+          });
+        } else {
+          // New reaction
+          tx.update(postRef, {
+            likeCount: increment(1),
+            [`reactionCounts.${newReaction}`]: increment(1),
+          });
+        }
+      }
+    });
+  },
+
+  // Add a comment
+  async addComment(
+    postId: string,
+    userId: string,
+    userData: { name: string; photoURL?: string; tier: string },
+    content: string
+  ): Promise<string> {
+    const commentsRef = collection(db, 'posts', postId, 'comments');
+    const docRef = await addDoc(commentsRef, {
+      postId,
+      authorId: userId,
+      authorName: userData.name || 'Anonymous',
+      authorAvatar: userData.photoURL || null,
+      authorTier: userData.tier || 'explorer',
+      content,
+      createdAt: serverTimestamp(),
+    });
+    // Increment comment count
+    await updateDoc(doc(db, 'posts', postId), { commentCount: increment(1) });
+    return docRef.id;
+  },
+
+  // Subscribe to comments on a post
+  subscribeToComments(
+    postId: string,
+    callback: (comments: Comment[]) => void
+  ): () => void {
+    const commentsRef = collection(db, 'posts', postId, 'comments');
+    const q = query(commentsRef, orderBy('createdAt', 'asc'));
+    return onSnapshot(q, snap => {
+      callback(snap.docs.map(d => ({ id: d.id, ...d.data() } as Comment)));
+    });
+  },
+
+  // Pin / unpin a post (admin)
+  async pinPost(postId: string, pinned: boolean): Promise<void> {
+    await updateDoc(doc(db, 'posts', postId), { isPinned: pinned });
+  },
+};
+
+export interface ChatMessage {
+  role: 'user' | 'assistant';
+  content: string;
+  timestamp: any;
+  type?: 'text' | 'roadmap' | 'advice' | 'content';
+  data?: any;
+}
+
+export interface ChatThread {
+  id: string;
+  title: string;
+  lastUpdated: any;
+  pinned: boolean;
+  userId: string;
+}
+
+export interface UserProfile {
+  uid: string;
+  email: string;
+  name: string;
+  tier: 'explorer' | 'pro' | 'elite';
+  onboardingComplete: boolean;
+  selectedIdentity: string;
+  experienceLevel: string;
+  financialGoal: string;
+  xp: number;
+  roadmapGenerated: boolean;
+  createdAt: any;
+  updatedAt: any;
+  intendedPlan?: 'explorer' | 'pro' | 'elite';
+  ownsLegacyBuilders?: boolean;
+  engagementScore?: number;
+  growthAssessmentResult?: {
+    ownsLegacyBuilders: boolean;
+    readinessLevel: 'low' | 'medium' | 'high';
+    businessStage: 'beginner' | 'growing' | 'advanced';
+    interestAlignment: number;
+    recommendedPath: string;
+  } | null;
+  growthAssessmentDismissed?: boolean;
+  subscription?: {
+    provider: string;
+    status: string;
+    plan: 'explorer' | 'pro' | 'elite';
+    transactionId?: string;
+    startedAt?: any;
+    expiresAt?: any;
+  };
+  [key: string]: any; // Allow additional flexible fields like budget/availableTime
+}
+
+export const dbService = {
+  // User Profile and Goals
+  async saveUserProfile(userId: string, data: Partial<UserProfile>) {
+    const userRef = doc(db, "users", userId);
+
+    // Safety check: Strip client-controlled entitlement fields to prevent overrides
+    const {
+      tier,
+      subscription,
+      isAdmin,
+      roles,
+      plan,
+      ...safeData
+    } = data as any;
+
+    const snap = await getDoc(userRef);
+    if (!snap.exists()) {
+      const defaultProfile = {
+        uid: userId,
+        tier: 'explorer',
+        subscription: {
+          provider: 'free',
+          status: 'active',
+          plan: 'explorer'
+        },
+        onboardingComplete: false,
+        xp: 0,
+        roadmapGenerated: false,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+        ...safeData
+      };
+      await setDoc(userRef, defaultProfile);
+    } else {
+      await setDoc(userRef, {
+        ...safeData,
+        updatedAt: serverTimestamp()
+      }, { merge: true });
+    }
+  },
+
+  async updateUserProfile(userId: string, data: Partial<UserProfile>) {
+    return this.saveUserProfile(userId, data);
+  },
+
+  async getUserProfile(userId: string): Promise<UserProfile | null> {
+    const userRef = doc(db, "users", userId);
+    const snap = await getDoc(userRef);
+    return snap.exists() ? snap.data() as UserProfile : null;
+  },
+
+  // Roadmap persistence
+  async saveRoadmap(userId: string, roadmap: any) {
+    const roadmapRef = doc(db, `users/${userId}/roadmaps`, "current");
+    await setDoc(roadmapRef, {
+      ...roadmap,
+      createdAt: serverTimestamp()
+    });
+  },
+
+  // Chat Threads
+  async createThread(userId: string, title: string) {
+    const threadsRef = collection(db, `users/${userId}/mentorHistory`);
+    const docRef = await addDoc(threadsRef, {
+      title,
+      createdAt: serverTimestamp(),
+      lastUpdated: serverTimestamp(),
+      pinned: false,
+      userId
+    });
+    return docRef.id;
+  },
+
+  async getThreads(userId: string) {
+    const threadsRef = collection(db, `users/${userId}/mentorHistory`);
+    const q = query(threadsRef, orderBy("lastUpdated", "desc"));
+    const snap = await getDocs(q);
+    return snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as ChatThread));
+  },
+
+  async updateThread(userId: string, threadId: string, data: Partial<ChatThread>) {
+    const threadRef = doc(db, `users/${userId}/mentorHistory`, threadId);
+    await updateDoc(threadRef, {
+      ...data,
+      lastUpdated: serverTimestamp()
+    });
+  },
+
+  // Messages
+  async saveMessage(userId: string, threadId: string, message: Omit<ChatMessage, 'timestamp'>) {
+    const messagesRef = collection(db, `users/${userId}/mentorHistory/${threadId}/messages`);
+    await addDoc(messagesRef, {
+      ...message,
+      timestamp: serverTimestamp()
+    });
+    
+    // Update thread lastUpdated
+    const threadRef = doc(db, `users/${userId}/mentorHistory`, threadId);
+    await updateDoc(threadRef, { lastUpdated: serverTimestamp() });
+  },
+
+  async getMessages(userId: string, threadId: string) {
+    const messagesRef = collection(db, `users/${userId}/mentorHistory/${threadId}/messages`);
+    const q = query(messagesRef, orderBy("timestamp", "asc"));
+    const snap = await getDocs(q);
+    return snap.docs.map(doc => doc.data() as ChatMessage);
+  },
+
+  // Global Community Stats
+  async getGlobalStats() {
+    try {
+      const usersRef = collection(db, 'users');
+      const postsRef = collection(db, 'posts');
+      
+      const [usersCount, postsCount] = await Promise.all([
+        getCountFromServer(usersRef),
+        getCountFromServer(postsRef)
+      ]);
+
+      return {
+        memberCount: usersCount.data().count,
+        discussionCount: postsCount.data().count,
+        revenueGenerated: 0 
+      };
+    } catch (error) {
+      console.error("Error fetching global stats:", error);
+      return { memberCount: 0, discussionCount: 0, revenueGenerated: 0 };
+    }
+  },
+
+  async getRecentActivity(limitCount = 4) {
+    try {
+      const postsRef = collection(db, 'posts');
+      const q = query(postsRef, orderBy('createdAt', 'desc'), firestoreLimit(limitCount));
+      const snap = await getDocs(q);
+      return snap.docs.map(doc => ({
+        id: doc.id,
+        type: 'post',
+        user: doc.data().authorName,
+        time: doc.data().createdAt,
+        detail: `Shared a new ${doc.data().type}`
+      }));
+    } catch (error) {
+      console.error("Error fetching recent activity:", error);
+      return [];
+    }
+  },
+
+  async getRecentMembers(limitCount = 4) {
+    try {
+      const usersRef = collection(db, 'users');
+      const q = query(usersRef, orderBy('createdAt', 'desc'), firestoreLimit(limitCount));
+      const snap = await getDocs(q);
+      return snap.docs.map(doc => ({
+        id: doc.id,
+        type: 'join',
+        user: doc.data().name || 'Anonymous',
+        time: doc.data().createdAt,
+        detail: 'Joined the Founding cohort'
+      }));
+    } catch (error) {
+      console.error("Error fetching recent members:", error);
+      return [];
+    }
+  }
+};

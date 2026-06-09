@@ -1,12 +1,18 @@
-import { cn } from "@/lib/utils";
-import React from "react";
+import React from "react"
+import { cn } from "@/lib/utils"
 
 interface GlassCardProps extends React.HTMLAttributes<HTMLDivElement> {
-  children: React.ReactNode;
-  glow?: boolean;
+  children?: React.ReactNode
+  className?: string
+  glow?: boolean
 }
 
-export const GlassCard = ({ children, className, glow = false, ...props }: GlassCardProps) => {
+export const GlassCard = ({
+  children,
+  className,
+  glow = false,
+  ...props
+}: GlassCardProps) => {
   return (
     <div
       className={cn(
@@ -18,5 +24,5 @@ export const GlassCard = ({ children, className, glow = false, ...props }: Glass
     >
       {children}
     </div>
-  );
-};
+  )
+}

@@ -1,0 +1,110 @@
+service firebase.storage {
+  match /b/{bucket}/o {
+    function isAuthed() {
+      return request.auth != null;
+    }
+
+    function userDoc() {
+      return firestore.get(/databases/(default)/documents/users/$(request.auth.uid));
+    }
+
+    function assetDoc(assetId) {
+      return firestore.get(/databases/(default)/documents/marketplaceAssets/$(assetId));
+    }
+
+    function hasRole(role) {
+      return isAuthed()
+        && userDoc().data.roles is list
+        && role in userDoc().data.roles;
+    }
+
+    function isAdminOrContentManager() {
+      return isAuthed()
+        && (
+          userDoc().data.isAdmin == true
+          || userDoc().data.role == 'admin'
+          || hasRole('admin')
+          || hasRole('content-manager')
+          || hasRole('contentManager')
+        );
+    }
+
+    function subscriptionPlan() {
+      return userDoc().data.subscription.subscriptionPlan == 'enterprise'
+        || (
+          userDoc().data.subscription.subscriptionPlan == null
+          && userDoc().data.subscription.plan == 'enterprise'
+        )
+        ? 'elite'
+        : (
+          userDoc().data.subscription.subscriptionPlan != null
+            ? userDoc().data.subscription.subscriptionPlan
+            : userDoc().data.subscription.plan
+        );
+    }
+
+    function assetTier(assetId) {
+      return assetDoc(assetId).data.tier == 'enterprise'
+        ? 'elite'
+        : assetDoc(assetId).data.tier;
+    }
+
+    function hasActiveSubscription() {
+      return isAuthed()
+        && (
+          userDoc().data.subscription.subscriptionStatus == 'active'
+          || userDoc().data.subscription.status == 'active'
+        );
+    }
+
+    function canReadMarketplaceAsset(assetId) {
+      return isAdminOrContentManager()
+        || (
+          isAuthed()
+          && assetTier(assetId) == 'free'
+        )
+        || (
+          hasActiveSubscription()
+          && assetTier(assetId) == 'pro'
+          && (subscriptionPlan() == 'pro' || subscriptionPlan() == 'elite')
+        )
+        || (
+          hasActiveSubscription()
+          && assetTier(assetId) == 'elite'
+          && subscriptionPlan() == 'elite'
+        );
+    }
+
+    function isAllowedMarketplaceUpload(assetId) {
+      return request.resource != null
+        && request.resource.size < 50 * 1024 * 1024
+        && (
+          request.resource.contentType.matches('image/.*')
+          || request.resource.contentType in [
+            'application/pdf',
+            'video/mp4',
+            'application/zip',
+            'application/x-zip-compressed',
+            'text/markdown',
+            'text/x-markdown'
+          ]
+        )
+        && request.resource.metadata.assetId == assetId
+        && request.resource.metadata.uploadedBy == request.auth.uid;
+    }
+
+    match /community-posts/{userId}/{allPaths=**} {
+      allow read: if true;
+      allow write, delete: if request.auth != null && request.auth.uid == userId
+        && request.resource != null
+        && request.resource.size <= 5 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*');
+    }
+
+    match /marketplace-assets/{assetId}/{filename} {
+      allow read: if canReadMarketplaceAsset(assetId);
+      allow write: if isAdminOrContentManager() && isAllowedMarketplaceUpload(assetId);
+      allow delete: if isAdminOrContentManager();
+    }
+  }
+}
