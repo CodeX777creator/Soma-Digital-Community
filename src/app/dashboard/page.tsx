@@ -43,12 +43,9 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { PremiumLock } from "@/components/premium/PremiumLock";
 import { UpgradeModal } from "@/components/premium/UpgradeModal";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
-import {
-  useDashboardLeaderboard,
-  useWeeklyPerformance,
-  useDailyMissions,
-  useDashboardStats,
+import { useDashboardLeaderboard, useWeeklyPerformance, useDailyMissions, useDashboardStats,
 } from "@/hooks/useDashboardData";
+import { useSubscription } from "@/hooks/useSubscription";
 import Link from "next/link";
 
 function DashboardContent() {
@@ -58,6 +55,7 @@ function DashboardContent() {
   const [mounted, setMounted] = useState(false);
   const [showUpgrade, setShowUpgrade] = useState(false);
   const [initialUpgradePlan, setInitialUpgradePlan] = useState<'pro' | 'elite' | null>(null);
+  const { refreshUserToken } = useSubscription();
 
   // Fetch real data
   const { leaders, loading: leadersLoading, error: leadersError } = useDashboardLeaderboard(3);
@@ -71,13 +69,21 @@ function DashboardContent() {
 
   useEffect(() => {
     const upgradePlan = searchParams.get("upgrade");
+    const subscriptionSuccess = searchParams.get("subscription");
 
     if (upgradePlan === "pro" || upgradePlan === "elite") {
       setInitialUpgradePlan(upgradePlan);
       setShowUpgrade(true);
       router.replace("/dashboard");
     }
-  }, [router, searchParams]);
+
+    // Refresh token and subscription status after successful payment
+    if (subscriptionSuccess === "success") {
+      refreshUserToken().then(() => {
+        router.replace("/dashboard");
+      });
+    }
+  }, [router, searchParams, refreshUserToken]);
 
   if (!mounted) return null;
 
