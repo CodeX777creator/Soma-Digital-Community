@@ -1,9 +1,10 @@
 import { NextResponse } from 'next/server';
-import { requireSubscription } from '@/lib/serverAuth';
+import { requireUserEntitlements } from '@/lib/serverAuth';
 
 export async function GET(req: Request) {
   try {
-    const { profile, subscription } = await requireSubscription(req as any, 'explorer');
+    // Get fresh data from Firestore, not cached auth claims
+    const { profile, subscription } = await requireUserEntitlements(req as any);
 
     const xp = typeof profile.xp === 'number' ? profile.xp : 0;
     const streak = typeof profile.streak === 'number' ? profile.streak : 0;
