@@ -60,8 +60,14 @@ export function useDashboardLeaderboard(limit = 10) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    const fetchLeaderboard = async () => {
+    useEffect(() => {
+    if (!db) {
+      setLoading(false);
+      return;
+    }
+
+        const fetchLeaderboard = async () => {
+      if (!db) return;
       try {
         setLoading(true);
         const usersRef = collection(db, 'users');
@@ -135,10 +141,11 @@ export function useDailyMissions() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (!user?.uid) return;
+    useEffect(() => {
+    if (!user?.uid || !db) return;
 
-    const fetchMissions = async () => {
+        const fetchMissions = async () => {
+      if (!db) return;
       try {
         setLoading(true);
         const today = new Date().toISOString().slice(0, 10);
@@ -177,18 +184,19 @@ export function useDailyMissions() {
     fetchMissions();
   }, [user?.uid]);
 
-  const completeMission = async (missionId: string) => {
-    if (!user?.uid) return;
+        const completeMission = async (missionId: string) => {
+    if (!user?.uid || !db) return;
+    const firestore = db;
     try {
-      const missionRef = doc(db, `users/${user.uid}/missions`, missionId);
+      const missionRef = doc(firestore, `users/${user.uid}/missions`, missionId);
       // Transactionally mark mission complete and increment user xp
-      const xpAwarded = await runTransaction(db, async (tx) => {
+            const xpAwarded = await runTransaction(firestore, async (tx) => {
         const snap = await tx.get(missionRef);
         if (!snap.exists()) throw new Error('Mission not found');
         const data = snap.data() as any;
         if (data.completed) return 0;
         const xp = typeof data.xp === 'number' ? data.xp : (typeof data.xpReward === 'number' ? data.xpReward : 0);
-        const userRef = doc(db, 'users', user.uid);
+        const userRef = doc(firestore, 'users', user.uid);
         tx.update(missionRef, { completed: true, completedAt: serverTimestamp() });
         tx.update(userRef, { xp: increment(xp) });
         return xp;

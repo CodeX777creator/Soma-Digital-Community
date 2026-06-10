@@ -68,6 +68,7 @@ export async function uploadAsset(
   metadata: AssetUploadMetadata,
   options: UploadAssetOptions = {}
 ): Promise<string> {
+  if (!storage) throw new Error('Storage not initialized');
   if (!assetId || assetId !== metadata.assetId) {
     throw new Error("A valid assetId is required before upload.");
   }

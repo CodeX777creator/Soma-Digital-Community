@@ -96,7 +96,7 @@ function csvEscape(value: unknown) {
 }
 
 async function authedAdminFetch(path: string, body: Record<string, unknown>) {
-  const token = await auth.currentUser?.getIdToken();
+  const token = await auth?.currentUser?.getIdToken();
   if (!token) throw new Error("Admin session expired.");
 
   const response = await fetch(path, {
@@ -133,8 +133,14 @@ export default function AdminUsersPage() {
   const [actionLoading, setActionLoading] = useState<string | null>(null);
 
   useEffect(() => {
+    if (!db) {
+      setError("Database not initialized.");
+      setLoading(false);
+      return;
+    }
+    const firestore = db;
     const unsubUsers = onSnapshot(
-      query(collection(db, "users"), orderBy("createdAt", "desc")),
+      query(collection(firestore, "users"), orderBy("createdAt", "desc")),
       (snapshot) => {
         setUsers(snapshot.docs.map((userDoc) => normalizeUser(userDoc.id, userDoc.data())));
         setLoading(false);
@@ -145,16 +151,16 @@ export default function AdminUsersPage() {
       }
     );
 
-    const unsubSubscriptions = onSnapshot(collection(db, "subscriptions"), (snapshot) => {
+    const unsubSubscriptions = onSnapshot(collection(firestore, "subscriptions"), (snapshot) => {
       setSubscriptions(snapshot.docs.map((item) => ({ id: item.id, ...item.data() })));
     });
-    const unsubPurchases = onSnapshot(collection(db, "assetPurchases"), (snapshot) => {
+    const unsubPurchases = onSnapshot(collection(firestore, "assetPurchases"), (snapshot) => {
       setPurchases(snapshot.docs.map((item) => ({ id: item.id, ...item.data() })));
     });
-    const unsubPosts = onSnapshot(collection(db, "posts"), (snapshot) => {
+    const unsubPosts = onSnapshot(collection(firestore, "posts"), (snapshot) => {
       setPosts(snapshot.docs.map((item) => ({ id: item.id, ...item.data() })));
     });
-    const unsubMentorChats = onSnapshot(collection(db, "mentorChats"), (snapshot) => {
+    const unsubMentorChats = onSnapshot(collection(firestore, "mentorChats"), (snapshot) => {
       setMentorChats(snapshot.docs.map((item) => ({ id: item.id, ...item.data() })));
     });
 
@@ -225,6 +231,10 @@ export default function AdminUsersPage() {
   }, [mentorChats, posts, purchases, selectedUser, subscriptions]);
 
   const changeTier = async (user: UserRecord, tier: Tier, reason = "Admin tier change") => {
+    if (!db) {
+      setError("Database not initialized.");
+      return;
+    }
     setActionLoading(`tier-${user.uid}`);
     setError(null);
     try {
@@ -237,7 +247,7 @@ export default function AdminUsersPage() {
           tier,
           reason,
           updatedAt: serverTimestamp(),
-          updatedBy: auth.currentUser?.uid || null,
+          updatedBy: auth?.currentUser?.uid || null,
         },
         updatedAt: serverTimestamp(),
       });
@@ -255,6 +265,10 @@ export default function AdminUsersPage() {
   };
 
   const toggleBan = async (user: UserRecord) => {
+    if (!db) {
+      setError("Database not initialized.");
+      return;
+    }
     const disabled = !user.disabled;
     const confirmed = window.confirm(`${disabled ? "Ban" : "Unban"} ${user.email || user.name}?`);
     if (!confirmed) return;
@@ -329,6 +343,7 @@ export default function AdminUsersPage() {
         <select
           value={tierFilter}
           onChange={(event) => setTierFilter(event.target.value as "all" | Tier)}
+          aria-label="Filter by tier"
           className="h-10 rounded-md border border-white/10 bg-black/20 px-3 text-sm outline-none focus:border-cyan-400/50"
         >
           <option value="all">All tiers</option>
@@ -337,6 +352,7 @@ export default function AdminUsersPage() {
         <select
           value={statusFilter}
           onChange={(event) => setStatusFilter(event.target.value as StatusFilter)}
+          aria-label="Filter by status"
           className="h-10 rounded-md border border-white/10 bg-black/20 px-3 text-sm outline-none focus:border-cyan-400/50"
         >
           <option value="all">All statuses</option>
@@ -402,6 +418,7 @@ export default function AdminUsersPage() {
                       value={user.tier}
                       disabled={actionLoading === `tier-${user.uid}`}
                       onChange={(event) => changeTier(user, event.target.value as Tier)}
+                      aria-label={`Change tier for ${user.name}`}
                       className="h-8 rounded-md border border-white/10 bg-black/20 px-2 text-xs capitalize outline-none focus:border-cyan-400/50"
                     >
                       {TIERS.map((tier) => <option key={tier} value={tier}>{tier}</option>)}
@@ -450,6 +467,7 @@ export default function AdminUsersPage() {
               type="button"
               onClick={() => setPage((value) => Math.max(1, value - 1))}
               disabled={page === 1}
+              aria-label="Previous page"
               className="rounded-md border border-white/10 p-2 disabled:opacity-40"
             >
               <ChevronLeft className="h-4 w-4" />
@@ -459,6 +477,7 @@ export default function AdminUsersPage() {
               type="button"
               onClick={() => setPage((value) => Math.min(totalPages, value + 1))}
               disabled={page === totalPages}
+              aria-label="Next page"
               className="rounded-md border border-white/10 p-2 disabled:opacity-40"
             >
               <ChevronRight className="h-4 w-4" />
@@ -500,6 +519,7 @@ export default function AdminUsersPage() {
                   <select
                     value={overrideTier}
                     onChange={(event) => setOverrideTier(event.target.value as Tier)}
+                    aria-label="Select override tier"
                     className="h-10 rounded-md border border-white/10 bg-black/20 px-3 text-sm outline-none focus:border-cyan-400/50"
                   >
                     {TIERS.map((tier) => <option key={tier} value={tier}>{tier}</option>)}

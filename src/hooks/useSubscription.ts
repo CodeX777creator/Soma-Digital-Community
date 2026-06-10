@@ -303,7 +303,7 @@ export function useSubscription(): UseSubscriptionResult {
 
   const refreshUserToken = useCallback(async (): Promise<void> => {
     try {
-      await auth.currentUser?.getIdToken(true);
+      await auth?.currentUser?.getIdToken(true);
       await checkSubscriptionStatus();
     } catch (err: unknown) {
       const message = getFriendlyErrorMessage(

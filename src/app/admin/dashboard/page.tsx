@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { collection, onSnapshot, orderBy, query } from "firebase/firestore";
+import { collection, Firestore, onSnapshot, orderBy, query } from "firebase/firestore";
 import {
   Area,
   AreaChart,
@@ -192,9 +192,9 @@ export default function AdminDashboardPage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    const usersQuery = query(collection(db, "users"), orderBy("createdAt", "desc"));
+    const usersQuery = query(collection(db as Firestore, "users"), orderBy("createdAt", "desc"));
     const subscriptionsQuery = query(
-      collection(db, "subscriptions"),
+      collection(db as Firestore, "subscriptions"),
       orderBy("createdAt", "desc")
     );
 

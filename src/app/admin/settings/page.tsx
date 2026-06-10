@@ -69,7 +69,7 @@ function hasAdminAccess(profile: Record<string, any> | null) {
 }
 
 async function loadSettingsStatus() {
-  const token = await auth.currentUser?.getIdToken();
+  const token = await auth?.currentUser?.getIdToken();
   if (!token) throw new Error("Admin session expired.");
 
   const response = await fetch("/api/admin/settings/status", {
@@ -90,6 +90,8 @@ export default function AdminSettingsPage() {
 
   useEffect(() => {
     let unsubProfile: (() => void) | undefined;
+    if (!auth || !db) return;
+    const firestore = db;
     const unsubAuth = onAuthStateChanged(auth, (user) => {
       setAdminUser(user);
       unsubProfile?.();
@@ -99,7 +101,7 @@ export default function AdminSettingsPage() {
         return;
       }
 
-      unsubProfile = onSnapshot(doc(db, "users", user.uid), (snapshot) => {
+      unsubProfile = onSnapshot(doc(firestore, "users", user.uid), (snapshot) => {
         setProfile(snapshot.exists() ? snapshot.data() : null);
       });
     });
@@ -319,9 +321,9 @@ function EnvRow({ item }: { item: EnvStatus }) {
 
 function Detail({ label, value }: { label: string; value: string }) {
   return (
-    <div>
+    <dl>
       <dt className="text-xs uppercase tracking-wider text-white/35">{label}</dt>
       <dd className="mt-1 break-all text-sm text-white/75">{value}</dd>
-    </div>
+    </dl>
   );
 }

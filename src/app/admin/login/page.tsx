@@ -13,6 +13,7 @@ import {
   ShieldCheck,
 } from "lucide-react";
 import {
+  Auth,
   AuthError,
   GoogleAuthProvider,
   User,
@@ -21,7 +22,7 @@ import {
   signInWithPopup,
   signOut,
 } from "firebase/auth";
-import { doc, getDoc } from "firebase/firestore";
+import { doc, Firestore, getDoc } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
 
 type AuthStatus = "checking" | "idle" | "submitting" | "unauthorized";
@@ -78,11 +79,11 @@ export default function AdminLoginPage() {
     setError(null);
 
     try {
-      const userSnap = await getDoc(doc(db, "users", user.uid));
+      const userSnap = await getDoc(doc(db as Firestore, "users", user.uid));
       const profile = userSnap.exists() ? userSnap.data() : undefined;
 
       if (!hasAdminAccess(profile)) {
-        await signOut(auth);
+        await signOut(auth as Auth);
         setStatus("unauthorized");
         setError("Unauthorized. This account does not have admin access.");
         return;
@@ -91,7 +92,7 @@ export default function AdminLoginPage() {
       redirectingRef.current = true;
       router.replace(ADMIN_DASHBOARD_PATH);
     } catch {
-      await signOut(auth);
+      await signOut(auth as Auth);
       setStatus("idle");
       setError("Unable to verify admin access. Please try again.");
     } finally {
@@ -100,7 +101,7 @@ export default function AdminLoginPage() {
   };
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+    const unsubscribe = onAuthStateChanged(auth as Auth, async (user) => {
       if (!user) {
         if (!redirectingRef.current && status === "checking") {
           setStatus("idle");
@@ -121,7 +122,7 @@ export default function AdminLoginPage() {
 
     try {
       const credential = await signInWithEmailAndPassword(
-        auth,
+        auth as Auth,
         email.trim(),
         password
       );
@@ -139,7 +140,7 @@ export default function AdminLoginPage() {
     try {
       const provider = new GoogleAuthProvider();
       provider.setCustomParameters({ prompt: "select_account" });
-      const credential = await signInWithPopup(auth, provider);
+      const credential = await signInWithPopup(auth as Auth, provider);
       await verifyAdmin(credential.user);
     } catch (err) {
       setStatus("idle");

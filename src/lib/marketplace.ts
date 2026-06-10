@@ -62,6 +62,7 @@ function normalizeAsset(id: string, data: Record<string, any>): MarketplaceAsset
 }
 
 export async function getMarketplaceAssets(filters: MarketplaceAssetFilters = {}): Promise<MarketplaceAsset[]> {
+  if (!db) throw new Error('Database not initialized');
   const constraints = [];
 
   if (filters.category && filters.category !== "All Assets") {
@@ -98,6 +99,7 @@ export async function getAssetById(assetId: string): Promise<MarketplaceAsset | 
     return normalizeAsset(assetDoc.id, assetDoc.data() || {});
   }
 
+  if (!db) throw new Error('Database not initialized');
   const assetDoc = await getDoc(doc(db, COLLECTION, assetId));
   if (!assetDoc.exists()) return null;
   return normalizeAsset(assetDoc.id, assetDoc.data());

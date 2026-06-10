@@ -30,8 +30,8 @@ export function SubscriptionManager() {
   const { cancel, loading: cancelLoading } = usePayPalSubscription();
   const { toast } = useToast();
 
-  useEffect(() => {
-    if (!user?.uid) {
+    useEffect(() => {
+    if (!user?.uid || !db) {
       setLoading(false);
       return;
     }

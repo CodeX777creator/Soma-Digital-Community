@@ -80,7 +80,7 @@ export default function MentorPage() {
   const functions = useMemo(() => getFunctions(app), []);
 
   useEffect(() => {
-    if (!user?.uid) return;
+    if (!user?.uid || !db) return;
 
     const threadsQuery = query(
       collection(db, "users", user.uid, "mentorHistory"),
@@ -110,7 +110,7 @@ export default function MentorPage() {
   }, [user?.uid]);
 
   useEffect(() => {
-    if (!user?.uid || !activeThreadId) {
+    if (!user?.uid || !activeThreadId || !db) {
       setMessages([WELCOME_MESSAGE]);
       return;
     }
@@ -150,7 +150,7 @@ export default function MentorPage() {
   }, [messages, isSending]);
 
   const createThread = async (firstMessage?: string): Promise<string> => {
-    if (!user?.uid) {
+    if (!user?.uid || !db) {
       throw new Error("Please sign in to chat with your mentor.");
     }
 
@@ -180,7 +180,7 @@ export default function MentorPage() {
   const sendMessage = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
-    if (!user?.uid || !input.trim() || isSending) return;
+    if (!user?.uid || !db || !input.trim() || isSending) return;
 
     const message = input.trim();
     setInput("");

@@ -109,6 +109,15 @@ export function AccountCreationStep() {
       return;
     }
 
+    if (!auth) {
+      toast({
+        title: "Error",
+        description: "Authentication not initialized.",
+        variant: "destructive"
+      });
+      return;
+    }
+
     setIsLoading(true);
     try {
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
@@ -136,6 +145,15 @@ export function AccountCreationStep() {
   };
 
   const handleGoogleSignup = async () => {
+    if (!auth) {
+      toast({
+        title: "Error",
+        description: "Authentication not initialized.",
+        variant: "destructive"
+      });
+      return;
+    }
+
     setIsLoading(true);
     try {
       const provider = new GoogleAuthProvider();
@@ -156,6 +174,11 @@ export function AccountCreationStep() {
   };
 
   const handleVerificationComplete = async () => {
+    if (!auth) {
+      window.location.reload();
+      return;
+    }
+
     const user = auth.currentUser;
 
     if (!user) {
@@ -203,6 +226,7 @@ export function AccountCreationStep() {
             <button 
               type="button"
               onClick={() => {
+                if (!auth) return;
                 const user = auth.currentUser;
                 if (user) {
                   sendEmailVerification(user);

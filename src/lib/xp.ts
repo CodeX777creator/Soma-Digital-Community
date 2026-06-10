@@ -59,13 +59,14 @@ export async function awardXP(
   type: XPEventType,
   metadata: Record<string, any> | null = null
 ) {
-  if (!userId || xp <= 0) {
+  if (!userId || xp <= 0 || !db) {
     return;
   }
 
-  const userRef = doc(db, 'users', userId);
+  const firestore = db;
+  const userRef = doc(firestore, 'users', userId);
 
-  await runTransaction(db, async (tx) => {
+  await runTransaction(firestore, async (tx) => {
     const userSnap = await tx.get(userRef);
     if (!userSnap.exists()) {
       tx.set(
@@ -89,7 +90,7 @@ export async function awardXP(
 }
 
 export async function calculateWeeklyXP(userId: string): Promise<WeeklyPerformancePoint[]> {
-  if (!userId) return [];
+  if (!userId || !db) return [];
 
   const since = new Date();
   since.setDate(since.getDate() - 6);

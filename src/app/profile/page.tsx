@@ -134,7 +134,7 @@ export default function ProfilePage() {
   };
 
   const handleChangePassword = async () => {
-    if (!user?.email) return;
+    if (!user?.email || !auth) return;
     setIsPasswordSending(true);
     try {
       await sendPasswordResetEmail(auth, user.email);
@@ -148,6 +148,7 @@ export default function ProfilePage() {
   };
 
   const handleLogout = async () => {
+    if (!auth) return;
     await signOut(auth);
     router.push("/");
   };
@@ -182,8 +183,11 @@ export default function ProfilePage() {
                 </div>
                 <div className="text-sm font-bold text-white">{completion.filled}/{completion.total} fields filled</div>
               </div>
-              <div className="h-3 w-full overflow-hidden rounded-full bg-white/10">
-                <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${completion.percent}%` }} />
+              <div
+                className="h-3 w-full overflow-hidden rounded-full bg-white/10"
+                style={{ "--progress": `${completion.percent}%` } as React.CSSProperties}
+              >
+                <div className="h-full w-[var(--progress)] rounded-full bg-primary transition-all" />
               </div>
             </div>
           </GlassCard>
@@ -271,6 +275,7 @@ export default function ProfilePage() {
                     accept="image/*"
                     disabled={!editMode}
                     onChange={handleAvatarFile}
+                    aria-label="Upload avatar image"
                     className="text-sm text-muted-foreground file:mr-4 file:rounded-full file:border-0 file:bg-white/10 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-white/80"
                   />
                 </div>

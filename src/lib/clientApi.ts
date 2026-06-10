@@ -1,6 +1,9 @@
 import { auth } from '@/lib/firebase';
 
 export async function authFetch(input: RequestInfo, init?: RequestInit) {
+  if (!auth) {
+    throw new Error('Authentication not initialized');
+  }
   const currentUser = auth.currentUser;
   if (!currentUser) {
     throw new Error('User not authenticated');

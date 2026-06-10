@@ -15,7 +15,7 @@ const TEMPLATES: MissionTemplate[] = [
 ];
 
 export async function seedMissionsIfMissing(uid: string) {
-  if (!uid) return;
+  if (!uid || !db) return;
 
   const today = new Date().toISOString().slice(0, 10);
   const missionsRef = collection(db, `users/${uid}/missions`);

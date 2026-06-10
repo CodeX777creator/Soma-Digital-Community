@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import React, { FormEvent, useEffect, useId, useMemo, useState } from "react";
 import {
   collection,
   deleteDoc,
@@ -171,6 +171,12 @@ export default function AdminMarketplacePage() {
   const [assetProgress, setAssetProgress] = useState<number | null>(null);
 
   useEffect(() => {
+    if (!db) {
+      setError("Database not initialized.");
+      setLoading(false);
+      return;
+    }
+
     const assetsQuery = query(collection(db, COLLECTION), orderBy("createdAt", "desc"));
 
     return onSnapshot(
@@ -208,6 +214,10 @@ export default function AdminMarketplacePage() {
   }, [assets, publishedFilter, search, tierFilter, typeFilter]);
 
   const openAddModal = () => {
+    if (!db) {
+      setError("Database not initialized.");
+      return;
+    }
     setEditingAsset(null);
     setDraftAssetId(doc(collection(db, COLLECTION)).id);
     setForm(emptyForm);
@@ -233,13 +243,18 @@ export default function AdminMarketplacePage() {
     purpose: "thumbnail" | "asset"
   ) => {
     validateUpload(file, purpose);
-    const uid = auth.currentUser?.uid;
+    const uid = auth?.currentUser?.uid;
 
     if (!uid) {
       throw new Error("Admin session expired. Please sign in again.");
     }
 
+    if (!storage) {
+      throw new Error("Storage not initialized.");
+    }
+
     const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "-");
+    
     const storageRef = ref(storage, `marketplace-assets/${assetId}/${safeName}`);
     const uploadTask = uploadBytesResumable(storageRef, file, {
       customMetadata: {
@@ -267,6 +282,7 @@ export default function AdminMarketplacePage() {
   };
 
   const ensureUploadAssetId = async () => {
+    if (!db) throw new Error("Database not initialized.");
     if (editingAsset) return editingAsset.id;
 
     const assetId = draftAssetId || doc(collection(db, COLLECTION)).id;
@@ -320,6 +336,10 @@ export default function AdminMarketplacePage() {
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (!db) {
+      setError("Database not initialized.");
+      return;
+    }
     setSaving(true);
     setError(null);
 
@@ -369,6 +389,10 @@ export default function AdminMarketplacePage() {
   };
 
   const handleDelete = async (asset: MarketplaceAsset) => {
+    if (!db) {
+      setError("Database not initialized.");
+      return;
+    }
     const confirmed = window.confirm(`Delete "${asset.title}"? This cannot be undone.`);
     if (!confirmed) return;
 
@@ -380,6 +404,10 @@ export default function AdminMarketplacePage() {
   };
 
   const handlePublishedToggle = async (asset: MarketplaceAsset) => {
+    if (!db) {
+      setError("Database not initialized.");
+      return;
+    }
     try {
       await updateDoc(doc(db, COLLECTION, asset.id), {
         published: !asset.published,
@@ -422,6 +450,7 @@ export default function AdminMarketplacePage() {
         <select
           value={typeFilter}
           onChange={(event) => setTypeFilter(event.target.value as "all" | AssetType)}
+          aria-label="Filter by type"
           className="h-10 rounded-md border border-white/10 bg-black/20 px-3 text-sm outline-none focus:border-cyan-400/50"
         >
           <option value="all">All types</option>
@@ -432,6 +461,7 @@ export default function AdminMarketplacePage() {
         <select
           value={tierFilter}
           onChange={(event) => setTierFilter(event.target.value as "all" | AssetTier)}
+          aria-label="Filter by tier"
           className="h-10 rounded-md border border-white/10 bg-black/20 px-3 text-sm outline-none focus:border-cyan-400/50"
         >
           <option value="all">All tiers</option>
@@ -442,6 +472,7 @@ export default function AdminMarketplacePage() {
         <select
           value={publishedFilter}
           onChange={(event) => setPublishedFilter(event.target.value as PublishedFilter)}
+          aria-label="Filter by status"
           className="h-10 rounded-md border border-white/10 bg-black/20 px-3 text-sm outline-none focus:border-cyan-400/50"
         >
           <option value="all">All statuses</option>
@@ -580,6 +611,7 @@ export default function AdminMarketplacePage() {
                   value={form.title}
                   onChange={(event) => setForm({ ...form, title: event.target.value })}
                   className="admin-input"
+                  aria-label="Title"
                 />
               </Field>
 
@@ -590,6 +622,7 @@ export default function AdminMarketplacePage() {
                   onChange={(event) => setForm({ ...form, category: event.target.value })}
                   className="admin-input"
                   placeholder="Sales, Growth, AI, Operations"
+                  aria-label="Category"
                 />
               </Field>
 
@@ -599,6 +632,7 @@ export default function AdminMarketplacePage() {
                   value={form.description}
                   onChange={(event) => setForm({ ...form, description: event.target.value })}
                   className="admin-input min-h-28 resize-y"
+                  aria-label="Description"
                 />
               </Field>
 
@@ -607,6 +641,7 @@ export default function AdminMarketplacePage() {
                   value={form.type}
                   onChange={(event) => setForm({ ...form, type: event.target.value as AssetType })}
                   className="admin-input"
+                  aria-label="Type"
                 >
                   {ASSET_TYPES.map((type) => (
                     <option key={type} value={type}>{type}</option>
@@ -619,6 +654,7 @@ export default function AdminMarketplacePage() {
                   value={form.tier}
                   onChange={(event) => setForm({ ...form, tier: event.target.value as AssetTier })}
                   className="admin-input"
+                  aria-label="Tier"
                 >
                   {ASSET_TIERS.map((tier) => (
                     <option key={tier} value={tier}>{tier}</option>
@@ -632,6 +668,7 @@ export default function AdminMarketplacePage() {
                   onChange={(event) => setForm({ ...form, tags: event.target.value })}
                   className="admin-input"
                   placeholder="funnels, ai, checklist"
+                  aria-label="Tags"
                 />
               </Field>
 
@@ -643,6 +680,7 @@ export default function AdminMarketplacePage() {
                   value={form.price}
                   onChange={(event) => setForm({ ...form, price: event.target.value })}
                   className="admin-input"
+                  aria-label="Price"
                 />
               </Field>
 
@@ -653,6 +691,7 @@ export default function AdminMarketplacePage() {
                     onChange={(event) => setForm({ ...form, thumbnailUrl: event.target.value })}
                     className="admin-input"
                     placeholder="https://..."
+                    aria-label="Thumbnail URL"
                   />
                   <UploadButton icon={ImageIcon} label="Upload Image" accept="image/*" onChange={(event) => handleUpload(event, "thumbnail")} />
                 </div>
@@ -668,6 +707,7 @@ export default function AdminMarketplacePage() {
                     onChange={(event) => setForm({ ...form, assetUrl: event.target.value })}
                     className="admin-input"
                     placeholder="https://..."
+                    aria-label="Asset URL"
                   />
                   <UploadButton icon={FileUp} label="Upload File" onChange={(event) => handleUpload(event, "asset")} />
                 </div>
@@ -777,16 +817,33 @@ function UploadButton({
 }
 
 function ProgressBar({ label, value }: { label: string; value: number }) {
+  const progressRef = React.useRef<HTMLDivElement>(null);
+  
+  React.useEffect(() => {
+    if (progressRef.current) {
+      progressRef.current.style.setProperty("--progress-width", `${value}%`);
+    }
+  }, [value]);
+
   return (
     <div className="mt-2">
       <div className="mb-1 flex justify-between text-xs text-white/45">
         <span>{label}</span>
         <span>{value}%</span>
       </div>
-      <div className="h-2 overflow-hidden rounded-full bg-white/10">
+      <div
+        ref={progressRef}
+        className="h-2 overflow-hidden rounded-full bg-white/10"
+        role="progressbar"
+        aria-label={label}
+        {...{
+          "aria-valuenow": value,
+          "aria-valuemin": 0,
+          "aria-valuemax": 100,
+        }}
+      >
         <div
-          className="h-full rounded-full bg-cyan-400 transition-all"
-          style={{ width: `${value}%` }}
+          className="h-full rounded-full bg-cyan-400 transition-all w-[var(--progress-width)]"
         />
       </div>
     </div>

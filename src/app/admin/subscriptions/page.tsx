@@ -157,8 +157,14 @@ export default function AdminSubscriptionsPage() {
   const [selected, setSelected] = useState<SubscriptionRecord | null>(null);
 
   useEffect(() => {
+    if (!db) {
+      setError("Database not initialized.");
+      setLoading(false);
+      return;
+    }
+    const firestore = db;
     const unsubSubscriptions = onSnapshot(
-      query(collection(db, "subscriptions"), orderBy("updatedAt", "desc")),
+      query(collection(firestore, "subscriptions"), orderBy("updatedAt", "desc")),
       (snapshot) => {
         setSubscriptions(snapshot.docs.map((item) => normalizeSubscription(item.id, item.data())));
         setLoading(false);
@@ -170,7 +176,7 @@ export default function AdminSubscriptionsPage() {
       }
     );
 
-    const unsubUsers = onSnapshot(collection(db, "users"), (snapshot) => {
+    const unsubUsers = onSnapshot(collection(firestore, "users"), (snapshot) => {
       setUsers(
         Object.fromEntries(snapshot.docs.map((userDoc) => [userDoc.id, normalizeUser(userDoc.id, userDoc.data())]))
       );
@@ -236,9 +242,12 @@ export default function AdminSubscriptionsPage() {
             className="h-10 w-full rounded-md border border-white/10 bg-black/20 pl-9 pr-3 text-sm outline-none focus:border-cyan-400/50"
           />
         </label>
-        <FilterSelect value={statusFilter} onChange={(value) => setStatusFilter(value as SubscriptionStatus)} options={STATUSES} />
-        <FilterSelect value={providerFilter} onChange={(value) => setProviderFilter(value as "all" | Provider)} options={PROVIDERS} />
-        <FilterSelect value={tierFilter} onChange={(value) => setTierFilter(value as "all" | Tier)} options={TIERS} />
+
+
+
+        <FilterSelect value={statusFilter} onChange={(value) => setStatusFilter(value as SubscriptionStatus)} options={STATUSES} label="Filter by status" />
+        <FilterSelect value={providerFilter} onChange={(value) => setProviderFilter(value as "all" | Provider)} options={PROVIDERS} label="Filter by provider" />
+        <FilterSelect value={tierFilter} onChange={(value) => setTierFilter(value as "all" | Tier)} options={TIERS} label="Filter by tier" />
       </section>
 
       {error && (
@@ -366,15 +375,18 @@ function FilterSelect({
   value,
   onChange,
   options,
+  label,
 }: {
   value: string;
   onChange: (value: string) => void;
   options: string[];
+  label?: string;
 }) {
   return (
     <select
       value={value}
       onChange={(event) => onChange(event.target.value)}
+      aria-label={label || "Filter options"}
       className="h-10 rounded-md border border-white/10 bg-black/20 px-3 text-sm capitalize outline-none focus:border-cyan-400/50"
     >
       {options.map((option) => (
@@ -480,9 +492,9 @@ function SubscriptionModal({
 
 function Detail({ label, value }: { label: string; value: string }) {
   return (
-    <div>
+    <dl>
       <dt className="text-xs uppercase tracking-wider text-white/35">{label}</dt>
       <dd className="mt-1 break-all text-white/75">{value}</dd>
-    </div>
+    </dl>
   );
 }

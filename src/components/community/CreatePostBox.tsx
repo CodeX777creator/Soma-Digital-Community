@@ -63,6 +63,7 @@ export function CreatePostBox({ selectedChannel = "all" }: CreatePostBoxProps) {
     setImageUploading(true);
     try {
       if (!user) throw new Error('User must be signed in to upload an image');
+      if (!storage) throw new Error('Storage not initialized');
       if (!file.type.startsWith('image/')) {
         throw new Error('Only image files are allowed');
       }

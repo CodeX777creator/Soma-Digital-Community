@@ -47,7 +47,7 @@ export function AdminAssetUpload({ assetId, onUploaded }: AdminAssetUploadProps)
   };
 
   const handleUpload = async () => {
-    if (!user || !selectedFile || !assetId) return;
+    if (!user || !selectedFile || !assetId || !db) return;
 
     setUploading(true);
     setError("");

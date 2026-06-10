@@ -20,6 +20,10 @@ export default function LoginPage() {
 
   const handleEmailLogin = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!auth) {
+      setError("Authentication not initialized.");
+      return;
+    }
     setIsLoading(true);
     setError(null);
     try {
@@ -33,6 +37,10 @@ export default function LoginPage() {
   };
 
   const handleGoogleLogin = async () => {
+    if (!auth) {
+      setError("Authentication not initialized.");
+      return;
+    }
     setIsLoading(true);
     setError(null);
     try {
@@ -59,6 +67,10 @@ export default function LoginPage() {
 
   const handleResetPassword = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!auth) {
+      setError("Authentication not initialized.");
+      return;
+    }
     if (!email) {
       setError("Please enter your email address first.");
       return;

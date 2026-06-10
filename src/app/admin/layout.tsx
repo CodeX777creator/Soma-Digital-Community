@@ -3,8 +3,8 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { ReactNode, useEffect, useMemo, useState } from "react";
-import { onAuthStateChanged, signOut, User } from "firebase/auth";
-import { doc, getDoc } from "firebase/firestore";
+import { Auth, onAuthStateChanged, signOut, User } from "firebase/auth";
+import { doc, Firestore, getDoc } from "firebase/firestore";
 import {
   BarChart3,
   Boxes,
@@ -63,7 +63,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
       return;
     }
 
-    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+    const unsubscribe = onAuthStateChanged(auth as Auth, async (user) => {
       if (!user) {
         setAdminUser(null);
         setChecking(false);
@@ -72,12 +72,12 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
       }
 
       try {
-        const userSnap = await getDoc(doc(db, "users", user.uid));
+        const userSnap = await getDoc(doc(db as Firestore, "users", user.uid));
         const profile = userSnap.exists() ? userSnap.data() : undefined;
 
         if (!hasAdminAccess(profile)) {
           setAdminUser(null);
-          await signOut(auth);
+          await signOut(auth as Auth);
           router.replace("/admin/login");
           return;
         }
@@ -99,7 +99,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
   }, [pathname]);
 
   const handleLogout = async () => {
-    await signOut(auth);
+    await signOut(auth as Auth);
     router.replace("/admin/login");
   };
 

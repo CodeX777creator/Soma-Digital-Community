@@ -38,7 +38,10 @@ export interface NotificationRecord extends NotificationPayload {
   createdAt: any;
 }
 
-const notificationsCollection = (userId: string) => collection(db, "users", userId, "notifications");
+const notificationsCollection = (userId: string) => {
+  if (!db) throw new Error('Database not initialized');
+  return collection(db, "users", userId, "notifications");
+};
 
 export async function createNotification(
   userId: string,
@@ -65,6 +68,7 @@ export async function markNotificationRead(userId: string, notificationId: strin
   if (!userId) {
     throw new Error("Missing userId for notification");
   }
+  if (!db) throw new Error('Database not initialized');
 
   const notificationRef = doc(db, "users", userId, "notifications", notificationId);
   await updateDoc(notificationRef, {
@@ -76,6 +80,7 @@ export async function deleteNotification(userId: string, notificationId: string)
   if (!userId) {
     throw new Error("Missing userId for notification");
   }
+  if (!db) throw new Error('Database not initialized');
 
   const notificationRef = doc(db, "users", userId, "notifications", notificationId);
   await deleteDoc(notificationRef);
@@ -85,16 +90,18 @@ export async function clearAllNotifications(userId: string) {
   if (!userId) {
     throw new Error("Missing userId for notification");
   }
+  if (!db) throw new Error('Database not initialized');
 
+  const firestore = db;
   const collectionRef = notificationsCollection(userId);
   const snapshot = await getDocs(query(collectionRef, orderBy("createdAt", "desc")));
   if (snapshot.empty) {
     return;
   }
 
-  const batch = writeBatch(db);
+  const batch = writeBatch(firestore);
   snapshot.docs.forEach((docSnapshot) => {
-    batch.delete(doc(db, "users", userId, "notifications", docSnapshot.id));
+    batch.delete(doc(firestore, "users", userId, "notifications", docSnapshot.id));
   });
   await batch.commit();
 }

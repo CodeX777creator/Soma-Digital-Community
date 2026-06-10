@@ -78,6 +78,7 @@ export const postService = {
     imageUrl?: string,
     linkUrl?: string
   ): Promise<string> {
+    if (!db) throw new Error('Database not initialized');
     const postsRef = collection(db, 'posts');
     const docRef = await addDoc(postsRef, {
       authorId: userId,
@@ -106,6 +107,7 @@ export const postService = {
     callback: (posts: Post[]) => void,
     postLimit = 30
   ): () => void {
+    if (!db) throw new Error('Database not initialized');
     const postsRef = collection(db, 'posts');
     const q = query(postsRef, orderBy('createdAt', 'desc'), firestoreLimit(postLimit));
     return onSnapshot(q, (snap: QuerySnapshot<DocumentData>) => {
@@ -121,6 +123,7 @@ export const postService = {
   },
 
   async getPost(postId: string): Promise<Post | null> {
+    if (!db) throw new Error('Database not initialized');
     const postRef = doc(db, 'posts', postId);
     const snap = await getDoc(postRef);
     if (!snap.exists()) return null;
@@ -129,6 +132,7 @@ export const postService = {
 
   // Get the current user's reaction on a post (null = no reaction)
   async getUserReaction(postId: string, userId: string): Promise<ReactionType | null> {
+    if (!db) throw new Error('Database not initialized');
     const reactionRef = doc(db, 'likes', `${postId}_${userId}`);
     const snap = await getDoc(reactionRef);
     if (snap.exists()) return (snap.data() as PostReaction).type;
@@ -141,6 +145,7 @@ export const postService = {
     userId: string,
     callback: (reaction: ReactionType | null) => void
   ): () => void {
+    if (!db) throw new Error('Database not initialized');
     const reactionRef = doc(db, 'likes', `${postId}_${userId}`);
     return onSnapshot(reactionRef, snap => {
       callback(snap.exists() ? (snap.data() as PostReaction).type : null);
@@ -149,6 +154,7 @@ export const postService = {
 
   // Toggle / change reaction — Firestore is the eventual source of truth
   async setReaction(postId: string, userId: string, newReaction: ReactionType | null): Promise<void> {
+    if (!db) throw new Error('Database not initialized');
     const reactionId = `${postId}_${userId}`;
     const reactionRef = doc(db, 'likes', reactionId);
     const postRef = doc(db, 'posts', postId);
@@ -195,6 +201,7 @@ export const postService = {
     userData: { name: string; photoURL?: string; tier: string },
     content: string
   ): Promise<string> {
+    if (!db) throw new Error('Database not initialized');
     const commentsRef = collection(db, 'posts', postId, 'comments');
     const docRef = await addDoc(commentsRef, {
       postId,
@@ -215,6 +222,7 @@ export const postService = {
     postId: string,
     callback: (comments: Comment[]) => void
   ): () => void {
+    if (!db) throw new Error('Database not initialized');
     const commentsRef = collection(db, 'posts', postId, 'comments');
     const q = query(commentsRef, orderBy('createdAt', 'asc'));
     return onSnapshot(q, snap => {
@@ -224,6 +232,7 @@ export const postService = {
 
   // Pin / unpin a post (admin)
   async pinPost(postId: string, pinned: boolean): Promise<void> {
+    if (!db) throw new Error('Database not initialized');
     await updateDoc(doc(db, 'posts', postId), { isPinned: pinned });
   },
 };
@@ -282,6 +291,7 @@ export interface UserProfile {
 export const dbService = {
   // User Profile and Goals
   async saveUserProfile(userId: string, data: Partial<UserProfile>) {
+    if (!db) throw new Error('Database not initialized');
     const userRef = doc(db, "users", userId);
 
     // Safety check: Strip client-controlled entitlement fields to prevent overrides
@@ -325,6 +335,7 @@ export const dbService = {
   },
 
   async getUserProfile(userId: string): Promise<UserProfile | null> {
+    if (!db) throw new Error('Database not initialized');
     const userRef = doc(db, "users", userId);
     const snap = await getDoc(userRef);
     return snap.exists() ? snap.data() as UserProfile : null;
@@ -332,6 +343,7 @@ export const dbService = {
 
   // Roadmap persistence
   async saveRoadmap(userId: string, roadmap: any) {
+    if (!db) throw new Error('Database not initialized');
     const roadmapRef = doc(db, `users/${userId}/roadmaps`, "current");
     await setDoc(roadmapRef, {
       ...roadmap,
@@ -341,6 +353,7 @@ export const dbService = {
 
   // Chat Threads
   async createThread(userId: string, title: string) {
+    if (!db) throw new Error('Database not initialized');
     const threadsRef = collection(db, `users/${userId}/mentorHistory`);
     const docRef = await addDoc(threadsRef, {
       title,
@@ -353,6 +366,7 @@ export const dbService = {
   },
 
   async getThreads(userId: string) {
+    if (!db) throw new Error('Database not initialized');
     const threadsRef = collection(db, `users/${userId}/mentorHistory`);
     const q = query(threadsRef, orderBy("lastUpdated", "desc"));
     const snap = await getDocs(q);
@@ -360,6 +374,7 @@ export const dbService = {
   },
 
   async updateThread(userId: string, threadId: string, data: Partial<ChatThread>) {
+    if (!db) throw new Error('Database not initialized');
     const threadRef = doc(db, `users/${userId}/mentorHistory`, threadId);
     await updateDoc(threadRef, {
       ...data,
@@ -369,6 +384,7 @@ export const dbService = {
 
   // Messages
   async saveMessage(userId: string, threadId: string, message: Omit<ChatMessage, 'timestamp'>) {
+    if (!db) throw new Error('Database not initialized');
     const messagesRef = collection(db, `users/${userId}/mentorHistory/${threadId}/messages`);
     await addDoc(messagesRef, {
       ...message,
@@ -381,6 +397,7 @@ export const dbService = {
   },
 
   async getMessages(userId: string, threadId: string) {
+    if (!db) throw new Error('Database not initialized');
     const messagesRef = collection(db, `users/${userId}/mentorHistory/${threadId}/messages`);
     const q = query(messagesRef, orderBy("timestamp", "asc"));
     const snap = await getDocs(q);
@@ -389,6 +406,7 @@ export const dbService = {
 
   // Global Community Stats
   async getGlobalStats() {
+    if (!db) throw new Error('Database not initialized');
     try {
       const usersRef = collection(db, 'users');
       const postsRef = collection(db, 'posts');
@@ -410,6 +428,7 @@ export const dbService = {
   },
 
   async getRecentActivity(limitCount = 4) {
+    if (!db) throw new Error('Database not initialized');
     try {
       const postsRef = collection(db, 'posts');
       const q = query(postsRef, orderBy('createdAt', 'desc'), firestoreLimit(limitCount));
@@ -428,6 +447,7 @@ export const dbService = {
   },
 
   async getRecentMembers(limitCount = 4) {
+    if (!db) throw new Error('Database not initialized');
     try {
       const usersRef = collection(db, 'users');
       const q = query(usersRef, orderBy('createdAt', 'desc'), firestoreLimit(limitCount));

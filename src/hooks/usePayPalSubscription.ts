@@ -82,9 +82,9 @@ export function usePayPalSubscription() {
     [cancelSubscription]
   );
 
-  const refreshUserToken = useCallback(async () => {
+    const refreshUserToken = useCallback(async () => {
     try {
-      if (auth.currentUser) {
+      if (auth?.currentUser) {
         await auth.currentUser.getIdToken(true);
         console.log('User token refreshed');
       }
