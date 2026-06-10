@@ -25,6 +25,7 @@ import {
   User,
 } from "lucide-react";
 import { db } from "@/lib/firebase";
+import { Firestore } from "firebase/firestore";
 import { Post } from "@/lib/db";
 
 type ModeratedPost = Post & {
@@ -126,7 +127,7 @@ export default function AdminContentPage() {
 
   useEffect(() => {
     setLoading(true);
-    const postsQuery = query(collection(db, "posts"), orderBy("createdAt", "desc"));
+    const postsQuery = query(collection(db as Firestore, "posts"), orderBy("createdAt", "desc"));
 
     const unsubscribe = onSnapshot(
       postsQuery,
@@ -189,7 +190,7 @@ export default function AdminContentPage() {
   const handleTogglePin = async (postId: string, currentPinned: boolean) => {
     setProcessingId(postId);
     try {
-      await updateDoc(doc(db, "posts", postId), { isPinned: !currentPinned });
+      await updateDoc(doc(db as Firestore, "posts", postId), { isPinned: !currentPinned });
     } catch (err) {
       console.error("Error toggling pin:", err);
       setError("Failed to update pin status.");
@@ -201,7 +202,7 @@ export default function AdminContentPage() {
   const handleDeletePost = async (postId: string) => {
     setProcessingId(postId);
     try {
-      await deleteDoc(doc(db, "posts", postId));
+      await deleteDoc(doc(db as Firestore, "posts", postId));
       setDeleteConfirm(null);
     } catch (err) {
       console.error("Error deleting post:", err);
@@ -214,7 +215,7 @@ export default function AdminContentPage() {
   const handleFlagPost = async (postId: string, flag: boolean) => {
     setProcessingId(postId);
     try {
-      await updateDoc(doc(db, "posts", postId), {
+            await updateDoc(doc(db as Firestore, "posts", postId), {
         moderationStatus: flag ? "flagged" : "approved",
         moderatedAt: new Date(),
       });
