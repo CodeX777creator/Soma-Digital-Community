@@ -27,21 +27,12 @@ function getRequiredEnvVar(name: string): string {
   return value.trim();
 }
 
-function validateFirebaseConfig(): {
-  apiKey: string;
-  authDomain: string;
-  projectId: string;
-  storageBucket: string;
-  messagingSenderId: string;
-  appId: string;
-} {
-  // Required variables that must be explicitly set
+function createFirebaseConfig() {
   const apiKey = getRequiredEnvVar('NEXT_PUBLIC_FIREBASE_API_KEY');
   const projectId = getRequiredEnvVar('NEXT_PUBLIC_FIREBASE_PROJECT_ID');
   const messagingSenderId = getRequiredEnvVar('NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID');
   const appId = getRequiredEnvVar('NEXT_PUBLIC_FIREBASE_APP_ID');
 
-  // Derive optional values from projectId if not explicitly set
   const authDomain = process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN?.trim() || `${projectId}.firebaseapp.com`;
   const storageBucket = process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET?.trim() || `${projectId}.appspot.com`;
 
@@ -55,32 +46,71 @@ function validateFirebaseConfig(): {
   };
 }
 
-// Initialize Firebase Client SDK with strict validation
-let app: FirebaseApp;
+// Lazy initialization — only runs when first accessed
+let appInstance: FirebaseApp | null = null;
+let authInstance: Auth | null = null;
+let dbInstance: Firestore | null = null;
+let storageInstance: FirebaseStorage | null = null;
 
-try {
-  if (getApps().length > 0) {
-    app = getApp();
-  } else {
-    const firebaseConfig = validateFirebaseConfig();
-    app = initializeApp(firebaseConfig);
+function getAppInstance(): FirebaseApp {
+  if (typeof window === 'undefined') {
+    throw new Error('[Firebase Client] Firebase client SDK should not be initialized on the server side. Use Firebase Admin SDK for server operations.');
   }
-} catch (error: any) {
-  // Re-throw with clear context for debugging
-  throw new Error(`[Firebase Client] Initialization failed: ${error.message}`);
+  
+  if (!appInstance) {
+    if (getApps().length > 0) {
+      appInstance = getApp();
+    } else {
+      const firebaseConfig = createFirebaseConfig();
+      appInstance = initializeApp(firebaseConfig);
+    }
+  }
+  return appInstance;
 }
 
-// Initialize services
-let auth: Auth;
-let db: Firestore;
-let storage: FirebaseStorage;
-
-try {
-  auth = getAuth(app);
-  db = getFirestore(app);
-  storage = getStorage(app);
-} catch (error: any) {
-  throw new Error(`[Firebase Client] Service initialization failed: ${error.message}`);
+export function getAuthInstance(): Auth {
+  if (!authInstance) {
+    authInstance = getAuth(getAppInstance());
+  }
+  return authInstance;
 }
 
-export { app, auth, db, storage };
+export function getDbInstance(): Firestore {
+  if (!dbInstance) {
+    dbInstance = getFirestore(getAppInstance());
+  }
+  return dbInstance;
+}
+
+export function getStorageInstance(): FirebaseStorage {
+  if (!storageInstance) {
+    storageInstance = getStorage(getAppInstance());
+  }
+  return storageInstance;
+}
+
+// Backward-compatible exports that lazy-initialize on first access
+// This prevents build-time crashes while keeping existing imports working
+export const app = new Proxy({} as FirebaseApp, {
+  get(_, prop) {
+    return (getAppInstance() as any)[prop];
+  },
+});
+
+export const auth = new Proxy({} as Auth, {
+  get(_, prop) {
+    return (getAuthInstance() as any)[prop];
+  },
+});
+
+export const db = new Proxy({} as Firestore, {
+  get(_, prop) {
+    return (getDbInstance() as any)[prop];
+  },
+});
+
+export const storage = new Proxy({} as FirebaseStorage, {
+  get(_, prop) {
+    return (getStorageInstance() as any)[prop];
+  },
+});
