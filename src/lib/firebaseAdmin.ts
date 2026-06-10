@@ -79,42 +79,57 @@ function validateAdminConfig(): FirebaseAdminConfig {
   };
 }
 
-// Initialize Firebase Admin SDK with strict validation
-let adminApp: admin.app.App;
+// Lazy initialization - Firebase Admin will only initialize when first accessed
+let adminApp: admin.app.App | undefined;
 
-try {
-  if (!admin.apps.length) {
-    const config = validateAdminConfig();
-    
-    // Use cert() for explicit credential, or applicationDefault() for env var path
-    const credential = process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON 
-      ? admin.credential.cert(config.credential)
-      : admin.credential.applicationDefault();
-    
-    admin.initializeApp({
-      projectId: config.projectId,
-      credential,
-      storageBucket: config.storageBucket,
-    });
+function getAdminApp(): admin.app.App {
+  if (adminApp) return adminApp;
+  
+  if (admin.apps.length > 0) {
+    adminApp = admin.app();
+    return adminApp;
   }
   
-  adminApp = admin.app();
-} catch (error: any) {
-  // Fail fast with clear error message
-  const errorMessage = error.message || 'Unknown error';
+  const config = validateAdminConfig();
   
-  // Log to stderr for server-side visibility (safe, no secrets)
-  // eslint-disable-next-line no-console
-  console.error('[Firebase Admin] CRITICAL: Initialization failed:', errorMessage);
+  const credential = process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON 
+    ? admin.credential.cert(config.credential)
+    : admin.credential.applicationDefault();
   
-  throw new Error(`[Firebase Admin] Initialization failed: ${errorMessage}`);
+  adminApp = admin.initializeApp({
+    projectId: config.projectId,
+    credential,
+    storageBucket: config.storageBucket,
+  });
+  
+  return adminApp;
 }
 
-// Export initialized services
-// These will throw if accessed before successful initialization
-export const adminDb: admin.firestore.Firestore = adminApp.firestore();
-export const adminAuth: admin.auth.Auth = adminApp.auth();
-export const adminStorage: admin.storage.Storage = adminApp.storage();
+// Lazy exports - will initialize on first access
+export function getAdminDb(): admin.firestore.Firestore {
+  return getAdminApp().firestore();
+}
+
+export function getAdminAuth(): admin.auth.Auth {
+  return getAdminApp().auth();
+}
+
+export function getAdminStorage(): admin.storage.Storage {
+  return getAdminApp().storage();
+}
+
+// Backwards compatible exports using getters
+export const adminDb: admin.firestore.Firestore = new Proxy({} as admin.firestore.Firestore, {
+  get: (target, prop) => (getAdminDb() as any)[prop]
+});
+
+export const adminAuth: admin.auth.Auth = new Proxy({} as admin.auth.Auth, {
+  get: (target, prop) => (getAdminAuth() as any)[prop]
+});
+
+export const adminStorage: admin.storage.Storage = new Proxy({} as admin.storage.Storage, {
+  get: (target, prop) => (getAdminStorage() as any)[prop]
+});
 
 // Re-export admin for advanced use cases
 export { admin };
