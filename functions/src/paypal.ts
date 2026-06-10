@@ -1,7 +1,7 @@
-import * as functions from 'firebase-functions';
 import * as admin from 'firebase-admin';
 import axios, { AxiosError } from 'axios';
 import { onCall, onRequest, HttpsError } from 'firebase-functions/v2/https';
+import { defineSecret, defineString } from 'firebase-functions/params';
 import { createNotification } from './notifications';
 import type {
   PayPalAccessTokenResponse,
@@ -48,9 +48,7 @@ interface CanonicalSubscriptionState {
   currentPeriodEnd?: string | null;
 }
 
-interface RuntimeConfigRoot {
-  [key: string]: unknown;
-}
+
 
 interface PayPalWebhookResource {
   id: string;
@@ -73,43 +71,29 @@ const planToDuration: Record<SubscriptionPlan, number> = {
   elite: 1,
 };
 
-function getFunctionsConfigValue(path: string, envKey: string): string {
-  let value: unknown = undefined;
+// Define params
+const paypalClientId = defineSecret('PAYPAL_CLIENT_ID');
+const paypalClientSecret = defineSecret('PAYPAL_CLIENT_SECRET');
+const paypalWebhookId = defineSecret('PAYPAL_WEBHOOK_ID');
+const paypalEnv = defineString('PAYPAL_ENV', { default: 'sandbox' });
+const frontendUrl = defineString('FRONTEND_URL', { default: 'https://soma-digital-community.vercel.app' });
+const paypalPlanExplorer = defineString('PAYPAL_PLAN_EXPLORER', { default: '' });
+const paypalPlanPro = defineString('PAYPAL_PLAN_PRO', { default: '' });
+const paypalPlanElite = defineString('PAYPAL_PLAN_ELITE', { default: '' });
 
-  try {
-    const configFn = (functions as unknown as {
-      config?: () => RuntimeConfigRoot;
-    }).config;
-    const config = typeof configFn === 'function' ? configFn() : {};
-    value = path
-      .split('.')
-      .reduce<unknown>((acc, part) => {
-        if (acc && typeof acc === 'object' && part in acc) {
-          return (acc as Record<string, unknown>)[part];
-        }
-        return undefined;
-      }, config);
-  } catch {
-    value = undefined;
-  }
-
-  return typeof value === 'string' && value.length > 0
-    ? value
-    : process.env[envKey] || '';
+function getPayPalApiBaseUrl(): string {
+  return paypalEnv.value() === 'production'
+    ? 'https://api.paypal.com'
+    : 'https://api.sandbox.paypal.com';
 }
 
-const PAYPAL_ENV = getFunctionsConfigValue('paypal.env', 'PAYPAL_ENV') || 'sandbox';
-const PAYPAL_API_BASE_URL = PAYPAL_ENV === 'production'
-  ? 'https://api.paypal.com'
-  : 'https://api.sandbox.paypal.com';
-
-const FRONTEND_URL = getFunctionsConfigValue('app.frontend_url', 'FRONTEND_URL');
-
-const PAYPAL_PLANS: Record<SubscriptionPlan, string> = {
-  explorer: getFunctionsConfigValue('paypal.planExplorer', 'PAYPAL_PLAN_EXPLORER'),
-  pro: getFunctionsConfigValue('paypal.planPro', 'PAYPAL_PLAN_PRO'),
-  elite: getFunctionsConfigValue('paypal.planElite', 'PAYPAL_PLAN_ELITE'),
-};
+function getPayPalPlans(): Record<SubscriptionPlan, string> {
+  return {
+    explorer: paypalPlanExplorer.value(),
+    pro: paypalPlanPro.value(),
+    elite: paypalPlanElite.value(),
+  };
+}
 
 function isHttpsError(error: unknown): error is HttpsError {
   return error instanceof HttpsError;
@@ -266,8 +250,8 @@ function parsePayPalWebhookEvent(body: unknown): PayPalWebhookEvent {
 }
 
 async function getPayPalAccessToken(): Promise<string> {
-  const clientId = getFunctionsConfigValue('paypal.clientId', 'PAYPAL_CLIENT_ID');
-  const clientSecret = getFunctionsConfigValue('paypal.clientSecret', 'PAYPAL_CLIENT_SECRET');
+  const clientId = paypalClientId.value();
+  const clientSecret = paypalClientSecret.value();
 
   if (!clientId || !clientSecret) {
     throw new HttpsError('failed-precondition', 'PayPal credentials are not configured');
@@ -275,7 +259,7 @@ async function getPayPalAccessToken(): Promise<string> {
 
   try {
     const response = await axios.post<PayPalAccessTokenResponse>(
-      `${PAYPAL_API_BASE_URL}/v1/oauth2/token`,
+      `${getPayPalApiBaseUrl()}/v1/oauth2/token`,
       'grant_type=client_credentials',
       {
         auth: {
@@ -299,6 +283,9 @@ async function getPayPalAccessToken(): Promise<string> {
 }
 
 export const createPayPalSubscription = onCall<CreateSubscriptionRequest>(
+  {
+    secrets: [paypalClientId, paypalClientSecret, paypalPlanExplorer, paypalPlanPro, paypalPlanElite],
+  },
   async (request): Promise<CreateSubscriptionResponse> => {
     const data = request.data as Partial<CreateSubscriptionRequest>;
     const context = request.auth;
@@ -310,6 +297,7 @@ export const createPayPalSubscription = onCall<CreateSubscriptionRequest>(
     assertCreateSubscriptionRequest(data);
 
     const { planId, userId } = data;
+    const PAYPAL_PLANS = getPayPalPlans();
     const planPayPalId = PAYPAL_PLANS[planId];
 
     if (!planPayPalId) {
@@ -329,7 +317,7 @@ export const createPayPalSubscription = onCall<CreateSubscriptionRequest>(
       }
 
       const response = await axios.post<PayPalSubscriptionResponse>(
-        `${PAYPAL_API_BASE_URL}/v1/billing/subscriptions`,
+        `${getPayPalApiBaseUrl()}/v1/billing/subscriptions`,
         {
           plan_id: planPayPalId,
           subscriber: {
@@ -342,8 +330,8 @@ export const createPayPalSubscription = onCall<CreateSubscriptionRequest>(
             brand_name: 'Soma Digital',
             locale: 'en-US',
             user_action: 'SUBSCRIBE_NOW',
-            return_url: data.returnUrl || `${FRONTEND_URL}/dashboard?subscription=success`,
-            cancel_url: data.cancelUrl || `${FRONTEND_URL}/dashboard?subscription=cancelled`,
+            return_url: data.returnUrl || `${frontendUrl.value()}/dashboard?subscription=success`,
+            cancel_url: data.cancelUrl || `${frontendUrl.value()}/dashboard?subscription=cancelled`,
           },
         },
         {
@@ -393,30 +381,34 @@ export const createPayPalSubscription = onCall<CreateSubscriptionRequest>(
   }
 );
 
-export const paypalWebhook = onRequest(async (req, res): Promise<void> => {
-  try {
-    const webhookId = getFunctionsConfigValue('paypal.webhookId', 'PAYPAL_WEBHOOK_ID');
-    const token = await getPayPalAccessToken();
-    const event = parsePayPalWebhookEvent(req.body);
+export const paypalWebhook = onRequest(
+  {
+    secrets: [paypalClientId, paypalClientSecret, paypalWebhookId],
+  },
+  async (req, res): Promise<void> => {
+    try {
+      const webhookId = paypalWebhookId.value();
+      const token = await getPayPalAccessToken();
+      const event = parsePayPalWebhookEvent(req.body);
 
-    const verificationResponse = await axios.post<PayPalVerificationResponse>(
-      `${PAYPAL_API_BASE_URL}/v1/notifications/verify-webhook-signature`,
-      {
-        transmission_id: req.headers['paypal-transmission-id'],
-        transmission_time: req.headers['paypal-transmission-time'],
-        cert_url: req.headers['paypal-cert-url'],
-        auth_algo: req.headers['paypal-auth-algo'],
-        transmission_sig: req.headers['paypal-transmission-sig'],
-        webhook_id: webhookId,
-        webhook_event: req.body,
-      },
-      {
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
+      const verificationResponse = await axios.post<PayPalVerificationResponse>(
+        `${getPayPalApiBaseUrl()}/v1/notifications/verify-webhook-signature`,
+        {
+          transmission_id: req.headers['paypal-transmission-id'],
+          transmission_time: req.headers['paypal-transmission-time'],
+          cert_url: req.headers['paypal-cert-url'],
+          auth_algo: req.headers['paypal-auth-algo'],
+          transmission_sig: req.headers['paypal-transmission-sig'],
+          webhook_id: webhookId,
+          webhook_event: req.body,
         },
-      }
-    );
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+        }
+      );
 
     if (verificationResponse.data.verification_status !== 'SUCCESS') {
       console.warn('Invalid webhook signature');
@@ -543,6 +535,9 @@ export const paypalWebhook = onRequest(async (req, res): Promise<void> => {
 });
 
 export const cancelPayPalSubscription = onCall<CancelSubscriptionRequest>(
+  {
+    secrets: [paypalClientId, paypalClientSecret],
+  },
   async (request): Promise<CancelSubscriptionResponse> => {
     const data = request.data as Partial<CancelSubscriptionRequest>;
     const context = request.auth;
@@ -572,7 +567,7 @@ export const cancelPayPalSubscription = onCall<CancelSubscriptionRequest>(
 
       const token = await getPayPalAccessToken();
       await axios.post(
-        `${PAYPAL_API_BASE_URL}/v1/billing/subscriptions/${subscriptionId}/cancel`,
+        `${getPayPalApiBaseUrl()}/v1/billing/subscriptions/${subscriptionId}/cancel`,
         { reason: 'User-initiated cancellation' },
         {
           headers: {

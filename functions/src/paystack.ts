@@ -1,49 +1,38 @@
-import * as functions from 'firebase-functions';
 import * as admin from 'firebase-admin';
-import { onCall, HttpsError } from 'firebase-functions/v2/https';
+import { onCall, HttpsError, onRequest } from 'firebase-functions/v2/https';
+import { defineSecret, defineString, defineInt } from 'firebase-functions/params';
 import axios from 'axios';
 import crypto from 'crypto';
 import { createNotification } from './notifications';
+import type { Request } from 'express';
 
 const db = admin.firestore();
 const auth = admin.auth();
 
-function getFunctionsConfigValue(path: string, envKey: string): string {
-  let value: unknown = undefined;
-  try {
-    const configFn = (functions as unknown as {
-      config?: () => Record<string, unknown>;
-    }).config;
-    const config = typeof configFn === 'function' ? configFn() : {};
-    value = path
-      .split('.')
-      .reduce<unknown>((acc, part) => {
-        if (acc && typeof acc === 'object' && part in acc) {
-          return (acc as Record<string, unknown>)[part];
-        }
-        return undefined;
-      }, config);
-  } catch {
-    value = undefined;
-  }
-  return typeof value === 'string' && value.length > 0
-    ? value
-    : process.env[envKey] || '';
-}
+// Define params
+const paystackSecretKey = defineSecret('PAYSTACK_SECRET_KEY');
+const paystackCurrency = defineString('PAYSTACK_CURRENCY', { default: 'USD' });
+const frontendUrl = defineString('FRONTEND_URL', { default: 'https://soma-digital-community.vercel.app' });
+const paystackAmountExplorer = defineInt('PAYSTACK_AMOUNT_EXPLORER', { default: 0 });
+const paystackAmountPro = defineInt('PAYSTACK_AMOUNT_PRO', { default: 970000 });
+const paystackAmountElite = defineInt('PAYSTACK_AMOUNT_ELITE', { default: 2970000 });
 
 const PAYSTACK_API_BASE_URL = 'https://api.paystack.co';
-const PAYSTACK_SECRET_KEY = getFunctionsConfigValue('paystack.secret_key', 'PAYSTACK_SECRET_KEY');
-const PAYSTACK_CURRENCY = getFunctionsConfigValue('paystack.currency', 'PAYSTACK_CURRENCY') || 'USD';
-const FRONTEND_URL = getFunctionsConfigValue('app.frontend_url', 'FRONTEND_URL');
-const PAYSTACK_CALLBACK_URL = FRONTEND_URL
-  ? `${FRONTEND_URL}/dashboard?subscription=success`
-  : '';
 
-const PAYSTACK_AMOUNTS: Record<SubscriptionPlan, number> = {
-  explorer: Number(getFunctionsConfigValue('paystack.amount_explorer', 'PAYSTACK_AMOUNT_EXPLORER') || 0),
-  pro: Number(getFunctionsConfigValue('paystack.amount_pro', 'PAYSTACK_AMOUNT_PRO') || 0),
-  elite: Number(getFunctionsConfigValue('paystack.amount_elite', 'PAYSTACK_AMOUNT_ELITE') || 0),
-};
+function getPaystackHeaders(secretKey: string) {
+  return {
+    Authorization: `Bearer ${secretKey}`,
+    'Content-Type': 'application/json',
+  };
+}
+
+function getPaystackAmounts(): Record<SubscriptionPlan, number> {
+  return {
+    explorer: paystackAmountExplorer.value(),
+    pro: paystackAmountPro.value(),
+    elite: paystackAmountElite.value(),
+  };
+}
 
 type SubscriptionPlan = 'explorer' | 'pro' | 'elite';
 type SubscriptionStatus = 'active' | 'cancelled' | 'past_due' | 'expired';
@@ -72,12 +61,7 @@ interface CanonicalSubscriptionState {
   currentPeriodEnd?: string | null;
 }
 
-function getPaystackHeaders() {
-  return {
-    Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`,
-    'Content-Type': 'application/json',
-  };
-}
+
 
 function isValidEmail(email: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
@@ -178,16 +162,14 @@ async function cacheSubscriptionClaim(userId: string, tier: SubscriptionPlan) {
   });
 }
 
-function verifyPaystackSignature(req: functions.https.Request): boolean {
+function verifyPaystackSignature(req: Request, secretKey: string): boolean {
   const signatureHeader = req.headers['x-paystack-signature'];
   const signature = Array.isArray(signatureHeader) ? signatureHeader[0] : signatureHeader;
-  if (!signature) {
-    return false;
-  }
+  if (!signature) return false;
 
   const rawBody = (req as any).rawBody || Buffer.from(JSON.stringify(req.body)).toString('utf8');
   const computedSignature = crypto
-    .createHmac('sha512', PAYSTACK_SECRET_KEY)
+    .createHmac('sha512', secretKey)
     .update(rawBody)
     .digest('hex');
 
@@ -195,8 +177,12 @@ function verifyPaystackSignature(req: functions.https.Request): boolean {
 }
 
 export const initializePaystackTransaction = onCall<InitializeTransactionRequest>(
+  {
+    secrets: [paystackSecretKey],
+  },
   async (request): Promise<InitializeTransactionResponse> => {
     const { email, amount, plan, metadata } = request.data;
+    const secretKey = paystackSecretKey.value();
 
     if (typeof email !== 'string' || !isValidEmail(email)) {
       throw new HttpsError('invalid-argument', 'A valid email address is required');
@@ -206,26 +192,18 @@ export const initializePaystackTransaction = onCall<InitializeTransactionRequest
       throw new HttpsError('invalid-argument', 'Amount must be greater than 0');
     }
 
-    if (!PAYSTACK_SECRET_KEY) {
+    if (!secretKey) {
       throw new HttpsError('internal', 'Paystack secret key is not configured');
     }
 
     try {
       const response = await axios.post(
         `${PAYSTACK_API_BASE_URL}/transaction/initialize`,
-        {
-          email,
-          amount,
-          ...(plan ? { plan } : {}),
-          ...(metadata ? { metadata } : {}),
-        },
-        {
-          headers: getPaystackHeaders(),
-        }
+        { email, amount, ...(plan ? { plan } : {}), ...(metadata ? { metadata } : {}) },
+        { headers: getPaystackHeaders(secretKey) }
       );
 
       const transaction = (response.data as { data?: unknown }).data;
-
       if (!isPaystackTransactionResponse(transaction)) {
         throw new Error('Paystack returned an invalid transaction response');
       }
@@ -245,35 +223,41 @@ export const initializePaystackTransaction = onCall<InitializeTransactionRequest
 /**
  * Create Paystack subscription/charge and return checkout URL
  */
-export const createPaystackSubscription = functions.https.onCall(
+export const createPaystackSubscription = onCall(
+  {
+    secrets: [paystackSecretKey],
+  },
   async (request) => {
     const data = request.data;
     const context = request.auth;
+    const secretKey = paystackSecretKey.value();
+    const callbackUrl = `${frontendUrl.value()}/dashboard?subscription=success`;
 
     if (!context?.uid) {
-      throw new functions.https.HttpsError('unauthenticated', 'User not authenticated');
+      throw new HttpsError('unauthenticated', 'User not authenticated');
     }
 
-    if (!PAYSTACK_SECRET_KEY) {
-      throw new functions.https.HttpsError('failed-precondition', 'Paystack secret key is not configured');
+    if (!secretKey) {
+      throw new HttpsError('failed-precondition', 'Paystack secret key is not configured');
     }
 
     const { planId, userId } = data as { planId: SubscriptionPlan; userId: string };
     const normalizedPlanId = normalizePlanId(planId);
+    const PAYSTACK_AMOUNTS = getPaystackAmounts();
     const amount = PAYSTACK_AMOUNTS[normalizedPlanId];
 
-    if (!amount || !PAYSTACK_CALLBACK_URL) {
-      throw new functions.https.HttpsError('invalid-argument', 'Invalid Paystack plan configuration');
+    if (!amount || !callbackUrl) {
+      throw new HttpsError('invalid-argument', 'Invalid Paystack plan configuration');
     }
 
     if (userId !== context.uid) {
-      throw new functions.https.HttpsError('permission-denied', 'Cannot create subscription for another user');
+      throw new HttpsError('permission-denied', 'Cannot create subscription for another user');
     }
 
     const userRecord = await auth.getUser(context.uid);
     const email = userRecord.email;
     if (!email) {
-      throw new functions.https.HttpsError('failed-precondition', 'User email is required for Paystack checkout');
+      throw new HttpsError('failed-precondition', 'User email is required for Paystack checkout');
     }
 
     try {
@@ -282,17 +266,11 @@ export const createPaystackSubscription = functions.https.onCall(
         {
           email,
           amount,
-          currency: PAYSTACK_CURRENCY,
-          callback_url: PAYSTACK_CALLBACK_URL,
-          metadata: {
-            planId: normalizedPlanId,
-            userId,
-            provider: 'paystack',
-          },
+          currency: paystackCurrency.value(),
+          callback_url: callbackUrl,
+          metadata: { planId: normalizedPlanId, userId, provider: 'paystack' },
         },
-        {
-          headers: getPaystackHeaders(),
-        }
+        { headers: getPaystackHeaders(secretKey) }
       );
 
       const transaction = response.data.data;
@@ -317,13 +295,10 @@ export const createPaystackSubscription = functions.https.onCall(
         }
       );
 
-      return {
-        subscriptionId,
-        authorizationUrl,
-      };
+      return { subscriptionId, authorizationUrl };
     } catch (error) {
       console.error('Failed to create Paystack subscription:', error);
-      throw new functions.https.HttpsError('internal', 'Failed to create Paystack subscription');
+      throw new HttpsError('internal', 'Failed to create Paystack subscription');
     }
   }
 );
@@ -331,13 +306,19 @@ export const createPaystackSubscription = functions.https.onCall(
 /**
  * Paystack webhook handler
  */
-export const paystackWebhook = functions.https.onRequest(async (req, res) => {
-  try {
-    if (!PAYSTACK_SECRET_KEY || !verifyPaystackSignature(req)) {
-      console.warn('Invalid Paystack webhook signature');
-      res.status(401).send('Invalid signature');
-      return;
-    }
+export const paystackWebhook = onRequest(
+  {
+    secrets: [paystackSecretKey],
+  },
+  async (req, res) => {
+    const secretKey = paystackSecretKey.value();
+
+    try {
+      if (!secretKey || !verifyPaystackSignature(req, secretKey)) {
+        console.warn('Invalid Paystack webhook signature');
+        res.status(401).send('Invalid signature');
+        return;
+      }
 
     const body = req.body;
     const eventType = body.event;
@@ -448,23 +429,28 @@ export const paystackWebhook = functions.https.onRequest(async (req, res) => {
       );
     }
 
-    res.status(200).json({ success: true });
-  } catch (error) {
-    console.error('Paystack webhook error:', error);
-    res.status(200).json({ error: error instanceof Error ? error.message : 'Unknown error' });
+        res.status(200).json({ success: true });
+    } catch (error) {
+      console.error('Paystack webhook error:', error);
+      res.status(200).json({ error: error instanceof Error ? error.message : 'Unknown error' });
+    }
   }
-});
+);
 
 /**
  * Cancel Paystack subscription (user-initiated)
  */
-export const cancelPaystackSubscription = functions.https.onCall(
+export const cancelPaystackSubscription = onCall(
+  {
+    secrets: [paystackSecretKey],
+  },
   async (request) => {
     const data = request.data;
     const context = request.auth;
+    const secretKey = paystackSecretKey.value();
 
     if (!context?.uid) {
-      throw new functions.https.HttpsError('unauthenticated', 'User not authenticated');
+      throw new HttpsError('unauthenticated', 'User not authenticated');
     }
 
     const { subscriptionId } = data as { subscriptionId: string };
@@ -473,21 +459,21 @@ export const cancelPaystackSubscription = functions.https.onCall(
     const subscriptionSnap = await subscriptionRef.get();
 
     if (!subscriptionSnap.exists) {
-      throw new functions.https.HttpsError('not-found', 'Subscription not found');
+      throw new HttpsError('not-found', 'Subscription not found');
     }
 
     const subscriptionData = subscriptionSnap.data();
     if (subscriptionData?.userId !== userId) {
-      throw new functions.https.HttpsError('permission-denied', 'Cannot cancel someone else\'s subscription');
+      throw new HttpsError('permission-denied', 'Cannot cancel someone else\'s subscription');
     }
 
     try {
-      if (PAYSTACK_SECRET_KEY && subscriptionData?.paystackReference) {
+      if (secretKey && subscriptionData?.paystackReference) {
         try {
           await axios.post(
             `${PAYSTACK_API_BASE_URL}/subscription/${subscriptionData.paystackReference}/disable`,
             {},
-            { headers: getPaystackHeaders() }
+            { headers: getPaystackHeaders(secretKey) }
           );
         } catch (innerError) {
           console.warn('Paystack disable call failed, falling back to local state update', innerError);
@@ -501,28 +487,17 @@ export const cancelPaystackSubscription = functions.https.onCall(
         null
       );
 
-      await saveCanonicalSubscriptionState(
-        userId,
-        subscriptionId,
-        canonicalState,
-        {
-          status: 'cancelled',
-          cancelledAt: admin.firestore.FieldValue.serverTimestamp(),
-        }
-      );
+      await saveCanonicalSubscriptionState(userId, subscriptionId, canonicalState, {
+        status: 'cancelled',
+        cancelledAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
       await cacheSubscriptionClaim(userId, 'explorer');
-      await createNotification(
-        userId,
-        'subscription',
-        'Subscription cancelled',
-        'Your Paystack subscription has been cancelled successfully.',
-        '/dashboard'
-      );
+      await createNotification(userId, 'subscription', 'Subscription cancelled', 'Your Paystack subscription has been cancelled successfully.', '/dashboard');
 
       return { success: true };
     } catch (error) {
       console.error('Failed to cancel Paystack subscription:', error);
-      throw new functions.https.HttpsError('internal', 'Failed to cancel Paystack subscription');
+      throw new HttpsError('internal', 'Failed to cancel Paystack subscription');
     }
   }
 );

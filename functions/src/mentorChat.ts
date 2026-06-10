@@ -2,6 +2,7 @@ import * as functions from 'firebase-functions';
 import { onCall, HttpsError } from 'firebase-functions/v2/https';
 import { getFirestore, Timestamp } from 'firebase-admin/firestore';
 import { GoogleGenAI } from '@google/genai';
+import { defineSecret, defineString } from 'firebase-functions/params';
 
 interface MentorChatRequest {
   message: string;
@@ -25,30 +26,9 @@ const SYSTEM_PROMPT =
 
 const db = getFirestore();
 
-function getFunctionsConfigValue(path: string, envKey: string): string {
-  let value: unknown = undefined;
-
-  try {
-    const configFn = (functions as unknown as {
-      config?: () => Record<string, unknown>;
-    }).config;
-    const config = typeof configFn === 'function' ? configFn() : {};
-    value = path
-      .split('.')
-      .reduce<unknown>((acc, part) => {
-        if (acc && typeof acc === 'object' && part in acc) {
-          return (acc as Record<string, unknown>)[part];
-        }
-        return undefined;
-      }, config);
-  } catch {
-    value = undefined;
-  }
-
-  return typeof value === 'string' && value.length > 0
-    ? value
-    : process.env[envKey] || '';
-}
+// Define params
+const geminiApiKey = defineSecret('GEMINI_API_KEY');
+const geminiModel = defineString('GEMINI_MODEL', { default: 'gemini-2.0-flash' });
 
 function assertMentorChatRequest(data: Partial<MentorChatRequest>): asserts data is MentorChatRequest {
   if (typeof data.message !== 'string' || data.message.trim().length === 0) {
@@ -104,6 +84,13 @@ function extractResponseText(response: { text?: string | (() => string) }): stri
 }
 
 export const mentorChat = onCall<MentorChatRequest>(
+  {
+    cors: true,
+    maxInstances: 10,
+    memory: '256MiB',
+    timeoutSeconds: 30,
+    secrets: [geminiApiKey],
+  },
   async (request): Promise<MentorChatResponse> => {
     const data = request.data as Partial<MentorChatRequest>;
     const authUid = request.auth?.uid;
@@ -122,7 +109,7 @@ export const mentorChat = onCall<MentorChatRequest>(
       throw new HttpsError('permission-denied', 'You can only chat in your own mentor threads');
     }
 
-    const apiKey = getFunctionsConfigValue('gemini.api_key', 'GEMINI_API_KEY');
+    const apiKey = geminiApiKey.value();
 
     if (!apiKey) {
       throw new HttpsError('failed-precondition', 'Gemini API key is not configured');
@@ -138,7 +125,7 @@ export const mentorChat = onCall<MentorChatRequest>(
 
       const ai = new GoogleGenAI({ apiKey });
       const result = await ai.models.generateContent({
-        model: process.env.GEMINI_MODEL || 'gemini-2.0-flash',
+        model: geminiModel.value(),
         contents: buildPrompt(history, message),
         config: {
           systemInstruction: SYSTEM_PROMPT,

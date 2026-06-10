@@ -163,7 +163,11 @@ service cloud.firestore {
     }
 
     match /marketplaceAssets/{assetId} {
-      allow read: if resource.data.published == true || isContentManager();
+      // Allow authenticated users to query marketplace assets
+      // List/get operations: allow query to execute, filtering happens at query level
+      allow list: if isAuthed();
+      // Get single doc: check published flag or is content manager
+      allow get: if resource.data.published == true || isContentManager();
       allow create, update, delete: if isContentManager();
     }
   }
