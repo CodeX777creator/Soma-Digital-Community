@@ -11,6 +11,7 @@ import {
   doc,
   runTransaction,
   increment,
+  onSnapshot,
 } from 'firebase/firestore';
 import { useAuth } from '@/providers/AuthProvider';
 import { authFetch } from '@/lib/clientApi';
@@ -228,40 +229,53 @@ export function useDailyMissions() {
   return { missions, loading, error, completeMission };
 }
 
-// Hook for dashboard stats
+// Hook for dashboard stats - reads directly from Firestore for real-time updates
 export function useDashboardStats() {
   const { user } = useAuth();
   const [stats, setStats] = useState<UserStats | null>(null);
 
   useEffect(() => {
-    if (!user?.uid) {
+    if (!user?.uid || !db) {
       setStats(null);
       return;
     }
 
-    const fetchStats = async () => {
-      try {
-        const response = await authFetch('/api/dashboard/stats');
-        if (!response.ok) {
-          const error = await response.json();
-          throw new Error(error?.error || response.statusText);
+    // Use Firestore onSnapshot for real-time subscription updates
+    const userRef = doc(db, 'users', user.uid);
+    const unsubscribe = onSnapshot(
+      userRef,
+      (snapshot) => {
+        if (!snapshot.exists()) {
+          setStats(null);
+          return;
         }
 
-        const data = await response.json();
+        const data = snapshot.data();
+        const xp = typeof data.xp === 'number' ? data.xp : 0;
+        
+        // Check multiple possible locations for tier info
+        // Priority: subscription.subscriptionPlan > subscriptionTier > tier > 'explorer'
+        const tier = data.subscription?.subscriptionPlan 
+          || data.subscription?.plan 
+          || data.subscriptionTier 
+          || data.tier 
+          || 'explorer';
+
         setStats({
-          currentXP: data.xp || 0,
-          level: data.level || 1,
-          streak: data.streak || 0,
-          tier: data.subscription?.plan || 'explorer',
-          goal: data.goal || null,
+          currentXP: xp,
+          level: Math.max(1, Math.floor(xp / 1000) + 1),
+          streak: typeof data.streak === 'number' ? data.streak : 0,
+          tier: tier as 'explorer' | 'pro' | 'elite',
+          goal: typeof data.goal === 'string' ? data.goal : null,
         });
-      } catch (err) {
-        console.error('Failed to fetch dashboard stats', err);
+      },
+      (error) => {
+        console.error('Failed to listen to user stats:', error);
         setStats(null);
       }
-    };
+    );
 
-    fetchStats();
+    return unsubscribe;
   }, [user?.uid]);
 
   return stats;

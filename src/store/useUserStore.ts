@@ -108,17 +108,27 @@ export const useUserStore = create<UserState>()(
 
       updateRoadmapStatus: (roadmapStatus) => set({ roadmapStatus }),
 
-      syncProfile: (data) => set((state) => ({
-        xp: data.xp ?? state.xp,
-        level: data.level ?? state.level,
-        tier: data.tier ?? state.tier,
-        unlockedFeatures: getFeaturesForTier(data.tier ?? state.tier),
-        // Sync Growth Engine Fields
-        ownsLegacyBuilders: data.ownsLegacyBuilders ?? state.ownsLegacyBuilders,
-        engagementScore: data.engagementScore ?? state.engagementScore,
-        growthAssessmentResult: data.growthAssessmentResult ?? state.growthAssessmentResult,
-        growthAssessmentDismissed: data.growthAssessmentDismissed ?? state.growthAssessmentDismissed,
-      })),
+      syncProfile: (data) => set((state) => {
+        // Check multiple possible locations for tier info
+        // Priority: subscription.subscriptionPlan > subscription.plan > subscriptionTier > tier > existing
+        const newTier = data.subscription?.subscriptionPlan 
+          || data.subscription?.plan 
+          || data.subscriptionTier 
+          || data.tier 
+          || state.tier;
+
+        return {
+          xp: data.xp ?? state.xp,
+          level: data.level ?? state.level,
+          tier: newTier,
+          unlockedFeatures: getFeaturesForTier(newTier),
+          // Sync Growth Engine Fields
+          ownsLegacyBuilders: data.ownsLegacyBuilders ?? state.ownsLegacyBuilders,
+          engagementScore: data.engagementScore ?? state.engagementScore,
+          growthAssessmentResult: data.growthAssessmentResult ?? state.growthAssessmentResult,
+          growthAssessmentDismissed: data.growthAssessmentDismissed ?? state.growthAssessmentDismissed,
+        };
+      }),
 
       clearState: () => set({
         xp: 0,

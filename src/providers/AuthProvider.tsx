@@ -1,9 +1,9 @@
 "use client";
 
-import React, { createContext, useContext, useEffect, useState } from "react";
+import React, { createContext, useContext, useEffect, useState, useRef } from "react";
 import { onAuthStateChanged, User } from "firebase/auth";
-import { serverTimestamp } from "firebase/firestore";
-import { auth } from "@/lib/firebase";
+import { serverTimestamp, doc, onSnapshot } from "firebase/firestore";
+import { auth, db } from "@/lib/firebase";
 import { dbService, UserProfile } from "@/lib/db";
 import { useUserStore } from "@/store/useUserStore";
 import { awardXP } from "@/lib/xp";
@@ -22,6 +22,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [userData, setUserData] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const { syncProfile, clearState } = useUserStore();
+  const firestoreUnsubscribeRef = useRef<(() => void) | null>(null);
 
   const refreshProfile = async () => {
     if (!user) return;
@@ -33,6 +34,34 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       console.error('Failed to refresh user profile:', error);
     }
   };
+
+  // Set up real-time Firestore listener for user profile
+  useEffect(() => {
+    if (!user?.uid || !db) return;
+
+    // Clean up previous listener
+    if (firestoreUnsubscribeRef.current) {
+      firestoreUnsubscribeRef.current();
+    }
+
+    const userRef = doc(db, 'users', user.uid);
+    const unsubscribe = onSnapshot(
+      userRef,
+      (snapshot) => {
+        if (snapshot.exists()) {
+          const profile = snapshot.data() as UserProfile;
+          setUserData(profile);
+          syncProfile(profile);
+        }
+      },
+      (error) => {
+        console.error('AuthProvider Firestore listener error:', error);
+      }
+    );
+
+    firestoreUnsubscribeRef.current = unsubscribe;
+    return () => unsubscribe();
+  }, [user?.uid, syncProfile]);
 
   useEffect(() => {
     if (!auth) {

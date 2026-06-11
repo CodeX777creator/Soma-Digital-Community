@@ -1,5 +1,6 @@
 import type {Metadata} from 'next';
 import './globals.css';
+import { SpeedInsights } from "@vercel/speed-insights/next";
 
 export const metadata: Metadata = {
   title: 'Soma Digital Community | AI-Powered Business Growth',
@@ -25,6 +26,7 @@ export default function RootLayout({
         <AuthProvider>
           <PayPalProvider>
             {children}
+            <SpeedInsights />
           </PayPalProvider>
         </AuthProvider>
       </body>
