@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { Cpu, ArrowRight, Mail, Lock, Loader2, Eye, EyeOff, ChevronLeft } from "lucide-react";
-import { signInWithEmailAndPassword, signInWithPopup, signInWithRedirect, getRedirectResult, GoogleAuthProvider, sendPasswordResetEmail, getAdditionalUserInfo, signOut } from "firebase/auth";
+import { signInWithEmailAndPassword, signInWithRedirect, getRedirectResult, GoogleAuthProvider, sendPasswordResetEmail, getAdditionalUserInfo, signOut } from "firebase/auth";
 import { auth } from "@/lib/firebase";
 import { useToast } from "@/hooks/use-toast";
 
@@ -81,34 +81,9 @@ export default function LoginPage() {
         prompt: 'select_account'
       });
       
-      let credential;
-      try {
-        // Try popup first (better UX)
-        credential = await signInWithPopup(auth, provider);
-      } catch (popupErr: any) {
-        // If popup is blocked or fails due to COOP/COEP, fall back to redirect
-        if (popupErr.code === 'auth/popup-blocked' || 
-            popupErr.code === 'auth/cancelled-popup-request' ||
-            popupErr.message?.includes('Cross-Origin-Opener-Policy')) {
-          await signInWithRedirect(auth, provider);
-          return; // Redirect will navigate away
-        }
-        throw popupErr;
-      }
-      
-      const info = getAdditionalUserInfo(credential);
-
-      if (info?.isNewUser) {
-        await signOut(auth);
-        toast({
-          title: "Let's set up your profile first",
-          description: "New members complete onboarding before account activation.",
-        });
-        router.push("/open");
-        return;
-      }
-
-      router.push("/dashboard");
+      // Use redirect flow to avoid COOP/popup issues entirely
+      await signInWithRedirect(auth, provider);
+      // Page will redirect to Google and back - result handled in useEffect above
     } catch (err: any) {
       console.error("Google sign-in error:", err);
       setError(err.message || "Google sign-in failed.");

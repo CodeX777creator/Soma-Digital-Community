@@ -19,8 +19,8 @@ import {
   User,
   onAuthStateChanged,
   signInWithEmailAndPassword,
-  signInWithPopup,
   signInWithRedirect,
+  getRedirectResult,
   signOut,
 } from "firebase/auth";
 import { doc, Firestore, getDoc } from "firebase/firestore";
@@ -106,6 +106,21 @@ export default function AdminLoginPage() {
   };
 
   useEffect(() => {
+    // Handle redirect result from Google Sign-In
+    const checkRedirectResult = async () => {
+      try {
+        const result = await getRedirectResult(auth as Auth);
+        if (result?.user) {
+          await verifyAdmin(result.user);
+        }
+      } catch (err) {
+        console.error("Redirect result error:", err);
+        setStatus("idle");
+        setError(getAuthErrorMessage(err));
+      }
+    };
+    checkRedirectResult();
+
     const unsubscribe = onAuthStateChanged(auth as Auth, async (user) => {
       if (!user) {
         if (!redirectingRef.current && status === "checking") {
@@ -146,21 +161,9 @@ export default function AdminLoginPage() {
       const provider = new GoogleAuthProvider();
       provider.setCustomParameters({ prompt: "select_account" });
       
-      let credential;
-      try {
-        credential = await signInWithPopup(auth as Auth, provider);
-      } catch (popupErr: any) {
-        // If popup is blocked or fails due to COOP/COEP, fall back to redirect
-        if (popupErr.code === 'auth/popup-blocked' || 
-            popupErr.code === 'auth/cancelled-popup-request' ||
-            popupErr.message?.includes('Cross-Origin-Opener-Policy')) {
-          await signInWithRedirect(auth as Auth, provider);
-          return;
-        }
-        throw popupErr;
-      }
-      
-      await verifyAdmin(credential.user);
+      // Use redirect flow to avoid COOP/popup issues entirely
+      await signInWithRedirect(auth as Auth, provider);
+      // Page will redirect to Google and back - result handled in useEffect above
     } catch (err) {
       console.error("Google sign-in error:", err);
       setStatus("idle");
