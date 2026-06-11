@@ -1,10 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { Cpu, ArrowRight, Mail, Lock, Loader2, Eye, EyeOff, ChevronLeft } from "lucide-react";
-import { signInWithEmailAndPassword, signInWithPopup, GoogleAuthProvider, sendPasswordResetEmail, getAdditionalUserInfo, signOut } from "firebase/auth";
+import { signInWithEmailAndPassword, signInWithPopup, signInWithRedirect, getRedirectResult, GoogleAuthProvider, sendPasswordResetEmail, getAdditionalUserInfo, signOut } from "firebase/auth";
 import { auth } from "@/lib/firebase";
 import { useToast } from "@/hooks/use-toast";
 
@@ -12,11 +12,43 @@ export default function LoginPage() {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(true); // Start loading to check redirect result
   const [error, setError] = useState<string | null>(null);
   const [showPassword, setShowPassword] = useState(false);
   const [isForgotPassword, setIsForgotPassword] = useState(false);
   const { toast } = useToast();
+
+  // Handle redirect result from Google Sign-In (fallback when popup is blocked)
+  useEffect(() => {
+    const checkRedirectResult = async () => {
+      if (!auth) {
+        setIsLoading(false);
+        return;
+      }
+      try {
+        const result = await getRedirectResult(auth);
+        if (result) {
+          const info = getAdditionalUserInfo(result);
+          if (info?.isNewUser) {
+            await signOut(auth);
+            toast({
+              title: "Let's set up your profile first",
+              description: "New members complete onboarding before account activation.",
+            });
+            router.push("/open");
+            return;
+          }
+          router.push("/dashboard");
+        }
+      } catch (err: any) {
+        console.error("Redirect result error:", err);
+        setError(err.message || "Google sign-in failed after redirect.");
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    checkRedirectResult();
+  });
 
   const handleEmailLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -45,7 +77,25 @@ export default function LoginPage() {
     setError(null);
     try {
       const provider = new GoogleAuthProvider();
-      const credential = await signInWithPopup(auth, provider);
+      provider.setCustomParameters({
+        prompt: 'select_account'
+      });
+      
+      let credential;
+      try {
+        // Try popup first (better UX)
+        credential = await signInWithPopup(auth, provider);
+      } catch (popupErr: any) {
+        // If popup is blocked or fails due to COOP/COEP, fall back to redirect
+        if (popupErr.code === 'auth/popup-blocked' || 
+            popupErr.code === 'auth/cancelled-popup-request' ||
+            popupErr.message?.includes('Cross-Origin-Opener-Policy')) {
+          await signInWithRedirect(auth, provider);
+          return; // Redirect will navigate away
+        }
+        throw popupErr;
+      }
+      
       const info = getAdditionalUserInfo(credential);
 
       if (info?.isNewUser) {
@@ -60,6 +110,7 @@ export default function LoginPage() {
 
       router.push("/dashboard");
     } catch (err: any) {
+      console.error("Google sign-in error:", err);
       setError(err.message || "Google sign-in failed.");
       setIsLoading(false);
     }

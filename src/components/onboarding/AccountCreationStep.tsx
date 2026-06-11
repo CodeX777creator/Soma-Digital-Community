@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Sparkles, ArrowRight, UserPlus, Loader2, Eye, EyeOff, Lock, CheckCircle2, AlertCircle, ChevronLeft, Mail } from "lucide-react";
 import { useOnboardingStore } from "@/store/useOnboardingStore";
 import { Badge } from "@/components/ui/badge";
-import { createUserWithEmailAndPassword, updateProfile, signInWithPopup, GoogleAuthProvider, sendEmailVerification } from "firebase/auth";
+import { createUserWithEmailAndPassword, updateProfile, signInWithPopup, signInWithRedirect, GoogleAuthProvider, sendEmailVerification } from "firebase/auth";
 import { auth } from "@/lib/firebase";
 import { dbService } from "@/lib/db";
 import { createNotification } from "@/lib/notifications";
@@ -157,12 +157,29 @@ export function AccountCreationStep() {
     setIsLoading(true);
     try {
       const provider = new GoogleAuthProvider();
-      const userCredential = await signInWithPopup(auth, provider);
-      const user = userCredential.user;
+      provider.setCustomParameters({
+        prompt: 'select_account'
+      });
       
+      let userCredential;
+      try {
+        userCredential = await signInWithPopup(auth, provider);
+      } catch (popupErr: any) {
+        // If popup is blocked or fails due to COOP/COEP, fall back to redirect
+        if (popupErr.code === 'auth/popup-blocked' || 
+            popupErr.code === 'auth/cancelled-popup-request' ||
+            popupErr.message?.includes('Cross-Origin-Opener-Policy')) {
+          await signInWithRedirect(auth, provider);
+          return;
+        }
+        throw popupErr;
+      }
+      
+      const user = userCredential.user;
       await saveUserData(user, user.displayName || "Explorer");
       handlePostSignup();
     } catch (error: any) {
+      console.error("Google sign-up error:", error);
       toast({
         title: "Error",
         description: error.message || "Google sign-in failed.",

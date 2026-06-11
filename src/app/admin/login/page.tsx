@@ -20,6 +20,7 @@ import {
   onAuthStateChanged,
   signInWithEmailAndPassword,
   signInWithPopup,
+  signInWithRedirect,
   signOut,
 } from "firebase/auth";
 import { doc, Firestore, getDoc } from "firebase/firestore";
@@ -39,6 +40,10 @@ function getAuthErrorMessage(error: unknown) {
       return "The email or password is incorrect.";
     case "auth/popup-closed-by-user":
       return "Google sign-in was closed before it finished.";
+    case "auth/popup-blocked":
+      return "Popup was blocked. Please allow popups for this site or try again.";
+    case "auth/cancelled-popup-request":
+      return "Multiple popup requests detected. Please try again.";
     case "auth/too-many-requests":
       return "Too many attempts. Please wait a moment and try again.";
     default:
@@ -140,9 +145,24 @@ export default function AdminLoginPage() {
     try {
       const provider = new GoogleAuthProvider();
       provider.setCustomParameters({ prompt: "select_account" });
-      const credential = await signInWithPopup(auth as Auth, provider);
+      
+      let credential;
+      try {
+        credential = await signInWithPopup(auth as Auth, provider);
+      } catch (popupErr: any) {
+        // If popup is blocked or fails due to COOP/COEP, fall back to redirect
+        if (popupErr.code === 'auth/popup-blocked' || 
+            popupErr.code === 'auth/cancelled-popup-request' ||
+            popupErr.message?.includes('Cross-Origin-Opener-Policy')) {
+          await signInWithRedirect(auth as Auth, provider);
+          return;
+        }
+        throw popupErr;
+      }
+      
       await verifyAdmin(credential.user);
     } catch (err) {
+      console.error("Google sign-in error:", err);
       setStatus("idle");
       setError(getAuthErrorMessage(err));
     }
