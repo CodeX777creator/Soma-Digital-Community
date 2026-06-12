@@ -1,10 +1,10 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { GlassCard } from "@/components/ui/glass-card";
 import { Button } from "@/components/ui/button";
 import { Sparkles, ArrowRight, UserPlus, Loader2, Eye, EyeOff, Lock, CheckCircle2, AlertCircle, ChevronLeft, Mail } from "lucide-react";
 import { useOnboardingStore } from "@/store/useOnboardingStore";
 import { Badge } from "@/components/ui/badge";
-import { createUserWithEmailAndPassword, updateProfile, signInWithRedirect, GoogleAuthProvider, sendEmailVerification } from "firebase/auth";
+import { createUserWithEmailAndPassword, updateProfile, signInWithRedirect, GoogleAuthProvider, sendEmailVerification, getRedirectResult } from "firebase/auth";
 import { auth } from "@/lib/firebase";
 import { dbService } from "@/lib/db";
 import { createNotification } from "@/lib/notifications";
@@ -21,12 +21,62 @@ export function AccountCreationStep() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(true); // Start loading to check redirect result
   const [verificationSent, setVerificationSent] = useState(false);
   const { toast } = useToast();
   const router = useRouter();
   const searchParams = useSearchParams();
   const redirectUrl = searchParams.get("redirect");
+
+  // Handle Google Sign-In redirect result
+  useEffect(() => {
+    const checkRedirectResult = async () => {
+      if (!auth) {
+        setIsLoading(false);
+        return;
+      }
+      try {
+        console.log('[Google Signup] Checking redirect result...');
+        const result = await getRedirectResult(auth);
+        console.log('[Google Signup] Redirect result:', result);
+        
+        if (result?.user) {
+          const user = result.user;
+          console.log('[Google Signup] User authenticated:', user.email);
+          
+          // Save user data to Firestore with onboarding data
+          await saveUserData(user, user.displayName || '');
+          
+          // Show success and redirect
+          toast({
+            title: "Welcome to Soma Digital!",
+            description: "Your account has been created successfully.",
+          });
+          
+          // Redirect based on plan selection
+          if (redirectUrl) {
+            router.push(redirectUrl);
+          } else if (plan === "pro" || plan === "elite") {
+            router.push(`/dashboard?upgrade=${plan}`);
+          } else {
+            router.push("/dashboard");
+          }
+          return;
+        }
+      } catch (err: any) {
+        console.error("[Google Signup] Redirect result error:", err);
+        toast({
+          title: "Sign-in Error",
+          description: err.message || "Google sign-in failed. Please try again.",
+          variant: "destructive"
+        });
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    checkRedirectResult();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handlePostSignup = () => {
     toast({

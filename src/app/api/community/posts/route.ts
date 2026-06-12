@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { requireAuth } from '@/lib/serverAuth';
-import { adminDb } from '@/lib/firebaseAdmin';
+import { adminDb, adminAuth } from '@/lib/firebaseAdmin';
 import { Timestamp } from 'firebase-admin/firestore';
 import { DEFAULT_POST_CHANNEL, isPostChannel } from '@/lib/communityChannels';
 import type { PostType } from '@/lib/db';
@@ -63,7 +63,23 @@ export async function POST(req: Request) {
 
     const userSnap = await adminDb.collection('users').doc(uid).get();
     const userData = userSnap.exists ? userSnap.data() : null;
-    const authorName = userData?.name || userData?.displayName || email || 'Member';
+    
+    // Get Firebase Auth user data as fallback for name
+    const authUser = await adminAuth.getUser(uid).catch(() => null);
+    
+    const authorName = userData?.name 
+      || authUser?.displayName 
+      || userData?.displayName 
+      || email?.split('@')[0] 
+      || 'Member';
+    
+    // If name is missing from Firestore but available in Auth, save it for future use
+    if (!userData?.name && authUser?.displayName && userSnap.exists) {
+      await adminDb.collection('users').doc(uid).update({
+        name: authUser.displayName,
+        updatedAt: Timestamp.now(),
+      });
+    }
     const authorAvatar = userData?.photoURL || userData?.avatarURL || userData?.avatarUrl || '';
     const tier = userData?.tier || userData?.subscription?.subscriptionPlan || userData?.subscription?.plan || 'explorer';
     const authorTier = ['explorer', 'pro', 'elite'].includes(tier) ? tier : 'explorer';
