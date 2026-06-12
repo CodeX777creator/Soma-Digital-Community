@@ -27,7 +27,8 @@ import {
   Quote,
   Lock,
   AlertCircle,
-  Loader
+  Loader,
+  Crown
 } from "lucide-react";
 import {
   AreaChart,
@@ -170,9 +171,25 @@ function DashboardContent() {
             </div>
 
             <div className="flex flex-wrap gap-4 md:gap-8">
-              <Button onClick={() => setShowUpgrade(true)} className="bg-primary hover:bg-primary/90 rounded-xl h-12 px-6 font-bold blue-glow transition-all active:scale-95 text-xs">
-                <Zap className="w-4 h-4 mr-2 fill-white" /> Upgrade for Pro Stats
-              </Button>
+              {/* Dynamic CTA based on tier */}
+              {stats?.tier === 'elite' ? (
+                <Badge className="bg-yellow-500/20 text-yellow-400 border-yellow-500/30 h-12 px-6 text-xs uppercase font-bold flex items-center gap-2">
+                  <Crown className="w-4 h-4" /> Elite Member
+                </Badge>
+              ) : stats?.tier === 'pro' ? (
+                <div className="flex items-center gap-3">
+                  <Badge className="bg-cyan-500/20 text-cyan-400 border-cyan-500/30 h-12 px-6 text-xs uppercase font-bold flex items-center gap-2">
+                    <Zap className="w-4 h-4" /> Pro Active
+                  </Badge>
+                  <Button onClick={() => { setInitialUpgradePlan('elite'); setShowUpgrade(true); }} variant="outline" className="rounded-xl h-12 px-4 font-bold text-xs border-yellow-500/30 text-yellow-400 hover:bg-yellow-500/10">
+                    <Crown className="w-4 h-4 mr-2" /> Go Elite
+                  </Button>
+                </div>
+              ) : (
+                <Button onClick={() => setShowUpgrade(true)} className="bg-primary hover:bg-primary/90 rounded-xl h-12 px-6 font-bold blue-glow transition-all active:scale-95 text-xs">
+                  <Zap className="w-4 h-4 mr-2 fill-white" /> Upgrade for Pro Stats
+                </Button>
+              )}
               <div className="h-10 w-px bg-white/5 hidden md:block" />
               <Button asChild size="icon" variant="ghost" className="rounded-full bg-white/5 relative">
                 <Link href="/notifications" aria-label="Notifications">
