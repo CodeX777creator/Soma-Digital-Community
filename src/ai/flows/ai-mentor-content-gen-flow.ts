@@ -3,7 +3,7 @@
  * @fileOverview An AI mentor flow for generating high-performance marketing and business content.
  */
 
-import { ai } from '@/ai/genkit';
+import { ai, KIMI_MODELS } from '@/ai/genkit';
 import { z } from 'genkit';
 
 const ContentGenInputSchema = z.object({
@@ -25,6 +25,10 @@ export async function generateMentorContent(input: ContentGenInput): Promise<Con
 
 const contentPrompt = ai.definePrompt({
   name: 'aiMentorContentGenPrompt',
+  model: 'kimi',
+  config: {
+    model: KIMI_MODELS.STANDARD,
+  },
   input: { schema: ContentGenInputSchema },
   output: { schema: ContentGenOutputSchema },
   prompt: `You are an elite AI Digital Marketing Coach and Copywriter for Soma Digital. You specialize in teaching members how to create high-converting content, manage social media, and optimize for SEO.

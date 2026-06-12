@@ -1,8 +1,14 @@
 import * as functions from 'firebase-functions';
 import { onCall, HttpsError } from 'firebase-functions/v2/https';
 import { getFirestore, Timestamp } from 'firebase-admin/firestore';
-import { GoogleGenAI } from '@google/genai';
-import { defineSecret, defineString } from 'firebase-functions/params';
+import OpenAI from 'openai';
+import { defineSecret } from 'firebase-functions/params';
+
+/**
+ * @deprecated This Firebase Function is deprecated. Use the Next.js API route /api/mentor/chat instead.
+ * The API route uses the Genkit smart router with automatic model tier selection and fallback.
+ * To be removed in a future release.
+ */
 
 interface MentorChatRequest {
   message: string;
@@ -27,8 +33,7 @@ const SYSTEM_PROMPT =
 const db = getFirestore();
 
 // Define params
-const geminiApiKey = defineSecret('GEMINI_API_KEY');
-const geminiModel = defineString('GEMINI_MODEL', { default: 'gemini-1.5-flash' });
+const kimiApiKey = defineSecret('KIMI_API_KEY');
 
 function assertMentorChatRequest(data: Partial<MentorChatRequest>): asserts data is MentorChatRequest {
   if (typeof data.message !== 'string' || data.message.trim().length === 0) {
@@ -59,47 +64,20 @@ function toMentorMessage(data: FirebaseFirestore.DocumentData): MentorMessage | 
   };
 }
 
-function buildPrompt(history: MentorMessage[], message: string): string {
-  const recentHistory = history.slice(-20);
-  const transcript = recentHistory
-    .map((item) => `${item.role === 'user' ? 'User' : 'Mentor'}: ${item.content}`)
-    .join('\n\n');
-
-  return [
-    transcript ? `Conversation history:\n${transcript}` : 'Conversation history: none yet.',
-    `Current user message:\n${message}`,
-  ].join('\n\n');
-}
-
-function extractResponseText(response: any): string {
-  console.log('Gemini response:', JSON.stringify(response, null, 2));
-  
-  if (typeof response.text === 'string') {
-    return response.text.trim();
-  }
-
-  if (typeof response.text === 'function') {
-    return response.text().trim();
-  }
-  
-  // Handle candidates structure
-  if (response.candidates && response.candidates[0]?.content?.parts) {
-    const parts = response.candidates[0].content.parts;
-    return parts.map((p: any) => p.text || '').join('').trim();
-  }
-
-  return '';
-}
-
+/**
+ * @deprecated Use /api/mentor/chat instead. This function will be removed in a future release.
+ */
 export const mentorChat = onCall<MentorChatRequest>(
   {
     cors: ['https://soma-digital-community.vercel.app', 'http://localhost:3000'],
     maxInstances: 10,
     memory: '256MiB',
     timeoutSeconds: 30,
-    secrets: [geminiApiKey],
+    secrets: [kimiApiKey],
   },
   async (request): Promise<MentorChatResponse> => {
+    console.warn('[DEPRECATED] mentorChat Firebase Function is deprecated. Use /api/mentor/chat instead.');
+    
     const data = request.data as Partial<MentorChatRequest>;
     const authUid = request.auth?.uid;
 
@@ -117,19 +95,17 @@ export const mentorChat = onCall<MentorChatRequest>(
       throw new HttpsError('permission-denied', 'You can only chat in your own mentor threads');
     }
 
-    const apiKey = geminiApiKey.value();
-    const modelName = geminiModel.value();
+    const apiKey = kimiApiKey.value();
     
     console.log('MentorChat called:', { 
       userId, 
       threadId, 
       messageLength: message.length,
-      modelName,
       hasApiKey: !!apiKey 
     });
 
     if (!apiKey) {
-      throw new HttpsError('failed-precondition', 'Gemini API key is not configured. Set GEMINI_API_KEY secret in Firebase.');
+      throw new HttpsError('failed-precondition', 'Kimi API key is not configured. Set KIMI_API_KEY secret in Firebase.');
     }
 
     try {
@@ -140,26 +116,46 @@ export const mentorChat = onCall<MentorChatRequest>(
         .map((doc) => toMentorMessage(doc.data()))
         .filter((item): item is MentorMessage => item !== null);
 
-      const ai = new GoogleGenAI({ apiKey });
-      const prompt = buildPrompt(history, message);
-      console.log('Calling Gemini with model:', modelName);
+      // Initialize Kimi (Moonshot AI) client
+      const kimi = new OpenAI({
+        apiKey,
+        baseURL: 'https://api.moonshot.cn/v1',
+      });
+
+      // Build messages array for Kimi
+      const messages: Array<{role: 'system' | 'user' | 'assistant', content: string}> = [
+        { role: 'system', content: SYSTEM_PROMPT },
+      ];
+
+      // Add conversation history
+      for (const item of history) {
+        messages.push({
+          role: item.role,
+          content: item.content,
+        });
+      }
+
+      // Add current message
+      messages.push({
+        role: 'user',
+        content: message,
+      });
+
+      console.log('Calling Kimi API with', messages.length, 'messages');
       
-      const result = await ai.models.generateContent({
-        model: modelName,
-        contents: prompt,
-        config: {
-          systemInstruction: SYSTEM_PROMPT,
-          temperature: 0.7,
-          maxOutputTokens: 900,
-        },
+      const completion = await kimi.chat.completions.create({
+        model: 'moonshot-v1-8k',
+        messages,
+        temperature: 0.7,
+        max_tokens: 900,
       });
       
-      console.log('Gemini result received:', !!result);
+      console.log('Kimi result received:', !!completion);
 
-      const responseText = extractResponseText(result);
+      const responseText = completion.choices[0]?.message?.content?.trim();
 
       if (!responseText) {
-        throw new Error('Gemini returned an empty response');
+        throw new Error('Kimi returned an empty response');
       }
 
       const responseDoc = await messagesRef.add({

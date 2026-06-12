@@ -7,7 +7,7 @@
  * - AIMentorStrategicAdviceOutput - The return type for the aiMentorStrategicAdvice function.
  */
 
-import {ai} from '@/ai/genkit';
+import {ai, KIMI_MODELS} from '@/ai/genkit';
 import {z} from 'genkit';
 
 const AIMentorStrategicAdviceInputSchema = z.object({
@@ -31,6 +31,10 @@ export async function aiMentorStrategicAdvice(input: AIMentorStrategicAdviceInpu
 
 const aiMentorStrategicAdvicePrompt = ai.definePrompt({
   name: 'aiMentorStrategicAdvicePrompt',
+  model: 'kimi',
+  config: {
+    model: KIMI_MODELS.STANDARD,
+  },
   input: {schema: AIMentorStrategicAdviceInputSchema},
   output: {schema: AIMentorStrategicAdviceOutputSchema},
   prompt: `You are an AI-powered strategic business mentor, expert in digital marketing, AI business, online income, entrepreneurship, branding, funnels, and the creator economy. Your goal is to provide personalized, actionable strategic advice to entrepreneurs.

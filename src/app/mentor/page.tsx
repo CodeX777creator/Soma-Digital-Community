@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 import {
   addDoc,
   collection,
@@ -12,7 +12,6 @@ import {
   setDoc,
   updateDoc,
 } from "firebase/firestore";
-import { getFunctions, httpsCallable, connectFunctionsEmulator } from "firebase/functions";
 import { Bot, Loader2, MessageSquare, Plus, Send } from "lucide-react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
@@ -21,7 +20,7 @@ import { GlassCard } from "@/components/ui/glass-card";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useToast } from "@/hooks/use-toast";
-import { app, db } from "@/lib/firebase";
+import { db } from "@/lib/firebase";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/providers/AuthProvider";
 
@@ -41,15 +40,13 @@ interface ChatThread {
   userId: string;
 }
 
-interface MentorChatRequest {
+interface MentorChatApiRequest {
   message: string;
-  threadId: string;
-  userId: string;
+  history: Array<{ role: ChatRole; content: string }>;
 }
 
-interface MentorChatResponse {
-  response: string;
-  messageId: string;
+interface MentorChatApiResponse {
+  result: string;
 }
 
 const WELCOME_MESSAGE: ChatMessage = {
@@ -76,15 +73,6 @@ export default function MentorPage() {
   const [isSending, setIsSending] = useState(false);
   const [loadingMessages, setLoadingMessages] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  const functions = useMemo(() => {
-    const funcs = getFunctions(app, 'us-central1');
-    // Uncomment for local testing
-    // if (process.env.NODE_ENV === 'development') {
-    //   connectFunctionsEmulator(funcs, 'localhost', 5001);
-    // }
-    return funcs;
-  }, []);
 
   useEffect(() => {
     if (!user?.uid || !db) return;
@@ -188,12 +176,6 @@ export default function MentorPage() {
     event.preventDefault();
 
     if (!user?.uid || !db || !input.trim() || isSending) return;
-    
-    console.log('sendMessage - auth state:', {
-      userUid: user?.uid,
-      isAuthenticated: !!user,
-      email: user?.email,
-    });
 
     const message = input.trim();
     setInput("");
@@ -205,6 +187,7 @@ export default function MentorPage() {
       const threadRef = doc(db, "users", user.uid, "mentorHistory", threadId);
       const messagesRef = collection(threadRef, "messages");
 
+      // Save user message to Firestore
       await addDoc(messagesRef, {
         role: "user",
         content: message,
@@ -217,26 +200,51 @@ export default function MentorPage() {
         lastUpdated: serverTimestamp(),
       });
 
-      console.log('Calling mentorChat function with:', { threadId, userId: user.uid });
-      const mentorChat = httpsCallable<MentorChatRequest, MentorChatResponse>(functions, "mentorChat");
-      const result = await mentorChat({
-        message,
-        threadId,
-        userId: user.uid,
+      // Build history from current messages (excluding welcome message if it's the only one)
+      const history = messages
+        .filter(m => m.id !== "welcome")
+        .map(m => ({
+          role: m.role,
+          content: m.content,
+        }));
+
+      // Call the Next.js API route with Genkit/Kimi
+      console.log('Calling /api/mentor/chat with:', { message, historyLength: history.length });
+      const response = await fetch('/api/mentor/chat', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          message,
+          history,
+        } as MentorChatApiRequest),
       });
-      console.log('mentorChat success:', result);
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+        throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
+      }
+
+      const data: MentorChatApiResponse = await response.json();
+      console.log('API response received:', { resultLength: data.result?.length });
+
+      // Save AI response to Firestore
+      await addDoc(messagesRef, {
+        role: "assistant",
+        content: data.result,
+        timestamp: serverTimestamp(),
+        type: "text",
+      });
+
+      await updateDoc(threadRef, {
+        lastUpdated: serverTimestamp(),
+      });
     } catch (err: any) {
-      // Extract detailed error message from Firebase callable function
       let messageText = "The AI mentor could not respond. Please try again.";
       
       if (err?.message) {
         messageText = err.message;
-      }
-      if (err?.details?.message) {
-        messageText = err.details.message;
-      }
-      if (err?.data?.message) {
-        messageText = err.data.message;
       }
       
       console.error('Mentor chat error:', err);

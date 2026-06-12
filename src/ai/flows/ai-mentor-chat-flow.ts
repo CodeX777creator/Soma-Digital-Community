@@ -1,6 +1,6 @@
 'use server';
 
-import { ai } from '@/ai/genkit';
+import { ai, KIMI_MODELS } from '@/ai/genkit';
 import { z } from 'genkit';
 
 const ChatMessageSchema = z.object({
@@ -19,7 +19,7 @@ const AIChatOutputSchema = z.string();
 
 export async function aiMentorChat(input: z.infer<typeof AIChatInputSchema>): Promise<string> {
   const { text } = await ai.generate({
-    model: 'googleai/gemini-1.5-flash',
+    model: 'kimi',
     messages: [
       { 
         role: 'system', 
@@ -38,6 +38,7 @@ export async function aiMentorChat(input: z.infer<typeof AIChatInputSchema>): Pr
         content: [{ text: input.message }] 
       }
     ],
+
   });
   
   return text || "I'm sorry, I couldn't process that.";

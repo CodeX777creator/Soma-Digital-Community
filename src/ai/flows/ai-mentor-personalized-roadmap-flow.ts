@@ -7,7 +7,7 @@
  * - PersonalizedRoadmapOutput - The return type for the generatePersonalizedRoadmap function.
  */
 
-import { ai } from '@/ai/genkit';
+import { ai, KIMI_MODELS } from '@/ai/genkit';
 import { z } from 'genkit';
 
 const BusinessGoalsInputSchema = z.object({
@@ -48,6 +48,10 @@ export async function generatePersonalizedRoadmap(
 
 const roadmapPrompt = ai.definePrompt({
   name: 'aiMentorPersonalizedRoadmapPrompt',
+  model: 'kimi',
+  config: {
+    model: KIMI_MODELS.PREMIUM,
+  },
   input: { schema: BusinessGoalsInputSchema },
   output: { schema: PersonalizedRoadmapOutputSchema },
   prompt: `You are a high-level Digital Wealth Strategist for the "Soma Digital Community". You are a hybrid of a ChatGPT expert, a McKinsey consultant, and a startup incubator mentor.
