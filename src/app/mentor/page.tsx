@@ -208,12 +208,16 @@ export default function MentorPage() {
           content: m.content,
         }));
 
+      // Get Firebase ID token for authentication
+      const idToken = await user.getIdToken();
+
       // Call the Next.js API route with Genkit/Kimi
       console.log('Calling /api/mentor/chat with:', { message, historyLength: history.length });
       const response = await fetch('/api/mentor/chat', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${idToken}`,
         },
         body: JSON.stringify({
           message,
