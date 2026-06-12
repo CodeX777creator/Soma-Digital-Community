@@ -234,20 +234,76 @@ function DashboardContent() {
                 </h3>
                 <div className="grid grid-cols-2 gap-3">
                   {[
-                    { icon: <Target className="w-4 h-4" />, label: "Strategy", href: "/mentor" },
-                    { icon: <Zap className="w-4 h-4" />, label: "Autopilot", locked: true },
-                    { icon: <Users className="w-4 h-4" />, label: "Network", href: "/community" },
-                    { icon: <Search className="w-4 h-4" />, label: "Insight", locked: true }
+                    { 
+                      icon: <Target className="w-4 h-4" />, 
+                      label: "Strategy", 
+                      href: "/tools/strategy",
+                      description: "AI-powered strategy planning",
+                      locked: false,
+                      comingSoon: true,
+                    },
+                    { 
+                      icon: <Zap className="w-4 h-4" />, 
+                      label: "Autopilot", 
+                      href: "/tools/autopilot",
+                      locked: true,
+                      requiredTier: "pro",
+                      description: "Automated growth systems",
+                      comingSoon: true,
+                    },
+                    { 
+                      icon: <Users className="w-4 h-4" />, 
+                      label: "Network", 
+                      href: "/tools/network",
+                      locked: true,
+                      requiredTier: "pro",
+                      description: "Connect with other founders",
+                      comingSoon: true,
+                    },
+                    { 
+                      icon: <Search className="w-4 h-4" />, 
+                      label: "Insight", 
+                      href: "/tools/insights",
+                      locked: true,
+                      requiredTier: "elite",
+                      description: "Advanced analytics & insights",
+                      comingSoon: true,
+                    }
                   ].map((tool, i) => (
-                    <button
-                      key={i}
-                      onClick={() => tool.locked ? setShowUpgrade(true) : tool.href && router.push(tool.href)}
-                      className={`flex flex-col items-center justify-center p-3 rounded-xl bg-white/5 border border-white/5 hover:border-accent/50 hover:bg-accent/5 transition-all group relative ${tool.locked ? 'opacity-50' : ''}`}
-                    >
-                      <div className="text-muted-foreground group-hover:text-accent mb-1 transition-colors">{tool.icon}</div>
-                      <span className="text-[9px] font-bold uppercase tracking-tight">{tool.label}</span>
-                      {tool.locked && <Lock className="absolute top-1 right-1 w-2.5 h-2.5 text-muted-foreground" />}
-                    </button>
+                    <div key={i} className="relative group/tooltip">
+                      <button
+                        onClick={() => router.push(tool.href)}
+                        className={`w-full flex flex-col items-center justify-center p-3 rounded-xl bg-white/5 border border-white/5 hover:border-accent/50 hover:bg-accent/5 transition-all group relative ${tool.locked ? 'opacity-60' : ''}`}
+                      >
+                        <div className={`mb-1 transition-colors ${tool.locked ? 'text-muted-foreground' : 'text-muted-foreground group-hover:text-accent'}`}>
+                          {tool.icon}
+                        </div>
+                        <span className="text-[9px] font-bold uppercase tracking-tight">{tool.label}</span>
+                        {tool.comingSoon && (
+                          <span className="absolute -top-1 -right-1 flex h-2 w-2">
+                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75"></span>
+                            <span className="relative inline-flex rounded-full h-2 w-2 bg-primary"></span>
+                          </span>
+                        )}
+                        {tool.locked && <Lock className="absolute top-1 right-1 w-2.5 h-2.5 text-muted-foreground" />}
+                      </button>
+                      
+                      {/* Tooltip */}
+                      <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-2 bg-popover border border-border rounded-lg shadow-lg opacity-0 invisible group-hover/tooltip:opacity-100 group-hover/tooltip:visible transition-all duration-200 z-50 w-44">
+                        <p className="text-[10px] font-medium text-white text-center">
+                          {tool.description}
+                        </p>
+                        <p className="text-[9px] text-primary text-center mt-1">
+                          Preview now →
+                        </p>
+                        {tool.locked && (
+                          <p className="text-[9px] text-muted-foreground text-center mt-1 border-t border-border pt-1">
+                            Requires {tool.requiredTier} tier
+                          </p>
+                      )}
+                        <div className="absolute top-full left-1/2 -translate-x-1/2 -mt-1 border-4 border-transparent border-t-popover" />
+                      </div>
+                    </div>
                   ))}
                 </div>
               </GlassCard>
