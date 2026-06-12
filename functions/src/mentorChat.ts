@@ -93,7 +93,7 @@ function extractResponseText(response: any): string {
 
 export const mentorChat = onCall<MentorChatRequest>(
   {
-    cors: true,
+    cors: ['https://soma-digital-community.vercel.app', 'http://localhost:3000'],
     maxInstances: 10,
     memory: '256MiB',
     timeoutSeconds: 30,
