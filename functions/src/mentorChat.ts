@@ -28,7 +28,7 @@ const db = getFirestore();
 
 // Define params
 const geminiApiKey = defineSecret('GEMINI_API_KEY');
-const geminiModel = defineString('GEMINI_MODEL', { default: 'gemini-2.0-flash' });
+const geminiModel = defineString('GEMINI_MODEL', { default: 'gemini-1.5-flash' });
 
 function assertMentorChatRequest(data: Partial<MentorChatRequest>): asserts data is MentorChatRequest {
   if (typeof data.message !== 'string' || data.message.trim().length === 0) {
@@ -71,13 +71,21 @@ function buildPrompt(history: MentorMessage[], message: string): string {
   ].join('\n\n');
 }
 
-function extractResponseText(response: { text?: string | (() => string) }): string {
+function extractResponseText(response: any): string {
+  console.log('Gemini response:', JSON.stringify(response, null, 2));
+  
   if (typeof response.text === 'string') {
     return response.text.trim();
   }
 
   if (typeof response.text === 'function') {
     return response.text().trim();
+  }
+  
+  // Handle candidates structure
+  if (response.candidates && response.candidates[0]?.content?.parts) {
+    const parts = response.candidates[0].content.parts;
+    return parts.map((p: any) => p.text || '').join('').trim();
   }
 
   return '';
@@ -110,9 +118,18 @@ export const mentorChat = onCall<MentorChatRequest>(
     }
 
     const apiKey = geminiApiKey.value();
+    const modelName = geminiModel.value();
+    
+    console.log('MentorChat called:', { 
+      userId, 
+      threadId, 
+      messageLength: message.length,
+      modelName,
+      hasApiKey: !!apiKey 
+    });
 
     if (!apiKey) {
-      throw new HttpsError('failed-precondition', 'Gemini API key is not configured');
+      throw new HttpsError('failed-precondition', 'Gemini API key is not configured. Set GEMINI_API_KEY secret in Firebase.');
     }
 
     try {
@@ -124,15 +141,20 @@ export const mentorChat = onCall<MentorChatRequest>(
         .filter((item): item is MentorMessage => item !== null);
 
       const ai = new GoogleGenAI({ apiKey });
+      const prompt = buildPrompt(history, message);
+      console.log('Calling Gemini with model:', modelName);
+      
       const result = await ai.models.generateContent({
-        model: geminiModel.value(),
-        contents: buildPrompt(history, message),
+        model: modelName,
+        contents: prompt,
         config: {
           systemInstruction: SYSTEM_PROMPT,
           temperature: 0.7,
           maxOutputTokens: 900,
         },
       });
+      
+      console.log('Gemini result received:', !!result);
 
       const responseText = extractResponseText(result);
 
@@ -160,9 +182,30 @@ export const mentorChat = onCall<MentorChatRequest>(
         response: responseText,
         messageId: responseDoc.id,
       };
-    } catch (error) {
+    } catch (error: any) {
       console.error('mentorChat failed:', error);
-      throw new HttpsError('internal', 'The AI mentor could not respond right now. Please try again.');
+      console.error('Error details:', {
+        message: error?.message,
+        code: error?.code,
+        status: error?.status,
+        stack: error?.stack,
+      });
+      
+      // Provide more specific error messages for common issues
+      if (error?.message?.includes('API key') || error?.message?.includes('authentication')) {
+        throw new HttpsError('failed-precondition', 'AI service authentication failed. Please contact support.');
+      }
+      if (error?.message?.includes('model') || error?.message?.includes('not found')) {
+        throw new HttpsError('failed-precondition', 'AI model configuration error. Please contact support.');
+      }
+      if (error?.message?.includes('quota') || error?.message?.includes('rate limit')) {
+        throw new HttpsError('resource-exhausted', 'AI service quota exceeded. Please try again later.');
+      }
+      if (error?.message?.includes('billing')) {
+        throw new HttpsError('failed-precondition', 'AI service billing issue. Please contact support.');
+      }
+      
+      throw new HttpsError('internal', `AI mentor error: ${error?.message || 'Unknown error'}`);
     }
   }
 );

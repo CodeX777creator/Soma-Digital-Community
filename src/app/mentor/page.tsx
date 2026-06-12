@@ -210,8 +210,21 @@ export default function MentorPage() {
         threadId,
         userId: user.uid,
       });
-    } catch (err) {
-      const messageText = err instanceof Error ? err.message : "The AI mentor could not respond. Please try again.";
+    } catch (err: any) {
+      // Extract detailed error message from Firebase callable function
+      let messageText = "The AI mentor could not respond. Please try again.";
+      
+      if (err?.message) {
+        messageText = err.message;
+      }
+      if (err?.details?.message) {
+        messageText = err.details.message;
+      }
+      if (err?.data?.message) {
+        messageText = err.data.message;
+      }
+      
+      console.error('Mentor chat error:', err);
       setError(messageText);
       toast({ title: "Mentor error", description: messageText, variant: "destructive" });
     } finally {
