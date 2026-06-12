@@ -49,7 +49,7 @@ import { useSubscription } from "@/hooks/useSubscription";
 import Link from "next/link";
 
 function DashboardContent() {
-  const { userData } = useAuth();
+  const { userData, loading: authLoading } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
   const [mounted, setMounted] = useState(false);
@@ -104,24 +104,39 @@ function DashboardContent() {
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 p-4 rounded-3xl bg-white/[0.02] border border-white/5 backdrop-blur-sm">
             <div className="flex items-center gap-4">
               <div className="relative">
-                <UserAvatar
-                  src={userData?.photoURL}
-                  name={userData?.name || "Explorer"}
-                  size="lg"
-                  className="border-2 border-primary/50 p-1 blue-glow rounded-2xl"
-                />
+                {authLoading ? (
+                  <div className="w-12 h-12 rounded-2xl bg-muted animate-pulse" />
+                ) : (
+                  <UserAvatar
+                    src={userData?.photoURL}
+                    name={userData?.name || "Explorer"}
+                    size="lg"
+                    className="border-2 border-primary/50 p-1 blue-glow rounded-2xl"
+                  />
+                )}
                 <div className="absolute -bottom-1 -right-1 w-6 h-6 bg-accent rounded-full border-2 border-background flex items-center justify-center cyan-glow">
                   <span className="text-[10px] font-bold text-black">{stats?.level || 1}</span>
                 </div>
               </div>
               <div>
-                <h1 className="text-3xl font-bold font-headline tracking-tight">System Active: {userData?.name?.split(' ')[0] || "Explorer"}</h1>
-                <div className="flex items-center gap-3 mt-1">
-                  <Badge className="bg-white/5 text-muted-foreground border-white/10 text-[9px] font-bold px-3 py-0.5 uppercase tracking-widest">{(stats?.tier || 'explorer').toUpperCase()} Tier</Badge>
-                  <p className="text-[10px] text-muted-foreground flex items-center gap-1 font-bold uppercase tracking-wider">
-                    <Clock className="w-3 h-3" /> Streak: {stats?.streak || 0} days
-                  </p>
-                </div>
+                {authLoading ? (
+                  <div className="space-y-2">
+                    <div className="h-8 w-48 bg-muted animate-pulse rounded" />
+                    <div className="h-4 w-32 bg-muted animate-pulse rounded" />
+                  </div>
+                ) : (
+                  <>
+                    <h1 className="text-3xl font-bold font-headline tracking-tight">
+                      Welcome back{userData?.name ? `, ${userData.name.split(' ')[0]}` : ''}
+                    </h1>
+                    <div className="flex items-center gap-3 mt-1">
+                      <Badge className="bg-white/5 text-muted-foreground border-white/10 text-[9px] font-bold px-3 py-0.5 uppercase tracking-widest">{(stats?.tier || 'explorer').toUpperCase()} Tier</Badge>
+                      <p className="text-[10px] text-muted-foreground flex items-center gap-1 font-bold uppercase tracking-wider">
+                        <Clock className="w-3 h-3" /> Streak: {stats?.streak || 0} days
+                      </p>
+                    </div>
+                  </>
+                )}
               </div>
             </div>
 
