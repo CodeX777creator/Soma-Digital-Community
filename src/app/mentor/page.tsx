@@ -12,7 +12,7 @@ import {
   setDoc,
   updateDoc,
 } from "firebase/firestore";
-import { getFunctions, httpsCallable } from "firebase/functions";
+import { getFunctions, httpsCallable, connectFunctionsEmulator } from "firebase/functions";
 import { Bot, Loader2, MessageSquare, Plus, Send } from "lucide-react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
@@ -77,7 +77,14 @@ export default function MentorPage() {
   const [loadingMessages, setLoadingMessages] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const functions = useMemo(() => getFunctions(app), []);
+  const functions = useMemo(() => {
+    const funcs = getFunctions(app, 'us-central1');
+    // Uncomment for local testing
+    // if (process.env.NODE_ENV === 'development') {
+    //   connectFunctionsEmulator(funcs, 'localhost', 5001);
+    // }
+    return funcs;
+  }, []);
 
   useEffect(() => {
     if (!user?.uid || !db) return;
@@ -181,6 +188,12 @@ export default function MentorPage() {
     event.preventDefault();
 
     if (!user?.uid || !db || !input.trim() || isSending) return;
+    
+    console.log('sendMessage - auth state:', {
+      userUid: user?.uid,
+      isAuthenticated: !!user,
+      email: user?.email,
+    });
 
     const message = input.trim();
     setInput("");
@@ -204,12 +217,14 @@ export default function MentorPage() {
         lastUpdated: serverTimestamp(),
       });
 
+      console.log('Calling mentorChat function with:', { threadId, userId: user.uid });
       const mentorChat = httpsCallable<MentorChatRequest, MentorChatResponse>(functions, "mentorChat");
-      await mentorChat({
+      const result = await mentorChat({
         message,
         threadId,
         userId: user.uid,
       });
+      console.log('mentorChat success:', result);
     } catch (err: any) {
       // Extract detailed error message from Firebase callable function
       let messageText = "The AI mentor could not respond. Please try again.";
