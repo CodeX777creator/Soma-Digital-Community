@@ -489,7 +489,7 @@ export const paypalWebhook = onRequest(
         'subscription',
         'Subscription activated',
         'Your plan is now active. Enjoy premium access.',
-        '/dashboard'
+        '/settings/billing'
       );
 
       console.log(`Activated subscription ${subscriptionId} for user ${userId}`);
@@ -519,7 +519,7 @@ export const paypalWebhook = onRequest(
         status === 'cancelled'
           ? 'Your subscription was cancelled. You can rejoin anytime.'
           : 'Your plan has expired. Renew to keep premium access.',
-        '/dashboard'
+        '/settings/billing'
       );
 
       console.log(
@@ -596,7 +596,7 @@ export const cancelPayPalSubscription = onCall<CancelSubscriptionRequest>(
         'subscription',
         'Subscription cancelled',
         'Your subscription has been cancelled successfully.',
-        '/dashboard'
+        '/settings/billing'
       );
 
       await cacheSubscriptionClaim(userId, 'explorer');

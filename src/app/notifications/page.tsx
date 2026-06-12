@@ -12,6 +12,29 @@ import { useAuth } from "@/providers/AuthProvider";
 import { useNotifications } from "@/hooks/useNotifications";
 import { useToast } from "@/hooks/use-toast";
 import { formatDistanceToNow } from "date-fns";
+import { NotificationType } from "@/lib/notifications";
+
+// Helper to get a meaningful URL for a notification
+// Returns null if there's no specific actionable URL
+function getNotificationActionUrl(
+  linkUrl: string | undefined,
+  type: NotificationType,
+  notificationId: string
+): string | null {
+  // If no linkUrl provided, return null (hide "View details")
+  if (!linkUrl) return null;
+
+  // If it's a generic dashboard link, treat as no specific action
+  // unless it's a specific path within dashboard
+  if (linkUrl === "/dashboard" || linkUrl === "/notifications") {
+    // For certain notification types, we could derive better URLs
+    // But for now, we'll hide "View details" for generic links
+    return null;
+  }
+
+  // Return the specific linkUrl for meaningful targets
+  return linkUrl;
+}
 
 export default function NotificationsPage() {
   const { user } = useAuth();
@@ -100,6 +123,8 @@ export default function NotificationsPage() {
                   ? formatDistanceToNow(item.createdAt.toDate(), { addSuffix: true })
                   : "just now";
 
+                const actionUrl = getNotificationActionUrl(item.linkUrl, item.type, item.id);
+
                 return (
                   <GlassCard
                     key={item.id}
@@ -110,14 +135,22 @@ export default function NotificationsPage() {
                         <div className="flex items-center gap-2 flex-wrap">
                           <p className="font-bold text-white break-words">{item.title}</p>
                           {!item.readAt && <Badge className="bg-primary text-[10px]">NEW</Badge>}
+                          {/* Show notification type badge for clarity */}
+                          <Badge variant="outline" className="text-[9px] capitalize border-white/10 text-muted-foreground">
+                            {item.type}
+                          </Badge>
                         </div>
                         <p className="text-sm text-muted-foreground mt-2 leading-relaxed break-words">{item.body}</p>
                         <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
                           <span>{timestampLabel}</span>
-                          <span aria-hidden="true">·</span>
-                          <Link href={item.linkUrl || "/notifications"} className="text-primary hover:underline">
-                            View details
-                          </Link>
+                          {actionUrl && (
+                            <>
+                              <span aria-hidden="true">·</span>
+                              <Link href={actionUrl} className="text-primary hover:underline">
+                                View details
+                              </Link>
+                            </>
+                          )}
                         </div>
                       </div>
 

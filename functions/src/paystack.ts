@@ -403,29 +403,29 @@ export const paystackWebhook = onRequest(
       canonicalState.subscriptionStatus === 'active' ? canonicalState.subscriptionPlan : 'explorer'
     );
 
-    if (eventType === 'charge.success') {
+        if (eventType === 'charge.success') {
       await createNotification(
         userId,
         'subscription',
         'Subscription activated',
         'Your plan is now active. Welcome to premium access.',
-        '/dashboard'
+        '/settings/billing'
       );
-    } else if (eventType === 'subscription.disable' || eventType === 'subscription.deactivate') {
+        } else if (eventType === 'subscription.disable' || eventType === 'subscription.deactivate') {
       await createNotification(
         userId,
         'subscription',
         'Subscription cancelled',
         'Your subscription has been cancelled. Re-enable it anytime from your dashboard.',
-        '/dashboard'
+        '/settings/billing'
       );
-    } else if (eventType === 'charge.dispute' || eventType === 'charge.refund') {
+        } else if (eventType === 'charge.dispute' || eventType === 'charge.refund') {
       await createNotification(
         userId,
         'subscription',
         'Subscription expired',
         'Your subscription has expired. Renew to keep premium access.',
-        '/dashboard'
+        '/settings/billing'
       );
     }
 
@@ -492,7 +492,7 @@ export const cancelPaystackSubscription = onCall(
         cancelledAt: admin.firestore.FieldValue.serverTimestamp(),
       });
       await cacheSubscriptionClaim(userId, 'explorer');
-      await createNotification(userId, 'subscription', 'Subscription cancelled', 'Your Paystack subscription has been cancelled successfully.', '/dashboard');
+      await createNotification(userId, 'subscription', 'Subscription cancelled', 'Your Paystack subscription has been cancelled successfully.', '/settings/billing');
 
       return { success: true };
     } catch (error) {

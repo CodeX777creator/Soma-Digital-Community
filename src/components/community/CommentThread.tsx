@@ -77,7 +77,7 @@ export function CommentThread({ postId, initialCount }: CommentThreadProps) {
           'comment',
           'New comment on your post',
           `${userData.name || user.displayName || 'Someone'} left a comment on your post.`,
-          `/community`
+          `/community?post=${postId}`
         );
       }
 

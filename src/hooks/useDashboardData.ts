@@ -207,12 +207,12 @@ export function useDailyMissions() {
         // record xp event through trusted backend validation
         await logXPEvent(user.uid, 'mission', xpAwarded, { missionId });
         const mission = missions.find((m) => m.id === missionId);
-        await createNotification(
+                await createNotification(
           user.uid,
           'mission',
           'Mission completed',
           `You earned ${xpAwarded} XP for completing "${mission?.title || 'a mission'}".`,
-          '/dashboard'
+          `/dashboard?mission=${missionId}`
         );
       }
 
