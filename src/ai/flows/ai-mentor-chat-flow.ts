@@ -15,30 +15,26 @@ const AIChatInputSchema = z.object({
   skillLevel: z.string().optional(),
 });
 
-const AIChatOutputSchema = z.string();
-
 export async function aiMentorChat(input: z.infer<typeof AIChatInputSchema>): Promise<string> {
-  const { text } = await ai.generate({
-    model: 'kimi',
-    messages: [
-      { 
-        role: 'system', 
-        content: [{ text: `You are the Soma Digital AI Coach. 
-          User context:
-          Goals: ${input.userGoals || 'Not set'}
-          Skill Level: ${input.skillLevel || 'Not set'}` 
-        }] 
-      },
-      ...input.history.map(m => ({ 
-        role: m.role as any, 
-        content: [{ text: m.content }] 
-      })),
-      { 
-        role: 'user', 
-        content: [{ text: input.message }] 
-      }
-    ],
+  // Build conversation history as a text prompt
+  const historyText = input.history
+    .map(m => `${m.role === 'assistant' ? 'AI' : 'User'}: ${m.content}`)
+    .join('\n\n');
+  
+  const systemPrompt = `You are the Soma Digital AI Coach. 
+User context:
+Goals: ${input.userGoals || 'Not set'}
+Skill Level: ${input.skillLevel || 'Not set'}
 
+${historyText ? 'Previous conversation:\n' + historyText + '\n\n' : ''}User: ${input.message}
+
+AI:`;
+
+  const { text } = await ai.generate({
+    prompt: systemPrompt,
+    config: {
+      model: KIMI_MODELS.BALANCED,
+    },
   });
   
   return text || "I'm sorry, I couldn't process that.";
