@@ -47,9 +47,38 @@ import { useDashboardLeaderboard, useWeeklyPerformance, useDailyMissions, useDas
 } from "@/hooks/useDashboardData";
 import { useSubscription } from "@/hooks/useSubscription";
 import Link from "next/link";
+import { User } from "firebase/auth";
+import { UserProfile } from "@/lib/db";
+
+// Helper to get display name from Firebase Auth or Firestore profile
+function getDisplayName(user: User | null, userData: UserProfile | null): string | null {
+  // First try Firestore userData.name (most reliable, set during onboarding)
+  if (userData?.name?.trim()) {
+    return userData.name.split(' ')[0]; // Return first name
+  }
+  // Fallback to Firebase Auth displayName (from Google/OAuth)
+  if (user?.displayName?.trim()) {
+    return user.displayName.split(' ')[0];
+  }
+  return null;
+}
+
+function getFullName(user: User | null, userData: UserProfile | null): string {
+  return userData?.name?.trim() || user?.displayName?.trim() || "Explorer";
+}
 
 function DashboardContent() {
-  const { userData, loading: authLoading } = useAuth();
+  const { user, userData, loading: authLoading } = useAuth();
+  
+  // Debug logging to help diagnose the issue
+  useEffect(() => {
+    console.log('[Dashboard Debug]', {
+      authLoading,
+      firebaseUserDisplayName: user?.displayName,
+      firestoreUserDataName: userData?.name,
+      firestoreUserData: userData ? { ...userData, uid: userData.uid } : null,
+    });
+  }, [user, userData, authLoading]);
   const router = useRouter();
   const searchParams = useSearchParams();
   const [mounted, setMounted] = useState(false);
@@ -108,8 +137,8 @@ function DashboardContent() {
                   <div className="w-12 h-12 rounded-2xl bg-muted animate-pulse" />
                 ) : (
                   <UserAvatar
-                    src={userData?.photoURL}
-                    name={userData?.name || "Explorer"}
+                    src={userData?.photoURL || user?.photoURL}
+                    name={getFullName(user, userData)}
                     size="lg"
                     className="border-2 border-primary/50 p-1 blue-glow rounded-2xl"
                   />
@@ -127,7 +156,7 @@ function DashboardContent() {
                 ) : (
                   <>
                     <h1 className="text-3xl font-bold font-headline tracking-tight">
-                      Welcome back{userData?.name ? `, ${userData.name.split(' ')[0]}` : ''}
+                      Welcome back{getDisplayName(user, userData) ? `, ${getDisplayName(user, userData)}` : ''}
                     </h1>
                     <div className="flex items-center gap-3 mt-1">
                       <Badge className="bg-white/5 text-muted-foreground border-white/10 text-[9px] font-bold px-3 py-0.5 uppercase tracking-widest">{(stats?.tier || 'explorer').toUpperCase()} Tier</Badge>
@@ -315,7 +344,7 @@ function DashboardContent() {
                       <Sparkles className="w-4 h-4 text-yellow-400" />
                     </div>
                     <p className="text-sm text-blue-100/80 leading-relaxed italic">
-                      "{userData?.name?.split(' ')[0] || 'Explorer'}, you've maintained a {stats?.streak || 0}-day streak. Your trajectory is positive. {stats?.tier === 'explorer' ? 'Upgrade to Pro for enhanced insights and high-velocity market audits.' : 'Keep leveraging these tools for maximum impact.'}"
+                      "{getDisplayName(user, userData) || 'Explorer'}, you've maintained a {stats?.streak || 0}-day streak. Your trajectory is positive. {stats?.tier === 'explorer' ? 'Upgrade to Pro for enhanced insights and high-velocity market audits.' : 'Keep leveraging these tools for maximum impact.'}"
                     </p>
                     <div className="flex gap-4 mt-2">
                       {stats?.tier === 'explorer' && (
