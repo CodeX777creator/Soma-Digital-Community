@@ -61,7 +61,31 @@ service cloud.firestore {
         && request.resource.data.commentCount == resource.data.commentCount
         && request.resource.data.isPinned == resource.data.isPinned;
 
-      // Admin-only updates (pin/unpin, likeCount via transaction, commentCount via transaction)
+      // Allow authenticated users to update likeCount/reactionCounts (for reactions)
+      // and commentCount (for comments) - only increment/decrement by 1
+      allow update: if isAuthed()
+        && (
+          // Only likeCount and reactionCounts are changing (reaction transaction)
+          (
+            request.resource.data.diff(resource.data).affectedKeys()
+              .hasOnly(['likeCount', 'reactionCounts'])
+            && (
+              request.resource.data.likeCount == resource.data.likeCount + 1
+              || request.resource.data.likeCount == resource.data.likeCount - 1
+            )
+          )
+          ||
+          // Only commentCount is changing (comment transaction)
+          (
+            request.resource.data.diff(resource.data).affectedKeys()
+              .hasOnly(['commentCount'])
+            && (
+              request.resource.data.commentCount == resource.data.commentCount + 1
+            )
+          )
+        );
+
+      // Admin-only updates (pin/unpin, full post edits)
       allow update: if isAdmin();
 
       allow delete: if isAuthed() && resource.data.authorId == request.auth.uid
