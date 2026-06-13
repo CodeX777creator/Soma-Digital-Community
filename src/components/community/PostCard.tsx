@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { MessageSquare, Share2, MoreHorizontal, Pin, Trophy, ShieldCheck, ChevronDown, ChevronUp, Link as LinkIcon } from "lucide-react";
+import { MessageSquare, Share2, Pin, Trophy, ShieldCheck, ChevronDown, ChevronUp, Link as LinkIcon, ZoomIn } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { GlassCard } from "@/components/ui/glass-card";
@@ -12,6 +12,8 @@ import { cn } from "@/lib/utils";
 import { ReactionPicker, REACTIONS } from "./ReactionPicker";
 import { CommentThread } from "./CommentThread";
 import { UserAvatar } from "@/components/ui/user-avatar";
+import { PostOptionsMenu } from "./PostOptionsMenu";
+import { ImageLightbox } from "./ImageLightbox";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -64,6 +66,9 @@ export function PostCard({ post }: PostCardProps) {
 
   // ── Comments toggle ───────────────────────────────────────────────────────
   const [showComments, setShowComments] = useState(false);
+  
+  // ── Lightbox toggle ────────────────────────────────────────────────────────
+  const [lightboxOpen, setLightboxOpen] = useState(false);
 
   // Subscribe to user's current reaction from Firestore (eventual truth)
   useEffect(() => {
@@ -199,28 +204,30 @@ export function PostCard({ post }: PostCardProps) {
               </p>
             </div>
           </div>
-          <Button 
-            title="Post options" 
-            aria-label="Post options" 
-            variant="ghost" 
-            size="icon" 
-            className="text-muted-foreground h-8 w-8 hover:bg-white/5 rounded-full shrink-0"
-          >
-            <MoreHorizontal className="w-4 h-4" />
-          </Button>
+          <PostOptionsMenu post={post} />
         </div>
 
         {/* Content */}
         <div className="space-y-4 mb-5">
           <p className="text-white/90 leading-relaxed text-[15px]">{post.content}</p>
           {post.imageUrl && (
-            <div className="rounded-2xl overflow-hidden border border-white/5 group cursor-zoom-in">
-              <img
-                src={post.imageUrl}
-                alt="Post media"
-                title="Post media"
-                className="w-full aspect-video object-cover transition-transform duration-700 group-hover:scale-105"
-              />
+            <div 
+              className="relative group cursor-pointer w-fit"
+              onClick={() => setLightboxOpen(true)}
+            >
+              {/* Minimized thumbnail */}
+              <div className="relative rounded-xl overflow-hidden border border-white/10">
+                <img
+                  src={post.imageUrl}
+                  alt="Post media"
+                  className="w-48 h-48 object-cover"
+                />
+                {/* Hover overlay */}
+                <div className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                  <ZoomIn className="w-8 h-8 text-white" />
+                </div>
+              </div>
+              <p className="text-[10px] text-muted-foreground mt-1">Click to enlarge</p>
             </div>
           )}
           {post.linkUrl && (
@@ -305,6 +312,16 @@ export function PostCard({ post }: PostCardProps) {
             </div>
           )}
         </AnimatePresence>
+        
+        {/* Image Lightbox */}
+        {post.imageUrl && (
+          <ImageLightbox
+            src={post.imageUrl}
+            alt="Post media"
+            isOpen={lightboxOpen}
+            onClose={() => setLightboxOpen(false)}
+          />
+        )}
       </GlassCard>
     </motion.div>
   );

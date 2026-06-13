@@ -2,7 +2,8 @@
 
 import { useEffect, useState, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Image as ImageIcon, Link as LinkIcon, Send, Loader2, X } from "lucide-react";
+import { Image as ImageIcon, Link as LinkIcon, Send, Loader2, X, ZoomIn } from "lucide-react";
+import { ImageLightbox } from "./ImageLightbox";
 import { Button } from "@/components/ui/button";
 import { GlassCard } from "@/components/ui/glass-card";
 import { PostType, dbService } from "@/lib/db";
@@ -44,8 +45,13 @@ export function CreatePostBox({ selectedChannel = "all" }: CreatePostBoxProps) {
   const [imageUploading, setImageUploading] = useState(false);
   const [imageError, setImageError] = useState<string | null>(null);
   const [postError, setPostError] = useState<string | null>(null);
+  const [lightboxOpen, setLightboxOpen] = useState(false);
   const textRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  
+  // Constants
+  const MAX_IMAGES = 1; // Limit to 1 image per post
+  const MAX_IMAGE_SIZE = 5 * 1024 * 1024; // 5MB
   const selectedPostChannel = selectedChannel === "all" ? DEFAULT_POST_CHANNEL : selectedChannel;
 
   useEffect(() => {
@@ -64,6 +70,11 @@ export function CreatePostBox({ selectedChannel = "all" }: CreatePostBoxProps) {
     console.log('[CreatePostBox] Starting image upload:', { fileName: file.name, fileType: file.type, fileSize: file.size });
     
     try {
+      // Check if already has image
+      if (imageUrl) {
+        throw new Error(`You can only upload ${MAX_IMAGES} image per post. Remove the current image first.`);
+      }
+      
       if (!user) throw new Error('User must be signed in to upload an image');
       if (!storage) {
         console.error('[CreatePostBox] Storage not initialized');
@@ -72,7 +83,7 @@ export function CreatePostBox({ selectedChannel = "all" }: CreatePostBoxProps) {
       if (!file.type.startsWith('image/')) {
         throw new Error('Only image files are allowed');
       }
-      if (file.size > 5 * 1024 * 1024) {
+      if (file.size > MAX_IMAGE_SIZE) {
         throw new Error('Image must be smaller than 5MB');
       }
       
@@ -283,19 +294,34 @@ export function CreatePostBox({ selectedChannel = "all" }: CreatePostBoxProps) {
                   </div>
                 )}
                 {imageUrl && (
-                  <div className="rounded-3xl overflow-hidden border border-white/10 bg-white/5 p-3">
-                    <div className="flex items-start justify-between gap-3">
-                      <p className="text-sm font-bold">Image attached</p>
+                  <div className="rounded-2xl overflow-hidden border border-white/10 bg-white/5 p-3">
+                    <div className="flex items-center justify-between gap-3 mb-2">
+                      <p className="text-xs font-medium text-muted-foreground">
+                        Image attached ({MAX_IMAGES}/{MAX_IMAGES})
+                      </p>
                       <Button
                         variant="ghost"
                         size="icon"
-                        className="text-muted-foreground hover:text-red-400"
+                        className="h-6 w-6 text-muted-foreground hover:text-red-400"
                         onClick={() => setImageUrl(null)}
                       >
-                        <X className="w-4 h-4" />
+                        <X className="w-3 h-3" />
                       </Button>
                     </div>
-                    <img src={imageUrl} alt="Attached preview" className="mt-3 w-full rounded-2xl object-cover" />
+                    {/* Small thumbnail with click to enlarge */}
+                    <div 
+                      className="relative group cursor-pointer"
+                      onClick={() => setLightboxOpen(true)}
+                    >
+                      <img 
+                        src={imageUrl} 
+                        alt="Attached preview" 
+                        className="w-32 h-32 object-cover rounded-xl" 
+                      />
+                      <div className="absolute inset-0 bg-black/50 rounded-xl flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                        <ZoomIn className="w-6 h-6 text-white" />
+                      </div>
+                    </div>
                   </div>
                 )}
                 {imageError && (
@@ -319,11 +345,22 @@ export function CreatePostBox({ selectedChannel = "all" }: CreatePostBoxProps) {
               <Button
                 variant="ghost"
                 size="icon"
-                className="w-8 h-8 rounded-xl text-muted-foreground hover:text-primary hover:bg-primary/5"
-                onClick={() => fileInputRef.current?.click()}
-                disabled={imageUploading}
+                className={cn(
+                  "w-8 h-8 rounded-xl relative",
+                  imageUrl 
+                    ? "text-primary bg-primary/10 cursor-not-allowed" 
+                    : "text-muted-foreground hover:text-primary hover:bg-primary/5"
+                )}
+                onClick={() => !imageUrl && fileInputRef.current?.click()}
+                disabled={imageUploading || !!imageUrl}
+                title={imageUrl ? "Max 1 image per post" : "Add image"}
               >
                 <ImageIcon className="w-4 h-4" />
+                {imageUrl && (
+                  <span className="absolute -top-1 -right-1 w-4 h-4 bg-primary text-[8px] text-black font-bold rounded-full flex items-center justify-center">
+                    1
+                  </span>
+                )}
               </Button>
               <Button
                 variant="ghost"
@@ -369,6 +406,14 @@ export function CreatePostBox({ selectedChannel = "all" }: CreatePostBoxProps) {
           )}
         </div>
       </div>
+      
+      {/* Lightbox for image preview */}
+      <ImageLightbox 
+        src={imageUrl || ""} 
+        alt="Post attachment"
+        isOpen={lightboxOpen}
+        onClose={() => setLightboxOpen(false)}
+      />
     </GlassCard>
   );
 }

@@ -18,6 +18,7 @@ export type XPEventType =
   | 'mission'
   | 'post'
   | 'comment'
+  | 'reply'
   | 'mentor'
   | 'profile'
   | 'login'

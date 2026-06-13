@@ -61,6 +61,8 @@ export interface Comment {
   authorAvatar: string;
   authorTier: 'explorer' | 'pro' | 'elite';
   content: string;
+  parentId?: string | null; // For reply threading
+  replyCount?: number;
   createdAt: any;
 }
 
@@ -211,7 +213,8 @@ export const postService = {
     postId: string,
     userId: string,
     userData: { name: string; photoURL?: string; tier: string },
-    content: string
+    content: string,
+    parentId?: string | null
   ): Promise<string> {
     if (!db) throw new Error('Database not initialized');
     const commentsRef = collection(db, 'posts', postId, 'comments');
@@ -222,11 +225,53 @@ export const postService = {
       authorAvatar: userData.photoURL || null,
       authorTier: userData.tier || 'explorer',
       content,
+      parentId: parentId || null,
+      replyCount: 0,
       createdAt: serverTimestamp(),
     });
-    // Increment comment count
+    
+    // Increment comment count on post
     await updateDoc(doc(db, 'posts', postId), { commentCount: increment(1) });
+    
+    // If this is a reply, increment parent's replyCount
+    if (parentId) {
+      await updateDoc(doc(db, 'posts', postId, 'comments', parentId), { 
+        replyCount: increment(1) 
+      });
+    }
+    
     return docRef.id;
+  },
+
+  // Add a reply to a comment
+  async addReply(
+    postId: string,
+    parentCommentId: string,
+    userId: string,
+    userData: { name: string; photoURL?: string; tier: string },
+    content: string
+  ): Promise<string> {
+    return this.addComment(postId, userId, userData, content, parentCommentId);
+  },
+
+  // Get replies for a specific comment
+  subscribeToReplies(
+    postId: string,
+    parentId: string,
+    callback: (comments: Comment[]) => void
+  ): () => void {
+    if (!db) throw new Error('Database not initialized');
+    const commentsRef = collection(db, 'posts', postId, 'comments');
+    const q = query(
+      commentsRef, 
+      orderBy('createdAt', 'asc')
+    );
+    return onSnapshot(q, snap => {
+      const allComments = snap.docs.map(d => ({ id: d.id, ...d.data() } as Comment));
+      // Filter replies for this parent
+      const replies = allComments.filter(c => c.parentId === parentId);
+      callback(replies);
+    });
   },
 
   // Subscribe to comments on a post
@@ -246,6 +291,35 @@ export const postService = {
   async pinPost(postId: string, pinned: boolean): Promise<void> {
     if (!db) throw new Error('Database not initialized');
     await updateDoc(doc(db, 'posts', postId), { isPinned: pinned });
+  },
+
+  // Delete a post (author or admin)
+  async deletePost(postId: string): Promise<void> {
+    if (!db) throw new Error('Database not initialized');
+    await updateDoc(doc(db, 'posts', postId), { 
+      deleted: true,
+      content: '[deleted]',
+      deletedAt: serverTimestamp(),
+    });
+  },
+
+  // Update mission progress
+  async completeMission(userId: string, missionId: string): Promise<void> {
+    if (!db) throw new Error('Database not initialized');
+    const userRef = doc(db, 'users', userId);
+    await updateDoc(userRef, {
+      [`missions.${missionId}`]: true,
+      [`missions.completedAt.${missionId}`]: serverTimestamp(),
+    });
+  },
+
+  // Track user stats
+  async incrementUserStat(userId: string, stat: 'postCount' | 'commentCount' | 'likeCount'): Promise<void> {
+    if (!db) throw new Error('Database not initialized');
+    const userRef = doc(db, 'users', userId);
+    await updateDoc(userRef, {
+      [stat]: increment(1),
+    });
   },
 };
 

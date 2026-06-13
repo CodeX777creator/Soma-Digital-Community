@@ -132,11 +132,22 @@ service cloud.firestore {
         && request.resource.data.get('isAdmin', false) == false;
 
       // Self-update: cannot change uid, tier, isAdmin, or subscription via client
+      // But CAN update missions, stats, and engagement scores
       allow update: if isUser(userId)
         && request.resource.data.uid == resource.data.uid
         && request.resource.data.tier == resource.data.tier
         && request.resource.data.get('isAdmin', false) == resource.data.get('isAdmin', false)
         && request.resource.data.get('subscription', null) == resource.data.get('subscription', null);
+
+      // Allow self-update of mission progress and stats
+      allow update: if isUser(userId)
+        && (
+          // Only missions field is changing
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['missions', 'postCount', 'commentCount', 'likeCount', 'engagementScore', 'updatedAt'])
+          ||
+          // Only xp field is changing (incrementing)
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['xp', 'updatedAt'])
+        );
 
       // Admins may update anything (tier upgrades, subscription writes from backend)
       allow update: if isAdmin();

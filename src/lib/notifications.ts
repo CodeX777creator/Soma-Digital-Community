@@ -18,6 +18,7 @@ export type NotificationType =
   | "success"
   | "warning"
   | "comment"
+  | "reply"
   | "mission"
   | "mentor"
   | "subscription"

@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Send, ChevronDown } from "lucide-react";
+import { Send, ChevronDown, CornerDownRight, MessageCircle } from "lucide-react";
 import { Comment, postService } from "@/lib/db";
 import { useAuth } from "@/providers/AuthProvider";
 import { cn } from "@/lib/utils";
@@ -29,6 +29,161 @@ function timeAgo(timestamp: any): string {
 interface CommentThreadProps {
   postId: string;
   initialCount: number;
+}
+
+// Individual comment component with reply support
+function CommentItem({ 
+  comment, 
+  postId, 
+  depth = 0 
+}: { 
+  comment: Comment; 
+  postId: string;
+  depth?: number;
+}) {
+  const { user, userData } = useAuth();
+  const [replies, setReplies] = useState<Comment[]>([]);
+  const [showReplies, setShowReplies] = useState(false);
+  const [isReplying, setIsReplying] = useState(false);
+  const [replyInput, setReplyInput] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  
+  // Subscribe to replies for this comment
+  useEffect(() => {
+    if (!comment.id || depth > 2) return; // Limit nesting to 3 levels
+    const unsub = postService.subscribeToReplies(postId, comment.id, setReplies);
+    return unsub;
+  }, [comment.id, postId, depth]);
+
+  const handleReply = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!replyInput.trim() || !user) return;
+    
+    setSubmitting(true);
+    try {
+      await postService.addReply(postId, comment.id, user.uid, {
+        name: userData?.name || user.displayName || "Anonymous",
+        photoURL: user.photoURL || undefined,
+        tier: userData?.tier || 'explorer',
+      }, replyInput);
+      
+      setReplyInput("");
+      setIsReplying(false);
+      setShowReplies(true);
+      
+      // Award XP for replying
+      await awardXP(user.uid, 3, 'reply', { postId, parentCommentId: comment.id });
+      
+      // Notify parent comment author
+      if (comment.authorId !== user.uid) {
+        await createNotification(
+          comment.authorId,
+          'reply',
+          'New reply to your comment',
+          `${userData?.name || user.displayName || 'Someone'} replied to your comment.`,
+          `/community?post=${postId}`
+        );
+      }
+    } catch (err) {
+      console.error('Failed to add reply:', err);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const maxDepth = 2; // Max 3 levels of nesting (0, 1, 2)
+  const canReply = depth < maxDepth && !!user;
+
+  return (
+    <div className={cn("flex gap-3", depth > 0 && "ml-8 mt-2")}>
+      <div className={cn("w-7 h-7 rounded-xl border shrink-0 overflow-hidden", TIER_COLORS[comment.authorTier])}>
+        <img src={comment.authorAvatar} alt={comment.authorName} className="w-full h-full object-cover" />
+      </div>
+      <div className="flex-1">
+        <div className="bg-white/[0.03] rounded-2xl px-4 py-2.5">
+          <div className="flex items-center gap-2 mb-1">
+            <span className="text-[11px] font-bold text-white">{comment.authorName}</span>
+            <span className="text-[9px] text-muted-foreground">{timeAgo(comment.createdAt)}</span>
+          </div>
+          <p className="text-xs text-white/80 leading-relaxed">{comment.content}</p>
+        </div>
+        
+        {/* Reply actions */}
+        {canReply && (
+          <div className="flex items-center gap-3 mt-1 ml-2">
+            <button 
+              onClick={() => setIsReplying(!isReplying)}
+              className="text-[10px] text-muted-foreground hover:text-primary transition-colors flex items-center gap-1"
+              aria-label={isReplying ? "Cancel reply" : "Reply to comment"}
+            >
+              <MessageCircle className="w-3 h-3" />
+              Reply
+            </button>
+            
+            {comment.replyCount && comment.replyCount > 0 && (
+              <button 
+                onClick={() => setShowReplies(!showReplies)}
+                className="text-[10px] text-primary hover:underline flex items-center gap-1"
+                aria-label={showReplies ? "Hide replies" : `Show ${comment.replyCount} replies`}
+              >
+                <CornerDownRight className="w-3 h-3" />
+                {showReplies ? 'Hide' : 'Show'} {comment.replyCount} {comment.replyCount === 1 ? 'reply' : 'replies'}
+              </button>
+            )}
+          </div>
+        )}
+        
+        {/* Reply input */}
+        {isReplying && (
+          <motion.form
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: "auto" }}
+            exit={{ opacity: 0, height: 0 }}
+            onSubmit={handleReply}
+            className="flex gap-2 items-center mt-2 ml-2"
+          >
+            <input
+              value={replyInput}
+              onChange={e => setReplyInput(e.target.value)}
+              placeholder={`Reply to ${comment.authorName}...`}
+              className="flex-1 bg-white/[0.04] border border-white/10 rounded-xl px-3 py-2 text-xs text-white placeholder:text-muted-foreground/50 outline-none focus:border-primary/40"
+              autoFocus
+            />
+            <button
+              type="submit"
+              disabled={!replyInput.trim() || submitting}
+              aria-label="Send reply"
+              className="w-7 h-7 rounded-lg bg-primary disabled:opacity-30 flex items-center justify-center transition-all hover:bg-primary/90"
+            >
+              <Send className="w-3 h-3 text-white" />
+            </button>
+            <button
+              type="button"
+              onClick={() => setIsReplying(false)}
+              aria-label="Cancel reply"
+              className="text-[10px] text-muted-foreground hover:text-white"
+            >
+              Cancel
+            </button>
+          </motion.form>
+        )}
+        
+        {/* Nested replies */}
+        {showReplies && replies.length > 0 && (
+          <div className="mt-2 space-y-2">
+            {replies.map(reply => (
+              <CommentItem 
+                key={reply.id} 
+                comment={reply} 
+                postId={postId} 
+                depth={depth + 1}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
 }
 
 export function CommentThread({ postId, initialCount }: CommentThreadProps) {
@@ -111,30 +266,13 @@ export function CommentThread({ postId, initialCount }: CommentThreadProps) {
       {/* Comment list */}
       <div className="space-y-3">
         <AnimatePresence initial={false}>
-          {shown.map(c => (
-            <motion.div
-              key={c.id}
-              initial={{ opacity: 0, y: -6 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -6 }}
-              className="flex gap-3"
-            >
-              <div className={cn("w-7 h-7 rounded-xl border shrink-0 overflow-hidden", TIER_COLORS[c.authorTier])}>
-                <img src={c.authorAvatar} alt={c.authorName} className="w-full h-full object-cover" />
-              </div>
-              <div className="flex-1 bg-white/[0.03] rounded-2xl px-4 py-2.5">
-                <div className="flex items-center gap-2 mb-1">
-                  <span className="text-[11px] font-bold text-white">{c.authorName}</span>
-                  <span className="text-[9px] text-muted-foreground">{timeAgo(c.createdAt)}</span>
-                </div>
-                <p className="text-xs text-white/80 leading-relaxed">{c.content}</p>
-              </div>
-            </motion.div>
+          {shown.filter(c => !c.parentId).map(c => ( // Only show top-level comments
+            <CommentItem key={c.id} comment={c} postId={postId} depth={0} />
           ))}
         </AnimatePresence>
 
         {/* Empty state */}
-        {comments.length === 0 && (
+        {comments.filter(c => !c.parentId).length === 0 && (
           <p className="text-xs text-muted-foreground/60 italic text-center py-2">
             Be the first to spark this discussion.
           </p>
