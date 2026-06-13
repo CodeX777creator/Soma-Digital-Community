@@ -14,6 +14,7 @@ import { CommentThread } from "./CommentThread";
 import { UserAvatar } from "@/components/ui/user-avatar";
 import { PostOptionsMenu } from "./PostOptionsMenu";
 import { ImageLightbox } from "./ImageLightbox";
+import { EditPostModal } from "./EditPostModal";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -69,15 +70,27 @@ export function PostCard({ post }: PostCardProps) {
   
   // ── Lightbox toggle ────────────────────────────────────────────────────────
   const [lightboxOpen, setLightboxOpen] = useState(false);
+  
+  // ── Edit modal toggle ──────────────────────────────────────────────────────
+  const [isEditing, setIsEditing] = useState(false);
+  const [isDeleted, setIsDeleted] = useState(false);
+  
+  // Local post state for editing
+  const [localPost, setLocalPost] = useState(post);
+  
+  // Update local post when prop changes
+  useEffect(() => {
+    setLocalPost(post);
+  }, [post]);
 
   // Subscribe to user's current reaction from Firestore (eventual truth)
   useEffect(() => {
     if (!user) return;
-    const unsub = postService.subscribeToUserReaction(post.id, user.uid, (r) => {
+    const unsub = postService.subscribeToUserReaction(localPost.id, user.uid, (r) => {
       setMyReaction(r);
     });
     return unsub;
-  }, [post.id, user]);
+  }, [localPost.id, user]);
 
   // Keep local count in sync with Firestore when not mid-interaction
   useEffect(() => {
@@ -123,15 +136,15 @@ export function PostCard({ post }: PostCardProps) {
 
     // Firestore sync (background)
     const targetReaction = isSame ? null : type;
-    console.log('[handleReaction] Calling setReaction:', { postId: post.id, userId: user.uid, targetReaction });
+    console.log('[handleReaction] Calling setReaction:', { postId: localPost.id, userId: user.uid, targetReaction });
     
-    postService.setReaction(post.id, user.uid, targetReaction).catch((err) => {
+    postService.setReaction(localPost.id, user.uid, targetReaction).catch((err) => {
       console.error('[handleReaction] setReaction failed:', err);
       // Revert on failure
       setMyReaction(myReaction);
-      setLocalLikeCount(post.likeCount);
+      setLocalLikeCount(localPost.likeCount);
     });
-  }, [user, myReaction, pickerLocked, post.id, post.likeCount]);
+  }, [user, myReaction, pickerLocked, localPost.id, localPost.likeCount]);
 
   // Hover timer logic
   const handleMouseEnterLike = () => {
@@ -143,9 +156,14 @@ export function PostCard({ post }: PostCardProps) {
     pickerTimerRef.current = setTimeout(() => setShowPicker(false), 300);
   };
 
-  const meta = POST_TYPE_META[post.type] || POST_TYPE_META.insight;
+  const meta = POST_TYPE_META[localPost.type] || POST_TYPE_META.insight;
   const activeReactionEmoji = myReaction ? REACTIONS.find(r => r.type === myReaction)?.emoji : null;
   const activeReactionColor = myReaction ? REACTIONS.find(r => r.type === myReaction)?.color : null;
+
+  // Don't render if post is deleted
+  if (isDeleted || localPost.deleted) {
+    return null;
+  }
 
   return (
     <motion.div
@@ -158,11 +176,11 @@ export function PostCard({ post }: PostCardProps) {
       <GlassCard
         className={cn(
           "p-6 rounded-3xl transition-all duration-300 hover:translate-y-[-2px] hover:shadow-xl hover:shadow-black/30",
-          post.isPinned && "border-primary/40 bg-primary/[0.03]"
+          localPost.isPinned && "border-primary/40 bg-primary/[0.03]"
         )}
       >
         {/* Pinned indicator */}
-        {post.isPinned && (
+        {localPost.isPinned && (
           <div className="flex items-center gap-2 mb-4 text-[10px] font-bold text-primary uppercase tracking-widest">
             <Pin className="w-3 h-3 fill-primary" /> Pinned
           </div>
@@ -173,12 +191,12 @@ export function PostCard({ post }: PostCardProps) {
           <div className="flex gap-3 items-center">
             <div className="relative">
               <UserAvatar 
-                src={post.authorAvatar} 
-                name={post.authorName} 
+                src={localPost.authorAvatar} 
+                name={localPost.authorName} 
                 size="md"
-                className={cn("rounded-2xl border-2 p-0.5", TIER_RING[post.authorTier])} 
+                className={cn("rounded-2xl border-2 p-0.5", TIER_RING[localPost.authorTier])} 
               />
-              {post.type === "win" && (
+              {localPost.type === "win" && (
                 <div className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-yellow-500 rounded-full flex items-center justify-center border-2 border-[#0d1117] shadow-lg">
                   <Trophy className="w-3 h-3 text-black" />
                 </div>
@@ -187,9 +205,9 @@ export function PostCard({ post }: PostCardProps) {
             <div>
               <div className="flex items-center gap-2 flex-wrap">
                 <h4 className="font-bold text-sm text-white hover:text-primary cursor-pointer transition-colors leading-none">
-                  {post.authorName}
+                  {localPost.authorName}
                 </h4>
-                {post.isFounder && (
+                {localPost.isFounder && (
                   <span title="Founder"><ShieldCheck className="w-3.5 h-3.5 text-cyan-400" /></span>
                 )}
                 <span className={cn(
@@ -198,19 +216,32 @@ export function PostCard({ post }: PostCardProps) {
                 )}>
                   {meta.icon} {meta.label}
                 </span>
+                {localPost.isEdited && (
+                  <span 
+                    className="text-[9px] text-muted-foreground cursor-help"
+                    title={localPost.editedAt ? `Edited ${timeAgo(localPost.editedAt)}` : 'Edited'}
+                  >
+                    (edited)
+                  </span>
+                )}
               </div>
               <p className="text-[10px] text-muted-foreground font-medium uppercase tracking-tight mt-1">
-                {post.authorRole} · {timeAgo(post.createdAt)}
+                {localPost.authorRole} · {timeAgo(localPost.createdAt)}
               </p>
             </div>
           </div>
-          <PostOptionsMenu post={post} />
+          <PostOptionsMenu 
+            post={localPost} 
+            onEdit={() => setIsEditing(true)}
+            onDelete={() => setIsDeleted(true)}
+            isAdmin={userData?.isAdmin || userData?.role === 'admin'}
+          />
         </div>
 
         {/* Content */}
         <div className="space-y-4 mb-5">
-          <p className="text-white/90 leading-relaxed text-[15px]">{post.content}</p>
-          {post.imageUrl && (
+          <p className="text-white/90 leading-relaxed text-[15px]">{localPost.content}</p>
+          {localPost.imageUrl && (
             <div 
               className="relative group cursor-pointer w-fit"
               onClick={() => setLightboxOpen(true)}
@@ -218,7 +249,7 @@ export function PostCard({ post }: PostCardProps) {
               {/* Minimized thumbnail */}
               <div className="relative rounded-xl overflow-hidden border border-white/10">
                 <img
-                  src={post.imageUrl}
+                  src={localPost.imageUrl}
                   alt="Post media"
                   className="w-48 h-48 object-cover"
                 />
@@ -230,23 +261,23 @@ export function PostCard({ post }: PostCardProps) {
               <p className="text-[10px] text-muted-foreground mt-1">Click to enlarge</p>
             </div>
           )}
-          {post.linkUrl && (
+          {localPost.linkUrl && (
             <a
-              href={post.linkUrl}
+              href={localPost.linkUrl}
               target="_blank"
               rel="noreferrer"
               className="inline-flex items-center gap-2 rounded-3xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-primary transition hover:border-primary/30 hover:bg-white/10"
             >
               <LinkIcon className="w-4 h-4" />
-              {new URL(post.linkUrl).hostname}
+              {new URL(localPost.linkUrl).hostname}
             </a>
           )}
         </div>
 
         {/* Tags */}
-        {post.tags.length > 0 && (
+        {localPost.tags.length > 0 && (
           <div className="flex flex-wrap gap-2 mb-5">
-            {post.tags.map(tag => (
+            {localPost.tags.map(tag => (
               <span key={tag} className="text-[10px] font-bold text-primary/70 hover:text-primary cursor-pointer transition-colors uppercase tracking-wider">
                 #{tag}
               </span>
@@ -306,22 +337,32 @@ export function PostCard({ post }: PostCardProps) {
 
         {/* Comment thread */}
         <AnimatePresence>
-          {showComments && (
-            <div className="mt-4">
-              <CommentThread postId={post.id} initialCount={post.commentCount} />
-            </div>
-          )}
+        {showComments && (
+          <div className="mt-4">
+            <CommentThread postId={localPost.id} initialCount={localPost.commentCount} />
+          </div>
+        )}
         </AnimatePresence>
         
         {/* Image Lightbox */}
-        {post.imageUrl && (
-          <ImageLightbox
-            src={post.imageUrl}
-            alt="Post media"
-            isOpen={lightboxOpen}
-            onClose={() => setLightboxOpen(false)}
-          />
+        {localPost.imageUrl && (
+        <ImageLightbox
+          src={localPost.imageUrl}
+          alt="Post media"
+          isOpen={lightboxOpen}
+          onClose={() => setLightboxOpen(false)}
+        />
         )}
+        
+        {/* Edit Modal */}
+        <EditPostModal
+        post={localPost}
+        isOpen={isEditing}
+        onClose={() => setIsEditing(false)}
+        onUpdate={(updatedPost) => {
+          setLocalPost(updatedPost);
+        }}
+        />
       </GlassCard>
     </motion.div>
   );

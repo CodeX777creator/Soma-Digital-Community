@@ -54,8 +54,13 @@ service cloud.firestore {
         && request.resource.data.commentCount == 0;
 
       // Author can edit content/tags/type but NOT authorId, likeCount, or commentCount.
+      // Must be within 30 minutes of creation (or be admin)
       allow update: if isAuthed()
         && resource.data.authorId == request.auth.uid
+        && (
+          isAdmin()
+          || (request.time - resource.data.createdAt) < duration.value(30, "m")
+        )
         && request.resource.data.authorId == resource.data.authorId
         && request.resource.data.likeCount == resource.data.likeCount
         && request.resource.data.commentCount == resource.data.commentCount
@@ -82,6 +87,15 @@ service cloud.firestore {
             && (
               request.resource.data.commentCount == resource.data.commentCount + 1
             )
+          )
+          ||
+          // Soft delete (author only)
+          (
+            resource.data.authorId == request.auth.uid
+            && request.resource.data.diff(resource.data).affectedKeys()
+              .hasOnly(['deleted', 'content', 'deletedAt'])
+            && request.resource.data.deleted == true
+            && request.resource.data.content == '[deleted]'
           )
         );
 

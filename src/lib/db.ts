@@ -51,6 +51,11 @@ export interface Post {
   topReaction?: ReactionType;
   reactionCounts?: Partial<Record<ReactionType, number>>;
   createdAt: any;
+  // Edit/Delete tracking
+  isEdited?: boolean;
+  editedAt?: any;
+  deleted?: boolean;
+  deletedAt?: any;
 }
 
 export interface Comment {
@@ -291,6 +296,15 @@ export const postService = {
   async pinPost(postId: string, pinned: boolean): Promise<void> {
     if (!db) throw new Error('Database not initialized');
     await updateDoc(doc(db, 'posts', postId), { isPinned: pinned });
+  },
+
+  // Update a post (author only)
+  async updatePost(postId: string, updates: Partial<Post>): Promise<void> {
+    if (!db) throw new Error('Database not initialized');
+    await updateDoc(doc(db, 'posts', postId), {
+      ...updates,
+      updatedAt: serverTimestamp(),
+    });
   },
 
   // Delete a post (author or admin)

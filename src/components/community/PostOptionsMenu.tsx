@@ -24,6 +24,9 @@ import { Post, postService } from "@/lib/db";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 
+// Time limit for editing posts (30 minutes in milliseconds)
+const EDIT_TIME_LIMIT = 60 * 60 * 1000;
+
 interface PostOptionsMenuProps {
   post: Post;
   onEdit?: () => void;
@@ -44,9 +47,34 @@ export function PostOptionsMenu({
   const [isDeleting, setIsDeleting] = useState(false);
   
   const isAuthor = user?.uid === post.authorId;
-  const canEdit = isAuthor;
+  
+  // Check if post is within edit time limit
+  const canEditPost = () => {
+    if (!isAuthor) return false;
+    if (isAdmin) return true; // Admins can always edit
+    
+    const createdAt = post.createdAt?.toDate?.() || new Date(post.createdAt);
+    const timeElapsed = Date.now() - createdAt.getTime();
+    return timeElapsed <= EDIT_TIME_LIMIT;
+  };
+  
+  const canEdit = canEditPost();
   const canDelete = isAuthor || isAdmin;
   const canPin = isAdmin;
+  
+  // Calculate remaining edit time for display
+  const getRemainingEditTime = () => {
+    if (!isAuthor || isAdmin) return null;
+    const createdAt = post.createdAt?.toDate?.() || new Date(post.createdAt);
+    const timeElapsed = Date.now() - createdAt.getTime();
+    const remaining = EDIT_TIME_LIMIT - timeElapsed;
+    if (remaining <= 0) return null;
+    
+    const minutes = Math.floor(remaining / 60000);
+    return minutes;
+  };
+  
+  const remainingMinutes = getRemainingEditTime();
 
   const handleCopyLink = () => {
     const url = `${window.location.origin}/community?post=${post.id}`;
@@ -78,14 +106,14 @@ export function PostOptionsMenu({
     
     setIsDeleting(true);
     try {
-      // TODO: Implement delete in postService
-      // await postService.deletePost(post.id);
+      await postService.deletePost(post.id);
       toast({
         title: "Post deleted",
         description: "Your post has been removed.",
       });
       onDelete?.();
     } catch (error) {
+      console.error('Failed to delete post:', error);
       toast({
         title: "Error",
         description: "Failed to delete post. Please try again.",
@@ -132,6 +160,17 @@ export function PostOptionsMenu({
           <DropdownMenuItem onClick={onEdit} className="cursor-pointer">
             <Edit3 className="w-4 h-4 mr-2" />
             Edit post
+            {remainingMinutes !== null && remainingMinutes <= 5 && (
+              <span className="ml-auto text-[10px] text-yellow-500">
+                {remainingMinutes}m left
+              </span>
+            )}
+          </DropdownMenuItem>
+        )}
+        {!canEdit && isAuthor && (
+          <DropdownMenuItem disabled className="cursor-not-allowed opacity-50">
+            <Edit3 className="w-4 h-4 mr-2" />
+            Edit expired
           </DropdownMenuItem>
         )}
         
