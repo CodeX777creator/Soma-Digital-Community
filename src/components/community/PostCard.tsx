@@ -80,7 +80,16 @@ export function PostCard({ post }: PostCardProps) {
   }, [post.likeCount]);
 
   const handleReaction = useCallback((type: ReactionType) => {
-    if (!user || !userData || pickerLocked) return;
+    console.log('[handleReaction] Clicked:', { type, user: !!user, pickerLocked });
+    
+    if (!user) {
+      console.log('[handleReaction] No user, returning');
+      return;
+    }
+    if (pickerLocked) {
+      console.log('[handleReaction] Picker locked, returning');
+      return;
+    }
 
     // Debounce: lock for 350ms
     setPickerLocked(true);
@@ -109,12 +118,15 @@ export function PostCard({ post }: PostCardProps) {
 
     // Firestore sync (background)
     const targetReaction = isSame ? null : type;
-    postService.setReaction(post.id, user.uid, targetReaction).catch(() => {
+    console.log('[handleReaction] Calling setReaction:', { postId: post.id, userId: user.uid, targetReaction });
+    
+    postService.setReaction(post.id, user.uid, targetReaction).catch((err) => {
+      console.error('[handleReaction] setReaction failed:', err);
       // Revert on failure
       setMyReaction(myReaction);
       setLocalLikeCount(post.likeCount);
     });
-  }, [user, userData, myReaction, pickerLocked, post.id, post.likeCount]);
+  }, [user, myReaction, pickerLocked, post.id, post.likeCount]);
 
   // Hover timer logic
   const handleMouseEnterLike = () => {

@@ -61,18 +61,33 @@ export function CreatePostBox({ selectedChannel = "all" }: CreatePostBoxProps) {
   const uploadImage = async (file: File) => {
     setImageError(null);
     setImageUploading(true);
+    console.log('[CreatePostBox] Starting image upload:', { fileName: file.name, fileType: file.type, fileSize: file.size });
+    
     try {
       if (!user) throw new Error('User must be signed in to upload an image');
-      if (!storage) throw new Error('Storage not initialized');
+      if (!storage) {
+        console.error('[CreatePostBox] Storage not initialized');
+        throw new Error('Storage not initialized - please check Firebase configuration');
+      }
       if (!file.type.startsWith('image/')) {
         throw new Error('Only image files are allowed');
       }
+      if (file.size > 5 * 1024 * 1024) {
+        throw new Error('Image must be smaller than 5MB');
+      }
+      
       const imageRef = ref(storage, `community-posts/${user.uid}/${Date.now()}-${file.name}`);
+      console.log('[CreatePostBox] Uploading to:', imageRef.fullPath);
+      
       const snapshot = await uploadBytes(imageRef, file, { contentType: file.type });
+      console.log('[CreatePostBox] Upload successful, getting download URL');
+      
       const url = await getDownloadURL(snapshot.ref);
+      console.log('[CreatePostBox] Got download URL:', url);
+      
       setImageUrl(url);
     } catch (err: any) {
-      console.error('Image upload failed', err);
+      console.error('[CreatePostBox] Image upload failed:', err);
       setImageError(err?.message || 'Upload failed');
     } finally {
       setImageUploading(false);
@@ -87,7 +102,19 @@ export function CreatePostBox({ selectedChannel = "all" }: CreatePostBoxProps) {
   };
 
   const handlePost = async () => {
-    if (!user || !userData || (!content.trim() && !imageUrl && !linkUrl.trim())) return;
+    console.log('[CreatePostBox] handlePost called:', { 
+      hasUser: !!user, 
+      hasUserData: !!userData, 
+      content: content.trim().length,
+      hasImage: !!imageUrl,
+      hasLink: !!linkUrl.trim()
+    });
+    
+    if (!user || (!content.trim() && !imageUrl && !linkUrl.trim())) {
+      console.log('[CreatePostBox] Missing required data');
+      return;
+    }
+    
     setSubmitting(true);
     setPostError(null);
 
@@ -104,16 +131,24 @@ export function CreatePostBox({ selectedChannel = "all" }: CreatePostBoxProps) {
       if (imageUrl) payload.imageUrl = imageUrl;
       if (linkUrl.trim()) payload.linkUrl = linkUrl.trim();
 
+      console.log('[CreatePostBox] Sending payload:', payload);
+
       const response = await authFetch('/api/community/posts', {
         method: 'POST',
         body: JSON.stringify(payload),
       });
 
+      console.log('[CreatePostBox] Response status:', response.status);
+
       if (!response.ok) {
         const body = await response.json().catch(() => null);
+        console.error('[CreatePostBox] Post failed:', body);
         const message = body?.error || body?.message || 'Unable to post';
         throw new Error(message);
       }
+
+      const result = await response.json();
+      console.log('[CreatePostBox] Post successful:', result);
 
       incrementEngagementScore(15);
       dbService.saveUserProfile(user.uid, { engagementScore: (engagementScore || 0) + 15 });
@@ -128,7 +163,7 @@ export function CreatePostBox({ selectedChannel = "all" }: CreatePostBoxProps) {
       setShowLinkInput(false);
       setExpanded(false);
     } catch (err: any) {
-      console.error("Failed to create post:", err);
+      console.error("[CreatePostBox] Failed to create post:", err);
       setPostError(err?.message || 'Unable to create post');
     } finally {
       setSubmitting(false);

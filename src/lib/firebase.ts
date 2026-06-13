@@ -30,8 +30,17 @@ if (hasConfig) {
     auth = getAuth(app);
     db = getFirestore(app);
     storage = getStorage(app);
+    
+    console.log('[Firebase] Initialized successfully:', {
+      projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
+      storageBucket: `${process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID}.appspot.com`,
+      hasAuth: !!auth,
+      hasDb: !!db,
+      hasStorage: !!storage,
+      isClient: typeof window !== 'undefined',
+    });
   } catch (e) {
-    console.error("Firebase init error:", e);
+    console.error("[Firebase] Init error:", e);
   }
 } else if (!isSSG) {
   // Client-side with missing config - this is an error

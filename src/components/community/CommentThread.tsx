@@ -49,26 +49,35 @@ export function CommentThread({ postId, initialCount }: CommentThreadProps) {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!input.trim() || !user || !userData) return;
+    console.log('[CommentThread] Submitting comment:', { input: input.trim(), hasUser: !!user, hasUserData: !!userData });
+    
+    if (!input.trim() || !user) {
+      console.log('[CommentThread] Missing required data, returning');
+      return;
+    }
+    
     setSubmitting(true);
     const optimisticComment: Comment = {
       id: `optimistic-${Date.now()}`,
       postId,
       authorId: user.uid,
-      authorName: userData.name || user.displayName || "You",
+      authorName: userData?.name || user.displayName || "You",
       authorAvatar: user.photoURL || "",
-      authorTier: userData.tier,
+      authorTier: userData?.tier || 'explorer',
       content: input,
       createdAt: null,
     };
     setComments(prev => [...prev, optimisticComment]);
     setInput("");
+    
     try {
+      console.log('[CommentThread] Calling addComment');
       await postService.addComment(postId, user.uid, {
-        name: userData.name || user.displayName || "Anonymous",
+        name: userData?.name || user.displayName || "Anonymous",
         photoURL: user.photoURL || undefined,
-        tier: userData.tier,
+        tier: userData?.tier || 'explorer',
       }, optimisticComment.content);
+      console.log('[CommentThread] addComment successful');
 
       const post = await postService.getPost(postId);
       if (post && post.authorId && post.authorId !== user.uid) {
@@ -76,13 +85,14 @@ export function CommentThread({ postId, initialCount }: CommentThreadProps) {
           post.authorId,
           'comment',
           'New comment on your post',
-          `${userData.name || user.displayName || 'Someone'} left a comment on your post.`,
+          `${userData?.name || user.displayName || 'Someone'} left a comment on your post.`,
           `/community?post=${postId}`
         );
       }
 
       await awardXP(user.uid, 5, 'comment', { postId });
-    } catch {
+    } catch (err) {
+      console.error('[CommentThread] Failed to add comment:', err);
       // Revert optimistic comment
       setComments(prev => prev.filter(c => c.id !== optimisticComment.id));
       setInput(optimisticComment.content);

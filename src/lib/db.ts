@@ -159,39 +159,51 @@ export const postService = {
     const reactionRef = doc(db, 'likes', reactionId);
     const postRef = doc(db, 'posts', postId);
 
-    await runTransaction(db, async (tx) => {
-      const existing = await tx.get(reactionRef);
-      const existingType: ReactionType | null = existing.exists()
-        ? (existing.data() as PostReaction).type
-        : null;
+    console.log('[setReaction] Starting transaction:', { postId, userId, newReaction, reactionId });
 
-      if (existingType === newReaction || newReaction === null) {
-        // Remove reaction
-        if (existing.exists()) {
-          tx.delete(reactionRef);
-          tx.update(postRef, {
-            likeCount: increment(-1),
-            [`reactionCounts.${existingType}`]: increment(-1),
-          });
-        }
-      } else {
-        // Add or swap reaction
-        tx.set(reactionRef, { type: newReaction, userId, createdAt: serverTimestamp() });
-        if (existingType) {
-          // Swap: decrement old, increment new
-          tx.update(postRef, {
-            [`reactionCounts.${existingType}`]: increment(-1),
-            [`reactionCounts.${newReaction}`]: increment(1),
-          });
+    try {
+      await runTransaction(db, async (tx) => {
+        const existing = await tx.get(reactionRef);
+        const existingType: ReactionType | null = existing.exists()
+          ? (existing.data() as PostReaction).type
+          : null;
+
+        console.log('[setReaction] Existing reaction:', existingType);
+
+        if (existingType === newReaction || newReaction === null) {
+          // Remove reaction
+          if (existing.exists()) {
+            console.log('[setReaction] Removing reaction');
+            tx.delete(reactionRef);
+            tx.update(postRef, {
+              likeCount: increment(-1),
+              [`reactionCounts.${existingType}`]: increment(-1),
+            });
+          }
         } else {
-          // New reaction
-          tx.update(postRef, {
-            likeCount: increment(1),
-            [`reactionCounts.${newReaction}`]: increment(1),
-          });
+          // Add or swap reaction
+          console.log('[setReaction] Setting new reaction:', newReaction);
+          tx.set(reactionRef, { type: newReaction, userId, createdAt: serverTimestamp() });
+          if (existingType) {
+            // Swap: decrement old, increment new
+            tx.update(postRef, {
+              [`reactionCounts.${existingType}`]: increment(-1),
+              [`reactionCounts.${newReaction}`]: increment(1),
+            });
+          } else {
+            // New reaction
+            tx.update(postRef, {
+              likeCount: increment(1),
+              [`reactionCounts.${newReaction}`]: increment(1),
+            });
+          }
         }
-      }
     });
+      console.log('[setReaction] Transaction successful');
+    } catch (error) {
+      console.error('[setReaction] Transaction failed:', error);
+      throw error;
+    }
   },
 
   // Add a comment
