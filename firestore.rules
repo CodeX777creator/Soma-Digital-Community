@@ -153,14 +153,24 @@ service cloud.firestore {
         && request.resource.data.get('isAdmin', false) == resource.data.get('isAdmin', false)
         && request.resource.data.get('subscription', null) == resource.data.get('subscription', null);
 
-      // Allow self-update of mission progress and stats
+      // Allow self-update of mission progress, stats, and credits
       allow update: if isUser(userId)
         && (
-          // Only missions field is changing
-          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['missions', 'postCount', 'commentCount', 'likeCount', 'engagementScore', 'updatedAt'])
+          // Only missions/stats fields are changing
+          request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['missions', 'postCount', 'commentCount', 'likeCount', 'engagementScore', 'updatedAt'])
           ||
-          // Only xp field is changing (incrementing)
-          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['xp', 'updatedAt'])
+          // Only xp field is changing
+          request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['xp', 'updatedAt'])
+          ||
+          // Only usage tracking fields are changing (AI chats, etc)
+          request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['usage', 'updatedAt'])
+          ||
+          // Only credits field is changing (purchased credits)
+          request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['credits', 'updatedAt'])
         );
 
       // Admins may update anything (tier upgrades, subscription writes from backend)
