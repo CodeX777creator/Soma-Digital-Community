@@ -13,7 +13,7 @@ import {
   Star, ChevronRight, Cpu, Loader2, Briefcase,
 } from "lucide-react";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
-import { PostCard } from "@/components/community/PostCard";
+import { PostCardOptimized } from "@/components/community/PostCardOptimized";
 import { CreatePostBox } from "@/components/community/CreatePostBox";
 import { Post, postService } from "@/lib/db";
 import { COMMUNITY_CHANNELS, CommunityChannel } from "@/lib/communityChannels";
@@ -275,7 +275,7 @@ export default function CommunityPage() {
               <div className="flex flex-col gap-5">
                 <AnimatePresence initial={false}>
                   {filteredPosts.map(post => (
-                    <PostCard key={post.id} post={post} />
+                    <PostCardOptimized key={post.id} post={post} />
                   ))}
                 </AnimatePresence>
               </div>
