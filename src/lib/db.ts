@@ -166,8 +166,6 @@ export const postService = {
     const reactionRef = doc(db, 'likes', reactionId);
     const postRef = doc(db, 'posts', postId);
 
-    console.log('[setReaction] Starting transaction:', { postId, userId, newReaction, reactionId });
-
     try {
       await runTransaction(db, async (tx) => {
         const existing = await tx.get(reactionRef);
@@ -175,12 +173,9 @@ export const postService = {
           ? (existing.data() as PostReaction).type
           : null;
 
-        console.log('[setReaction] Existing reaction:', existingType);
-
         if (existingType === newReaction || newReaction === null) {
           // Remove reaction
           if (existing.exists()) {
-            console.log('[setReaction] Removing reaction');
             tx.delete(reactionRef);
             tx.update(postRef, {
               likeCount: increment(-1),
@@ -189,7 +184,6 @@ export const postService = {
           }
         } else {
           // Add or swap reaction
-          console.log('[setReaction] Setting new reaction:', newReaction);
           tx.set(reactionRef, { type: newReaction, userId, createdAt: serverTimestamp() });
           if (existingType) {
             // Swap: decrement old, increment new
@@ -206,9 +200,7 @@ export const postService = {
           }
         }
     });
-      console.log('[setReaction] Transaction successful');
     } catch (error) {
-      console.error('[setReaction] Transaction failed:', error);
       throw error;
     }
   },
@@ -522,7 +514,6 @@ export const dbService = {
         revenueGenerated: 0 
       };
     } catch (error) {
-      console.error("Error fetching global stats:", error);
       return { memberCount: 0, discussionCount: 0, revenueGenerated: 0 };
     }
   },
@@ -541,7 +532,6 @@ export const dbService = {
         detail: `Shared a new ${doc.data().type}`
       }));
     } catch (error) {
-      console.error("Error fetching recent activity:", error);
       return [];
     }
   },
@@ -560,7 +550,6 @@ export const dbService = {
         detail: 'Joined the Founding cohort'
       }));
     } catch (error) {
-      console.error("Error fetching recent members:", error);
       return [];
     }
   }

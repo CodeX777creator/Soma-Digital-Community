@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { FieldValue } from 'firebase-admin/firestore';
 import { adminAuth, adminDb } from '@/lib/firebaseAdmin';
+import { rateLimit, getClientIP } from '@/lib/api-middleware';
+import { ADMIN_RATE_LIMIT, isBlocked } from '@/lib/security';
 
 type SetDisabledRequest = {
   userId?: unknown;
@@ -16,7 +18,6 @@ function getBearerToken(req: Request) {
   if (scheme !== 'Bearer' || !token) {
     return null;
   }
-
   return token;
 }
 
@@ -27,6 +28,27 @@ function hasAdminAccess(profile: Record<string, any> | undefined) {
 
 export async function POST(req: Request) {
   try {
+    // Apply strict rate limiting for admin operations
+    const clientIP = getClientIP(req as any);
+    const identifier = `${clientIP}:admin:set-disabled`;
+    
+    // Check if IP is already blocked
+    if (isBlocked(identifier)) {
+      return NextResponse.json(
+        { error: 'Access temporarily blocked due to rate limit violations' },
+        { status: 429 }
+      );
+    }
+    
+    const limitResult = rateLimit(identifier, ADMIN_RATE_LIMIT);
+    
+    if (!limitResult.allowed) {
+      return NextResponse.json(
+        { error: 'Rate limit exceeded', retryAfter: Math.ceil((limitResult.resetTime - Date.now()) / 1000) },
+        { status: 429 }
+      );
+    }
+
     const token = getBearerToken(req);
 
     if (!token) {
@@ -83,6 +105,16 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Target user not found' }, { status: 404 });
     }
 
+    const userData = userSnap.data();
+    
+    // Prevent disabling other admins
+    if (disabled && (userData?.isAdmin || userData?.role === 'admin' || (userData?.roles || []).includes('admin'))) {
+      return NextResponse.json(
+        { error: 'Cannot disable admin users' },
+        { status: 403 }
+      );
+    }
+
     const previousDisabled = userSnap.data()?.disabled === true;
     const timestamp = FieldValue.serverTimestamp();
 
@@ -116,6 +148,7 @@ export async function POST(req: Request) {
       adminId: callerUid,
       reason,
       timestamp,
+      ipAddress: clientIP,
     });
 
     return NextResponse.json({ success: true, userId, disabled });

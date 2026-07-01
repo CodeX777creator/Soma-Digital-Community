@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { FieldValue } from 'firebase-admin/firestore';
 import { adminAuth, adminDb } from '@/lib/firebaseAdmin';
+import { rateLimit, getClientIP } from '@/lib/api-middleware';
+import { ADMIN_RATE_LIMIT, isBlocked } from '@/lib/security';
 
 type Tier = 'explorer' | 'pro' | 'elite';
 
@@ -35,6 +37,27 @@ function hasAdminAccess(profile: Record<string, any> | undefined) {
 
 export async function POST(req: Request) {
   try {
+    // Apply strict rate limiting for admin operations
+    const clientIP = getClientIP(req as any);
+    const identifier = `${clientIP}:admin:update-tier`;
+    
+    // Check if IP is already blocked
+    if (isBlocked(identifier)) {
+      return NextResponse.json(
+        { error: 'Access temporarily blocked due to rate limit violations' },
+        { status: 429 }
+      );
+    }
+    
+    const limitResult = rateLimit(identifier, ADMIN_RATE_LIMIT);
+    
+    if (!limitResult.allowed) {
+      return NextResponse.json(
+        { error: 'Rate limit exceeded', retryAfter: Math.ceil((limitResult.resetTime - Date.now()) / 1000) },
+        { status: 429 }
+      );
+    }
+
     const token = getBearerToken(req);
 
     if (!token) {
@@ -78,6 +101,14 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Invalid tier value' }, { status: 400 });
     }
 
+    // Prevent self-tier modification through this endpoint
+    if (userId === callerUid) {
+      return NextResponse.json(
+        { error: 'Cannot modify your own tier through this endpoint' },
+        { status: 403 }
+      );
+    }
+
     const userRef = adminDb.collection('users').doc(userId);
     const userSnap = await userRef.get();
 
@@ -92,6 +123,15 @@ export async function POST(req: Request) {
       userData.subscription?.subscriptionPlan ||
       userData.subscription?.plan ||
       null;
+
+    // Additional check: prevent downgrading other admins
+    if (userData.isAdmin || userData.role === 'admin' || (userData.roles || []).includes('admin')) {
+      return NextResponse.json(
+        { error: 'Cannot modify tier of admin users' },
+        { status: 403 }
+      );
+    }
+
     const timestamp = FieldValue.serverTimestamp();
     const subscriptionId =
       typeof userData.subscription?.subscriptionId === 'string' && userData.subscription.subscriptionId
@@ -139,6 +179,9 @@ export async function POST(req: Request) {
       subscriptionTier: tier,
     });
 
+    // Revoke refresh tokens to force re-auth with new claims
+    await adminAuth.revokeRefreshTokens(userId);
+
     await adminDb.collection('admin').doc('audit').collection('entries').add({
       action: 'tier_change',
       targetUserId: userId,
@@ -147,6 +190,7 @@ export async function POST(req: Request) {
       adminId: callerUid,
       reason,
       timestamp,
+      ipAddress: clientIP,
     });
 
     return NextResponse.json({ success: true, userId, newTier: tier });

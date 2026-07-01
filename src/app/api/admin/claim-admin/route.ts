@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { FieldValue } from 'firebase-admin/firestore';
 import { adminAuth, adminDb } from '@/lib/firebaseAdmin';
+import { rateLimit, getClientIP } from '@/lib/api-middleware';
+import { ADMIN_RATE_LIMIT, isBlocked, sanitizeString } from '@/lib/security';
 
 type ClaimAdminRequest = {
   uid?: unknown;
@@ -18,11 +20,75 @@ function getBearerToken(req: Request): string | null {
   return token;
 }
 
+// Track failed setup attempts per IP
+const failedAttempts = new Map<string, { count: number; lockUntil: number }>();
+const MAX_FAILED_ATTEMPTS = 5;
+const LOCKOUT_DURATION = 60 * 60 * 1000; // 1 hour
+
+function isLockedOut(identifier: string): boolean {
+  const attempt = failedAttempts.get(identifier);
+  if (!attempt) return false;
+  if (Date.now() < attempt.lockUntil) return true;
+  // Clear expired lockout
+  failedAttempts.delete(identifier);
+  return false;
+}
+
+function recordFailedAttempt(identifier: string): void {
+  const existing = failedAttempts.get(identifier);
+  const count = (existing?.count || 0) + 1;
+  
+  if (count >= MAX_FAILED_ATTEMPTS) {
+    failedAttempts.set(identifier, {
+      count,
+      lockUntil: Date.now() + LOCKOUT_DURATION,
+    });
+  } else {
+    failedAttempts.set(identifier, {
+      count,
+      lockUntil: 0,
+    });
+  }
+}
+
+function clearFailedAttempts(identifier: string): void {
+  failedAttempts.delete(identifier);
+}
+
 export async function POST(req: Request) {
+  const clientIP = getClientIP(req as any);
+  const identifier = `${clientIP}:admin:claim`;
+  
   try {
+    // Check for lockout
+    if (isLockedOut(identifier)) {
+      return NextResponse.json(
+        { error: 'Too many failed attempts. Please try again later.' },
+        { status: 429 }
+      );
+    }
+
+    // Apply strict rate limiting
+    if (isBlocked(identifier)) {
+      return NextResponse.json(
+        { error: 'Access temporarily blocked due to rate limit violations' },
+        { status: 429 }
+      );
+    }
+    
+    const limitResult = rateLimit(identifier, ADMIN_RATE_LIMIT);
+    
+    if (!limitResult.allowed) {
+      return NextResponse.json(
+        { error: 'Rate limit exceeded', retryAfter: Math.ceil((limitResult.resetTime - Date.now()) / 1000) },
+        { status: 429 }
+      );
+    }
+
     // ── 1. Verify Firebase token ─────────────────────────────────────────
     const token = getBearerToken(req);
     if (!token) {
+      recordFailedAttempt(identifier);
       return NextResponse.json(
         { error: 'Missing Authorization bearer token' },
         { status: 401 }
@@ -33,13 +99,24 @@ export async function POST(req: Request) {
 
     // ── 2. Parse and validate body ───────────────────────────────────────
     const body = (await req.json()) as ClaimAdminRequest;
-    const uid = typeof body.uid === 'string' ? body.uid.trim() : '';
-    const email = typeof body.email === 'string' ? body.email.trim() : '';
-    const setupCode = typeof body.setupCode === 'string' ? body.setupCode.trim() : '';
+    const uid = typeof body.uid === 'string' ? sanitizeString(body.uid.trim(), 128) : '';
+    const email = typeof body.email === 'string' ? sanitizeString(body.email.trim().toLowerCase(), 254) : '';
+    const setupCode = typeof body.setupCode === 'string' ? sanitizeString(body.setupCode.trim(), 256) : '';
 
     if (!uid || !email) {
+      recordFailedAttempt(identifier);
       return NextResponse.json(
         { error: 'Missing uid or email' },
+        { status: 400 }
+      );
+    }
+
+    // Validate email format
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      recordFailedAttempt(identifier);
+      return NextResponse.json(
+        { error: 'Invalid email format' },
         { status: 400 }
       );
     }
@@ -47,6 +124,7 @@ export async function POST(req: Request) {
     // ── 3. CRITICAL: Verify setup code ───────────────────────────────────
     const expectedCode = process.env.ADMIN_SETUP_CODE;
     if (!expectedCode || setupCode !== expectedCode) {
+      recordFailedAttempt(identifier);
       return NextResponse.json(
         { error: 'Invalid or missing setup code' },
         { status: 403 }
@@ -55,6 +133,7 @@ export async function POST(req: Request) {
 
     // ── 4. Verify token matches requested user ───────────────────────────
     if (decodedToken.uid !== uid) {
+      recordFailedAttempt(identifier);
       return NextResponse.json(
         { error: 'Authenticated user does not match requested uid' },
         { status: 403 }
@@ -65,6 +144,7 @@ export async function POST(req: Request) {
     const authEmail = userRecord.email || decodedToken.email;
 
     if (authEmail && authEmail.toLowerCase() !== email.toLowerCase()) {
+      recordFailedAttempt(identifier);
       return NextResponse.json(
         { error: 'Authenticated user email does not match requested email' },
         { status: 403 }
@@ -152,6 +232,18 @@ export async function POST(req: Request) {
 
     // ── 8. Force token refresh ───────────────────────────────────────────
     await adminAuth.revokeRefreshTokens(uid);
+
+    // Clear failed attempts on success
+    clearFailedAttempts(identifier);
+
+    // Log successful admin claim
+    await adminDb.collection('admin').doc('audit').collection('entries').add({
+      action: 'admin_claimed',
+      adminId: uid,
+      email,
+      ipAddress: clientIP,
+      timestamp: FieldValue.serverTimestamp(),
+    });
 
     return NextResponse.json({
       success: true,

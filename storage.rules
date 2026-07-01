@@ -93,18 +93,29 @@ service firebase.storage {
         && request.resource.metadata.uploadedBy == request.auth.uid;
     }
 
+    function isSafeFilename(filename) {
+      return !filename.matches('.*\\.\\..*')
+        && !filename.matches('^/.*')
+        && filename.size() < 255;
+    }
+
     match /community-posts/{userId}/{allPaths=**} {
       allow read: if true;
       allow write, delete: if request.auth != null && request.auth.uid == userId
         && request.resource != null
         && request.resource.size <= 5 * 1024 * 1024
-        && request.resource.contentType.matches('image/.*');
+        && request.resource.contentType.matches('image/.*')
+        && isSafeFilename(allPaths);
     }
 
     match /marketplace-assets/{assetId}/{filename} {
       allow read: if canReadMarketplaceAsset(assetId);
-      allow write: if isAdminOrContentManager() && isAllowedMarketplaceUpload(assetId);
+      allow write: if isAdminOrContentManager() && isAllowedMarketplaceUpload(assetId) && isSafeFilename(filename);
       allow delete: if isAdminOrContentManager();
+    }
+
+    match /{allPaths=**} {
+      allow read, write: if false;
     }
   }
 }

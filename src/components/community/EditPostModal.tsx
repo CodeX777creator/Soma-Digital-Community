@@ -19,7 +19,7 @@ const POST_TYPES: { type: PostType; label: string; icon: string }[] = [
 ];
 
 // Time limit for editing posts (30 minutes in milliseconds)
-const EDIT_TIME_LIMIT = 60 * 60 * 1000;
+const EDIT_TIME_LIMIT = 30 * 60 * 1000;
 
 interface EditPostModalProps {
   post: Post;
@@ -221,6 +221,23 @@ export function EditPostModal({ post, isOpen, onClose, onUpdate }: EditPostModal
                   <input
                     value={linkUrl}
                     onChange={(e) => setLinkUrl(e.target.value)}
+                    onBlur={() => {
+                      // SECURITY: Validate URL on blur
+                      if (linkUrl.trim()) {
+                        try {
+                          let urlToValidate = linkUrl.trim();
+                          if (!urlToValidate.match(/^https?:\/\//i)) {
+                            urlToValidate = 'https://' + urlToValidate;
+                          }
+                          const url = new URL(urlToValidate);
+                          if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+                            setLinkUrl('');
+                          }
+                        } catch {
+                          console.warn('Invalid URL format in edit:', linkUrl);
+                        }
+                      }
+                    }}
                     placeholder="https://example.com"
                     className="flex-1 rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm text-white outline-none focus:border-primary/40"
                   />

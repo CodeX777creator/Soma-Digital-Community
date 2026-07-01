@@ -59,7 +59,6 @@ export default function NotificationsPage() {
       await clearAllNotifications();
       toast({ title: "Notifications cleared", description: "All notifications have been removed." });
     } catch (error) {
-      console.error("Clear notifications failed", error);
       toast({ title: "Unable to clear", description: "Please try again." });
     }
   };
@@ -69,7 +68,6 @@ export default function NotificationsPage() {
       await markNotificationRead(notificationId);
       toast({ title: "Marked read", description: "This notification is now marked as read." });
     } catch (error) {
-      console.error("Mark read failed", error);
       toast({ title: "Unable to mark read", description: "Please try again." });
     }
   };
@@ -79,7 +77,6 @@ export default function NotificationsPage() {
       await deleteNotification(notificationId);
       toast({ title: "Removed", description: "The notification was deleted." });
     } catch (error) {
-      console.error("Delete notification failed", error);
       toast({ title: "Unable to delete", description: "Please try again." });
     }
   };

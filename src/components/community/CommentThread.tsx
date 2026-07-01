@@ -26,6 +26,100 @@ function timeAgo(timestamp: any): string {
   return `${Math.floor(hrs / 24)}d ago`;
 }
 
+
+function formatContent(content: string): { __html: string } {
+  if (!content) return { __html: '' };
+
+  // SECURITY FIX: Step 1 - Block control characters
+  let sanitized = content.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\x9F]/g, '');
+
+  // Step 2: Escape ALL HTML entities FIRST
+  // This prevents any HTML from being interpreted
+  let escaped = sanitized
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#x27;')
+    .replace(/\//g, '&#x2F;');
+
+  // Step 3: Convert URLs to clickable links (on the ALREADY escaped content)
+  // SECURITY FIX: Use stricter URL regex - only match https:// in production
+  const isDev = process.env.NODE_ENV === 'development';
+  const urlRegex = isDev 
+    ? /(\bhttps?:\/\/[-A-Z0-9+&@#\/%?=~_|!:,.;]*[-A-Z0-9+&@#\/%=~_|])/gi
+    : /(\bhttps:\/\/[-A-Z0-9+&@#\/%?=~_|!:,.;]*[-A-Z0-9+&@#\/%=~_|])/gi; // Only https in production
+
+  escaped = escaped.replace(urlRegex, (match) => {
+    try {
+      // SECURITY FIX: Unescape the URL for validation
+      const unescapedUrl = match
+        .replace(/&amp;/g, '&')
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/&quot;/g, '"')
+        .replace(/&#x27;/g, "'")
+        .replace(/&#x2F;/g, '/');
+      
+      const url = new URL(unescapedUrl);
+
+      // Strict protocol check
+      if (url.protocol !== 'https:' && url.protocol !== 'http:') {
+        return match;
+      }
+
+      // SECURITY FIX: Enhanced dangerous pattern detection
+      const lowerHref = url.toString().toLowerCase();
+      const dangerousPatterns = [
+        'javascript:', 'data:', 'vbscript:', 'file:', 'about:', 'blob:',
+        'javascript%3a', 'data%3a', // URL encoded
+        'onerror=', 'onload=', 'onclick=', 'onmouse',
+        '<script', 'eval(', 'expression(',
+      ];
+      
+      if (dangerousPatterns.some(pattern => lowerHref.includes(pattern))) {
+        return match;
+      }
+
+      // SECURITY FIX: Block localhost/private IPs in production
+      if (process.env.NODE_ENV === 'production') {
+        const lowerHostname = url.hostname.toLowerCase();
+        if (
+          lowerHostname === 'localhost' ||
+          lowerHostname === '127.0.0.1' ||
+          lowerHostname.startsWith('192.168.') ||
+          lowerHostname.startsWith('10.') ||
+          lowerHostname.startsWith('172.')
+        ) {
+          return match;
+        }
+      }
+
+      // SECURITY FIX: Re-escape the URL for the href attribute
+      const href = url.toString()
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#x27;');
+
+      // Truncate display text
+      const displayText = match.length > 60 
+        ? match.substring(0, 57) + '...' 
+        : match;
+
+      return `<a href="${href}" target="_blank" rel="noopener noreferrer nofollow" class="text-primary hover:underline break-all">${displayText}</a>`;
+    } catch {
+      return match;
+    }
+  });
+
+  // Step 4: Convert line breaks to <br> tags
+  escaped = escaped.replace(/\n/g, '<br>');
+
+  return { __html: escaped };
+}
+
 interface CommentThreadProps {
   postId: string;
   initialCount: number;
@@ -105,7 +199,10 @@ function CommentItem({
             <span className="text-[11px] font-bold text-white">{comment.authorName}</span>
             <span className="text-[9px] text-muted-foreground">{timeAgo(comment.createdAt)}</span>
           </div>
-          <p className="text-xs text-white/80 leading-relaxed">{comment.content}</p>
+          <p 
+            className="text-xs text-white/80 leading-relaxed"
+            dangerouslySetInnerHTML={formatContent(comment.content)}
+          />
         </div>
         
         {/* Reply actions */}

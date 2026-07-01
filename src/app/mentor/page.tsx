@@ -212,7 +212,6 @@ export default function MentorPage() {
       const idToken = await user.getIdToken();
 
       // Call the Next.js API route with Genkit/Kimi
-      console.log('Calling /api/mentor/chat with:', { message, historyLength: history.length });
       const response = await fetch('/api/mentor/chat', {
         method: 'POST',
         headers: {
@@ -231,7 +230,6 @@ export default function MentorPage() {
       }
 
       const data: MentorChatApiResponse = await response.json();
-      console.log('API response received:', { resultLength: data.result?.length });
 
       // Save AI response to Firestore
       await addDoc(messagesRef, {
@@ -251,7 +249,6 @@ export default function MentorPage() {
         messageText = err.message;
       }
       
-      console.error('Mentor chat error:', err);
       setError(messageText);
       toast({ title: "Mentor error", description: messageText, variant: "destructive" });
     } finally {

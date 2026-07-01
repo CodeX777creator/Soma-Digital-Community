@@ -277,7 +277,31 @@ export function CreatePostBox({ selectedChannel = "all" }: CreatePostBoxProps) {
                   <div className="flex items-center gap-2">
                     <input
                       value={linkUrl}
-                      onChange={(e) => setLinkUrl(e.target.value)}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        setLinkUrl(value);
+                      }}
+                      onBlur={() => {
+                        // SECURITY: Validate URL on blur
+                        if (linkUrl.trim()) {
+                          try {
+                            let urlToValidate = linkUrl.trim();
+                            // Add https:// if no protocol
+                            if (!urlToValidate.match(/^https?:\/\//i)) {
+                              urlToValidate = 'https://' + urlToValidate;
+                            }
+                            const url = new URL(urlToValidate);
+                            // Only allow http and https protocols
+                            if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+                              setLinkUrl('');
+                              console.warn('Invalid URL protocol rejected:', url.protocol);
+                            }
+                          } catch {
+                            // Invalid URL, keep the input but log it
+                            console.warn('Invalid URL format:', linkUrl);
+                          }
+                        }
+                      }}
                       placeholder="https://example.com"
                       className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-2 text-sm text-white outline-none focus:border-primary/40"
                     />

@@ -71,15 +71,7 @@ function getFullName(user: User | null, userData: UserProfile | null): string {
 function DashboardContent() {
   const { user, userData, loading: authLoading } = useAuth();
   
-  // Debug logging to help diagnose the issue
-  useEffect(() => {
-    console.log('[Dashboard Debug]', {
-      authLoading,
-      firebaseUserDisplayName: user?.displayName,
-      firestoreUserDataName: userData?.name,
-      firestoreUserData: userData ? { ...userData, uid: userData.uid } : null,
-    });
-  }, [user, userData, authLoading]);
+
   const router = useRouter();
   const searchParams = useSearchParams();
   const [mounted, setMounted] = useState(false);

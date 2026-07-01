@@ -118,7 +118,6 @@ export default function OnboardingPage() {
         setCurrentStep(6);
       }, 3000);
     } catch (error) {
-      console.error("AI Error:", error);
       setIsSynthesizing(false);
       setCurrentStep(6); // Fallback
     }

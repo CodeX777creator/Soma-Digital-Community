@@ -34,6 +34,14 @@ service cloud.firestore {
       return isAdmin() || hasRole('admin') || hasRole('content-manager') || hasRole('contentManager');
     }
 
+    // String validation helpers
+    function isValidString(value, maxLength) {
+      return value is string && value.size() <= maxLength && value.size() > 0;
+    }
+    function isValidOptionalString(value, maxLength) {
+      return value == null || (value is string && value.size() <= maxLength);
+    }
+
     // ── Deny everything by default ────────────────────────────────────────────
     match /{document=**} {
       allow read, write: if false;
@@ -48,10 +56,18 @@ service cloud.firestore {
 
       allow create: if isAuthed()
         && request.resource.data.authorId == request.auth.uid
+        // Validate required fields
+        && request.resource.data.content is string
+        && request.resource.data.content.size() > 0
+        && request.resource.data.content.size() <= 5000
         // Enforce safe defaults on creation
         && request.resource.data.isPinned == false
         && request.resource.data.likeCount == 0
-        && request.resource.data.commentCount == 0;
+        && request.resource.data.commentCount == 0
+        // Validate optional fields
+        && isValidOptionalString(request.resource.data.imageUrl, 2048)
+        && isValidOptionalString(request.resource.data.linkUrl, 2048)
+        && (request.resource.data.channel == null || request.resource.data.channel is string);
 
       // Author can edit content/tags/type but NOT authorId, likeCount, or commentCount.
       // Must be within 30 minutes of creation (or be admin)
@@ -64,7 +80,11 @@ service cloud.firestore {
         && request.resource.data.authorId == resource.data.authorId
         && request.resource.data.likeCount == resource.data.likeCount
         && request.resource.data.commentCount == resource.data.commentCount
-        && request.resource.data.isPinned == resource.data.isPinned;
+        && request.resource.data.isPinned == resource.data.isPinned
+        && request.resource.data.createdAt == resource.data.createdAt
+        // Validate content length on update
+        && request.resource.data.content is string
+        && request.resource.data.content.size() <= 5000;
 
       // Allow authenticated users to update likeCount/reactionCounts (for reactions)
       // and commentCount (for comments) - only increment/decrement by 1
@@ -73,7 +93,7 @@ service cloud.firestore {
           // Only likeCount and reactionCounts are changing (reaction transaction)
           (
             request.resource.data.diff(resource.data).affectedKeys()
-              .hasOnly(['likeCount', 'reactionCounts'])
+              .hasOnly(['likeCount', 'reactionCounts', 'updatedAt'])
             && (
               request.resource.data.likeCount == resource.data.likeCount + 1
               || request.resource.data.likeCount == resource.data.likeCount - 1
@@ -83,7 +103,7 @@ service cloud.firestore {
           // Only commentCount is changing (comment transaction)
           (
             request.resource.data.diff(resource.data).affectedKeys()
-              .hasOnly(['commentCount'])
+              .hasOnly(['commentCount', 'updatedAt'])
             && (
               request.resource.data.commentCount == resource.data.commentCount + 1
             )
@@ -93,7 +113,7 @@ service cloud.firestore {
           (
             resource.data.authorId == request.auth.uid
             && request.resource.data.diff(resource.data).affectedKeys()
-              .hasOnly(['deleted', 'content', 'deletedAt'])
+              .hasOnly(['deleted', 'content', 'deletedAt', 'updatedAt'])
             && request.resource.data.deleted == true
             && request.resource.data.content == '[deleted]'
           )
@@ -112,11 +132,16 @@ service cloud.firestore {
 
       allow create: if isAuthed()
         && request.resource.data.authorId == request.auth.uid
-        && request.resource.data.postId == postId;
+        && request.resource.data.postId == postId
+        && request.resource.data.content is string
+        && request.resource.data.content.size() > 0
+        && request.resource.data.content.size() <= 2000;
 
       allow update: if isAuthed()
         && resource.data.authorId == request.auth.uid
-        && request.resource.data.authorId == resource.data.authorId;
+        && request.resource.data.authorId == resource.data.authorId
+        && request.resource.data.content is string
+        && request.resource.data.content.size() <= 2000;
 
       allow delete: if isAuthed() && resource.data.authorId == request.auth.uid
         || isAdmin();
@@ -129,7 +154,8 @@ service cloud.firestore {
 
       // Only the owner can create/update their own reaction
       allow create, update: if isAuthed()
-        && request.resource.data.userId == request.auth.uid;
+        && request.resource.data.userId == request.auth.uid
+        && likeId.matches('^' + request.auth.uid + '_[a-zA-Z0-9_-]+$');
 
       allow delete: if isAuthed() && resource.data.userId == request.auth.uid;
     }
@@ -143,14 +169,20 @@ service cloud.firestore {
       allow create: if isUser(userId)
         && request.resource.data.uid == userId
         && request.resource.data.tier == 'explorer'
-        && request.resource.data.get('isAdmin', false) == false;
+        && request.resource.data.get('isAdmin', false) == false
+        && request.resource.data.get('role', null) != 'admin'
+        && (!request.resource.data.keys().hasAny(['roles']) || 
+            (request.resource.data.roles is list && !('admin' in request.resource.data.roles)));
 
-      // Self-update: cannot change uid, tier, isAdmin, or subscription via client
+      // Self-update: cannot change uid, tier, isAdmin, role, or subscription via client
       // But CAN update missions, stats, and engagement scores
       allow update: if isUser(userId)
         && request.resource.data.uid == resource.data.uid
         && request.resource.data.tier == resource.data.tier
         && request.resource.data.get('isAdmin', false) == resource.data.get('isAdmin', false)
+        && request.resource.data.get('role', null) == resource.data.get('role', null)
+        && (!request.resource.data.keys().hasAny(['roles']) || 
+            request.resource.data.roles == resource.data.roles)
         && request.resource.data.get('subscription', null) == resource.data.get('subscription', null);
 
       // Allow self-update of mission progress, stats, and credits
@@ -171,6 +203,10 @@ service cloud.firestore {
           // Only credits field is changing (purchased credits)
           request.resource.data.diff(resource.data).affectedKeys()
             .hasOnly(['credits', 'updatedAt'])
+          ||
+          // Profile fields update (name, photo, etc)
+          request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['name', 'displayName', 'photoURL', 'avatarURL', 'avatarUrl', 'selectedIdentity', 'updatedAt'])
         );
 
       // Admins may update anything (tier upgrades, subscription writes from backend)
@@ -228,6 +264,18 @@ service cloud.firestore {
       // Get single doc: check published flag or is content manager
       allow get: if resource.data.published == true || isContentManager();
       allow create, update, delete: if isContentManager();
+    }
+
+    // ── Admin Audit Log ──────────────────────────────────────────────────────
+    match /admin/{document=**} {
+      allow read: if isAdmin();
+      allow write: if isAdmin();
+    }
+
+    // ── System Config ───────────────────────────────────────────────────────
+    match /system/{document} {
+      allow read: if true; // Allow checking setup status
+      allow write: if isAdmin();
     }
   }
 }

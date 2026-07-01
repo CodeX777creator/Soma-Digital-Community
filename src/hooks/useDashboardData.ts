@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
 import { db } from '@/lib/firebase';
 import {
   collection,
@@ -12,12 +12,14 @@ import {
   runTransaction,
   increment,
   onSnapshot,
+  FirestoreError,
 } from 'firebase/firestore';
 import { useAuth } from '@/providers/AuthProvider';
-import { authFetch } from '@/lib/clientApi';
 import { seedMissionsIfMissing } from '@/lib/missions';
 import { calculateWeeklyXP, logXPEvent } from '@/lib/xp';
 import { createNotification } from '@/lib/notifications';
+import { logger, logFirestoreError } from '@/lib/logger';
+import { withRetry } from '@/lib/retry';
 
 // Types
 export interface DashboardLeaderboardEntry {
@@ -55,22 +57,34 @@ export interface UserStats {
   goal: string | null;
 }
 
-// Hook for leaderboard data
+// Hook for leaderboard data with retry logic
 export function useDashboardLeaderboard(limit = 10) {
   const [leaders, setLeaders] = useState<DashboardLeaderboardEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const retryCount = useRef(0);
+  const maxRetries = 3;
+  const isMounted = useRef(true);
 
-    useEffect(() => {
+  useEffect(() => {
+    isMounted.current = true;
+    return () => {
+      isMounted.current = false;
+    };
+  }, []);
+
+  useEffect(() => {
     if (!db) {
       setLoading(false);
       return;
     }
 
-        const fetchLeaderboard = async () => {
+    const fetchLeaderboard = async () => {
       if (!db) return;
       try {
         setLoading(true);
+        setError(null);
+        
         const usersRef = collection(db, 'users');
         const q = query(
           usersRef,
@@ -78,7 +92,13 @@ export function useDashboardLeaderboard(limit = 10) {
           firestoreLimit(limit)
         );
 
-        const snapshot = await getDocs(q);
+        const snapshot = await withRetry(() => getDocs(q), {
+          maxAttempts: 3,
+          onRetry: (attempt, err) => {
+            logger.warn(`Leaderboard fetch retry ${attempt}`, { error: err.message });
+          },
+        });
+
         const leaderboardData = snapshot.docs.map((doc, index) => ({
           id: doc.id,
           uid: doc.id,
@@ -89,20 +109,41 @@ export function useDashboardLeaderboard(limit = 10) {
           rank: index + 1,
         }));
 
-        setLeaders(leaderboardData);
-        setError(null);
+        if (isMounted.current) {
+          setLeaders(leaderboardData);
+          retryCount.current = 0;
+        }
       } catch (err) {
-        console.error('Failed to fetch leaderboard:', err);
-        setError(err instanceof Error ? err.message : 'Failed to fetch leaderboard');
+        const errorMessage = err instanceof Error ? err.message : 'Failed to fetch leaderboard';
+        logFirestoreError('Leaderboard fetch', err instanceof Error ? err : new Error(errorMessage));
+        
+        if (isMounted.current) {
+          setError(errorMessage);
+          retryCount.current++;
+        }
       } finally {
-        setLoading(false);
+        if (isMounted.current) {
+          setLoading(false);
+        }
       }
     };
 
     fetchLeaderboard();
   }, [limit]);
 
-  return { leaders, loading, error };
+  // Auto-retry on error with exponential backoff
+  useEffect(() => {
+    if (error && retryCount.current < maxRetries && retryCount.current > 0) {
+      const delay = Math.min(1000 * Math.pow(2, retryCount.current), 10000);
+      const timer = setTimeout(() => {
+        setError(null);
+        setLoading(true);
+      }, delay);
+      return () => clearTimeout(timer);
+    }
+  }, [error]);
+
+  return { leaders, loading, error, retryCount: retryCount.current };
 }
 
 // Hook for user's weekly performance data
@@ -111,21 +152,54 @@ export function useWeeklyPerformance() {
   const [performanceData, setPerformanceData] = useState<PerformanceDataPoint[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const isMounted = useRef(true);
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
-    if (!user?.uid) return;
+    isMounted.current = true;
+    return () => {
+      isMounted.current = false;
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!user?.uid) {
+      setLoading(false);
+      return;
+    }
+
+    // Cancel previous request
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    abortControllerRef.current = new AbortController();
 
     const fetchPerformance = async () => {
       try {
         setLoading(true);
-        const data = await calculateWeeklyXP(user.uid);
-        setPerformanceData(data);
         setError(null);
+        
+        const data = await calculateWeeklyXP(user.uid);
+        
+        if (isMounted.current && !abortControllerRef.current?.signal.aborted) {
+          setPerformanceData(data);
+        }
       } catch (error) {
-        console.error('Failed to fetch performance data:', error);
-        setError(error instanceof Error ? error.message : 'Failed to fetch performance');
+        if (error instanceof Error && error.name === 'AbortError') return;
+        
+        const errorMessage = error instanceof Error ? error.message : 'Failed to fetch performance';
+        logger.error('Weekly performance fetch failed', error instanceof Error ? error : undefined);
+        
+        if (isMounted.current) {
+          setError(errorMessage);
+        }
       } finally {
-        setLoading(false);
+        if (isMounted.current) {
+          setLoading(false);
+        }
       }
     };
 
@@ -135,63 +209,95 @@ export function useWeeklyPerformance() {
   return { performanceData, loading, error };
 }
 
-// Hook for daily missions
+// Hook for daily missions with proper subscription cleanup
 export function useDailyMissions() {
   const { user } = useAuth();
   const [missions, setMissions] = useState<DailyMission[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const isMounted = useRef(true);
+  const unsubscribeRef = useRef<(() => void) | null>(null);
 
-    useEffect(() => {
-    if (!user?.uid || !db) return;
+  useEffect(() => {
+    isMounted.current = true;
+    return () => {
+      isMounted.current = false;
+      if (unsubscribeRef.current) {
+        unsubscribeRef.current();
+        unsubscribeRef.current = null;
+      }
+    };
+  }, []);
 
-        const fetchMissions = async () => {
-      if (!db) return;
-      try {
-        setLoading(true);
-        const today = new Date().toISOString().slice(0, 10);
-        const missionsRef = collection(db, `users/${user.uid}/missions`);
-        const q = query(
-          missionsRef,
-          where('dateString', '==', today)
-        );
+  useEffect(() => {
+    if (!user?.uid || !db) {
+      if (isMounted.current) setLoading(false);
+      return;
+    }
 
-        const snapshot = await getDocs(q);
+    // Cleanup previous subscription
+    if (unsubscribeRef.current) {
+      unsubscribeRef.current();
+      unsubscribeRef.current = null;
+    }
+
+    const today = new Date().toISOString().slice(0, 10);
+    const missionsRef = collection(db, `users/${user.uid}/missions`);
+    const q = query(
+      missionsRef,
+      where('dateString', '==', today)
+    );
+
+    // Use onSnapshot for real-time updates
+    const unsubscribe = onSnapshot(
+      q,
+      async (snapshot) => {
+        if (!isMounted.current) return;
+
         const missionData = snapshot.docs.map((doc) => ({
           id: doc.id,
           ...doc.data(),
         })) as DailyMission[];
 
         if (missionData.length === 0) {
-          // Seed missions for today if missing (client-side MVP)
-          await seedMissionsIfMissing(user.uid);
-
-          // Re-fetch after seeding
-          const snapshot2 = await getDocs(q);
-          const missionData2 = snapshot2.docs.map((doc) => ({ id: doc.id, ...doc.data() })) as DailyMission[];
-          setMissions(missionData2);
+          // Seed missions for today if missing
+          try {
+            await seedMissionsIfMissing(user.uid);
+          } catch (seedError) {
+            logger.error('Failed to seed missions', seedError instanceof Error ? seedError : undefined);
+          }
         } else {
           setMissions(missionData);
+          setLoading(false);
         }
-        setError(null);
-      } catch (err) {
-        console.error('Failed to fetch missions:', err);
-        setError(err instanceof Error ? err.message : 'Failed to fetch missions');
-      } finally {
-        setLoading(false);
+      },
+      (err: FirestoreError) => {
+        logFirestoreError('Missions subscription', err, `users/${user.uid}/missions`);
+        if (isMounted.current) {
+          setError('Failed to load missions');
+          setLoading(false);
+        }
+      }
+    );
+
+    unsubscribeRef.current = unsubscribe;
+
+    return () => {
+      if (unsubscribeRef.current) {
+        unsubscribeRef.current();
+        unsubscribeRef.current = null;
       }
     };
-
-    fetchMissions();
   }, [user?.uid]);
 
-        const completeMission = async (missionId: string) => {
+  const completeMission = useCallback(async (missionId: string) => {
     if (!user?.uid || !db) return;
+    
     const firestore = db;
     try {
       const missionRef = doc(firestore, `users/${user.uid}/missions`, missionId);
-      // Transactionally mark mission complete and increment user xp
-            const xpAwarded = await runTransaction(firestore, async (tx) => {
+      
+      const xpAwarded = await runTransaction(firestore, async (tx) => {
         const snap = await tx.get(missionRef);
         if (!snap.exists()) throw new Error('Mission not found');
         const data = snap.data() as any;
@@ -204,27 +310,39 @@ export function useDailyMissions() {
       });
 
       if (xpAwarded && xpAwarded > 0) {
-        // record xp event through trusted backend validation
-        await logXPEvent(user.uid, 'mission', xpAwarded, { missionId });
-        const mission = missions.find((m) => m.id === missionId);
-                await createNotification(
-          user.uid,
-          'mission',
-          'Mission completed',
-          `You earned ${xpAwarded} XP for completing "${mission?.title || 'a mission'}".`,
-          `/dashboard?mission=${missionId}`
-        );
+        // Fire these in the background - don't block UI
+        Promise.all([
+          logXPEvent(user.uid, 'mission', xpAwarded, { missionId }).catch(err => 
+            logger.error('Failed to log XP event', err instanceof Error ? err : undefined)
+          ),
+          createNotification(
+            user.uid,
+            'mission',
+            'Mission completed',
+            `You earned ${xpAwarded} XP for completing a mission.`,
+            `/dashboard?mission=${missionId}`
+          ).catch(err => 
+            logger.error('Failed to create notification', err instanceof Error ? err : undefined)
+          ),
+        ]);
       }
 
-      setMissions((missions) =>
-        missions.map((m) =>
-          m.id === missionId ? { ...m, completed: true, completedAt: new Date() } : m
-        )
-      );
+      // Optimistic update
+      if (isMounted.current) {
+        setMissions((prev) =>
+          prev.map((m) =>
+            m.id === missionId ? { ...m, completed: true, completedAt: new Date() } : m
+          )
+        );
+      }
     } catch (err) {
-      console.error('Failed to complete mission:', err);
+      logger.error('Failed to complete mission', err instanceof Error ? err : undefined);
+      // Revert optimistic update by re-fetching
+      if (isMounted.current) {
+        setError('Failed to complete mission. Please try again.');
+      }
     }
-  };
+  }, [user?.uid]);
 
   return { missions, loading, error, completeMission };
 }
@@ -233,6 +351,18 @@ export function useDailyMissions() {
 export function useDashboardStats() {
   const { user } = useAuth();
   const [stats, setStats] = useState<UserStats | null>(null);
+  const unsubscribeRef = useRef<(() => void) | null>(null);
+  const isMounted = useRef(true);
+
+  useEffect(() => {
+    isMounted.current = true;
+    return () => {
+      isMounted.current = false;
+      if (unsubscribeRef.current) {
+        unsubscribeRef.current();
+      }
+    };
+  }, []);
 
   useEffect(() => {
     if (!user?.uid || !db) {
@@ -240,11 +370,19 @@ export function useDashboardStats() {
       return;
     }
 
+    // Cleanup previous subscription
+    if (unsubscribeRef.current) {
+      unsubscribeRef.current();
+    }
+
     // Use Firestore onSnapshot for real-time subscription updates
     const userRef = doc(db, 'users', user.uid);
+    
     const unsubscribe = onSnapshot(
       userRef,
       (snapshot) => {
+        if (!isMounted.current) return;
+        
         if (!snapshot.exists()) {
           setStats(null);
           return;
@@ -269,13 +407,17 @@ export function useDashboardStats() {
           goal: typeof data.goal === 'string' ? data.goal : null,
         });
       },
-      (error) => {
-        console.error('Failed to listen to user stats:', error);
-        setStats(null);
+      (error: FirestoreError) => {
+        logFirestoreError('Dashboard stats listener', error, `users/${user.uid}`);
       }
     );
 
-    return unsubscribe;
+    unsubscribeRef.current = unsubscribe;
+
+    return () => {
+      unsubscribe();
+      unsubscribeRef.current = null;
+    };
   }, [user?.uid]);
 
   return stats;

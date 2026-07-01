@@ -111,7 +111,6 @@ export default function ProfilePage() {
       toast({ title: "Profile saved", description: "Your profile changes were saved successfully." });
       setEditMode(false);
     } catch (error) {
-      console.error("Profile save failed", error);
       toast({ title: "Save failed", description: "Unable to save profile. Please try again." });
     } finally {
       setIsSaving(false);
@@ -140,7 +139,6 @@ export default function ProfilePage() {
       await sendPasswordResetEmail(auth, user.email);
       toast({ title: "Password reset sent", description: `A reset link was sent to ${user.email}.` });
     } catch (error) {
-      console.error("Password reset failed", error);
       toast({ title: "Reset failed", description: "Unable to send reset email." });
     } finally {
       setIsPasswordSending(false);

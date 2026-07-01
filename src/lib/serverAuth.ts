@@ -40,8 +40,7 @@ export async function requireAuth(req: NextRequest): Promise<{ uid: string; emai
       throw authError('Invalid token payload');
     }
     return { uid: decoded.uid, email: decoded.email };
-  } catch (error) {
-    console.error('requireAuth failed', error);
+    } catch (error) {
     throw authError('Invalid or expired token');
   }
 }

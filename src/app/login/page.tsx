@@ -26,16 +26,12 @@ export default function LoginPage() {
         return;
       }
       try {
-        console.log('[Google Login] Checking redirect result...');
         const result = await getRedirectResult(auth);
-        console.log('[Google Login] Redirect result:', result);
         
         if (result?.user) {
           const info = getAdditionalUserInfo(result);
-          console.log('[Google Login] Additional user info:', info);
           
           if (info?.isNewUser) {
-            console.log('[Google Login] New user detected, redirecting to onboarding...');
             await signOut(auth);
             toast({
               title: "Let's set up your profile first",
@@ -44,14 +40,12 @@ export default function LoginPage() {
             router.push("/open");
             return;
           }
-          console.log('[Google Login] Existing user, redirecting to dashboard...');
           router.push("/dashboard");
         } else {
           // No redirect result, just stop loading
           setIsLoading(false);
         }
       } catch (err: any) {
-        console.error("[Google Login] Redirect result error:", err);
         setError(err.message || "Google sign-in failed after redirect.");
         setIsLoading(false);
       }
@@ -95,7 +89,6 @@ export default function LoginPage() {
       await signInWithRedirect(auth, provider);
       // Page will redirect to Google and back - result handled in useEffect above
     } catch (err: any) {
-      console.error("Google sign-in error:", err);
       setError(err.message || "Google sign-in failed.");
       setIsLoading(false);
     }

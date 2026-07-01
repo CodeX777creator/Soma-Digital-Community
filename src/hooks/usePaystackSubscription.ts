@@ -50,10 +50,9 @@ export function usePaystackSubscription() {
           subscriptionId: result.data.subscriptionId,
           authorizationUrl: result.data.authorizationUrl,
         };
-      } catch (err) {
+            } catch (err) {
         const message = err instanceof Error ? err.message : 'Failed to create subscription';
         setError(message);
-        console.error('initializeSubscription error:', err);
         return null;
       } finally {
         setLoading(false);
@@ -70,10 +69,9 @@ export function usePaystackSubscription() {
       try {
         await cancelSubscription({ subscriptionId });
         return true;
-      } catch (err) {
+            } catch (err) {
         const message = err instanceof Error ? err.message : 'Failed to cancel subscription';
         setError(message);
-        console.error('cancel error:', err);
         return false;
       } finally {
         setLoading(false);
@@ -82,14 +80,13 @@ export function usePaystackSubscription() {
     [cancelSubscription]
   );
 
-    const refreshUserToken = useCallback(async () => {
+        const refreshUserToken = useCallback(async () => {
     try {
       if (auth?.currentUser) {
         await auth.currentUser.getIdToken(true);
-        console.log('User token refreshed');
       }
     } catch (err) {
-      console.error('Failed to refresh user token:', err);
+      // Token refresh failed, will retry on next operation
     }
   }, []);
 
