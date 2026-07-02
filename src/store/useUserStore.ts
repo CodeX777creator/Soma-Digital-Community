@@ -114,11 +114,10 @@ export const useUserStore = create<UserState>()(
         const subscription = data.subscription;
         const isSubscriptionActive = subscription?.subscriptionStatus === 'active' || subscription?.status === 'active';
         
-        // Priority: active subscription.plan > subscriptionTier > tier > existing
-        // Only use subscription tier if subscription is actually active
+        // Only paid, active subscriptions should unlock paid UI.
         const newTier = isSubscriptionActive
           ? (subscription?.subscriptionPlan || subscription?.plan)
-          : (data.subscriptionTier || data.tier || state.tier);
+          : 'explorer';
 
         return {
           xp: data.xp ?? state.xp,

@@ -11,7 +11,7 @@ const handler = createAPIHandler(
     const requestId = `chat_${Date.now()}`;
     logger.info('[API /mentor/chat] Received request', { requestId });
     
-    const entitlements = await requireSubscription(req as any, 'explorer');
+    const entitlements = await requireSubscription(req as any, 'pro');
     logger.info('[API /mentor/chat] Auth successful', { userId: entitlements.uid, requestId });
     
     const body = await req.json();

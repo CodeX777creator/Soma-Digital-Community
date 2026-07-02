@@ -3,7 +3,8 @@ import { adminAuth, adminDb } from '@/lib/firebaseAdmin';
 
 // Tier hierarchy: higher number = more access
 const TIER_RANK: Record<string, number> = {
-  free: 1,
+  free: 0,
+  explorer: 1,
   pro: 2,
   elite: 3,
 };
@@ -12,8 +13,6 @@ type AssetTier = 'free' | 'pro' | 'elite';
 
 interface AssetAccessRequest {
   assetId: string;
-  requiredTier: AssetTier;
-  assetUrl: string;
 }
 
 /**
@@ -88,7 +87,11 @@ async function getUserTier(uid: string): Promise<string> {
     }
     
     const userData = userDoc.data();
-    const tier = userData?.tier || userData?.subscription?.plan || 'free';
+    const subscription = userData?.subscription;
+    const isActive = subscription?.subscriptionStatus === 'active' || subscription?.status === 'active';
+    const tier = isActive
+      ? (subscription?.subscriptionPlan || subscription?.plan || subscription?.planId)
+      : 'explorer';
     
     // Normalize tier string
     const normalizedTier = String(tier).toLowerCase().trim();
@@ -103,6 +106,12 @@ async function getUserTier(uid: string): Promise<string> {
     console.error(`Firestore error fetching user tier for ${uid}:`, error);
     throw new Error('DATABASE_ERROR');
   }
+}
+
+function normalizeAssetTier(rawTier: unknown): AssetTier {
+  if (rawTier === 'elite' || rawTier === 'enterprise') return 'elite';
+  if (rawTier === 'pro') return 'pro';
+  return 'free';
 }
 
 /**
@@ -125,7 +134,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       );
     }
     
-    const { assetId, requiredTier, assetUrl } = body;
+    const { assetId } = body;
     
     if (!assetId || typeof assetId !== 'string') {
       return NextResponse.json(
@@ -134,17 +143,28 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       );
     }
     
-    if (!requiredTier || !['free', 'pro', 'elite'].includes(requiredTier)) {
+    const assetDoc = await adminDb.collection('marketplaceAssets').doc(assetId).get();
+    if (!assetDoc.exists) {
       return NextResponse.json(
-        { error: 'Missing or invalid requiredTier', accessGranted: false },
-        { status: 400 }
+        { error: 'Asset not found', accessGranted: false },
+        { status: 404 }
       );
     }
-    
-    if (!assetUrl || typeof assetUrl !== 'string') {
+
+    const asset = assetDoc.data() || {};
+    if (asset.published === false) {
       return NextResponse.json(
-        { error: 'Missing or invalid assetUrl', accessGranted: false },
-        { status: 400 }
+        { error: 'Asset is not published', accessGranted: false },
+        { status: 404 }
+      );
+    }
+
+    const requiredTier = normalizeAssetTier(asset.tier);
+    const assetUrl = typeof asset.assetUrl === 'string' ? asset.assetUrl : '';
+    if (!assetUrl) {
+      return NextResponse.json(
+        { error: 'Asset file is not configured yet', accessGranted: false },
+        { status: 409 }
       );
     }
     
@@ -213,6 +233,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         assetUrl,
         accessGranted: true,
         assetId,
+        asset: {
+          title: typeof asset.title === 'string' ? asset.title : 'Marketplace asset',
+        },
         userTier,
       },
       { status: 200 }

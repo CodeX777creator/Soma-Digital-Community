@@ -79,7 +79,11 @@ export default function MarketplacePage() {
         throw new Error(payload?.error || 'Unable to access asset');
       }
 
-      toast({ title: 'Access granted', description: payload.asset.title });
+      if (payload.assetUrl) {
+        window.open(payload.assetUrl, '_blank', 'noopener,noreferrer');
+      }
+
+      toast({ title: 'Access granted', description: payload.asset?.title || 'Opening resource.' });
     } catch (err) {
       toast({ title: 'Access denied', description: err instanceof Error ? err.message : 'Upgrade required' });
     }

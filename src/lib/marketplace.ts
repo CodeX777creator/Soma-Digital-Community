@@ -4,7 +4,6 @@ import {
   getDoc,
   getDocs,
   limit,
-  orderBy,
   query,
   Timestamp,
   where,
@@ -79,16 +78,17 @@ export async function getMarketplaceAssets(filters: MarketplaceAssetFilters = {}
     constraints.push(where("tags", "array-contains-any", filters.tags.slice(0, 10)));
   }
 
-  if (!filters.includeUnpublished) {
-    constraints.push(where("published", "==", true));
-  }
-
-  constraints.push(orderBy("createdAt", "desc"), limit(100));
+  constraints.push(limit(100));
 
   const snapshot = await getDocs(query(collection(db, COLLECTION), ...constraints));
   return snapshot.docs
     .map((assetDoc) => normalizeAsset(assetDoc.id, assetDoc.data()))
-    .filter((asset) => filters.includeUnpublished || asset.published);
+    .filter((asset) => filters.includeUnpublished || asset.published)
+    .sort((a, b) => {
+      const left = a.createdAt?.toMillis?.() ?? 0;
+      const right = b.createdAt?.toMillis?.() ?? 0;
+      return right - left;
+    });
 }
 
 export async function getAssetById(assetId: string): Promise<MarketplaceAsset | null> {

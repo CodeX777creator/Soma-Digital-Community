@@ -391,13 +391,11 @@ export function useDashboardStats() {
         const data = snapshot.data();
         const xp = typeof data.xp === 'number' ? data.xp : 0;
         
-        // Check multiple possible locations for tier info
-        // Priority: subscription.subscriptionPlan > subscriptionTier > tier > 'explorer'
-        const tier = data.subscription?.subscriptionPlan 
-          || data.subscription?.plan 
-          || data.subscriptionTier 
-          || data.tier 
-          || 'explorer';
+        const subscription = data.subscription;
+        const isSubscriptionActive = subscription?.subscriptionStatus === 'active' || subscription?.status === 'active';
+        const tier = isSubscriptionActive
+          ? (subscription?.subscriptionPlan || subscription?.plan || 'explorer')
+          : 'explorer';
 
         setStats({
           currentXP: xp,

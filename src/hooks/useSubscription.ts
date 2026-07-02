@@ -18,17 +18,16 @@ interface CreatePayPalSubscriptionResponse {
   approvalUrl: string;
 }
 
-interface InitializePaystackTransactionRequest {
-  email: string;
-  amount: number;
-  plan?: string;
-  metadata?: { userId: string; planId: string };
+interface CreatePaystackSubscriptionRequest {
+  planId: PaidSubscriptionPlan;
+  userId: string;
 }
 
-interface InitializePaystackTransactionResponse {
-  authorization_url: string;
-  access_code: string;
-  reference: string;
+interface CreatePaystackSubscriptionResponse {
+  authorizationUrl: string | null;
+  subscriptionId: string;
+  status?: string;
+  message?: string;
 }
 
 interface CheckSubscriptionStatusRequest {
@@ -80,11 +79,6 @@ interface UseSubscriptionResult {
   setPaystackError: (message: string | null) => void;
   refreshUserToken: () => Promise<void>;
 }
-
-const PAYSTACK_PLAN_AMOUNTS: Record<PaidSubscriptionPlan, number> = {
-  pro: Number(process.env.NEXT_PUBLIC_PAYSTACK_AMOUNT_PRO || 970000),
-  elite: Number(process.env.NEXT_PUBLIC_PAYSTACK_AMOUNT_ELITE || 2970000),
-};
 
 function getFriendlyErrorMessage(error: unknown, fallback: string): string {
   if (error instanceof Error && error.message.trim().length > 0) {
@@ -198,7 +192,7 @@ export function useSubscription(): UseSubscriptionResult {
   );
 
   const initializePaystackTransaction = useCallback(
-    async (planId: SubscriptionPlan, email?: string): Promise<{ authorizationUrl: string }> => {
+    async (planId: SubscriptionPlan, _email?: string): Promise<{ authorizationUrl: string }> => {
       setPaystackLoading(true);
       setError(null);
       setPaystackError(null);
@@ -206,37 +200,26 @@ export function useSubscription(): UseSubscriptionResult {
       try {
         assertPaidPlan(planId);
         const currentUser = requireCurrentUser();
-        const checkoutEmail = email || currentUser.email;
 
-        if (!checkoutEmail) {
-          throw new Error("Your account needs an email address before starting Paystack checkout.");
-        }
+        const createSubscription = httpsCallable<
+          CreatePaystackSubscriptionRequest,
+          CreatePaystackSubscriptionResponse
+        >(functions, "createPaystackSubscription");
 
-        const amount = PAYSTACK_PLAN_AMOUNTS[planId];
-        if (!Number.isFinite(amount) || amount <= 0) {
-          throw new Error("This Paystack plan is not configured yet. Please try another payment method.");
-        }
-
-        const initializeTransaction = httpsCallable<
-          InitializePaystackTransactionRequest,
-          InitializePaystackTransactionResponse
-        >(functions, "initializePaystackTransaction");
-
-        const result = await initializeTransaction({
-          email: checkoutEmail,
-          amount,
-          metadata: {
-            userId: currentUser.uid,
-            planId,
-          },
+        const result = await createSubscription({
+          planId,
+          userId: currentUser.uid,
         });
 
-        if (!result.data.authorization_url) {
+        if (!result.data.authorizationUrl) {
+          if (result.data.status === "already_active") {
+            throw new Error(result.data.message || "You already have an active subscription for this plan.");
+          }
           throw new Error("Paystack did not return a checkout link. Please try again.");
         }
 
-        redirectTo(result.data.authorization_url);
-        return { authorizationUrl: result.data.authorization_url };
+        redirectTo(result.data.authorizationUrl);
+        return { authorizationUrl: result.data.authorizationUrl };
       } catch (err: unknown) {
         const message = getFriendlyErrorMessage(
           err,

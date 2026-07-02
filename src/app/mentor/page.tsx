@@ -12,7 +12,7 @@ import {
   setDoc,
   updateDoc,
 } from "firebase/firestore";
-import { Bot, Loader2, MessageSquare, Plus, Send } from "lucide-react";
+import { Bot, Loader2, Lock, MessageSquare, Plus, Send } from "lucide-react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import { Button } from "@/components/ui/button";
@@ -62,8 +62,17 @@ function createThreadTitle(message: string): string {
   return title || "Mentor conversation";
 }
 
+function hasMentorAccess(userData: Record<string, any> | null): boolean {
+  const subscription = userData?.subscription;
+  const isActive = subscription?.subscriptionStatus === "active" || subscription?.status === "active";
+  const tier = isActive
+    ? subscription?.subscriptionPlan || subscription?.plan || subscription?.planId
+    : "explorer";
+  return tier === "pro" || tier === "elite" || userData?.isAdmin === true || userData?.role === "admin";
+}
+
 export default function MentorPage() {
-  const { user } = useAuth();
+  const { user, userData } = useAuth();
   const { toast } = useToast();
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const [threads, setThreads] = useState<ChatThread[]>([]);
@@ -255,6 +264,29 @@ export default function MentorPage() {
       setIsSending(false);
     }
   };
+
+  if (!hasMentorAccess(userData as Record<string, any> | null)) {
+    return (
+      <ProtectedRoute>
+        <AppLayout>
+          <div className="mx-auto flex min-h-[60vh] max-w-2xl flex-col items-center justify-center gap-6 text-center">
+            <div className="flex h-14 w-14 items-center justify-center rounded-xl border border-primary/30 bg-primary/10">
+              <Lock className="h-6 w-6 text-primary" />
+            </div>
+            <div className="space-y-2">
+              <h1 className="text-3xl font-bold">AI Business Mentor is for Pro and Elite</h1>
+              <p className="text-muted-foreground">
+                Explorer includes community posting, likes, comments, and core community access. Upgrade when you are ready for AI strategy support.
+              </p>
+            </div>
+            <Button asChild className="h-12 px-6">
+              <a href="/dashboard?upgrade=pro">Upgrade to Pro</a>
+            </Button>
+          </div>
+        </AppLayout>
+      </ProtectedRoute>
+    );
+  }
 
   return (
     <ProtectedRoute>

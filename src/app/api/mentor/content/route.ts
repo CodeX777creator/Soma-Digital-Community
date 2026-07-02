@@ -8,7 +8,7 @@ const handler = createAPIHandler(
   async (req) => {
     logger.info('[API /mentor/content] Received request');
     
-    const entitlements = await requireSubscription(req as any, 'explorer');
+    const entitlements = await requireSubscription(req as any, 'pro');
     logger.info('[API /mentor/content] Auth successful', { userId: entitlements.uid });
     
     const body = await req.json();
