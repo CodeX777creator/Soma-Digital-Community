@@ -362,6 +362,11 @@ export const createPaystackSubscription = onCall(
           authorizationUrl: typeof existingData.authorizationUrl === 'string' ? existingData.authorizationUrl : '',
         };
       }
+
+      throw new HttpsError(
+        'aborted',
+        'Your checkout is still being prepared. Please try again in a moment.'
+      );
     }
     const PAYSTACK_AMOUNTS = getPaystackAmounts();
     const amount = PAYSTACK_AMOUNTS[normalizedPlanId];
@@ -483,6 +488,18 @@ export const createPaystackSubscription = onCall(
           createdAt: admin.firestore.FieldValue.serverTimestamp(),
         }
       );
+
+      await db.collection('idempotency_keys').doc(`${userId}_${idempotencyKey}`).set({
+        userId,
+        key: idempotencyKey,
+        provider: 'paystack',
+        planId: normalizedPlanId,
+        subscriptionId,
+        authorizationUrl,
+        status: 'approval_pending',
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+      }, { merge: true });
 
       return { subscriptionId, authorizationUrl, status: 'created' };
     } catch (error) {

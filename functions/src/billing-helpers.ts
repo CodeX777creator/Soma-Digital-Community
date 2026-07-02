@@ -296,21 +296,27 @@ export async function checkIdempotencyKey(userId: string, key: string): Promise<
   if (!key) return true;
   
   const idempotencyRef = db.collection('idempotency_keys').doc(`${userId}_${key}`);
-  const doc = await idempotencyRef.get();
-  
-  if (doc.exists) {
-    return false; // Key already used
-  }
-  
-  // Store key with 24-hour TTL
-  await idempotencyRef.set({
-    userId,
-    key,
-    createdAt: FieldValue.serverTimestamp(),
-    expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+  let reserved = false;
+
+  await db.runTransaction(async (transaction) => {
+    const doc = await transaction.get(idempotencyRef);
+
+    if (doc.exists) {
+      reserved = false;
+      return;
+    }
+
+    transaction.set(idempotencyRef, {
+      userId,
+      key,
+      status: 'reserved',
+      createdAt: FieldValue.serverTimestamp(),
+      expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+    });
+    reserved = true;
   });
-  
-  return true;
+
+  return reserved;
 }
 
 /**

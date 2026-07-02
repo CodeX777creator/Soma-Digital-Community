@@ -372,6 +372,11 @@ export const createPayPalSubscription = onCall<CreateSubscriptionRequest>(
             status: typeof existingData.status === 'string' ? existingData.status : 'approval_pending',
           };
         }
+
+        throw new HttpsError(
+          'aborted',
+          'Your checkout is still being prepared. Please try again in a moment.'
+        );
       }
 
       const response = await axios.post<PayPalSubscriptionResponse>(
@@ -425,10 +430,13 @@ export const createPayPalSubscription = onCall<CreateSubscriptionRequest>(
       await db.collection('idempotency_keys').doc(`${userId}_${idempotencyKey}`).set({
         userId,
         key: idempotencyKey,
+        provider: 'paypal',
+        planId,
         subscriptionId,
         approvalUrl: approvalLink,
         status: 'approval_pending',
         createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
         expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
       }, { merge: true });
 
