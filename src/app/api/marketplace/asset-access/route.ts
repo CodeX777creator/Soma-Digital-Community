@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { adminAuth, adminDb } from '@/lib/firebaseAdmin';
+import { getEffectiveUserTier } from '@/lib/tier';
 
 // Tier hierarchy: higher number = more access
 const TIER_RANK: Record<string, number> = {
@@ -87,11 +88,7 @@ async function getUserTier(uid: string): Promise<string> {
     }
     
     const userData = userDoc.data();
-    const subscription = userData?.subscription;
-    const isActive = subscription?.subscriptionStatus === 'active' || subscription?.status === 'active';
-    const tier = isActive
-      ? (subscription?.subscriptionPlan || subscription?.plan || subscription?.planId)
-      : 'explorer';
+    const tier = getEffectiveUserTier(userData);
     
     // Normalize tier string
     const normalizedTier = String(tier).toLowerCase().trim();

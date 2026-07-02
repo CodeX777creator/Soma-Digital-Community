@@ -20,6 +20,7 @@ import { calculateWeeklyXP, logXPEvent } from '@/lib/xp';
 import { createNotification } from '@/lib/notifications';
 import { logger, logFirestoreError } from '@/lib/logger';
 import { withRetry } from '@/lib/retry';
+import { getEffectiveUserTier } from '@/lib/tier';
 
 // Types
 export interface DashboardLeaderboardEntry {
@@ -391,11 +392,7 @@ export function useDashboardStats() {
         const data = snapshot.data();
         const xp = typeof data.xp === 'number' ? data.xp : 0;
         
-        const subscription = data.subscription;
-        const isSubscriptionActive = subscription?.subscriptionStatus === 'active' || subscription?.status === 'active';
-        const tier = isSubscriptionActive
-          ? (subscription?.subscriptionPlan || subscription?.plan || 'explorer')
-          : 'explorer';
+        const tier = getEffectiveUserTier(data);
 
         setStats({
           currentXP: xp,

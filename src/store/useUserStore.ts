@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { getEffectiveUserTier } from '@/lib/tier';
 
 export type UserTier = 'explorer' | 'pro' | 'elite';
 
@@ -109,15 +110,7 @@ export const useUserStore = create<UserState>()(
       updateRoadmapStatus: (roadmapStatus) => set({ roadmapStatus }),
 
       syncProfile: (data) => set((state) => {
-        // Only use tier from subscription if it's active
-        // This prevents showing upgraded tier for pending/cancelled subscriptions
-        const subscription = data.subscription;
-        const isSubscriptionActive = subscription?.subscriptionStatus === 'active' || subscription?.status === 'active';
-        
-        // Only paid, active subscriptions should unlock paid UI.
-        const newTier = isSubscriptionActive
-          ? (subscription?.subscriptionPlan || subscription?.plan)
-          : 'explorer';
+        const newTier = getEffectiveUserTier(data);
 
         return {
           xp: data.xp ?? state.xp,

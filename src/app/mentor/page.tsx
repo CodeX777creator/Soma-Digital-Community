@@ -21,6 +21,7 @@ import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useToast } from "@/hooks/use-toast";
 import { db } from "@/lib/firebase";
+import { getEffectiveUserTier } from "@/lib/tier";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/providers/AuthProvider";
 
@@ -63,11 +64,7 @@ function createThreadTitle(message: string): string {
 }
 
 function hasMentorAccess(userData: Record<string, any> | null): boolean {
-  const subscription = userData?.subscription;
-  const isActive = subscription?.subscriptionStatus === "active" || subscription?.status === "active";
-  const tier = isActive
-    ? subscription?.subscriptionPlan || subscription?.plan || subscription?.planId
-    : "explorer";
+  const tier = getEffectiveUserTier(userData);
   return tier === "pro" || tier === "elite" || userData?.isAdmin === true || userData?.role === "admin";
 }
 
