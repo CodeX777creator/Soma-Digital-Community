@@ -38,10 +38,17 @@ interface CheckSubscriptionStatusRequest {
 interface CheckSubscriptionStatusResponse {
   tier: string;
   expiresAt: Date | string | number | null | { seconds: number; nanoseconds?: number };
+  status?: string;
+  subscriptionId?: string;
+  provider?: string;
 }
 
-interface CancelSubscriptionRequest {
-  userId: string;
+interface CancelPayPalSubscriptionRequest {
+  subscriptionId: string;
+}
+
+interface CancelPaystackSubscriptionRequest {
+  subscriptionId: string;
 }
 
 interface CancelSubscriptionResponse {
@@ -60,7 +67,7 @@ interface UseSubscriptionResult {
     email?: string
   ) => Promise<{ authorizationUrl: string }>;
   checkSubscriptionStatus: () => Promise<SubscriptionStatus>;
-  cancelSubscription: () => Promise<void>;
+  cancelSubscription: (subscriptionId?: string) => Promise<void>;
   loading: boolean;
   paypalLoading: boolean;
   paystackLoading: boolean;
@@ -276,18 +283,42 @@ export function useSubscription(): UseSubscriptionResult {
     }
   }, [functions, requireCurrentUser, setTier]);
 
-  const cancelSubscription = useCallback(async (): Promise<void> => {
+  const cancelSubscription = useCallback(async (subscriptionId?: string): Promise<void> => {
     setCancelLoading(true);
     setError(null);
 
     try {
       const currentUser = requireCurrentUser();
-      const cancel = httpsCallable<CancelSubscriptionRequest, CancelSubscriptionResponse>(
-        functions,
-        "cancelSubscription"
-      );
+      
+      // If no subscriptionId provided, check status first to find active subscription
+      let targetSubscriptionId = subscriptionId;
+      let provider = 'paypal';
+      
+      if (!targetSubscriptionId) {
+        const checkStatus = httpsCallable<CheckSubscriptionStatusRequest, CheckSubscriptionStatusResponse>(
+          functions,
+          "checkSubscriptionStatus"
+        );
+        const statusResult = await checkStatus({ userId: currentUser.uid });
+        targetSubscriptionId = statusResult.data.subscriptionId;
+        provider = statusResult.data.provider || 'paypal';
+      }
 
-      await cancel({ userId: currentUser.uid });
+      if (!targetSubscriptionId) {
+        throw new Error("No active subscription found to cancel.");
+      }
+
+      // Call provider-specific cancel function
+      const cancelFunctionName = provider === 'paystack' 
+        ? 'cancelPaystackSubscription' 
+        : 'cancelPayPalSubscription';
+      
+      const cancel = httpsCallable<
+        CancelPayPalSubscriptionRequest | CancelPaystackSubscriptionRequest, 
+        CancelSubscriptionResponse
+      >(functions, cancelFunctionName);
+
+      await cancel({ subscriptionId: targetSubscriptionId });
       await checkSubscriptionStatus();
     } catch (err: unknown) {
       const message = getFriendlyErrorMessage(

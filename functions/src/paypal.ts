@@ -3,6 +3,15 @@ import axios, { AxiosError } from 'axios';
 import { onCall, onRequest, HttpsError } from 'firebase-functions/v2/https';
 import { defineSecret, defineString } from 'firebase-functions/params';
 import { createNotification } from './notifications';
+import {
+  deriveSubscriptionTransition,
+  persistSubscriptionState,
+  acquireWebhookLock,
+  releaseWebhookLock,
+  archiveWebhookEvent,
+  createAuditLog,
+  checkIdempotencyKey,
+} from './billing-helpers';
 import type {
   PayPalAccessTokenResponse,
   PayPalSubscriptionLink,
@@ -14,7 +23,7 @@ const db = admin.firestore();
 const auth = admin.auth();
 
 type SubscriptionPlan = 'explorer' | 'pro' | 'elite';
-type SubscriptionStatus = 'active' | 'cancelled' | 'past_due' | 'expired';
+type SubscriptionStatus = 'active' | 'cancelled' | 'past_due' | 'expired' | 'suspended';
 
 interface CreateSubscriptionRequest {
   planId: SubscriptionPlan;
@@ -56,6 +65,7 @@ interface PayPalWebhookResource {
   start_time?: string;
   billing_info?: {
     next_billing_time?: string;
+    failed_payments_count?: number;
   };
 }
 
@@ -181,11 +191,15 @@ async function saveCanonicalSubscriptionState(
 }
 
 async function cacheSubscriptionClaim(userId: string, tier: SubscriptionPlan): Promise<void> {
-  const user = await auth.getUser(userId);
-  await auth.setCustomUserClaims(userId, {
-    ...(user.customClaims || {}),
-    subscriptionTier: tier,
-  });
+  try {
+    const user = await auth.getUser(userId);
+    await auth.setCustomUserClaims(userId, {
+      ...(user.customClaims || {}),
+      subscriptionTier: tier,
+    });
+  } catch (error) {
+    console.error(`Failed to cache subscription claim for ${userId}:`, error);
+  }
 }
 
 function assertCreateSubscriptionRequest(
@@ -237,6 +251,10 @@ function parsePayPalWebhookEvent(body: unknown): PayPalWebhookEvent {
           next_billing_time:
             typeof (billingInfo as Record<string, unknown>).next_billing_time === 'string'
               ? (billingInfo as Record<string, string>).next_billing_time
+              : undefined,
+          failed_payments_count:
+            typeof (billingInfo as Record<string, unknown>).failed_payments_count === 'number'
+              ? (billingInfo as Record<string, number>).failed_payments_count
               : undefined,
         }
       : undefined,
@@ -316,6 +334,24 @@ export const createPayPalSubscription = onCall<CreateSubscriptionRequest>(
         throw new HttpsError('failed-precondition', 'User email is required for PayPal checkout');
       }
 
+      const idempotencyKeyParam = (data as { idempotencyKey?: string }).idempotencyKey;
+      const idempotencyKey = typeof idempotencyKeyParam === 'string' && idempotencyKeyParam
+        ? idempotencyKeyParam
+        : `paypal:${context.uid}:${planId}`;
+      const idempotencyReserved = await checkIdempotencyKey(context.uid, idempotencyKey);
+
+      if (!idempotencyReserved) {
+        const existingDoc = await db.collection('idempotency_keys').doc(`${context.uid}_${idempotencyKey}`).get();
+        const existingData = existingDoc.data();
+        if (existingDoc.exists && typeof existingData?.subscriptionId === 'string' && existingData.subscriptionId) {
+          return {
+            subscriptionId: existingData.subscriptionId as string,
+            approvalUrl: typeof existingData.approvalUrl === 'string' ? existingData.approvalUrl : '',
+            status: typeof existingData.status === 'string' ? existingData.status : 'approval_pending',
+          };
+        }
+      }
+
       const response = await axios.post<PayPalSubscriptionResponse>(
         `${getPayPalApiBaseUrl()}/v1/billing/subscriptions`,
         {
@@ -364,6 +400,16 @@ export const createPayPalSubscription = onCall<CreateSubscriptionRequest>(
         }
       );
 
+      await db.collection('idempotency_keys').doc(`${userId}_${idempotencyKey}`).set({
+        userId,
+        key: idempotencyKey,
+        subscriptionId,
+        approvalUrl: approvalLink,
+        status: 'approval_pending',
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+      }, { merge: true });
+
       console.log(`Created PayPal subscription ${subscriptionId} for user ${userId}`);
 
       return {
@@ -407,6 +453,7 @@ export const paypalWebhook = onRequest(
             Authorization: `Bearer ${token}`,
             'Content-Type': 'application/json',
           },
+          timeout: 10000, // 10 second timeout
         }
       );
 
@@ -419,120 +466,288 @@ export const paypalWebhook = onRequest(
     const eventType = event.event_type;
     const resource = event.resource;
     const subscriptionId = resource.id;
-    const eventRef = db.collection('webhook_events').doc(event.id);
-    const eventExists = await eventRef.get();
 
-    if (eventExists.exists) {
-      console.log(`Webhook event ${event.id} already processed`);
-      res.status(200).json({ success: true });
+    // Acquire distributed lock FIRST (before duplicate check) to prevent race conditions
+    const lockAcquired = await acquireWebhookLock(event.id, subscriptionId);
+    if (!lockAcquired) {
+      // Another instance is processing this event - return 200 to prevent retry storm
+      res.status(200).json({ success: true, duplicate: true, reason: 'concurrent_processing' });
       return;
     }
 
-    await eventRef.set({
-      eventId: event.id,
-      eventType,
-      subscriptionId,
-      processedAt: admin.firestore.FieldValue.serverTimestamp(),
-    });
+    try {
+      const eventRef = db.collection('webhook_events').doc(event.id);
+      const eventExists = await eventRef.get();
 
-    const subscriptionRef = db.collection('subscriptions').doc(subscriptionId);
-    const subscriptionSnap = await subscriptionRef.get();
+      if (eventExists.exists) {
+        console.log(`Webhook event ${event.id} already processed`);
+        res.status(200).json({ success: true, message: 'Already processed' });
+        return;
+      }
 
-    if (!subscriptionSnap.exists) {
-      console.warn(`Subscription ${subscriptionId} not found`);
-      res.status(200).json({ success: true });
-      return;
-    }
-
-    const subscriptionData = subscriptionSnap.data();
-    const userId = typeof subscriptionData?.userId === 'string' ? subscriptionData.userId : '';
-    const planId = normalizePlanId(subscriptionData?.planId || resource.plan_id);
-
-    if (!userId) {
-      console.warn(`No userId for subscription ${subscriptionId}`);
-      res.status(200).json({ success: true });
-      return;
-    }
-
-    if (eventType === 'BILLING.SUBSCRIPTION.CREATED') {
-      await saveCanonicalSubscriptionState(
-        userId,
+      await eventRef.set({
+        eventId: event.id,
+        eventType,
         subscriptionId,
-        buildCanonicalSubscriptionState(planId, 'expired', subscriptionId, null),
-        {
-        status: 'created',
+        processedAt: admin.firestore.FieldValue.serverTimestamp(),
+        status: 'processing',
       });
-    } else if (eventType === 'BILLING.SUBSCRIPTION.ACTIVATED') {
-      const currentPeriodEnd = resource.billing_info?.next_billing_time
-        ? new Date(resource.billing_info.next_billing_time).toISOString()
-        : resource.start_time
-          ? new Date(
-              new Date(resource.start_time).setMonth(
-                new Date(resource.start_time).getMonth() + (planToDuration[planId] || 1)
-              )
-            ).toISOString()
+
+      const subscriptionRef = db.collection('subscriptions').doc(subscriptionId);
+      const subscriptionSnap = await subscriptionRef.get();
+
+      if (!subscriptionSnap.exists) {
+        console.warn(`Subscription ${subscriptionId} not found`);
+        await eventRef.update({ status: 'skipped', reason: 'subscription_not_found' });
+        res.status(200).json({ success: true, message: 'Subscription not found' });
+        return;
+      }
+
+      const subscriptionData = subscriptionSnap.data();
+      const userId = typeof subscriptionData?.userId === 'string' ? subscriptionData.userId : '';
+      const planId = normalizePlanId(subscriptionData?.planId || resource.plan_id);
+
+      if (!userId) {
+        console.warn(`No userId for subscription ${subscriptionId}`);
+        await eventRef.update({ status: 'skipped', reason: 'no_user_id' });
+        res.status(200).json({ success: true, message: 'No userId' });
+        return;
+      }
+
+      if (eventType === 'BILLING.SUBSCRIPTION.CREATED') {
+        await saveCanonicalSubscriptionState(
+          userId,
+          subscriptionId,
+          buildCanonicalSubscriptionState(planId, 'expired', subscriptionId, null),
+          { status: 'created', eventType }
+        );
+      } else if (eventType === 'BILLING.SUBSCRIPTION.ACTIVATED') {
+        const currentPeriodEnd = resource.billing_info?.next_billing_time
+          ? new Date(resource.billing_info.next_billing_time).toISOString()
+          : resource.start_time
+            ? new Date(
+                new Date(resource.start_time).setMonth(
+                  new Date(resource.start_time).getMonth() + (planToDuration[planId] || 1)
+                )
+              ).toISOString()
+            : null;
+
+        await saveCanonicalSubscriptionState(
+          userId,
+          subscriptionId,
+          buildCanonicalSubscriptionState(planId, 'active', subscriptionId, currentPeriodEnd),
+          { status: 'active', currentPeriodEnd, eventType }
+        );
+
+        await cacheSubscriptionClaim(userId, planId);
+
+        await createNotification(
+          userId,
+          'subscription',
+          'Subscription activated',
+          'Your plan is now active. Enjoy premium access.',
+          '/settings/billing'
+        );
+
+        console.log(`Activated subscription ${subscriptionId} for user ${userId}`);
+      } else if (eventType === 'BILLING.SUBSCRIPTION.PAYMENT.FAILED') {
+        const failedPaymentsCount = resource.billing_info?.failed_payments_count || 1;
+        const currentPeriodEnd = subscriptionData?.currentPeriodEnd || null;
+
+        await saveCanonicalSubscriptionState(
+          userId,
+          subscriptionId,
+          buildCanonicalSubscriptionState(planId, 'past_due', subscriptionId, currentPeriodEnd),
+          {
+            status: 'past_due',
+            failedPaymentsCount,
+            lastPaymentFailedAt: admin.firestore.FieldValue.serverTimestamp(),
+            eventType,
+          }
+        );
+
+        await createNotification(
+          userId,
+          'subscription',
+          'Payment failed',
+          "We couldn't process your payment. Please update your payment method to keep your subscription active.",
+          '/settings/billing'
+        );
+
+        console.log(`Payment failed for subscription ${subscriptionId}, attempt ${failedPaymentsCount}`);
+      } else if (eventType === 'BILLING.SUBSCRIPTION.SUSPENDED') {
+        await saveCanonicalSubscriptionState(
+          userId,
+          subscriptionId,
+          buildCanonicalSubscriptionState(planId, 'suspended', subscriptionId, null),
+          {
+            status: 'suspended',
+            suspendedAt: admin.firestore.FieldValue.serverTimestamp(),
+            eventType,
+          }
+        );
+
+        await cacheSubscriptionClaim(userId, 'explorer');
+
+        await createNotification(
+          userId,
+          'subscription',
+          'Subscription suspended',
+          'Your subscription has been suspended due to payment issues. Please contact support.',
+          '/settings/billing'
+        );
+      } else if (eventType === 'BILLING.SUBSCRIPTION.RE-ACTIVATED') {
+        const currentPeriodEnd = resource.billing_info?.next_billing_time
+          ? new Date(resource.billing_info.next_billing_time).toISOString()
           : null;
 
-      await saveCanonicalSubscriptionState(
-        userId,
-        subscriptionId,
-        buildCanonicalSubscriptionState(planId, 'active', subscriptionId, currentPeriodEnd),
-        {
-        status: 'active',
-        currentPeriodEnd,
-      });
+        await saveCanonicalSubscriptionState(
+          userId,
+          subscriptionId,
+          buildCanonicalSubscriptionState(planId, 'active', subscriptionId, currentPeriodEnd),
+          {
+            status: 'active',
+            reactivatedAt: admin.firestore.FieldValue.serverTimestamp(),
+            eventType,
+          }
+        );
 
       await cacheSubscriptionClaim(userId, planId);
 
-      await createNotification(
-        userId,
-        'subscription',
-        'Subscription activated',
-        'Your plan is now active. Enjoy premium access.',
-        '/settings/billing'
-      );
+        await createNotification(
+          userId,
+          'subscription',
+          'Subscription reactivated',
+          'Welcome back! Your subscription is now active.',
+          '/settings/billing'
+        );
+      } else if (eventType === 'BILLING.SUBSCRIPTION.UPDATED') {
+        const currentPeriodEnd = resource.billing_info?.next_billing_time
+          ? new Date(resource.billing_info.next_billing_time).toISOString()
+          : null;
 
-      console.log(`Activated subscription ${subscriptionId} for user ${userId}`);
-    } else if (
-      eventType === 'BILLING.SUBSCRIPTION.CANCELLED' ||
-      eventType === 'BILLING.SUBSCRIPTION.EXPIRED'
-    ) {
-      const status: SubscriptionStatus = eventType === 'BILLING.SUBSCRIPTION.CANCELLED'
-        ? 'cancelled'
-        : 'expired';
+        await saveCanonicalSubscriptionState(
+          userId,
+          subscriptionId,
+          buildCanonicalSubscriptionState(planId, 'active', subscriptionId, currentPeriodEnd),
+          {
+            status: 'active',
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+            eventType,
+          }
+        );
 
-      await saveCanonicalSubscriptionState(
-        userId,
-        subscriptionId,
-        buildCanonicalSubscriptionState(planId, status, subscriptionId, null),
-        {
-        status,
-        cancelledAt: admin.firestore.FieldValue.serverTimestamp(),
-      });
+        await cacheSubscriptionClaim(userId, planId);
+      } else if (
+        eventType === 'BILLING.SUBSCRIPTION.CANCELLED' ||
+        eventType === 'BILLING.SUBSCRIPTION.EXPIRED'
+      ) {
+        const status: SubscriptionStatus = eventType === 'BILLING.SUBSCRIPTION.CANCELLED'
+          ? 'cancelled'
+          : 'expired';
 
-      await cacheSubscriptionClaim(userId, 'explorer');
+        await saveCanonicalSubscriptionState(
+          userId,
+          subscriptionId,
+          buildCanonicalSubscriptionState(planId, status, subscriptionId, null),
+          {
+            status,
+            cancelledAt: admin.firestore.FieldValue.serverTimestamp(),
+            eventType,
+          }
+        );
 
-      await createNotification(
-        userId,
-        'subscription',
-        status === 'cancelled' ? 'Subscription cancelled' : 'Subscription expired',
-        status === 'cancelled'
-          ? 'Your subscription was cancelled. You can rejoin anytime.'
-          : 'Your plan has expired. Renew to keep premium access.',
-        '/settings/billing'
-      );
+        await cacheSubscriptionClaim(userId, 'explorer');
 
-      console.log(
-        `${status === 'cancelled' ? 'Cancelled' : 'Expired'} subscription ${subscriptionId} for user ${userId}`
-      );
+        await createNotification(
+          userId,
+          'subscription',
+          status === 'cancelled' ? 'Subscription cancelled' : 'Subscription expired',
+          status === 'cancelled'
+            ? 'Your subscription was cancelled. You can rejoin anytime.'
+            : 'Your plan has expired. Renew to keep premium access.',
+          '/settings/billing'
+        );
+
+        console.log(
+          `${status === 'cancelled' ? 'Cancelled' : 'Expired'} subscription ${subscriptionId} for user ${userId}`
+        );
+      }
+
+      await eventRef.update({ status: 'success' });
+      res.status(200).json({ success: true });
+    } catch (processingError: unknown) {
+      console.error('Webhook processing error:', getErrorMessage(processingError));
+      // Update event with error
+      try {
+        await db.collection('webhook_events').doc(event.id).update({
+          status: 'error',
+          error: processingError instanceof Error ? processingError.message : 'Unknown error',
+        });
+      } catch { /* ignore */ }
+      // Return 500 to trigger provider retry
+      res.status(500).json({ error: 'Processing failed' });
+    } finally {
+      await releaseWebhookLock(event.id, subscriptionId);
     }
-
-    res.status(200).json({ success: true });
   } catch (error: unknown) {
-    console.error('Webhook error:', getErrorMessage(error));
-    res.status(200).json({ error: error instanceof Error ? error.message : 'Unknown error' });
+    console.error('Webhook fatal error:', getErrorMessage(error));
+    res.status(500).json({ error: error instanceof Error ? error.message : 'Unknown error' });
   }
 });
+
+export const checkSubscriptionStatus = onCall(
+  { secrets: [paypalClientId, paypalClientSecret] },
+  async (request) => {
+    const context = request.auth;
+    if (!context?.uid) {
+      throw new HttpsError('unauthenticated', 'User not authenticated');
+    }
+    const { userId } = request.data as { userId: string };
+    if (userId !== context.uid) {
+      throw new HttpsError('permission-denied', 'Cannot check another user\'s subscription');
+    }
+    try {
+      const userRef = db.collection('users').doc(userId);
+      const userDoc = await userRef.get();
+      if (!userDoc.exists) {
+        return { tier: 'explorer', expiresAt: null, status: 'expired', provider: 'none' };
+      }
+      const subscription = userDoc.data()?.subscription;
+      if (subscription?.subscriptionStatus === 'active') {
+        return {
+          tier: subscription.subscriptionPlan || 'explorer',
+          expiresAt: subscription.currentPeriodEnd || null,
+          status: subscription.subscriptionStatus,
+          provider: subscription.provider || 'unknown',
+          subscriptionId: subscription.subscriptionId,
+        };
+      }
+      const subsSnapshot = await db
+        .collection('subscriptions')
+        .where('userId', '==', userId)
+        .where('subscriptionStatus', '==', 'active')
+        .orderBy('updatedAt', 'desc')
+        .limit(1)
+        .get();
+      if (subsSnapshot.empty) {
+        return { tier: 'explorer', expiresAt: null, status: 'expired', provider: 'none' };
+      }
+      const subDoc = subsSnapshot.docs[0];
+      const subData = subDoc.data();
+      return {
+        tier: subData.subscriptionPlan || 'explorer',
+        expiresAt: subData.currentPeriodEnd || null,
+        status: subData.subscriptionStatus || 'expired',
+        provider: subData.provider || 'unknown',
+        subscriptionId: subDoc.id,
+      };
+    } catch (error) {
+      console.error('Failed to check subscription status:', error);
+      throw new HttpsError('internal', 'Failed to check subscription status');
+    }
+  }
+);
 
 export const cancelPayPalSubscription = onCall<CancelSubscriptionRequest>(
   {
@@ -565,17 +780,31 @@ export const cancelPayPalSubscription = onCall<CancelSubscriptionRequest>(
         throw new HttpsError('permission-denied', 'Cannot cancel someone else\'s subscription');
       }
 
-      const token = await getPayPalAccessToken();
-      await axios.post(
-        `${getPayPalApiBaseUrl()}/v1/billing/subscriptions/${subscriptionId}/cancel`,
-        { reason: 'User-initiated cancellation' },
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-            'Content-Type': 'application/json',
-          },
+      // Only call PayPal API if subscription is still active
+      if (subscriptionData?.subscriptionStatus === 'active') {
+        try {
+          const token = await getPayPalAccessToken();
+          await axios.post(
+            `${getPayPalApiBaseUrl()}/v1/billing/subscriptions/${subscriptionId}/cancel`,
+            { reason: 'User-initiated cancellation' },
+            {
+              headers: {
+                Authorization: `Bearer ${token}`,
+                'Content-Type': 'application/json',
+              },
+              timeout: 10000,
+            }
+          );
+        } catch (apiError) {
+          // If PayPal says already cancelled, that's fine
+          const errorMessage = getErrorMessage(apiError);
+          if (!errorMessage.includes('SUBSCRIPTION_ALREADY_CANCELLED') && 
+              !errorMessage.includes('ALREADY_CANCELLED')) {
+            throw apiError;
+          }
+          console.log(`PayPal subscription ${subscriptionId} already cancelled`);
         }
-      );
+      }
 
       await saveCanonicalSubscriptionState(
         userId,
@@ -587,9 +816,11 @@ export const cancelPayPalSubscription = onCall<CancelSubscriptionRequest>(
           null
         ),
         {
-        status: 'user_cancelled',
-        cancelledAt: admin.firestore.FieldValue.serverTimestamp(),
-      });
+          status: 'user_cancelled',
+          cancelledAt: admin.firestore.FieldValue.serverTimestamp(),
+          cancellationReason: 'user_initiated',
+        }
+      );
 
       await createNotification(
         userId,

@@ -9,7 +9,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 import { format } from 'date-fns';
-import { usePayPalSubscription } from '@/hooks/usePayPalSubscription';
+import { useSubscription } from '@/hooks/useSubscription';
 import { useToast } from '@/hooks/use-toast';
 import { AlertCircle, CheckCircle2, Loader2, Trash2 } from 'lucide-react';
 
@@ -27,7 +27,7 @@ export function SubscriptionManager() {
   const { user } = useAuth();
   const [subscriptions, setSubscriptions] = useState<Subscription[]>([]);
   const [loading, setLoading] = useState(true);
-  const { cancel, loading: cancelLoading } = usePayPalSubscription();
+  const { cancelSubscription, cancelLoading } = useSubscription();
   const { toast } = useToast();
 
     useEffect(() => {
@@ -53,13 +53,13 @@ export function SubscriptionManager() {
   }, [user?.uid]);
 
   const handleCancelSubscription = async (subscriptionId: string) => {
-    const success = await cancel(subscriptionId);
-    if (success) {
+    try {
+      await cancelSubscription(subscriptionId);
       toast({
         title: 'Subscription cancelled',
         description: 'Your subscription has been cancelled. You will retain access until the end of your billing period.',
       });
-    } else {
+    } catch {
       toast({
         title: 'Failed to cancel',
         description: 'Please try again or contact support.',

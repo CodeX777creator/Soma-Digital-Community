@@ -145,9 +145,11 @@ export const runDailyMissionsManually = onRequest(async (req, res) => {
 });
 
 // PayPal subscription functions
-export { createPayPalSubscription, paypalWebhook, cancelPayPalSubscription } from './paypal';
+export { createPayPalSubscription, paypalWebhook, cancelPayPalSubscription, checkSubscriptionStatus } from './paypal';
 // Paystack subscription functions
 export { createPaystackSubscription, paystackWebhook, cancelPaystackSubscription } from './paystack';
+// Subscription sync and cleanup jobs
+export { syncSubscriptions, runSubscriptionSync } from './subscriptionSync';
 // XP event validation
 export { logXPEvent } from './xp';
 // AI mentor chat
