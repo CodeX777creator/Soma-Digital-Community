@@ -109,13 +109,16 @@ export const useUserStore = create<UserState>()(
       updateRoadmapStatus: (roadmapStatus) => set({ roadmapStatus }),
 
       syncProfile: (data) => set((state) => {
-        // Check multiple possible locations for tier info
-        // Priority: subscription.subscriptionPlan > subscription.plan > subscriptionTier > tier > existing
-        const newTier = data.subscription?.subscriptionPlan 
-          || data.subscription?.plan 
-          || data.subscriptionTier 
-          || data.tier 
-          || state.tier;
+        // Only use tier from subscription if it's active
+        // This prevents showing upgraded tier for pending/cancelled subscriptions
+        const subscription = data.subscription;
+        const isSubscriptionActive = subscription?.subscriptionStatus === 'active' || subscription?.status === 'active';
+        
+        // Priority: active subscription.plan > subscriptionTier > tier > existing
+        // Only use subscription tier if subscription is actually active
+        const newTier = isSubscriptionActive
+          ? (subscription?.subscriptionPlan || subscription?.plan)
+          : (data.subscriptionTier || data.tier || state.tier);
 
         return {
           xp: data.xp ?? state.xp,

@@ -183,20 +183,38 @@ export async function saveCanonicalSubscriptionState(
     },
     { merge: true }
   );
-  
-  batch.set(
-    userRef,
-    {
-      subscription: {
-        ...state,
+
+  // Only update user tier if subscription is active
+  // This prevents users from appearing upgraded during pending/cancelled states
+  if (state.subscriptionStatus === 'active') {
+    batch.set(
+      userRef,
+      {
+        subscription: {
+          ...state,
+          updatedAt: timestamp,
+        },
+        subscriptionTier: state.subscriptionPlan,
+        tier: state.subscriptionPlan,
         updatedAt: timestamp,
       },
-      subscriptionTier: state.subscriptionPlan,
-      tier: state.subscriptionPlan,
-      updatedAt: timestamp,
-    },
-    { merge: true }
-  );
+      { merge: true }
+    );
+  } else {
+    // For non-active states, only update the subscription object without changing tier
+    // This preserves the user's current tier until payment is confirmed
+    batch.set(
+      userRef,
+      {
+        subscription: {
+          ...state,
+          updatedAt: timestamp,
+        },
+        updatedAt: timestamp,
+      },
+      { merge: true }
+    );
+  }
 
   await batch.commit();
 }
