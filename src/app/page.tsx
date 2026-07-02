@@ -42,6 +42,7 @@ import {
 } from "lucide-react";
 import { VisionModal } from "@/components/landing/VisionModal";
 import { useAuth } from "@/providers/AuthProvider";
+import { OptimizedImage } from "@/components/ui/optimized-image";
 
 function timeAgo(ts: any): string {
   if (!ts?.toDate) return "just now";
@@ -239,11 +240,14 @@ export default function Home() {
         <section className="max-w-7xl mx-auto px-6 grid grid-cols-1 lg:grid-cols-2 gap-16 items-center">
           <div className="relative">
             <div className="absolute -inset-4 bg-primary/20 blur-[100px] rounded-full opacity-30" />
-            <img
-              src="/founder_portrait.png"
-              alt="Founder of Soma Digital"
-              className="rounded-[3rem] w-full h-[600px] object-cover border border-white/10 shadow-2xl relative z-10"
-            />
+            <div className="rounded-[3rem] w-full h-[600px] border border-white/10 shadow-2xl relative z-10 overflow-hidden">
+              <OptimizedImage
+                src="/founder_portrait.png"
+                alt="Founder of Soma Digital"
+                containerClassName="w-full h-full"
+                className="w-full h-full object-cover"
+              />
+            </div>
             <GlassCard className="absolute -bottom-8 -right-8 p-6 w-72 z-20 animate-float" style={{ animationDuration: '10s' }}>
               <Quote className="w-8 h-8 text-primary mb-4 opacity-50" />
               <p className="text-sm italic text-white/90 leading-relaxed mb-4">
