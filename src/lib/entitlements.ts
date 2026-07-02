@@ -59,6 +59,7 @@ export function isSubscriptionActive(subscription?: SubscriptionRecord | null): 
 
 export function hasPlan(subscription: SubscriptionRecord | null | undefined, minimumPlan: SubscriptionPlan): boolean {
   if (!subscription) return false;
+  if (!isSubscriptionActive(subscription)) return false;
   return subscriptionWeights[getSubscriptionPlan(subscription.subscriptionPlan)] >= subscriptionWeights[minimumPlan];
 }
 

@@ -1,5 +1,15 @@
 export type UserTier = "explorer" | "pro" | "elite";
 
+const INACTIVE_SUBSCRIPTION_STATUSES = new Set([
+  "approval_pending",
+  "cancelled",
+  "created",
+  "expired",
+  "past_due",
+  "suspended",
+  "user_cancelled",
+]);
+
 function normalizeTier(value: unknown): UserTier | null {
   if (value === "elite" || value === "enterprise") return "elite";
   if (value === "pro") return "pro";
@@ -20,7 +30,7 @@ export function getEffectiveUserTier(profile: Record<string, any> | null | undef
     return subscriptionTier;
   }
 
-  if (status === "approval_pending" || status === "created") {
+  if (INACTIVE_SUBSCRIPTION_STATUSES.has(status)) {
     return "explorer";
   }
 
