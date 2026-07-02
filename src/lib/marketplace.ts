@@ -14,6 +14,7 @@ import type { SubscriptionPlan } from "@/lib/entitlements";
 export type MarketplaceAssetType = "pdf" | "video" | "template" | "notion" | "link" | "code" | "course";
 export type MarketplaceAssetTier = "free" | "pro" | "elite";
 export type MarketplaceLicenseType = "standard" | "mrr";
+export type MarketplaceCommissionBase = "full_price" | "course_price";
 
 export interface MarketplaceAsset {
   id: string;
@@ -31,6 +32,12 @@ export interface MarketplaceAsset {
   resalePrice: number;
   resellerCommissionType: "fixed" | "percentage";
   resellerCommissionValue: number;
+  commissionBase: MarketplaceCommissionBase;
+  courseValue: number;
+  externalPlatform: string;
+  externalAccessUrl: string;
+  accessInstructions: string;
+  websiteOnboardingInstructions: string;
   published: boolean;
   createdAt: Timestamp | null;
   updatedAt: Timestamp | null;
@@ -65,6 +72,12 @@ function normalizeAsset(id: string, data: Record<string, any>): MarketplaceAsset
     resalePrice: typeof data.resalePrice === "number" ? data.resalePrice : typeof data.price === "number" ? data.price : 0,
     resellerCommissionType: data.resellerCommissionType === "fixed" ? "fixed" : "percentage",
     resellerCommissionValue: typeof data.resellerCommissionValue === "number" ? data.resellerCommissionValue : 0,
+    commissionBase: data.commissionBase === "course_price" ? "course_price" : "full_price",
+    courseValue: typeof data.courseValue === "number" ? data.courseValue : typeof data.price === "number" ? data.price : 0,
+    externalPlatform: typeof data.externalPlatform === "string" ? data.externalPlatform : "",
+    externalAccessUrl: typeof data.externalAccessUrl === "string" ? data.externalAccessUrl : "",
+    accessInstructions: typeof data.accessInstructions === "string" ? data.accessInstructions : "",
+    websiteOnboardingInstructions: typeof data.websiteOnboardingInstructions === "string" ? data.websiteOnboardingInstructions : "",
     published: data.published !== false,
     createdAt: data.createdAt || null,
     updatedAt: data.updatedAt || null,

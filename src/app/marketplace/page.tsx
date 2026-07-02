@@ -5,15 +5,10 @@ import { GlassCard } from "@/components/ui/glass-card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import { Search, Download, Star, Filter, ShoppingBag, Zap, Lock } from "lucide-react";
+import { Search, Download, Star, Filter, ShoppingBag, Lock } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { useAuth } from "@/providers/AuthProvider";
-import { authFetch } from "@/lib/clientApi";
-import { app } from "@/lib/firebase";
 import { getMarketplaceAssets, MarketplaceAsset } from "@/lib/marketplace";
-import { useToast } from "@/hooks/use-toast";
-import { getFunctions, httpsCallable } from "firebase/functions";
 
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 
@@ -23,8 +18,6 @@ export default function MarketplacePage() {
   const [assets, setAssets] = useState<MarketplaceAsset[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
-  const { user } = useAuth();
-  const { toast } = useToast();
 
   useEffect(() => {
     let cancelled = false;
@@ -63,86 +56,6 @@ export default function MarketplacePage() {
       || asset.tags.some((tag) => tag.toLowerCase().includes(query));
     return matchesCategory && matchesSearch;
   });
-
-  const handlePurchase = async (asset: MarketplaceAsset) => {
-    if (!user) {
-      toast({ title: 'Sign in required', description: 'Please sign in to purchase courses.' });
-      return;
-    }
-
-    const params = new URLSearchParams(window.location.search);
-    const resellerSlug = params.get('ref') || undefined;
-    const functions = getFunctions(app);
-    const createPurchase = httpsCallable(functions, 'createPaystackAssetPurchase');
-    const result = await createPurchase({
-      assetId: asset.id,
-      userId: user.uid,
-      resellerSlug,
-    });
-    const data = result.data as { authorizationUrl?: string | null; status?: string; message?: string };
-
-    if (data.authorizationUrl) {
-      window.location.href = data.authorizationUrl;
-      return;
-    }
-
-    toast({
-      title: data.status === 'already_owned' ? 'Already owned' : 'Purchase ready',
-      description: data.message || asset.title,
-    });
-  };
-
-  const handleAcquire = async (asset: MarketplaceAsset) => {
-    const assetId = asset.id;
-    if (!user) {
-      toast({ title: 'Sign in required', description: 'Please sign in to access assets.' });
-      return;
-    }
-
-    try {
-      const response = await authFetch('/api/marketplace/asset-access', {
-        method: 'POST',
-        body: JSON.stringify({ assetId }),
-      });
-
-      const payload = await response.json();
-      if (!response.ok) {
-        throw new Error(payload?.error || 'Unable to access asset');
-      }
-
-      if (payload.assetUrl) {
-        window.open(payload.assetUrl, '_blank', 'noopener,noreferrer');
-      }
-
-      if (payload.purchase?.resaleRights && !payload.resellerLink?.url) {
-        try {
-          await authFetch('/api/marketplace/reseller-link', {
-            method: 'POST',
-            body: JSON.stringify({ assetId }),
-          });
-        } catch (linkError) {
-          console.warn("Unable to prepare reseller link:", linkError);
-        }
-      }
-
-      toast({ title: 'Access granted', description: payload.asset?.title || 'Opening resource.' });
-    } catch (err) {
-      if (asset.price > 0) {
-        try {
-          await handlePurchase(asset);
-          return;
-        } catch (purchaseError) {
-          toast({
-            title: 'Checkout unavailable',
-            description: purchaseError instanceof Error ? purchaseError.message : 'Unable to start purchase.',
-          });
-          return;
-        }
-      }
-
-      toast({ title: 'Access denied', description: err instanceof Error ? err.message : 'Upgrade required' });
-    }
-  };
 
   return (
     <ProtectedRoute>
@@ -188,7 +101,7 @@ export default function MarketplacePage() {
           )}
           {!loading && !loadError && visibleAssets.map(asset => (
             <div key={asset.id} className="relative group h-full">
-              <AssetCard asset={asset} onAcquire={() => handleAcquire(asset)} />
+              <AssetCard asset={asset} />
             </div>
           ))}
           {!loading && !loadError && visibleAssets.length === 0 && (
@@ -241,7 +154,7 @@ function AssetSkeleton() {
   );
 }
 
-function AssetCard({ asset, onAcquire }: { asset: MarketplaceAsset; onAcquire: () => void }) {
+function AssetCard({ asset }: { asset: MarketplaceAsset }) {
   const isPremium = asset.tier !== "free";
   const isLocked = asset.tier !== "free";
 
@@ -288,8 +201,10 @@ function AssetCard({ asset, onAcquire }: { asset: MarketplaceAsset; onAcquire: (
         </div>
         <div className="flex items-center justify-between pt-5 border-t border-white/5">
            <span className="text-2xl font-bold font-headline">{formatPrice(asset.price, asset.tier)}</span>
-           <Button onClick={onAcquire} size="icon" variant="ghost" className="rounded-2xl w-12 h-12 bg-white/5 border border-white/5 hover:bg-primary hover:text-white hover:border-primary transition-all group/btn blue-glow">
-             <ShoppingBag className="w-5 h-5" />
+           <Button asChild size="icon" variant="ghost" className="rounded-2xl w-12 h-12 bg-white/5 border border-white/5 hover:bg-primary hover:text-white hover:border-primary transition-all group/btn blue-glow">
+             <Link href={`/marketplace/${asset.id}`} aria-label={`View ${asset.title}`}>
+               <ShoppingBag className="w-5 h-5" />
+             </Link>
            </Button>
         </div>
       </div>

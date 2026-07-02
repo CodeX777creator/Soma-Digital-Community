@@ -268,16 +268,25 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     const resellerLink = licenseType === 'mrr' && resaleEnabled
       ? await getResellerLink(user.uid, assetId)
       : null;
+    const externalAccessUrl = typeof asset.externalAccessUrl === 'string' && asset.externalAccessUrl
+      ? asset.externalAccessUrl
+      : '';
+    const finalAssetUrl = externalAccessUrl || assetUrl;
     
     return NextResponse.json(
       {
-        assetUrl,
+        assetUrl: finalAssetUrl,
         accessGranted: true,
         assetId,
         asset: {
           title: typeof asset.title === 'string' ? asset.title : 'Marketplace asset',
           licenseType,
           resaleEnabled,
+          externalPlatform: typeof asset.externalPlatform === 'string' ? asset.externalPlatform : '',
+          accessInstructions: typeof asset.accessInstructions === 'string' ? asset.accessInstructions : '',
+          websiteOnboardingInstructions: typeof asset.websiteOnboardingInstructions === 'string'
+            ? asset.websiteOnboardingInstructions
+            : '',
         },
         userTier,
         accessSource: hasPurchaseAccess ? 'purchase' : 'subscription',

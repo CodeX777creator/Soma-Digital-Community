@@ -286,6 +286,11 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    match /resellerPayoutProfiles/{profileId} {
+      allow read: if isAdmin() || isUser(profileId);
+      allow write: if false;
+    }
+
     // ── Admin Audit Log ──────────────────────────────────────────────────────
     match /admin/{document=**} {
       allow read: if isAdmin();

@@ -32,6 +32,7 @@ type AssetType = "pdf" | "video" | "template" | "notion" | "link" | "code" | "co
 type AssetTier = "free" | "pro" | "elite";
 type LicenseType = "standard" | "mrr";
 type CommissionType = "fixed" | "percentage";
+type CommissionBase = "full_price" | "course_price";
 type PublishedFilter = "all" | "published" | "draft";
 
 type MarketplaceAsset = {
@@ -50,6 +51,12 @@ type MarketplaceAsset = {
   resalePrice: number;
   resellerCommissionType: CommissionType;
   resellerCommissionValue: number;
+  commissionBase: CommissionBase;
+  courseValue: number;
+  externalPlatform: string;
+  externalAccessUrl: string;
+  accessInstructions: string;
+  websiteOnboardingInstructions: string;
   published: boolean;
   createdAt: any;
   updatedAt: any;
@@ -70,6 +77,12 @@ type AssetFormState = {
   resalePrice: string;
   resellerCommissionType: CommissionType;
   resellerCommissionValue: string;
+  commissionBase: CommissionBase;
+  courseValue: string;
+  externalPlatform: string;
+  externalAccessUrl: string;
+  accessInstructions: string;
+  websiteOnboardingInstructions: string;
   published: boolean;
 };
 
@@ -77,6 +90,7 @@ const ASSET_TYPES: AssetType[] = ["pdf", "video", "template", "notion", "link", 
 const ASSET_TIERS: AssetTier[] = ["free", "pro", "elite"];
 const LICENSE_TYPES: LicenseType[] = ["standard", "mrr"];
 const COMMISSION_TYPES: CommissionType[] = ["percentage", "fixed"];
+const COMMISSION_BASES: CommissionBase[] = ["full_price", "course_price"];
 const MAX_FILE_SIZE = 50 * 1024 * 1024;
 const COLLECTION = "marketplaceAssets";
 
@@ -95,6 +109,12 @@ const emptyForm: AssetFormState = {
   resalePrice: "0",
   resellerCommissionType: "percentage",
   resellerCommissionValue: "0",
+  commissionBase: "full_price",
+  courseValue: "0",
+  externalPlatform: "",
+  externalAccessUrl: "",
+  accessInstructions: "",
+  websiteOnboardingInstructions: "",
   published: false,
 };
 
@@ -115,6 +135,12 @@ function normalizeAsset(id: string, data: Record<string, any>): MarketplaceAsset
     resalePrice: typeof data.resalePrice === "number" ? data.resalePrice : typeof data.price === "number" ? data.price : 0,
     resellerCommissionType: data.resellerCommissionType === "fixed" ? "fixed" : "percentage",
     resellerCommissionValue: typeof data.resellerCommissionValue === "number" ? data.resellerCommissionValue : 0,
+    commissionBase: data.commissionBase === "course_price" ? "course_price" : "full_price",
+    courseValue: typeof data.courseValue === "number" ? data.courseValue : typeof data.price === "number" ? data.price : 0,
+    externalPlatform: typeof data.externalPlatform === "string" ? data.externalPlatform : "",
+    externalAccessUrl: typeof data.externalAccessUrl === "string" ? data.externalAccessUrl : "",
+    accessInstructions: typeof data.accessInstructions === "string" ? data.accessInstructions : "",
+    websiteOnboardingInstructions: typeof data.websiteOnboardingInstructions === "string" ? data.websiteOnboardingInstructions : "",
     published: data.published === true,
     createdAt: data.createdAt || null,
     updatedAt: data.updatedAt || null,
@@ -137,6 +163,12 @@ function formFromAsset(asset: MarketplaceAsset): AssetFormState {
     resalePrice: String(asset.resalePrice || asset.price || 0),
     resellerCommissionType: asset.resellerCommissionType,
     resellerCommissionValue: String(asset.resellerCommissionValue || 0),
+    commissionBase: asset.commissionBase,
+    courseValue: String(asset.courseValue || asset.price || 0),
+    externalPlatform: asset.externalPlatform,
+    externalAccessUrl: asset.externalAccessUrl,
+    accessInstructions: asset.accessInstructions,
+    websiteOnboardingInstructions: asset.websiteOnboardingInstructions,
     published: asset.published,
   };
 }
@@ -334,6 +366,12 @@ export default function AdminMarketplacePage() {
         resalePrice: Number(form.resalePrice) || Number(form.price) || 0,
         resellerCommissionType: form.resellerCommissionType,
         resellerCommissionValue: Number(form.resellerCommissionValue) || 0,
+        commissionBase: form.commissionBase,
+        courseValue: Number(form.courseValue) || Number(form.price) || 0,
+        externalPlatform: form.externalPlatform.trim(),
+        externalAccessUrl: form.externalAccessUrl.trim(),
+        accessInstructions: form.accessInstructions.trim(),
+        websiteOnboardingInstructions: form.websiteOnboardingInstructions.trim(),
         published: false,
         draft: true,
         createdAt: serverTimestamp(),
@@ -397,6 +435,11 @@ export default function AdminMarketplacePage() {
       if (form.licenseType === "mrr" && form.resaleEnabled && price <= 0) {
         throw new Error("MRR assets need a purchase price.");
       }
+      const courseValue = Number(form.courseValue || form.price);
+      if (Number.isNaN(courseValue) || courseValue < 0) throw new Error("Course value must be 0 or higher.");
+      if (form.commissionBase === "course_price" && courseValue <= 0) {
+        throw new Error("Course value is required when commission is based on course price.");
+      }
 
       const payload = {
         title: form.title.trim(),
@@ -413,6 +456,12 @@ export default function AdminMarketplacePage() {
         resalePrice,
         resellerCommissionType: form.resellerCommissionType,
         resellerCommissionValue: commissionValue,
+        commissionBase: form.commissionBase,
+        courseValue,
+        externalPlatform: form.externalPlatform.trim(),
+        externalAccessUrl: form.externalAccessUrl.trim(),
+        accessInstructions: form.accessInstructions.trim(),
+        websiteOnboardingInstructions: form.websiteOnboardingInstructions.trim(),
         published: form.published,
         draft: false,
         updatedAt: serverTimestamp(),
@@ -806,6 +855,35 @@ export default function AdminMarketplacePage() {
                 />
               </Field>
 
+              <Field label="Commission Base">
+                <select
+                  value={form.commissionBase}
+                  onChange={(event) => setForm({ ...form, commissionBase: event.target.value as CommissionBase })}
+                  className="admin-input"
+                  aria-label="Commission Base"
+                  disabled={form.licenseType !== "mrr"}
+                >
+                  {COMMISSION_BASES.map((commissionBase) => (
+                    <option key={commissionBase} value={commissionBase}>
+                      {commissionBase === "course_price" ? "Course value only" : "Full bundle price"}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+
+              <Field label="Course Value">
+                <input
+                  type="number"
+                  min="0"
+                  step="1"
+                  value={form.courseValue}
+                  onChange={(event) => setForm({ ...form, courseValue: event.target.value })}
+                  className="admin-input"
+                  aria-label="Course Value"
+                  disabled={form.licenseType !== "mrr"}
+                />
+              </Field>
+
               <label className="flex items-center gap-3 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-3 md:col-span-2">
                 <input
                   type="checkbox"
@@ -819,6 +897,46 @@ export default function AdminMarketplacePage() {
                   <span className="text-xs text-white/45">Buyers with an MRR license can resell this course through SDC.</span>
                 </span>
               </label>
+
+              <Field label="External Platform">
+                <input
+                  value={form.externalPlatform}
+                  onChange={(event) => setForm({ ...form, externalPlatform: event.target.value })}
+                  className="admin-input"
+                  placeholder="Kajabi"
+                  aria-label="External Platform"
+                />
+              </Field>
+
+              <Field label="External Access URL">
+                <input
+                  value={form.externalAccessUrl}
+                  onChange={(event) => setForm({ ...form, externalAccessUrl: event.target.value })}
+                  className="admin-input"
+                  placeholder="https://..."
+                  aria-label="External Access URL"
+                />
+              </Field>
+
+              <Field label="Course Access Instructions" className="md:col-span-2">
+                <textarea
+                  value={form.accessInstructions}
+                  onChange={(event) => setForm({ ...form, accessInstructions: event.target.value })}
+                  className="admin-input min-h-24 resize-y"
+                  placeholder="Shown only after SDC confirms purchase."
+                  aria-label="Course Access Instructions"
+                />
+              </Field>
+
+              <Field label="Website Onboarding Instructions" className="md:col-span-2">
+                <textarea
+                  value={form.websiteOnboardingInstructions}
+                  onChange={(event) => setForm({ ...form, websiteOnboardingInstructions: event.target.value })}
+                  className="admin-input min-h-24 resize-y"
+                  placeholder="Use this for the $39 website setup portion of a bundle."
+                  aria-label="Website Onboarding Instructions"
+                />
+              </Field>
 
               <Field label="Thumbnail URL or upload" className="md:col-span-2">
                 <div className="grid gap-3 md:grid-cols-[1fr_auto]">

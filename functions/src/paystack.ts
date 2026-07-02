@@ -64,6 +64,8 @@ interface CreateAssetPurchaseRequest {
   userId: string;
   resellerSlug?: string;
   idempotencyKey?: string;
+  mrrLicenseAccepted?: boolean;
+  mrrLicenseVersion?: string;
 }
 
 interface CreateAssetPurchaseResponse {
@@ -259,9 +261,12 @@ async function processAssetPurchaseWebhook(
     const asset = assetSnap.data() || {};
     const commissionType = asset.resellerCommissionType === 'fixed' ? 'fixed' : 'percentage';
     const commissionValue = typeof asset.resellerCommissionValue === 'number' ? asset.resellerCommissionValue : 0;
+    const commissionBase = asset.commissionBase === 'course_price' ? 'course_price' : 'full_price';
+    const courseValue = typeof asset.courseValue === 'number' ? asset.courseValue : grossAmount;
+    const commissionableAmount = commissionBase === 'course_price' ? courseValue : grossAmount;
     const resellerEarnings = commissionType === 'fixed'
-      ? Math.min(commissionValue, grossAmount)
-      : Math.round(grossAmount * commissionValue) / 100;
+      ? Math.min(commissionValue, commissionableAmount)
+      : Math.round(commissionableAmount * commissionValue) / 100;
 
     await db.collection('resellerSales').doc(`${purchaseId}_${eventId}`).set({
       resellerUserId,
@@ -269,6 +274,8 @@ async function processAssetPurchaseWebhook(
       assetId,
       purchaseId,
       grossAmount,
+      commissionBase,
+      commissionableAmount,
       platformFee: Math.max(0, grossAmount - resellerEarnings),
       resellerEarnings,
       commissionType,
@@ -616,7 +623,7 @@ export const createPaystackAssetPurchase = onCall(
     const data = request.data as Partial<CreateAssetPurchaseRequest>;
     const context = request.auth;
     const secretKey = paystackSecretKey.value();
-    const callbackUrl = `${frontendUrl.value()}/marketplace?purchase=success`;
+    const callbackUrl = `${frontendUrl.value()}/marketplace/success?assetId=${encodeURIComponent(String(data.assetId || ''))}`;
 
     if (!context?.uid) {
       throw new HttpsError('unauthenticated', 'User not authenticated');
@@ -647,6 +654,12 @@ export const createPaystackAssetPurchase = onCall(
     const price = typeof asset.price === 'number' ? asset.price : 0;
     if (price <= 0) {
       throw new HttpsError('failed-precondition', 'This asset does not require purchase');
+    }
+
+    const licenseType = asset.licenseType === 'mrr' ? 'mrr' : 'standard';
+    const resaleRights = licenseType === 'mrr' && asset.resaleEnabled === true;
+    if (resaleRights && data.mrrLicenseAccepted !== true) {
+      throw new HttpsError('failed-precondition', 'You must accept the MRR license agreement before purchasing this course.');
     }
 
     const purchaseId = `${userId}_${assetId}`;
@@ -731,9 +744,6 @@ export const createPaystackAssetPurchase = onCall(
         throw new Error('Paystack did not return a checkout URL');
       }
 
-      const licenseType = asset.licenseType === 'mrr' ? 'mrr' : 'standard';
-      const resaleRights = licenseType === 'mrr' && asset.resaleEnabled === true;
-
       await purchaseRef.set({
         userId,
         uid: userId,
@@ -747,6 +757,15 @@ export const createPaystackAssetPurchase = onCall(
         status: 'approval_pending',
         licenseType,
         resaleRights,
+        mrrLicenseAccepted: resaleRights ? true : false,
+        mrrLicenseAcceptedAt: resaleRights ? admin.firestore.FieldValue.serverTimestamp() : null,
+        mrrLicenseVersion: resaleRights
+          ? (typeof data.mrrLicenseVersion === 'string' && data.mrrLicenseVersion ? data.mrrLicenseVersion : 'sdc-mrr-v1')
+          : null,
+        commissionBase: asset.commissionBase === 'course_price' ? 'course_price' : 'full_price',
+        courseValue: typeof asset.courseValue === 'number' ? asset.courseValue : price,
+        externalPlatform: typeof asset.externalPlatform === 'string' ? asset.externalPlatform : '',
+        provisioningStatus: asset.externalPlatform ? 'access_pending' : 'not_required',
         resellerSlug,
         resellerUserId,
         createdAt: admin.firestore.FieldValue.serverTimestamp(),

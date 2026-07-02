@@ -9,7 +9,9 @@ import {
   BarChart3,
   Boxes,
   CreditCard,
+  HandCoins,
   FileText,
+  GraduationCap,
   LayoutDashboard,
   LogOut,
   Menu,
@@ -22,8 +24,10 @@ import { auth, db } from "@/lib/firebase";
 const navItems = [
   { label: "Dashboard", href: "/admin/dashboard", icon: LayoutDashboard },
   { label: "Marketplace", href: "/admin/marketplace", icon: Boxes },
+  { label: "Purchases", href: "/admin/purchases", icon: GraduationCap },
   { label: "Users", href: "/admin/users", icon: Users },
   { label: "Subscriptions", href: "/admin/subscriptions", icon: CreditCard },
+  { label: "Payouts", href: "/admin/payouts", icon: HandCoins },
   { label: "Content", href: "/admin/content", icon: FileText },
   { label: "Settings", href: "/admin/settings", icon: Settings },
 ];

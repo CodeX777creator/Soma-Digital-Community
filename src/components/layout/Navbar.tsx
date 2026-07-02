@@ -43,6 +43,8 @@ export const Navbar = () => {
     { name: "Community", href: "/community" },
     { name: "AI Mentor", href: "/mentor" },
     { name: "Marketplace", href: "/marketplace" },
+    { name: "My Courses", href: "/my-courses" },
+    { name: "Reseller", href: "/reseller" },
   ];
 
   const links = isLoggedIn ? appLinks : landingLinks;

@@ -1,6 +1,8 @@
 {
+  "__comment": "Each index below includes a __comment documenting the query path it supports. Firebase deploy tooling reads the indexes array; keep these notes short and update them when query shapes change.",
   "indexes": [
     {
+      "__comment": "Community feed: reserved for pinned-first post ordering by isPinned desc, then newest posts first.",
       "collectionGroup": "posts",
       "queryScope": "COLLECTION",
       "fields": [
@@ -9,6 +11,7 @@
       ]
     },
     {
+      "__comment": "Community filters: supports post type filters ordered by newest post first.",
       "collectionGroup": "posts",
       "queryScope": "COLLECTION",
       "fields": [
@@ -17,6 +20,7 @@
       ]
     },
     {
+      "__comment": "Community profile/history views: supports posts filtered by authorId and ordered newest first.",
       "collectionGroup": "posts",
       "queryScope": "COLLECTION",
       "fields": [
@@ -25,6 +29,7 @@
       ]
     },
     {
+      "__comment": "Community comments: supports collection-group comment lookups by postId ordered oldest first.",
       "collectionGroup": "comments",
       "queryScope": "COLLECTION_GROUP",
       "fields": [
@@ -33,6 +38,7 @@
       ]
     },
     {
+      "__comment": "Mentor chat threads: supports per-user mentor history ordered by most recently updated thread.",
       "collectionGroup": "mentorHistory",
       "queryScope": "COLLECTION",
       "fields": [
@@ -41,13 +47,7 @@
       ]
     },
     {
-      "collectionGroup": "messages",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "timestamp", "order": "ASCENDING" }
-      ]
-    },
-    {
+      "__comment": "Admin/member views: supports users filtered by tier and ordered by newest account first.",
       "collectionGroup": "users",
       "queryScope": "COLLECTION",
       "fields": [
@@ -56,6 +56,7 @@
       ]
     },
     {
+      "__comment": "Community reactions: supports reaction history filtered by userId and ordered newest first.",
       "collectionGroup": "likes",
       "queryScope": "COLLECTION",
       "fields": [
@@ -64,6 +65,7 @@
       ]
     },
     {
+      "__comment": "Marketplace access checks: supports purchase lookups by userId, assetId, and paid status.",
       "collectionGroup": "assetPurchases",
       "queryScope": "COLLECTION",
       "fields": [
@@ -73,11 +75,133 @@
       ]
     },
     {
+      "__comment": "Marketplace reseller referrals: supports slug + assetId lookup for reseller links.",
       "collectionGroup": "resellerLinks",
       "queryScope": "COLLECTION",
       "fields": [
         { "fieldPath": "slug", "order": "ASCENDING" },
         { "fieldPath": "assetId", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "__comment": "Subscription manager: supports a user's subscriptions ordered by newest created record first.",
+      "collectionGroup": "subscriptions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "userId", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "__comment": "Server auth/session lookup: supports the latest subscription for a user by updatedAt.",
+      "collectionGroup": "subscriptions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "userId", "order": "ASCENDING" },
+        { "fieldPath": "updatedAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "__comment": "PayPal active access lookup: supports active subscription lookup by userId and subscriptionStatus ordered by updatedAt.",
+      "collectionGroup": "subscriptions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "userId", "order": "ASCENDING" },
+        { "fieldPath": "subscriptionStatus", "order": "ASCENDING" },
+        { "fieldPath": "updatedAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "__comment": "Billing helpers: supports active subscription lookup by userId and subscriptionStatus.",
+      "collectionGroup": "subscriptions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "userId", "order": "ASCENDING" },
+        { "fieldPath": "subscriptionStatus", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "__comment": "Paystack duplicate-active check: supports subscription lookup by userId and status.",
+      "collectionGroup": "subscriptions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "userId", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "__comment": "Paystack idempotency check: supports subscription lookup by userId, planId, and status.",
+      "collectionGroup": "subscriptions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "userId", "order": "ASCENDING" },
+        { "fieldPath": "planId", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "__comment": "Subscription sync expiry job: supports active subscriptions whose currentPeriodEnd has passed.",
+      "collectionGroup": "subscriptions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "subscriptionStatus", "order": "ASCENDING" },
+        { "fieldPath": "currentPeriodEnd", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "__comment": "Subscription sync past-due job: supports past_due subscriptions older than the grace period.",
+      "collectionGroup": "subscriptions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "subscriptionStatus", "order": "ASCENDING" },
+        { "fieldPath": "updatedAt", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "__comment": "Marketplace filters: supports combined category and tier filtering.",
+      "collectionGroup": "marketplaceAssets",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "category", "order": "ASCENDING" },
+        { "fieldPath": "tier", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "__comment": "Marketplace catalog: supports published asset listings ordered by newest created asset first.",
+      "collectionGroup": "marketplaceAssets",
+      "queryScope": "COLLECTION",
+      "density": "SPARSE_ALL",
+      "fields": [
+        { "fieldPath": "published", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "__comment": "Marketplace filters: supports category filtering combined with tag array matching.",
+      "collectionGroup": "marketplaceAssets",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "category", "order": "ASCENDING" },
+        { "fieldPath": "tags", "arrayConfig": "CONTAINS" }
+      ]
+    },
+    {
+      "__comment": "Marketplace filters: supports tier filtering combined with tag array matching.",
+      "collectionGroup": "marketplaceAssets",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "tier", "order": "ASCENDING" },
+        { "fieldPath": "tags", "arrayConfig": "CONTAINS" }
+      ]
+    },
+    {
+      "__comment": "Marketplace filters: supports category + tier filtering combined with tag array matching.",
+      "collectionGroup": "marketplaceAssets",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "category", "order": "ASCENDING" },
+        { "fieldPath": "tier", "order": "ASCENDING" },
+        { "fieldPath": "tags", "arrayConfig": "CONTAINS" }
       ]
     }
   ],
