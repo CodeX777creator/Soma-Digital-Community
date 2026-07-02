@@ -302,10 +302,13 @@ async function getPayPalAccessToken(): Promise<string> {
 
 export const createPayPalSubscription = onCall<CreateSubscriptionRequest>(
   {
-    secrets: [paypalClientId, paypalClientSecret, paypalPlanExplorer, paypalPlanPro, paypalPlanElite],
+
+    secrets: [paypalClientId, paypalClientSecret],
   },
   async (request): Promise<CreateSubscriptionResponse> => {
+    
     const data = request.data as Partial<CreateSubscriptionRequest>;
+    
     const context = request.auth;
 
     if (!context?.uid) {

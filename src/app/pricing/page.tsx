@@ -9,6 +9,7 @@ import { cn } from "@/lib/utils";
 
 const plans = [
   {
+    id: "explorer",
     name: "Explorer",
     price: 0,
     description: "Get started with the community",
@@ -29,6 +30,7 @@ const plans = [
     ],
   },
   {
+    id: "pro",
     name: "Pro",
     price: 97,
     popular: true,
@@ -52,6 +54,7 @@ const plans = [
     ],
   },
   {
+    id: "elite",
     name: "Elite",
     price: 297,
     description: "For leaders scaling to the top",
@@ -155,7 +158,7 @@ export default function PricingPage() {
                     )}
                     variant={plan.buttonVariant}
                   >
-                    <Link href={`/dashboard?upgrade=${plan.name.toLowerCase()}`}>
+                    <Link href={plan.id === "explorer" ? "/open?plan=explorer" : `/dashboard?upgrade=${plan.id}`}>
                       {plan.buttonText}
                       <ArrowRight className="w-4 h-4 ml-2" />
                     </Link>
