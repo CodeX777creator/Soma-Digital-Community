@@ -111,6 +111,40 @@ function normalizeAssetTier(rawTier: unknown): AssetTier {
   return 'free';
 }
 
+async function getPaidAssetPurchase(uid: string, assetId: string) {
+  const directPurchaseDoc = await adminDb
+    .collection('assetPurchases')
+    .doc(`${uid}_${assetId}`)
+    .get();
+
+  if (directPurchaseDoc.exists && directPurchaseDoc.data()?.status === 'paid') {
+    return directPurchaseDoc.data() || null;
+  }
+
+  const purchaseSnapshot = await adminDb
+    .collection('assetPurchases')
+    .where('userId', '==', uid)
+    .where('assetId', '==', assetId)
+    .where('status', '==', 'paid')
+    .limit(1)
+    .get();
+
+  if (purchaseSnapshot.empty) return null;
+  return purchaseSnapshot.docs[0].data();
+}
+
+async function getResellerLink(uid: string, assetId: string) {
+  const linkDoc = await adminDb
+    .collection('resellerLinks')
+    .doc(`${uid}_${assetId}`)
+    .get();
+
+  if (!linkDoc.exists) return null;
+  const data = linkDoc.data() || {};
+  if (data.active === false) return null;
+  return data;
+}
+
 /**
  * POST handler for marketplace asset access
  * Authenticates user via Firebase Admin and validates tier permissions
@@ -204,8 +238,12 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       );
     }
     
-    // 4. Validate tier permissions
-    const hasAccess = validateTierAccess(userTier, requiredTier);
+    // 4. Validate tier permissions or direct asset ownership
+    const purchase = await getPaidAssetPurchase(user.uid, assetId);
+    const hasPurchaseAccess = Boolean(purchase);
+    const price = typeof asset.price === 'number' ? asset.price : 0;
+    const requiresPurchase = price > 0;
+    const hasAccess = hasPurchaseAccess || (!requiresPurchase && validateTierAccess(userTier, requiredTier));
     
     if (!hasAccess) {
       console.info(`[${requestId}] Access denied: user ${user.uid} (tier: ${userTier}) attempted to access ${assetId} (requires: ${requiredTier})`);
@@ -216,6 +254,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           accessGranted: false,
           currentTier: userTier,
           requiredTier: requiredTier,
+          requiresPurchase,
           upgradeUrl: '/subscription/upgrade',
         },
         { status: 403 }
@@ -224,6 +263,11 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     
     // 5. Access granted - return asset URL
     console.info(`[${requestId}] Access granted: user ${user.uid} (tier: ${userTier}) accessing ${assetId}`);
+    const licenseType = asset.licenseType === 'mrr' ? 'mrr' : 'standard';
+    const resaleEnabled = asset.resaleEnabled === true;
+    const resellerLink = licenseType === 'mrr' && resaleEnabled
+      ? await getResellerLink(user.uid, assetId)
+      : null;
     
     return NextResponse.json(
       {
@@ -232,8 +276,19 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         assetId,
         asset: {
           title: typeof asset.title === 'string' ? asset.title : 'Marketplace asset',
+          licenseType,
+          resaleEnabled,
         },
         userTier,
+        accessSource: hasPurchaseAccess ? 'purchase' : 'subscription',
+        purchase: purchase ? {
+          licenseType: purchase.licenseType === 'mrr' ? 'mrr' : 'standard',
+          resaleRights: purchase.resaleRights === true,
+        } : null,
+        resellerLink: resellerLink ? {
+          slug: typeof resellerLink.slug === 'string' ? resellerLink.slug : '',
+          url: typeof resellerLink.url === 'string' ? resellerLink.url : '',
+        } : null,
       },
       { status: 200 }
     );

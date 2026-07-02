@@ -59,6 +59,20 @@ interface InitializeTransactionResponse {
   reference: string;
 }
 
+interface CreateAssetPurchaseRequest {
+  assetId: string;
+  userId: string;
+  resellerSlug?: string;
+  idempotencyKey?: string;
+}
+
+interface CreateAssetPurchaseResponse {
+  purchaseId: string;
+  authorizationUrl: string | null;
+  status: string;
+  message?: string;
+}
+
 interface CanonicalSubscriptionState {
   provider: 'paypal' | 'paystack' | string;
   subscriptionPlan: SubscriptionPlan;
@@ -192,6 +206,91 @@ async function cacheSubscriptionClaim(userId: string, tier: SubscriptionPlan) {
   } catch (error) {
     console.error(`Failed to cache subscription claim for ${userId}:`, error);
   }
+}
+
+async function processAssetPurchaseWebhook(
+  eventId: string,
+  eventType: string,
+  data: any
+): Promise<{ handled: boolean; response?: Record<string, unknown> }> {
+  const metadata = data?.metadata || {};
+  if (metadata.kind !== 'asset_purchase') {
+    return { handled: false };
+  }
+
+  const purchaseId = typeof metadata.purchaseId === 'string' ? metadata.purchaseId : '';
+  const assetId = typeof metadata.assetId === 'string' ? metadata.assetId : '';
+  const userId = typeof metadata.userId === 'string' ? metadata.userId : '';
+  const resellerUserId = typeof metadata.resellerUserId === 'string' ? metadata.resellerUserId : null;
+
+  if (!purchaseId || !assetId || !userId) {
+    await archiveWebhookEvent(eventId, eventType, String(data?.reference || 'unknown'), data, false, 'missing_asset_purchase_metadata');
+    return { handled: true, response: { success: true, ignored: true, reason: 'missing_asset_purchase_metadata' } };
+  }
+
+  const purchaseRef = db.collection('assetPurchases').doc(purchaseId);
+  const purchaseSnap = await purchaseRef.get();
+  const purchase = purchaseSnap.data() || {};
+  const grossAmount = typeof purchase.pricePaid === 'number'
+    ? purchase.pricePaid
+    : typeof data?.amount === 'number'
+      ? data.amount / 100
+      : 0;
+
+  if (eventType !== 'charge.success') {
+    await purchaseRef.set({
+      status: eventType === 'charge.failed' ? 'failed' : 'payment_pending',
+      lastEventType: eventType,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    }, { merge: true });
+    await archiveWebhookEvent(eventId, eventType, String(data?.reference || purchaseId), data, true);
+    return { handled: true, response: { success: true, ignored: true, reason: 'non_success_asset_purchase_event' } };
+  }
+
+  await purchaseRef.set({
+    status: 'paid',
+    paidAt: admin.firestore.FieldValue.serverTimestamp(),
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    paystackReference: data?.reference || purchase.paystackReference || null,
+  }, { merge: true });
+
+  if (resellerUserId) {
+    const assetSnap = await db.collection('marketplaceAssets').doc(assetId).get();
+    const asset = assetSnap.data() || {};
+    const commissionType = asset.resellerCommissionType === 'fixed' ? 'fixed' : 'percentage';
+    const commissionValue = typeof asset.resellerCommissionValue === 'number' ? asset.resellerCommissionValue : 0;
+    const resellerEarnings = commissionType === 'fixed'
+      ? Math.min(commissionValue, grossAmount)
+      : Math.round(grossAmount * commissionValue) / 100;
+
+    await db.collection('resellerSales').doc(`${purchaseId}_${eventId}`).set({
+      resellerUserId,
+      buyerUserId: userId,
+      assetId,
+      purchaseId,
+      grossAmount,
+      platformFee: Math.max(0, grossAmount - resellerEarnings),
+      resellerEarnings,
+      commissionType,
+      commissionValue,
+      status: 'payable',
+      provider: 'paystack',
+      paystackReference: data?.reference || null,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    }, { merge: true });
+  }
+
+  await createNotification(
+    userId,
+    'marketplace',
+    'Course purchase confirmed',
+    'Your marketplace course is now available in your account.',
+    '/marketplace'
+  );
+  await archiveWebhookEvent(eventId, eventType, String(data?.reference || purchaseId), data, true);
+
+  return { handled: true, response: { success: true } };
 }
 
 /**
@@ -509,6 +608,171 @@ export const createPaystackSubscription = onCall(
   }
 );
 
+export const createPaystackAssetPurchase = onCall(
+  {
+    secrets: [paystackSecretKey],
+  },
+  async (request): Promise<CreateAssetPurchaseResponse> => {
+    const data = request.data as Partial<CreateAssetPurchaseRequest>;
+    const context = request.auth;
+    const secretKey = paystackSecretKey.value();
+    const callbackUrl = `${frontendUrl.value()}/marketplace?purchase=success`;
+
+    if (!context?.uid) {
+      throw new HttpsError('unauthenticated', 'User not authenticated');
+    }
+
+    if (!secretKey) {
+      throw new HttpsError('failed-precondition', 'Paystack secret key is not configured');
+    }
+
+    const assetId = typeof data.assetId === 'string' ? data.assetId : '';
+    const userId = typeof data.userId === 'string' ? data.userId : '';
+    const resellerSlug = typeof data.resellerSlug === 'string' ? data.resellerSlug : null;
+
+    if (!assetId || !userId) {
+      throw new HttpsError('invalid-argument', 'assetId and userId are required');
+    }
+
+    if (userId !== context.uid) {
+      throw new HttpsError('permission-denied', 'Cannot create purchase for another user');
+    }
+
+    const assetSnap = await db.collection('marketplaceAssets').doc(assetId).get();
+    if (!assetSnap.exists || assetSnap.data()?.published === false) {
+      throw new HttpsError('not-found', 'Asset not found');
+    }
+
+    const asset = assetSnap.data() || {};
+    const price = typeof asset.price === 'number' ? asset.price : 0;
+    if (price <= 0) {
+      throw new HttpsError('failed-precondition', 'This asset does not require purchase');
+    }
+
+    const purchaseId = `${userId}_${assetId}`;
+    const purchaseRef = db.collection('assetPurchases').doc(purchaseId);
+    const existingPurchase = await purchaseRef.get();
+    const existingData = existingPurchase.data();
+    if (existingPurchase.exists && existingData?.status === 'paid') {
+      return {
+        purchaseId,
+        authorizationUrl: null,
+        status: 'already_owned',
+        message: 'You already own this asset',
+      };
+    }
+
+    if (
+      existingPurchase.exists &&
+      existingData?.status === 'approval_pending' &&
+      typeof existingData.authorizationUrl === 'string' &&
+      existingData.authorizationUrl
+    ) {
+      return {
+        purchaseId,
+        authorizationUrl: existingData.authorizationUrl,
+        status: 'pending',
+      };
+    }
+
+    const idempotencyKey = data.idempotencyKey || `paystack-asset:${userId}:${assetId}`;
+    const idempotencyReserved = await checkIdempotencyKey(userId, idempotencyKey);
+    if (!idempotencyReserved) {
+      const existingKey = await db.collection('idempotency_keys').doc(`${userId}_${idempotencyKey}`).get();
+      const existingKeyData = existingKey.data();
+      if (typeof existingKeyData?.authorizationUrl === 'string' && existingKeyData.authorizationUrl) {
+        return {
+          purchaseId,
+          authorizationUrl: existingKeyData.authorizationUrl,
+          status: typeof existingKeyData.status === 'string' ? existingKeyData.status : 'approval_pending',
+        };
+      }
+      throw new HttpsError('aborted', 'Your checkout is still being prepared. Please try again in a moment.');
+    }
+
+    const userRecord = await auth.getUser(context.uid);
+    if (!userRecord.email) {
+      throw new HttpsError('failed-precondition', 'User email is required for Paystack checkout');
+    }
+
+    const resellerLinkSnap = resellerSlug
+      ? await db.collection('resellerLinks').where('slug', '==', resellerSlug).where('assetId', '==', assetId).limit(1).get()
+      : null;
+    const resellerLink = resellerLinkSnap && !resellerLinkSnap.empty ? resellerLinkSnap.docs[0].data() : null;
+    const resellerUserId = typeof resellerLink?.userId === 'string' && resellerLink.userId !== userId
+      ? resellerLink.userId
+      : null;
+
+    try {
+      const response = await axios.post(
+        `${PAYSTACK_API_BASE_URL}/transaction/initialize`,
+        {
+          email: userRecord.email,
+          amount: Math.round(price * 100),
+          currency: paystackCurrency.value(),
+          callback_url: callbackUrl,
+          metadata: {
+            kind: 'asset_purchase',
+            purchaseId,
+            assetId,
+            userId,
+            resellerSlug,
+            resellerUserId,
+          },
+        },
+        { headers: getPaystackHeaders(secretKey) }
+      );
+
+      const transaction = response.data.data;
+      const authorizationUrl = transaction.authorization_url;
+      const paystackReference = transaction.reference;
+
+      if (!authorizationUrl || !paystackReference) {
+        throw new Error('Paystack did not return a checkout URL');
+      }
+
+      const licenseType = asset.licenseType === 'mrr' ? 'mrr' : 'standard';
+      const resaleRights = licenseType === 'mrr' && asset.resaleEnabled === true;
+
+      await purchaseRef.set({
+        userId,
+        uid: userId,
+        assetId,
+        assetTitle: typeof asset.title === 'string' ? asset.title : 'Marketplace asset',
+        pricePaid: price,
+        currency: paystackCurrency.value(),
+        provider: 'paystack',
+        paystackReference,
+        authorizationUrl,
+        status: 'approval_pending',
+        licenseType,
+        resaleRights,
+        resellerSlug,
+        resellerUserId,
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      }, { merge: true });
+
+      await db.collection('idempotency_keys').doc(`${userId}_${idempotencyKey}`).set({
+        userId,
+        key: idempotencyKey,
+        provider: 'paystack',
+        purchaseId,
+        assetId,
+        authorizationUrl,
+        status: 'approval_pending',
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+      }, { merge: true });
+
+      return { purchaseId, authorizationUrl, status: 'created' };
+    } catch (error) {
+      console.error('Failed to create Paystack asset purchase:', error);
+      throw new HttpsError('internal', 'Failed to create asset purchase');
+    }
+  }
+);
+
 /**
  * Paystack webhook handler
  * Handles: charge.success, subscription.disable, subscription.not_funded, invoice.create, invoice.update
@@ -575,6 +839,13 @@ export const paystackWebhook = onRequest(
           processedAt: admin.firestore.FieldValue.serverTimestamp(),
           status: 'processing',
         });
+
+        const assetPurchaseResult = await processAssetPurchaseWebhook(eventId, eventType, data);
+        if (assetPurchaseResult.handled) {
+          await eventRef.update({ status: 'success', flow: 'asset_purchase' });
+          res.status(200).json(assetPurchaseResult.response || { success: true });
+          return;
+        }
 
         const subscriptionRef = db.collection('subscriptions').doc(subscriptionId);
         const subscriptionSnap = await subscriptionRef.get();

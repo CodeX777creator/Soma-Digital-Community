@@ -10,8 +10,10 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useAuth } from "@/providers/AuthProvider";
 import { authFetch } from "@/lib/clientApi";
+import { app } from "@/lib/firebase";
 import { getMarketplaceAssets, MarketplaceAsset } from "@/lib/marketplace";
 import { useToast } from "@/hooks/use-toast";
+import { getFunctions, httpsCallable } from "firebase/functions";
 
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 
@@ -62,7 +64,36 @@ export default function MarketplacePage() {
     return matchesCategory && matchesSearch;
   });
 
-  const handleAcquire = async (assetId: string) => {
+  const handlePurchase = async (asset: MarketplaceAsset) => {
+    if (!user) {
+      toast({ title: 'Sign in required', description: 'Please sign in to purchase courses.' });
+      return;
+    }
+
+    const params = new URLSearchParams(window.location.search);
+    const resellerSlug = params.get('ref') || undefined;
+    const functions = getFunctions(app);
+    const createPurchase = httpsCallable(functions, 'createPaystackAssetPurchase');
+    const result = await createPurchase({
+      assetId: asset.id,
+      userId: user.uid,
+      resellerSlug,
+    });
+    const data = result.data as { authorizationUrl?: string | null; status?: string; message?: string };
+
+    if (data.authorizationUrl) {
+      window.location.href = data.authorizationUrl;
+      return;
+    }
+
+    toast({
+      title: data.status === 'already_owned' ? 'Already owned' : 'Purchase ready',
+      description: data.message || asset.title,
+    });
+  };
+
+  const handleAcquire = async (asset: MarketplaceAsset) => {
+    const assetId = asset.id;
     if (!user) {
       toast({ title: 'Sign in required', description: 'Please sign in to access assets.' });
       return;
@@ -83,8 +114,32 @@ export default function MarketplacePage() {
         window.open(payload.assetUrl, '_blank', 'noopener,noreferrer');
       }
 
+      if (payload.purchase?.resaleRights && !payload.resellerLink?.url) {
+        try {
+          await authFetch('/api/marketplace/reseller-link', {
+            method: 'POST',
+            body: JSON.stringify({ assetId }),
+          });
+        } catch (linkError) {
+          console.warn("Unable to prepare reseller link:", linkError);
+        }
+      }
+
       toast({ title: 'Access granted', description: payload.asset?.title || 'Opening resource.' });
     } catch (err) {
+      if (asset.price > 0) {
+        try {
+          await handlePurchase(asset);
+          return;
+        } catch (purchaseError) {
+          toast({
+            title: 'Checkout unavailable',
+            description: purchaseError instanceof Error ? purchaseError.message : 'Unable to start purchase.',
+          });
+          return;
+        }
+      }
+
       toast({ title: 'Access denied', description: err instanceof Error ? err.message : 'Upgrade required' });
     }
   };
@@ -133,7 +188,7 @@ export default function MarketplacePage() {
           )}
           {!loading && !loadError && visibleAssets.map(asset => (
             <div key={asset.id} className="relative group h-full">
-              <AssetCard asset={asset} onAcquire={() => handleAcquire(asset.id)} />
+              <AssetCard asset={asset} onAcquire={() => handleAcquire(asset)} />
             </div>
           ))}
           {!loading && !loadError && visibleAssets.length === 0 && (
@@ -202,6 +257,9 @@ function AssetCard({ asset, onAcquire }: { asset: MarketplaceAsset; onAcquire: (
           {isPremium && (
             <Badge className="bg-primary text-[9px] font-bold py-1 px-3 border-none blue-glow uppercase tracking-wider">PREMIUM</Badge>
           )}
+          {asset.licenseType === "mrr" && asset.resaleEnabled && (
+            <Badge className="bg-cyan-400 text-black text-[9px] font-bold py-1 px-3 border-none uppercase tracking-wider">MRR</Badge>
+          )}
           <Badge className="bg-black/60 backdrop-blur-md text-[9px] font-bold py-1 px-3 border-none uppercase tracking-wider">{asset.category}</Badge>
         </div>
         {isLocked && (
@@ -221,6 +279,11 @@ function AssetCard({ asset, onAcquire }: { asset: MarketplaceAsset; onAcquire: (
             <div className="flex items-center gap-1.5 text-[10px] font-bold text-muted-foreground uppercase">
               <Download className="w-3.5 h-3.5" /> {asset.type}
             </div>
+            {asset.licenseType === "mrr" && asset.resaleEnabled && (
+              <div className="text-[10px] font-bold text-cyan-300 uppercase">
+                Resell Rights
+              </div>
+            )}
           </div>
         </div>
         <div className="flex items-center justify-between pt-5 border-t border-white/5">

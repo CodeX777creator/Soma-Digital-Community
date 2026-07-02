@@ -11,8 +11,9 @@ import {
 import { db } from "@/lib/firebase";
 import type { SubscriptionPlan } from "@/lib/entitlements";
 
-export type MarketplaceAssetType = "pdf" | "video" | "template" | "notion" | "link" | "code";
+export type MarketplaceAssetType = "pdf" | "video" | "template" | "notion" | "link" | "code" | "course";
 export type MarketplaceAssetTier = "free" | "pro" | "elite";
+export type MarketplaceLicenseType = "standard" | "mrr";
 
 export interface MarketplaceAsset {
   id: string;
@@ -25,6 +26,11 @@ export interface MarketplaceAsset {
   assetUrl: string | null;
   price: number;
   tier: MarketplaceAssetTier;
+  licenseType: MarketplaceLicenseType;
+  resaleEnabled: boolean;
+  resalePrice: number;
+  resellerCommissionType: "fixed" | "percentage";
+  resellerCommissionValue: number;
   published: boolean;
   createdAt: Timestamp | null;
   updatedAt: Timestamp | null;
@@ -54,6 +60,11 @@ function normalizeAsset(id: string, data: Record<string, any>): MarketplaceAsset
     assetUrl: data.assetUrl ?? null,
     price: typeof data.price === "number" ? data.price : 0,
     tier,
+    licenseType: data.licenseType === "mrr" ? "mrr" : "standard",
+    resaleEnabled: data.resaleEnabled === true,
+    resalePrice: typeof data.resalePrice === "number" ? data.resalePrice : typeof data.price === "number" ? data.price : 0,
+    resellerCommissionType: data.resellerCommissionType === "fixed" ? "fixed" : "percentage",
+    resellerCommissionValue: typeof data.resellerCommissionValue === "number" ? data.resellerCommissionValue : 0,
     published: data.published !== false,
     createdAt: data.createdAt || null,
     updatedAt: data.updatedAt || null,

@@ -266,6 +266,26 @@ service cloud.firestore {
       allow create, update, delete: if isContentManager();
     }
 
+    match /assetPurchases/{purchaseId} {
+      allow read: if isAdmin()
+        || (isAuthed() && resource.data.userId == request.auth.uid)
+        || (isAuthed() && resource.data.uid == request.auth.uid);
+      allow write: if false;
+    }
+
+    match /resellerLinks/{linkId} {
+      allow read: if isAdmin()
+        || (isAuthed() && resource.data.userId == request.auth.uid);
+      allow write: if false;
+    }
+
+    match /resellerSales/{saleId} {
+      allow read: if isAdmin()
+        || (isAuthed() && resource.data.resellerUserId == request.auth.uid)
+        || (isAuthed() && resource.data.buyerUserId == request.auth.uid);
+      allow write: if false;
+    }
+
     // ── Admin Audit Log ──────────────────────────────────────────────────────
     match /admin/{document=**} {
       allow read: if isAdmin();

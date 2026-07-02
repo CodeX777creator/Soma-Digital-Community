@@ -28,8 +28,10 @@ import {
 } from "lucide-react";
 import { auth, db, storage } from "@/lib/firebase";
 
-type AssetType = "pdf" | "video" | "template" | "notion" | "link" | "code";
+type AssetType = "pdf" | "video" | "template" | "notion" | "link" | "code" | "course";
 type AssetTier = "free" | "pro" | "elite";
+type LicenseType = "standard" | "mrr";
+type CommissionType = "fixed" | "percentage";
 type PublishedFilter = "all" | "published" | "draft";
 
 type MarketplaceAsset = {
@@ -43,6 +45,11 @@ type MarketplaceAsset = {
   assetUrl: string;
   tier: AssetTier;
   price: number;
+  licenseType: LicenseType;
+  resaleEnabled: boolean;
+  resalePrice: number;
+  resellerCommissionType: CommissionType;
+  resellerCommissionValue: number;
   published: boolean;
   createdAt: any;
   updatedAt: any;
@@ -58,11 +65,18 @@ type AssetFormState = {
   assetUrl: string;
   tier: AssetTier;
   price: string;
+  licenseType: LicenseType;
+  resaleEnabled: boolean;
+  resalePrice: string;
+  resellerCommissionType: CommissionType;
+  resellerCommissionValue: string;
   published: boolean;
 };
 
-const ASSET_TYPES: AssetType[] = ["pdf", "video", "template", "notion", "link", "code"];
+const ASSET_TYPES: AssetType[] = ["pdf", "video", "template", "notion", "link", "code", "course"];
 const ASSET_TIERS: AssetTier[] = ["free", "pro", "elite"];
+const LICENSE_TYPES: LicenseType[] = ["standard", "mrr"];
+const COMMISSION_TYPES: CommissionType[] = ["percentage", "fixed"];
 const MAX_FILE_SIZE = 50 * 1024 * 1024;
 const COLLECTION = "marketplaceAssets";
 
@@ -76,6 +90,11 @@ const emptyForm: AssetFormState = {
   assetUrl: "",
   tier: "free",
   price: "0",
+  licenseType: "standard",
+  resaleEnabled: false,
+  resalePrice: "0",
+  resellerCommissionType: "percentage",
+  resellerCommissionValue: "0",
   published: false,
 };
 
@@ -91,6 +110,11 @@ function normalizeAsset(id: string, data: Record<string, any>): MarketplaceAsset
     assetUrl: data.assetUrl || "",
     tier: data.tier === "enterprise" ? "elite" : ASSET_TIERS.includes(data.tier) ? data.tier : "free",
     price: typeof data.price === "number" ? data.price : 0,
+    licenseType: data.licenseType === "mrr" ? "mrr" : "standard",
+    resaleEnabled: data.resaleEnabled === true,
+    resalePrice: typeof data.resalePrice === "number" ? data.resalePrice : typeof data.price === "number" ? data.price : 0,
+    resellerCommissionType: data.resellerCommissionType === "fixed" ? "fixed" : "percentage",
+    resellerCommissionValue: typeof data.resellerCommissionValue === "number" ? data.resellerCommissionValue : 0,
     published: data.published === true,
     createdAt: data.createdAt || null,
     updatedAt: data.updatedAt || null,
@@ -108,6 +132,11 @@ function formFromAsset(asset: MarketplaceAsset): AssetFormState {
     assetUrl: asset.assetUrl,
     tier: asset.tier,
     price: String(asset.price || 0),
+    licenseType: asset.licenseType,
+    resaleEnabled: asset.resaleEnabled,
+    resalePrice: String(asset.resalePrice || asset.price || 0),
+    resellerCommissionType: asset.resellerCommissionType,
+    resellerCommissionValue: String(asset.resellerCommissionValue || 0),
     published: asset.published,
   };
 }
@@ -300,6 +329,11 @@ export default function AdminMarketplacePage() {
         assetUrl: form.assetUrl.trim(),
         tier: form.tier,
         price: Number(form.price) || 0,
+        licenseType: form.licenseType,
+        resaleEnabled: form.licenseType === "mrr" && form.resaleEnabled,
+        resalePrice: Number(form.resalePrice) || Number(form.price) || 0,
+        resellerCommissionType: form.resellerCommissionType,
+        resellerCommissionValue: Number(form.resellerCommissionValue) || 0,
         published: false,
         draft: true,
         createdAt: serverTimestamp(),
@@ -351,6 +385,18 @@ export default function AdminMarketplacePage() {
 
       const price = Number(form.price);
       if (Number.isNaN(price) || price < 0) throw new Error("Price must be 0 or higher.");
+      const resalePrice = Number(form.resalePrice || form.price);
+      if (Number.isNaN(resalePrice) || resalePrice < 0) throw new Error("Resale price must be 0 or higher.");
+      const commissionValue = Number(form.resellerCommissionValue);
+      if (Number.isNaN(commissionValue) || commissionValue < 0) {
+        throw new Error("Reseller commission must be 0 or higher.");
+      }
+      if (form.resellerCommissionType === "percentage" && commissionValue > 100) {
+        throw new Error("Percentage commission cannot be more than 100.");
+      }
+      if (form.licenseType === "mrr" && form.resaleEnabled && price <= 0) {
+        throw new Error("MRR assets need a purchase price.");
+      }
 
       const payload = {
         title: form.title.trim(),
@@ -362,6 +408,11 @@ export default function AdminMarketplacePage() {
         assetUrl: form.assetUrl.trim(),
         tier: form.tier,
         price,
+        licenseType: form.licenseType,
+        resaleEnabled: form.licenseType === "mrr" && form.resaleEnabled,
+        resalePrice,
+        resellerCommissionType: form.resellerCommissionType,
+        resellerCommissionValue: commissionValue,
         published: form.published,
         draft: false,
         updatedAt: serverTimestamp(),
@@ -496,6 +547,7 @@ export default function AdminMarketplacePage() {
                 <th className="px-4 py-3 font-medium">Title</th>
                 <th className="px-4 py-3 font-medium">Type</th>
                 <th className="px-4 py-3 font-medium">Tier</th>
+                <th className="px-4 py-3 font-medium">License</th>
                 <th className="px-4 py-3 font-medium">Price</th>
                 <th className="px-4 py-3 font-medium">Published</th>
                 <th className="px-4 py-3 font-medium">Created</th>
@@ -505,7 +557,7 @@ export default function AdminMarketplacePage() {
             <tbody className="divide-y divide-white/10">
               {loading && (
                 <tr>
-                  <td colSpan={8} className="px-4 py-12 text-center text-white/45">
+                  <td colSpan={9} className="px-4 py-12 text-center text-white/45">
                     <span className="inline-flex items-center gap-2">
                       <Loader2 className="h-4 w-4 animate-spin text-cyan-300" />
                       Loading assets
@@ -515,7 +567,7 @@ export default function AdminMarketplacePage() {
               )}
               {!loading && filteredAssets.length === 0 && (
                 <tr>
-                  <td colSpan={8} className="px-4 py-12 text-center text-white/45">
+                  <td colSpan={9} className="px-4 py-12 text-center text-white/45">
                     No marketplace assets match the current filters.
                   </td>
                 </tr>
@@ -542,6 +594,11 @@ export default function AdminMarketplacePage() {
                   </td>
                   <td className="px-4 py-3 uppercase text-white/60">{asset.type}</td>
                   <td className="px-4 py-3 capitalize text-white/70">{asset.tier}</td>
+                  <td className="px-4 py-3">
+                    <span className={`rounded-full px-2 py-1 text-[10px] font-semibold uppercase tracking-wider ${asset.licenseType === "mrr" ? "bg-cyan-400/15 text-cyan-200" : "bg-white/10 text-white/55"}`}>
+                      {asset.licenseType === "mrr" ? "MRR" : "Standard"}
+                    </span>
+                  </td>
                   <td className="px-4 py-3 text-white/70">{formatPrice(asset.price, asset.tier)}</td>
                   <td className="px-4 py-3">
                     <label className="inline-flex cursor-pointer items-center gap-2">
@@ -683,6 +740,85 @@ export default function AdminMarketplacePage() {
                   aria-label="Price"
                 />
               </Field>
+
+              <Field label="License">
+                <select
+                  value={form.licenseType}
+                  onChange={(event) => {
+                    const licenseType = event.target.value as LicenseType;
+                    setForm({
+                      ...form,
+                      licenseType,
+                      resaleEnabled: licenseType === "mrr" ? form.resaleEnabled : false,
+                    });
+                  }}
+                  className="admin-input"
+                  aria-label="License"
+                >
+                  {LICENSE_TYPES.map((licenseType) => (
+                    <option key={licenseType} value={licenseType}>
+                      {licenseType === "mrr" ? "Master Resell Rights" : "Standard"}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+
+              <Field label="Resale Price">
+                <input
+                  type="number"
+                  min="0"
+                  step="1"
+                  value={form.resalePrice}
+                  onChange={(event) => setForm({ ...form, resalePrice: event.target.value })}
+                  className="admin-input"
+                  aria-label="Resale Price"
+                  disabled={form.licenseType !== "mrr"}
+                />
+              </Field>
+
+              <Field label="Commission Type">
+                <select
+                  value={form.resellerCommissionType}
+                  onChange={(event) => setForm({ ...form, resellerCommissionType: event.target.value as CommissionType })}
+                  className="admin-input"
+                  aria-label="Commission Type"
+                  disabled={form.licenseType !== "mrr"}
+                >
+                  {COMMISSION_TYPES.map((commissionType) => (
+                    <option key={commissionType} value={commissionType}>
+                      {commissionType === "percentage" ? "Percentage" : "Fixed Amount"}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+
+              <Field label={form.resellerCommissionType === "percentage" ? "Commission %" : "Commission Amount"}>
+                <input
+                  type="number"
+                  min="0"
+                  max={form.resellerCommissionType === "percentage" ? "100" : undefined}
+                  step="1"
+                  value={form.resellerCommissionValue}
+                  onChange={(event) => setForm({ ...form, resellerCommissionValue: event.target.value })}
+                  className="admin-input"
+                  aria-label="Reseller Commission"
+                  disabled={form.licenseType !== "mrr"}
+                />
+              </Field>
+
+              <label className="flex items-center gap-3 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-3 md:col-span-2">
+                <input
+                  type="checkbox"
+                  checked={form.licenseType === "mrr" && form.resaleEnabled}
+                  onChange={(event) => setForm({ ...form, resaleEnabled: event.target.checked })}
+                  disabled={form.licenseType !== "mrr"}
+                  className="h-4 w-4 accent-cyan-400 disabled:opacity-40"
+                />
+                <span>
+                  <span className="block text-sm font-medium">Enable reseller links</span>
+                  <span className="text-xs text-white/45">Buyers with an MRR license can resell this course through SDC.</span>
+                </span>
+              </label>
 
               <Field label="Thumbnail URL or upload" className="md:col-span-2">
                 <div className="grid gap-3 md:grid-cols-[1fr_auto]">
