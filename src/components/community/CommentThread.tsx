@@ -175,7 +175,8 @@ function CommentItem({
           'reply',
           'New reply to your comment',
           `${userData?.name || user.displayName || 'Someone'} replied to your comment.`,
-          `/community?post=${postId}`
+          `/community?post=${postId}`,
+          user.uid
         );
       }
     } catch (err) {
@@ -338,7 +339,8 @@ export function CommentThread({ postId, initialCount }: CommentThreadProps) {
           'comment',
           'New comment on your post',
           `${userData?.name || user.displayName || 'Someone'} left a comment on your post.`,
-          `/community?post=${postId}`
+          `/community?post=${postId}`,
+          user.uid
         );
       }
 

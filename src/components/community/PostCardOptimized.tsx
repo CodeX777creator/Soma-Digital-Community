@@ -1,15 +1,26 @@
 "use client";
 
-import { memo, useMemo } from "react";
+import { memo, useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
-import { Pin, Trophy, ShieldCheck, Link as LinkIcon, ZoomIn } from "lucide-react";
+import {
+  Link as LinkIcon,
+  MessageCircle,
+  Pin,
+  ShieldCheck,
+  ThumbsUp,
+  Trophy,
+  ZoomIn,
+} from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { GlassCard } from "@/components/ui/glass-card";
-import { Post } from "@/lib/db";
-import { cn } from "@/lib/utils";
 import { OptimizedImage } from "@/components/ui/optimized-image";
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+import { useToast } from "@/hooks/use-toast";
+import { createNotification } from "@/lib/notifications";
+import { Post, ReactionType, postService } from "@/lib/db";
+import { cn } from "@/lib/utils";
+import { useAuth } from "@/providers/AuthProvider";
+import { CommentThread } from "./CommentThread";
+import { ReactionPicker, REACTIONS } from "./ReactionPicker";
 
 function timeAgo(ts: any): string {
   if (!ts?.toDate) return "just now";
@@ -28,12 +39,12 @@ const TIER_RING: Record<string, string> = {
   elite: "border-yellow-400 shadow-[0_0_10px_rgba(250,204,21,0.3)]",
 };
 
-const POST_TYPE_META: Record<string, { label: string; icon: string; color: string }> = {
-  win: { label: "Founder Win", icon: "🏆", color: "text-yellow-400 bg-yellow-400/10 border-yellow-400/20" },
-  insight: { label: "Insight", icon: "💡", color: "text-blue-400 bg-blue-400/10 border-blue-400/20" },
-  mentorship: { label: "Mentorship", icon: "🤝", color: "text-purple-400 bg-purple-400/10 border-purple-400/20" },
-  announcement: { label: "Announcement", icon: "📢", color: "text-cyan-400 bg-cyan-400/10 border-cyan-400/20" },
-  question: { label: "Question", icon: "❓", color: "text-green-400 bg-green-400/10 border-green-400/20" },
+const POST_TYPE_META: Record<string, { label: string; color: string }> = {
+  win: { label: "Founder Win", color: "text-yellow-400 bg-yellow-400/10 border-yellow-400/20" },
+  insight: { label: "Insight", color: "text-blue-400 bg-blue-400/10 border-blue-400/20" },
+  mentorship: { label: "Mentorship", color: "text-purple-400 bg-purple-400/10 border-purple-400/20" },
+  announcement: { label: "Announcement", color: "text-cyan-400 bg-cyan-400/10 border-cyan-400/20" },
+  question: { label: "Question", color: "text-green-400 bg-green-400/10 border-green-400/20" },
 };
 
 function formatCount(n: number) {
@@ -41,16 +52,84 @@ function formatCount(n: number) {
   return n.toString();
 }
 
-// ─── Memoized Components ─────────────────────────────────────────────────────
-
 interface PostCardProps {
   post: Post;
 }
 
-// Memoized to prevent unnecessary re-renders
 export const PostCardOptimized = memo(function PostCardOptimized({ post }: PostCardProps) {
   const meta = useMemo(() => POST_TYPE_META[post.type] || POST_TYPE_META.insight, [post.type]);
-  
+  const { user, userData } = useAuth();
+  const { toast } = useToast();
+  const [currentReaction, setCurrentReaction] = useState<ReactionType | null>(null);
+  const [showReactionPicker, setShowReactionPicker] = useState(false);
+  const [showComments, setShowComments] = useState(false);
+  const [isReacting, setIsReacting] = useState(false);
+
+  useEffect(() => {
+    if (!user) {
+      setCurrentReaction(null);
+      return;
+    }
+
+    return postService.subscribeToUserReaction(post.id, user.uid, setCurrentReaction);
+  }, [post.id, user]);
+
+  const reactionMeta = REACTIONS.find((reaction) => reaction.type === currentReaction);
+
+  const handleReaction = async (reaction: ReactionType | null) => {
+    if (!user) {
+      toast({ title: "Sign in required", description: "Please sign in to react to posts." });
+      return;
+    }
+
+    setIsReacting(true);
+    const shouldNotify =
+      !!reaction &&
+      !currentReaction &&
+      !!post.authorId &&
+      post.authorId !== user.uid;
+
+    try {
+      await postService.setReaction(post.id, user.uid, reaction);
+
+      if (shouldNotify) {
+        const actorName = userData?.name || user.displayName || "Someone";
+        createNotification(
+          post.authorId,
+          "like",
+          "New reaction on your post",
+          `${actorName} reacted to your community post.`,
+          `/community?post=${post.id}`,
+          user.uid
+        ).catch((error) => {
+          console.error("Failed to create reaction notification:", error);
+        });
+      }
+    } catch (error) {
+      console.error("Failed to update reaction:", error);
+      toast({ title: "Reaction failed", description: "Please try again.", variant: "destructive" });
+    } finally {
+      setIsReacting(false);
+      setShowReactionPicker(false);
+    }
+  };
+
+  const handleQuickLike = () => {
+    handleReaction(currentReaction ? null : "like");
+  };
+
+  const safeLink = useMemo(() => {
+    if (!post.linkUrl) return null;
+
+    try {
+      const url = new URL(post.linkUrl);
+      if (url.protocol !== "http:" && url.protocol !== "https:") return null;
+      return { href: post.linkUrl, hostname: url.hostname };
+    } catch {
+      return null;
+    }
+  }, [post.linkUrl]);
+
   return (
     <motion.div
       layout
@@ -65,23 +144,16 @@ export const PostCardOptimized = memo(function PostCardOptimized({ post }: PostC
           post.isPinned && "border-primary/40 bg-primary/[0.03]"
         )}
       >
-        {/* Pinned indicator */}
         {post.isPinned && (
           <div className="flex items-center gap-2 mb-4 text-[10px] font-bold text-primary uppercase tracking-widest">
             <Pin className="w-3 h-3 fill-primary" /> Pinned
           </div>
         )}
 
-        {/* Header */}
         <div className="flex items-start justify-between mb-5">
           <div className="flex gap-3 items-center">
             <div className="relative">
-              <div
-                className={cn(
-                  "w-12 h-12 rounded-2xl overflow-hidden border-2 p-0.5",
-                  TIER_RING[post.authorTier]
-                )}
-              >
+              <div className={cn("w-12 h-12 rounded-2xl overflow-hidden border-2 p-0.5", TIER_RING[post.authorTier])}>
                 <OptimizedImage
                   src={post.authorAvatar || ""}
                   alt={post.authorName}
@@ -105,41 +177,27 @@ export const PostCardOptimized = memo(function PostCardOptimized({ post }: PostC
                     <ShieldCheck className="w-3.5 h-3.5 text-cyan-400" />
                   </span>
                 )}
-                <span
-                  className={cn(
-                    "text-[9px] font-bold uppercase px-2 py-0.5 rounded-md border",
-                    meta.color
-                  )}
-                >
-                  {meta.icon} {meta.label}
+                <span className={cn("text-[9px] font-bold uppercase px-2 py-0.5 rounded-md border", meta.color)}>
+                  {meta.label}
                 </span>
                 {post.isEdited && (
-                  <span
-                    className="text-[9px] text-muted-foreground cursor-help"
-                    title={post.editedAt ? `Edited ${timeAgo(post.editedAt)}` : "Edited"}
-                  >
+                  <span className="text-[9px] text-muted-foreground" title={post.editedAt ? `Edited ${timeAgo(post.editedAt)}` : "Edited"}>
                     (edited)
                   </span>
                 )}
               </div>
               <p className="text-[10px] text-muted-foreground font-medium uppercase tracking-tight mt-1">
-                {post.authorRole} · {timeAgo(post.createdAt)}
+                {post.authorRole} - {timeAgo(post.createdAt)}
               </p>
             </div>
           </div>
         </div>
 
-        {/* Content */}
         <div className="space-y-4 mb-5">
-          <p className="text-white/90 leading-relaxed text-[15px] whitespace-pre-wrap">{
-            // SECURITY: Escape HTML entities to prevent XSS
-            post.content
-              .replace(/&/g, '&amp;')
-              .replace(/</g, '&lt;')
-              .replace(/>/g, '&gt;')
-              .replace(/"/g, '&quot;')
-              .replace(/'/g, '&#x27;')
-          }</p>
+          <p className="text-white/90 leading-relaxed text-[15px] whitespace-pre-wrap">
+            {post.content}
+          </p>
+
           {post.imageUrl && (
             <div className="relative group cursor-pointer w-fit">
               <div className="relative rounded-xl overflow-hidden border border-white/10">
@@ -155,67 +213,79 @@ export const PostCardOptimized = memo(function PostCardOptimized({ post }: PostC
               </div>
             </div>
           )}
-          {post.linkUrl && (() => {
-            // SECURITY: Validate URL before rendering
-            let hostname = 'External Link';
-            let isSafeUrl = false;
-            try {
-              const url = new URL(post.linkUrl);
-              // Only allow http and https protocols
-              if (url.protocol === 'http:' || url.protocol === 'https:') {
-                hostname = url.hostname;
-                isSafeUrl = true;
-              }
-            } catch {
-              // Invalid URL, don't render as clickable link
-            }
-            
-            if (!isSafeUrl) {
-              return (
-                <span className="inline-flex items-center gap-2 rounded-3xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-muted-foreground">
-                  <LinkIcon className="w-4 h-4" />
-                  Invalid Link
-                </span>
-              );
-            }
-            
-            return (
-              <a
-                href={post.linkUrl}
-                target="_blank"
-                rel="noopener noreferrer nofollow"
-                className="inline-flex items-center gap-2 rounded-3xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-primary transition hover:border-primary/30 hover:bg-white/10"
-              >
-                <LinkIcon className="w-4 h-4" />
-                {hostname}
-              </a>
-            );
-          })()}
+
+          {post.linkUrl && !safeLink && (
+            <span className="inline-flex items-center gap-2 rounded-3xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-muted-foreground">
+              <LinkIcon className="w-4 h-4" />
+              Invalid Link
+            </span>
+          )}
+
+          {safeLink && (
+            <a
+              href={safeLink.href}
+              target="_blank"
+              rel="noopener noreferrer nofollow"
+              className="inline-flex items-center gap-2 rounded-3xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-primary transition hover:border-primary/30 hover:bg-white/10"
+            >
+              <LinkIcon className="w-4 h-4" />
+              {safeLink.hostname}
+            </a>
+          )}
         </div>
 
-        {/* Tags */}
         {post.tags.length > 0 && (
           <div className="flex flex-wrap gap-2 mb-5">
             {post.tags.map((tag) => (
-              <span
-                key={tag}
-                className="text-[10px] font-bold text-primary/70 hover:text-primary cursor-pointer transition-colors uppercase tracking-wider"
-              >
+              <Badge key={tag} variant="outline" className="border-white/10 text-primary/80">
                 #{tag}
-              </span>
+              </Badge>
             ))}
           </div>
         )}
 
-        {/* Stats */}
-        <div className="flex items-center gap-5 pt-4 border-t border-white/5">
-          <span className="flex items-center gap-2 text-muted-foreground text-xs font-bold">
-            👍 {formatCount(post.likeCount)}
-          </span>
-          <span className="flex items-center gap-2 text-muted-foreground text-xs font-bold">
-            💬 {formatCount(post.commentCount)}
-          </span>
+        <div className="flex flex-wrap items-center gap-2 pt-4 border-t border-white/5">
+          <div
+            className="relative"
+            onMouseEnter={() => user && setShowReactionPicker(true)}
+            onMouseLeave={() => setShowReactionPicker(false)}
+          >
+            <ReactionPicker visible={showReactionPicker} onSelect={handleReaction} />
+            <button
+              type="button"
+              onClick={handleQuickLike}
+              disabled={isReacting}
+              className={cn(
+                "flex h-9 items-center gap-2 rounded-xl border border-white/10 px-3 text-xs font-bold transition-all hover:border-primary/30 hover:bg-primary/10 disabled:opacity-60",
+                currentReaction ? "bg-primary/10 text-primary border-primary/30" : "text-muted-foreground hover:text-white"
+              )}
+              aria-label={currentReaction ? "Remove reaction" : "Like post"}
+            >
+              {reactionMeta ? (
+                <span className="text-sm leading-none">{reactionMeta.emoji}</span>
+              ) : (
+                <ThumbsUp className="w-4 h-4" />
+              )}
+              {formatCount(post.likeCount)}
+            </button>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setShowComments((value) => !value)}
+            className={cn(
+              "flex h-9 items-center gap-2 rounded-xl border border-white/10 px-3 text-xs font-bold transition-all hover:border-primary/30 hover:bg-primary/10",
+              showComments ? "bg-white/5 text-white border-white/20" : "text-muted-foreground hover:text-white"
+            )}
+            aria-expanded={showComments}
+            aria-label={showComments ? "Hide comments" : "Show comments"}
+          >
+            <MessageCircle className="w-4 h-4" />
+            {formatCount(post.commentCount)}
+          </button>
         </div>
+
+        {showComments && <CommentThread postId={post.id} initialCount={post.commentCount} />}
       </GlassCard>
     </motion.div>
   );

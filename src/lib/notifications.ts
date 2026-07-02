@@ -17,6 +17,7 @@ export type NotificationType =
   | "info"
   | "success"
   | "warning"
+  | "like"
   | "comment"
   | "reply"
   | "mission"
@@ -29,6 +30,7 @@ export interface NotificationPayload {
   body: string;
   linkUrl?: string;
   type: NotificationType;
+  createdBy?: string;
   readAt?: any;
   createdAt?: any;
 }
@@ -49,7 +51,8 @@ export async function createNotification(
   type: NotificationType,
   title: string,
   body: string,
-  linkUrl = "/dashboard"
+  linkUrl = "/dashboard",
+  createdBy?: string
 ) {
   if (!userId) {
     throw new Error("Missing userId for notification");
@@ -60,6 +63,7 @@ export async function createNotification(
     title,
     body,
     linkUrl,
+    ...(createdBy ? { createdBy } : {}),
     readAt: null,
     createdAt: serverTimestamp(),
   });

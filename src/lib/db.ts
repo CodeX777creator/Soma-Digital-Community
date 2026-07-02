@@ -140,7 +140,7 @@ export const postService = {
   // Get the current user's reaction on a post (null = no reaction)
   async getUserReaction(postId: string, userId: string): Promise<ReactionType | null> {
     if (!db) throw new Error('Database not initialized');
-    const reactionRef = doc(db, 'likes', `${postId}_${userId}`);
+    const reactionRef = doc(db, 'likes', `${userId}_${postId}`);
     const snap = await getDoc(reactionRef);
     if (snap.exists()) return (snap.data() as PostReaction).type;
     return null;
@@ -153,7 +153,7 @@ export const postService = {
     callback: (reaction: ReactionType | null) => void
   ): () => void {
     if (!db) throw new Error('Database not initialized');
-    const reactionRef = doc(db, 'likes', `${postId}_${userId}`);
+    const reactionRef = doc(db, 'likes', `${userId}_${postId}`);
     return onSnapshot(reactionRef, snap => {
       callback(snap.exists() ? (snap.data() as PostReaction).type : null);
     });
@@ -162,7 +162,7 @@ export const postService = {
   // Toggle / change reaction — Firestore is the eventual source of truth
   async setReaction(postId: string, userId: string, newReaction: ReactionType | null): Promise<void> {
     if (!db) throw new Error('Database not initialized');
-    const reactionId = `${postId}_${userId}`;
+    const reactionId = `${userId}_${postId}`;
     const reactionRef = doc(db, 'likes', reactionId);
     const postRef = doc(db, 'posts', postId);
 

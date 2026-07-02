@@ -97,6 +97,7 @@ service cloud.firestore {
             && (
               request.resource.data.likeCount == resource.data.likeCount + 1
               || request.resource.data.likeCount == resource.data.likeCount - 1
+              || request.resource.data.likeCount == resource.data.likeCount
             )
           )
           ||
@@ -138,17 +139,26 @@ service cloud.firestore {
         && request.resource.data.content.size() <= 2000;
 
       allow update: if isAuthed()
-        && resource.data.authorId == request.auth.uid
-        && request.resource.data.authorId == resource.data.authorId
-        && request.resource.data.content is string
-        && request.resource.data.content.size() <= 2000;
+        && (
+          (
+            resource.data.authorId == request.auth.uid
+            && request.resource.data.authorId == resource.data.authorId
+            && request.resource.data.content is string
+            && request.resource.data.content.size() <= 2000
+          )
+          ||
+          (
+            request.resource.data.diff(resource.data).affectedKeys().hasOnly(['replyCount'])
+            && request.resource.data.replyCount == resource.data.replyCount + 1
+          )
+        );
 
       allow delete: if isAuthed() && resource.data.authorId == request.auth.uid
         || isAdmin();
     }
 
     // ── Reactions / Likes ─────────────────────────────────────────────────────
-    // Doc ID is "{postId}_{userId}" — enforced by the rule below.
+    // Doc ID is "{userId}_{postId}" — enforced by the rule below.
     match /likes/{likeId} {
       allow read: if true;
 
@@ -236,7 +246,23 @@ service cloud.firestore {
 
       // ── Notifications (private to owner) ─────────────────────────────────
       match /notifications/{notificationId} {
-        allow read, write: if isUser(userId);
+        allow read, update, delete: if isUser(userId);
+        allow create: if isAuthed()
+          && (
+            isUser(userId)
+            || request.resource.data.createdBy == request.auth.uid
+          )
+          && request.resource.data.type in ['info', 'success', 'warning', 'like', 'comment', 'reply', 'mission', 'mentor', 'subscription', 'welcome']
+          && request.resource.data.title is string
+          && request.resource.data.title.size() > 0
+          && request.resource.data.title.size() <= 120
+          && request.resource.data.body is string
+          && request.resource.data.body.size() > 0
+          && request.resource.data.body.size() <= 500
+          && request.resource.data.linkUrl is string
+          && request.resource.data.linkUrl.size() <= 500
+          && request.resource.data.readAt == null
+          && request.resource.data.createdAt == request.time;
       }
 
       // ── XP Event Logs (server-validated) ──────────────────────────────────

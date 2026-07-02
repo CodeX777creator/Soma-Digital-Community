@@ -34,6 +34,7 @@ import { PayPalProvider } from '@/providers/PayPalProvider';
 import { NetworkStatusIndicator } from '@/components/ui/network-status';
 import { Toaster } from '@/components/ui/toaster';
 import { ServiceWorkerRegistration } from '@/components/ServiceWorkerRegistration';
+import { PwaInstallPrompt } from '@/components/PwaInstallPrompt';
 
 export default function RootLayout({
   children,
@@ -59,6 +60,7 @@ export default function RootLayout({
             <Toaster />
             <SpeedInsights />
             <ServiceWorkerRegistration />
+            <PwaInstallPrompt />
           </PayPalProvider>
         </AuthProvider>
       </body>
