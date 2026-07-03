@@ -124,3 +124,4 @@ export function subscribeToNotifications(
     callback(notifications);
   });
 }
+

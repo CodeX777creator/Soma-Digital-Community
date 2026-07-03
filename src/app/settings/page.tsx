@@ -65,8 +65,8 @@ export default function SettingsPage() {
     {
       icon: <Bell className="w-5 h-5" />,
       title: "Notifications",
-      description: "Configure your notification preferences",
-      href: "/notifications",
+      description: "Configure your notification preferences and push settings",
+      href: "/settings/notifications",
       badge: null,
     },
     {
