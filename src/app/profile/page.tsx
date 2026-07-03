@@ -15,6 +15,7 @@ import { UserAvatar } from "@/components/ui/user-avatar";
 import { useAuth } from "@/providers/AuthProvider";
 import { useToast } from "@/hooks/use-toast";
 import { Edit2, Check, LogOut, Key } from "lucide-react";
+import { processAvatarForUpload } from "@/lib/avatar-optimization";
 
 const PROFILE_FIELDS = [
   "displayName",
@@ -42,6 +43,7 @@ export default function ProfilePage() {
     avatarURL: "",
   });
   const [avatarPreview, setAvatarPreview] = useState<string>("");
+  const [isOptimizing, setIsOptimizing] = useState(false);
 
   useEffect(() => {
     if (!user) return;
@@ -75,13 +77,47 @@ export default function ProfilePage() {
   const handleAvatarFile = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      const url = reader.result as string;
+    
+    try {
+      setIsOptimizing(true);
+      
+      // Optimize the avatar image before use
+      const optimizedFile = await processAvatarForUpload(file, {
+        maxWidth: 512,
+        maxHeight: 512,
+        quality: 0.85,
+        format: 'webp',
+      });
+      
+      // Create preview URL from optimized file
+      const url = URL.createObjectURL(optimizedFile);
+      
       setForm((prev) => ({ ...prev, avatarURL: url }));
       setAvatarPreview(url);
-    };
-    reader.readAsDataURL(file);
+      
+      toast({
+        title: "Image optimized",
+        description: `Avatar compressed to ${(optimizedFile.size / 1024).toFixed(1)}KB`,
+      });
+    } catch (error) {
+      console.error('Avatar optimization error:', error);
+      // Fallback: use original file if optimization fails
+      const reader = new FileReader();
+      reader.onload = () => {
+        const url = reader.result as string;
+        setForm((prev) => ({ ...prev, avatarURL: url }));
+        setAvatarPreview(url);
+      };
+      reader.readAsDataURL(file);
+      
+      toast({
+        title: "Optimization failed",
+        description: "Using original image file",
+        variant: "destructive",
+      });
+    } finally {
+      setIsOptimizing(false);
+    }
   };
 
   const handleSave = async () => {
@@ -95,6 +131,7 @@ export default function ProfilePage() {
         jobTitle: form.jobTitle,
         company: form.company,
         website: form.website,
+        photoURL: form.avatarURL,
         avatarURL: form.avatarURL,
       };
 
@@ -111,7 +148,8 @@ export default function ProfilePage() {
       toast({ title: "Profile saved", description: "Your profile changes were saved successfully." });
       setEditMode(false);
     } catch (error) {
-      toast({ title: "Save failed", description: "Unable to save profile. Please try again." });
+      console.error("Profile save error:", error);
+      toast({ title: "Save failed", description: error instanceof Error ? error.message : "Unable to save profile. Please try again." });
     } finally {
       setIsSaving(false);
     }
@@ -268,14 +306,21 @@ export default function ProfilePage() {
 
                 <div className="grid gap-2 sm:grid-cols-2">
                   <label className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Upload Avatar</label>
-                  <input
-                    type="file"
-                    accept="image/*"
-                    disabled={!editMode}
-                    onChange={handleAvatarFile}
-                    aria-label="Upload avatar image"
-                    className="text-sm text-muted-foreground file:mr-4 file:rounded-full file:border-0 file:bg-white/10 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-white/80"
-                  />
+                  <div className="relative">
+                    <input
+                      type="file"
+                      accept="image/*"
+                      disabled={!editMode || isOptimizing}
+                      onChange={handleAvatarFile}
+                      aria-label="Upload avatar image"
+                      className="text-sm text-muted-foreground file:mr-4 file:rounded-full file:border-0 file:bg-white/10 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-white/80 disabled:opacity-50"
+                    />
+                    {isOptimizing && (
+                      <div className="absolute inset-0 flex items-center justify-center bg-black/50 rounded-lg">
+                        <div className="text-xs text-white font-bold">Optimizing...</div>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
 

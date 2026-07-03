@@ -143,17 +143,33 @@ const handler = createAPIHandler(
       || email?.split('@')[0] 
       || 'Member';
     
+    logger.info('Author name lookup', { 
+      name: authorName,
+      userName: userData?.name,
+      authDisplayName: authUser?.displayName,
+      userDisplayName: userData?.displayName
+    });
+    
     // If name is missing from Firestore but available in Auth, save it for future use
     if (!userData?.name && authUser?.displayName && userSnap.exists) {
-      adminDb.collection('users').doc(uid).update({
-        name: authUser.displayName,
-        updatedAt: Timestamp.now(),
-      }).catch(err => {
-        logger.error('Failed to update user name', err);
-      });
+      try {
+        await adminDb.collection('users').doc(uid).update({
+          name: authUser.displayName,
+          updatedAt: Timestamp.now(),
+        });
+        logger.info('Updated user name from Auth');
+      } catch (err) {
+        logger.error('Failed to update user name', err instanceof Error ? err : undefined);
+      }
     }
 
-    const authorAvatar = userData?.photoURL || userData?.avatarURL || userData?.avatarUrl || '';
+    // Handle avatar from multiple possible fields for compatibility
+    const authorAvatar = userData?.photoURL || userData?.avatarURL || userData?.avatarUrl || authUser?.photoURL || '';
+    logger.info('Author avatar lookup', { 
+      photoURL: userData?.photoURL,
+      avatarURL: userData?.avatarURL,
+      finalAvatar: authorAvatar
+    });
     const tier = userData?.tier || userData?.subscription?.subscriptionPlan || userData?.subscription?.plan || 'explorer';
     const authorTier = ['explorer', 'pro', 'elite'].includes(tier) ? tier : 'explorer';
 

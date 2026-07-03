@@ -42,8 +42,19 @@ export const UserAvatar = ({ src, name, className, size = "md" }: UserAvatarProp
           title={name || "User"} 
           className="aspect-square h-full w-full object-cover" 
           onError={(e) => {
-             // If image fails to load, hide it to show initials
-             (e.target as HTMLImageElement).style.display = 'none';
+            // If image fails to load, hide it to show initials
+            const img = e.target as HTMLImageElement;
+            img.style.display = 'none';
+            // Force re-render to show initials
+            const parent = img.parentElement;
+            if (parent && initials) {
+              // Remove the img element completely to show initials
+              img.remove();
+              const span = document.createElement('span');
+              span.className = 'text-primary blue-glow-text';
+              span.textContent = initials;
+              parent.appendChild(span);
+            }
           }}
         />
       ) : initials ? (

@@ -14,8 +14,9 @@ import { useUserStore } from "@/store/useUserStore";
 import { authFetch } from "@/lib/clientApi";
 import { awardXP } from "@/lib/xp";
 import { CommunityChannel, DEFAULT_POST_CHANNEL, getChannelLabel, POST_CHANNELS, PostChannel } from "@/lib/communityChannels";
-import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
+import { getDownloadURL, ref, uploadBytes, uploadBytesResumable } from "firebase/storage";
 import { storage } from "@/lib/firebase";
+import { processAvatarForUpload } from "@/lib/avatar-optimization";
 
 const TAG_SUGGESTIONS = ["AI", "SaaS", "Funnel", "Growth", "Win", "Design", "Web3", "Mindset", "Jobs", "Showcase"];
 
@@ -46,6 +47,7 @@ export function CreatePostBox({ selectedChannel = "all" }: CreatePostBoxProps) {
   const [imageError, setImageError] = useState<string | null>(null);
   const [postError, setPostError] = useState<string | null>(null);
   const [lightboxOpen, setLightboxOpen] = useState(false);
+  const [imageOptimizing, setImageOptimizing] = useState(false);
   const textRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   
@@ -87,10 +89,35 @@ export function CreatePostBox({ selectedChannel = "all" }: CreatePostBoxProps) {
         throw new Error('Image must be smaller than 5MB');
       }
       
-      const imageRef = ref(storage, `community-posts/${user.uid}/${Date.now()}-${file.name}`);
+      // Optimize image before upload (for larger files or non-WebP formats)
+      let fileToUpload = file;
+      if (file.size > 500 * 1024 || !file.type.includes('webp')) {
+        // Only optimize if file is larger than 500KB or not already WebP
+        setImageOptimizing(true);
+        try {
+          fileToUpload = await processAvatarForUpload(file, {
+            maxWidth: 1024,
+            maxHeight: 1024,
+            quality: 0.8,
+            format: 'webp',
+          });
+          console.log('[CreatePostBox] Image optimized:', {
+            originalSize: file.size,
+            optimizedSize: fileToUpload.size,
+            reduction: `${Math.round((1 - fileToUpload.size / file.size) * 100)}%`
+          });
+        } catch (optError) {
+          console.warn('[CreatePostBox] Optimization failed, using original:', optError);
+          // Continue with original file if optimization fails
+        } finally {
+          setImageOptimizing(false);
+        }
+      }
+      
+      const imageRef = ref(storage, `community-posts/${user.uid}/${Date.now()}-${fileToUpload.name}`);
       console.log('[CreatePostBox] Uploading to:', imageRef.fullPath);
       
-      const snapshot = await uploadBytes(imageRef, file, { contentType: file.type });
+      const snapshot = await uploadBytes(imageRef, fileToUpload, { contentType: fileToUpload.type });
       console.log('[CreatePostBox] Upload successful, getting download URL');
       
       const url = await getDownloadURL(snapshot.ref);
@@ -375,11 +402,15 @@ export function CreatePostBox({ selectedChannel = "all" }: CreatePostBoxProps) {
                     ? "text-primary bg-primary/10 cursor-not-allowed" 
                     : "text-muted-foreground hover:text-primary hover:bg-primary/5"
                 )}
-                onClick={() => !imageUrl && fileInputRef.current?.click()}
-                disabled={imageUploading || !!imageUrl}
-                title={imageUrl ? "Max 1 image per post" : "Add image"}
+                onClick={() => !imageUrl && !imageOptimizing && fileInputRef.current?.click()}
+                disabled={imageUploading || !!imageUrl || imageOptimizing}
+                title={imageUrl ? "Max 1 image per post" : imageOptimizing ? "Optimizing image..." : "Add image"}
               >
-                <ImageIcon className="w-4 h-4" />
+                {imageOptimizing ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <ImageIcon className="w-4 h-4" />
+                )}
                 {imageUrl && (
                   <span className="absolute -top-1 -right-1 w-4 h-4 bg-primary text-[8px] text-black font-bold rounded-full flex items-center justify-center">
                     1
