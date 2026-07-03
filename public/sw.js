@@ -3,7 +3,7 @@
  * Provides offline support and caching strategies
  */
 
-const CACHE_NAME = 'soma-cache-v1';
+const CACHE_NAME = 'soma-cache-v1.1';
 const STATIC_ASSETS = [
   '/',
   '/dashboard',
