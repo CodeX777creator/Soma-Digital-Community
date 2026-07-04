@@ -16,6 +16,7 @@ import { useAuth } from "@/providers/AuthProvider";
 import { useToast } from "@/hooks/use-toast";
 import { Edit2, Check, LogOut, Key } from "lucide-react";
 import { processAvatarForUpload } from "@/lib/avatar-optimization";
+import { uploadAvatar } from "@/lib/storage";
 
 const PROFILE_FIELDS = [
   "displayName",
@@ -44,6 +45,7 @@ export default function ProfilePage() {
   });
   const [avatarPreview, setAvatarPreview] = useState<string>("");
   const [isOptimizing, setIsOptimizing] = useState(false);
+  const [selectedAvatarFile, setSelectedAvatarFile] = useState<File | null>(null);
 
   useEffect(() => {
     if (!user) return;
@@ -89,6 +91,9 @@ export default function ProfilePage() {
         format: 'webp',
       });
       
+      // Store the optimized file for later upload
+      setSelectedAvatarFile(optimizedFile);
+      
       // Create preview URL from optimized file
       const url = URL.createObjectURL(optimizedFile);
       
@@ -101,7 +106,14 @@ export default function ProfilePage() {
       });
     } catch (error) {
       console.error('Avatar optimization error:', error);
-      // Fallback: use original file if optimization fails
+      toast({
+        title: "Optimization failed",
+        description: "Using original image file",
+        variant: "destructive",
+      });
+      
+      // Fallback: use original file
+      setSelectedAvatarFile(file);
       const reader = new FileReader();
       reader.onload = () => {
         const url = reader.result as string;
@@ -109,12 +121,6 @@ export default function ProfilePage() {
         setAvatarPreview(url);
       };
       reader.readAsDataURL(file);
-      
-      toast({
-        title: "Optimization failed",
-        description: "Using original image file",
-        variant: "destructive",
-      });
     } finally {
       setIsOptimizing(false);
     }
@@ -125,22 +131,48 @@ export default function ProfilePage() {
     setIsSaving(true);
 
     try {
+      let finalAvatarURL = form.avatarURL;
+
+      // If we have a new avatar file selected, upload it to Storage first
+      if (selectedAvatarFile) {
+        setIsOptimizing(true);
+        try {
+          finalAvatarURL = await uploadAvatar(selectedAvatarFile, user.uid);
+          toast({
+            title: "Upload successful",
+            description: "Avatar has been uploaded to cloud storage.",
+          });
+        } catch (uploadError) {
+          console.error('Avatar upload failed:', uploadError);
+          toast({
+            title: "Upload failed",
+            description: "Failed to upload avatar. Using local preview.",
+            variant: "destructive",
+          });
+          // Keep using the local preview URL if upload fails
+        } finally {
+          setIsOptimizing(false);
+          // Clear the selected file after upload attempt
+          setSelectedAvatarFile(null);
+        }
+      }
+
       const profileData = {
         name: form.displayName,
         bio: form.bio,
         jobTitle: form.jobTitle,
         company: form.company,
         website: form.website,
-        photoURL: form.avatarURL,
-        avatarURL: form.avatarURL,
+        photoURL: finalAvatarURL,
+        avatarURL: finalAvatarURL,
       };
 
       await dbService.updateUserProfile(user.uid, profileData);
 
-      if (user.displayName !== form.displayName || user.photoURL !== form.avatarURL) {
+      if (user.displayName !== form.displayName || user.photoURL !== finalAvatarURL) {
         await updateProfile(user, {
           displayName: form.displayName || user.displayName,
-          photoURL: form.avatarURL || user.photoURL || null,
+          photoURL: finalAvatarURL || user.photoURL || null,
         });
       }
 
@@ -166,6 +198,7 @@ export default function ProfilePage() {
         avatarURL: userData?.avatarURL || user?.photoURL || "",
       });
       setAvatarPreview(userData?.avatarURL || user?.photoURL || "");
+      setSelectedAvatarFile(null);
     }
     setEditMode(false);
   };

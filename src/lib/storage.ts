@@ -8,6 +8,54 @@ import {
 import { storage } from "@/lib/firebase";
 
 const MAX_ASSET_SIZE = 50 * 1024 * 1024;
+const MAX_AVATAR_SIZE = 5 * 1024 * 1024; // 5MB for avatars
+
+/**
+ * Uploads an avatar image to Firebase Storage
+ * @param file - The optimized avatar file
+ * @param userId - The user's unique ID
+ * @returns Promise resolving to the download URL
+ */
+export async function uploadAvatar(
+  file: File,
+  userId: string
+): Promise<string> {
+  if (!storage) throw new Error('Storage not initialized');
+  
+  // Validate file size
+  if (file.size > MAX_AVATAR_SIZE) {
+    throw new Error(`Avatar must be smaller than 5MB (current: ${(file.size / 1024 / 1024).toFixed(2)}MB)`);
+  }
+  
+  const filename = `avatars/${userId}/${Date.now()}-${file.name.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
+  const avatarRef = ref(storage, filename);
+  
+  const uploadMetadata: UploadMetadata = {
+    contentType: file.type,
+    customMetadata: {
+      uploadedBy: userId,
+      uploadedAt: new Date().toISOString(),
+    },
+  };
+
+  const task = uploadBytesResumable(avatarRef, file, uploadMetadata);
+
+  await new Promise<void>((resolve, reject) => {
+    task.on(
+      "state_changed",
+      (snapshot) => {
+        // Progress handling can be added here if needed
+      },
+      (error) => {
+        console.error('Avatar upload error:', error);
+        reject(error);
+      },
+      () => resolve()
+    );
+  });
+
+  return getDownloadURL(task.snapshot.ref);
+}
 
 const ALLOWED_ASSET_TYPES = new Map([
   ["application/pdf", "pdf"],

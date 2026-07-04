@@ -14,6 +14,8 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { GlassCard } from "@/components/ui/glass-card";
 import { OptimizedImage } from "@/components/ui/optimized-image";
+import { UserAvatar } from "@/components/ui/user-avatar";
+import { PostOptionsMenu } from "./PostOptionsMenu";
 import { useToast } from "@/hooks/use-toast";
 import { createNotification } from "@/lib/notifications";
 import { Post, ReactionType, postService } from "@/lib/db";
@@ -54,9 +56,11 @@ function formatCount(n: number) {
 
 interface PostCardProps {
   post: Post;
+  onEdit?: (post: Post) => void;
+  onDelete?: (postId: string) => void;
 }
 
-export const PostCardOptimized = memo(function PostCardOptimized({ post }: PostCardProps) {
+export const PostCardOptimized = memo(function PostCardOptimized({ post, onEdit, onDelete }: PostCardProps) {
   const meta = useMemo(() => POST_TYPE_META[post.type] || POST_TYPE_META.insight, [post.type]);
   const { user, userData } = useAuth();
   const { toast } = useToast();
@@ -151,14 +155,14 @@ export const PostCardOptimized = memo(function PostCardOptimized({ post }: PostC
         )}
 
         <div className="flex items-start justify-between mb-5">
-          <div className="flex gap-3 items-center">
+          <div className="flex gap-3 items-center flex-1">
             <div className="relative">
               <div className={cn("w-12 h-12 rounded-2xl overflow-hidden border-2 p-0.5", TIER_RING[post.authorTier])}>
-                <OptimizedImage
-                  src={post.authorAvatar || ""}
-                  alt={post.authorName}
-                  containerClassName="w-full h-full rounded-xl"
-                  className="w-full h-full object-cover"
+                <UserAvatar
+                  src={post.authorAvatar || null}
+                  name={post.authorName}
+                  size="md"
+                  className="rounded-2xl !w-full !h-full border-0"
                 />
               </div>
               {post.type === "win" && (
@@ -167,30 +171,43 @@ export const PostCardOptimized = memo(function PostCardOptimized({ post }: PostC
                 </div>
               )}
             </div>
-            <div>
+            <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2 flex-wrap">
-                <h4 className="font-bold text-sm text-white hover:text-primary cursor-pointer transition-colors leading-none">
+                <h4 className="font-bold text-sm text-white hover:text-primary cursor-pointer transition-colors leading-none truncate">
                   {post.authorName}
                 </h4>
                 {post.isFounder && (
                   <span title="Founder">
-                    <ShieldCheck className="w-3.5 h-3.5 text-cyan-400" />
+                    <ShieldCheck className="w-3.5 h-3.5 text-cyan-400 flex-shrink-0" />
                   </span>
                 )}
-                <span className={cn("text-[9px] font-bold uppercase px-2 py-0.5 rounded-md border", meta.color)}>
+                <span className={cn("text-[9px] font-bold uppercase px-2 py-0.5 rounded-md border flex-shrink-0", meta.color)}>
                   {meta.label}
                 </span>
                 {post.isEdited && (
-                  <span className="text-[9px] text-muted-foreground" title={post.editedAt ? `Edited ${timeAgo(post.editedAt)}` : "Edited"}>
+                  <span className="text-[9px] text-muted-foreground flex-shrink-0" title={post.editedAt ? `Edited ${timeAgo(post.editedAt)}` : "Edited"}>
                     (edited)
                   </span>
                 )}
               </div>
-              <p className="text-[10px] text-muted-foreground font-medium uppercase tracking-tight mt-1">
+              <p className="text-[10px] text-muted-foreground font-medium uppercase tracking-tight mt-1 truncate">
                 {post.authorRole} - {timeAgo(post.createdAt)}
               </p>
             </div>
           </div>
+          
+          <PostOptionsMenu 
+            post={post}
+            onEdit={() => onEdit?.(post)}
+            onDelete={() => onDelete?.(post.id)}
+            onPin={() => {
+              toast({
+                title: "Pin post",
+                description: "Pin functionality will be triggered here.",
+              });
+            }}
+            isAdmin={userData?.role === 'admin'}
+          />
         </div>
 
         <div className="space-y-4 mb-5">
@@ -277,7 +294,7 @@ export const PostCardOptimized = memo(function PostCardOptimized({ post }: PostC
               "flex h-9 items-center gap-2 rounded-xl border border-white/10 px-3 text-xs font-bold transition-all hover:border-primary/30 hover:bg-primary/10",
               showComments ? "bg-white/5 text-white border-white/20" : "text-muted-foreground hover:text-white"
             )}
-            aria-expanded={showComments}
+            aria-expanded={showComments ? "true" : "false"}
             aria-label={showComments ? "Hide comments" : "Show comments"}
           >
             <MessageCircle className="w-4 h-4" />

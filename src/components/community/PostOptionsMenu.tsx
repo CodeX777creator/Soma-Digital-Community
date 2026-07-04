@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { motion } from "framer-motion";
 import { 
   MoreHorizontal, 
   Edit3, 
@@ -75,6 +76,13 @@ export function PostOptionsMenu({
   };
   
   const remainingMinutes = getRemainingEditTime();
+
+  // Animation variants for dropdown
+  const menuVariants = {
+    hidden: { opacity: 0, scale: 0.95, y: -8 },
+    visible: { opacity: 1, scale: 1, y: 0, transition: { duration: 0.15, ease: "easeOut" } },
+    exit: { opacity: 0, scale: 0.95, y: -8, transition: { duration: 0.1 } }
+  };
 
   const handleCopyLink = () => {
     const url = `${window.location.origin}/community?post=${post.id}`;
@@ -154,12 +162,22 @@ export function PostOptionsMenu({
           <MoreHorizontal className="w-4 h-4" />
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-48">
-        {/* Author actions */}
-        {canEdit && (
-          <DropdownMenuItem onClick={onEdit} className="cursor-pointer">
-            <Edit3 className="w-4 h-4 mr-2" />
-            Edit post
+      <DropdownMenuContent align="end" className="w-48 p-1">
+        <motion.div
+          initial="hidden"
+          animate="visible"
+          exit="hidden"
+          variants={menuVariants}
+          className="flex flex-col gap-0.5"
+        >
+          {/* Author actions */}
+          {canEdit && (
+            <DropdownMenuItem 
+              onClick={onEdit} 
+              className="flex items-center gap-2 px-2 py-1.5 rounded-md cursor-pointer hover:bg-white/5 focus:bg-white/5 transition-colors"
+            >
+              <Edit3 className="w-4 h-4 mr-2" />
+              Edit post
             {remainingMinutes !== null && remainingMinutes <= 5 && (
               <span className="ml-auto text-[10px] text-yellow-500">
                 {remainingMinutes}m left
@@ -168,7 +186,7 @@ export function PostOptionsMenu({
           </DropdownMenuItem>
         )}
         {!canEdit && isAuthor && (
-          <DropdownMenuItem disabled className="cursor-not-allowed opacity-50">
+          <DropdownMenuItem disabled className="cursor-not-allowed opacity-50 px-2 py-1.5 rounded-md">
             <Edit3 className="w-4 h-4 mr-2" />
             Edit expired
           </DropdownMenuItem>
@@ -176,28 +194,40 @@ export function PostOptionsMenu({
         
         {/* Admin actions */}
         {canPin && (
-          <DropdownMenuItem onClick={handlePin} className="cursor-pointer">
+          <DropdownMenuItem 
+            onClick={handlePin} 
+            className="flex items-center gap-2 px-2 py-1.5 rounded-md cursor-pointer hover:bg-white/5 focus:bg-white/5 transition-colors"
+          >
             <Pin className={cn("w-4 h-4 mr-2", post.isPinned && "fill-primary")} />
             {post.isPinned ? "Unpin post" : "Pin post"}
           </DropdownMenuItem>
         )}
         
         {/* Common actions */}
-        <DropdownMenuItem onClick={handleCopyLink} className="cursor-pointer">
+        <DropdownMenuItem 
+          onClick={handleCopyLink} 
+          className="flex items-center gap-2 px-2 py-1.5 rounded-md cursor-pointer hover:bg-white/5 focus:bg-white/5 transition-colors"
+        >
           <LinkIcon className="w-4 h-4 mr-2" />
           Copy link
         </DropdownMenuItem>
         
-        <DropdownMenuItem onClick={handleHide} className="cursor-pointer">
+        <DropdownMenuItem 
+          onClick={handleHide} 
+          className="flex items-center gap-2 px-2 py-1.5 rounded-md cursor-pointer hover:bg-white/5 focus:bg-white/5 transition-colors"
+        >
           <EyeOff className="w-4 h-4 mr-2" />
           Hide post
         </DropdownMenuItem>
         
-        <DropdownMenuSeparator />
+        <DropdownMenuSeparator className="my-1" />
         
         {/* Report */}
         {!isAuthor && (
-          <DropdownMenuItem onClick={handleReport} className="cursor-pointer text-yellow-500">
+          <DropdownMenuItem 
+            onClick={handleReport} 
+            className="flex items-center gap-2 px-2 py-1.5 rounded-md cursor-pointer hover:bg-white/5 focus:bg-white/5 transition-colors text-yellow-500"
+          >
             <Flag className="w-4 h-4 mr-2" />
             Report post
           </DropdownMenuItem>
@@ -207,13 +237,14 @@ export function PostOptionsMenu({
         {canDelete && (
           <DropdownMenuItem 
             onClick={handleDelete} 
-            className="cursor-pointer text-red-500 focus:text-red-500"
+            className="flex items-center gap-2 px-2 py-1.5 rounded-md cursor-pointer text-red-500 focus:text-red-500 hover:bg-white/5 focus:bg-white/5 transition-colors"
             disabled={isDeleting}
           >
             <Trash2 className="w-4 h-4 mr-2" />
             {isDeleting ? "Deleting..." : "Delete post"}
           </DropdownMenuItem>
         )}
+        </motion.div>
       </DropdownMenuContent>
     </DropdownMenu>
   );

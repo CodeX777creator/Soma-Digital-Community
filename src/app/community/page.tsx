@@ -15,6 +15,7 @@ import {
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import { PostCardOptimized } from "@/components/community/PostCardOptimized";
 import { CreatePostBox } from "@/components/community/CreatePostBox";
+import { EditPostModal } from "@/components/community/EditPostModal";
 import { Post, postService } from "@/lib/db";
 import { COMMUNITY_CHANNELS, CommunityChannel } from "@/lib/communityChannels";
 
@@ -90,14 +91,43 @@ export default function CommunityPage() {
   const [posts, setPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeChannel, setActiveChannel] = useState<CommunityChannel>("all");
+  const [editModalPost, setEditModalPost] = useState<Post | null>(null);
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
 
-  useEffect(() => {
+    useEffect(() => {
     const unsub = postService.subscribeToPosts((fetched) => {
       setPosts(fetched);
       setLoading(false);
     });
     return unsub;
   }, []);
+
+  // Optimistic UI handlers
+  const handleEditPost = (post: Post) => {
+    setEditModalPost(post);
+  };
+
+  const handleDeletePost = async (postId: string) => {
+    // Optimistic delete: remove immediately from UI
+    setPosts(prev => prev.filter(p => p.id !== postId));
+    setPendingDeleteId(postId);
+
+    try {
+      await postService.deletePost(postId);
+      setPendingDeleteId(null);
+    } catch (error) {
+      console.error('Failed to delete post:', error);
+      // Rollback on error
+      setPendingDeleteId(null);
+      // Optionally show error toast or re-fetch
+    }
+  };
+
+  const handleUpdatePost = async (updatedPost: Post) => {
+    // Optimistic update: update immediately in UI
+    setPosts(prev => prev.map(p => p.id === updatedPost.id ? updatedPost : p));
+    setEditModalPost(null);
+  };
 
   // Derived: win posts from today
   const founderWins = posts.filter(p => p.type === "win").slice(0, 5);
@@ -274,11 +304,26 @@ export default function CommunityPage() {
             ) : (
               <div className="flex flex-col gap-5">
                 <AnimatePresence initial={false}>
-                  {filteredPosts.map(post => (
-                    <PostCardOptimized key={post.id} post={post} />
+                                    {filteredPosts.map(post => (
+                    <PostCardOptimized 
+                      key={post.id} 
+                      post={post} 
+                      onEdit={handleEditPost}
+                      onDelete={handleDeletePost}
+                    />
                   ))}
-                </AnimatePresence>
+                                </AnimatePresence>
               </div>
+            )}
+            
+            {/* Edit Post Modal */}
+            {editModalPost && (
+              <EditPostModal
+                post={editModalPost}
+                isOpen={true}
+                onClose={() => setEditModalPost(null)}
+                onUpdate={handleUpdatePost}
+              />
             )}
           </div>
 

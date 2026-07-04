@@ -3,7 +3,11 @@
  * Provides offline support and caching strategies
  */
 
-const CACHE_NAME = 'soma-cache-v1.1';
+// Update this version string when deploying breaking changes
+const APP_VERSION = '1.1.0';
+
+// Cache name includes version to force fresh cache on updates
+const CACHE_NAME = 'soma-cache-' + APP_VERSION;
 const STATIC_ASSETS = [
   '/',
   '/dashboard',
@@ -32,12 +36,40 @@ self.addEventListener('activate', (event) => {
       return Promise.all(
         cacheNames
           .filter((name) => name !== CACHE_NAME)
-          .map((name) => caches.delete(name))
+          .map((name) => {
+            console.log('Deleting old cache:', name);
+            return caches.delete(name);
+          })
       );
     }).then(() => {
       return self.clients.claim();
     })
   );
+});
+
+// Listen for messages from the client
+self.addEventListener('message', (event) => {
+  if (event.data && event.data.type === 'VERSION_CHECK') {
+    // Send current version to client
+    event.ports[0]?.postMessage({ version: APP_VERSION });
+  }
+  
+  if (event.data && event.data.type === 'SKIP_WAITING') {
+    // Skip waiting and activate the new service worker immediately
+    self.skipWaiting();
+  }
+});
+
+// Notify clients when a new controller is active
+self.addEventListener('controllerchange', () => {
+  self.clients.matchAll({ type: 'window' }).then((clients) => {
+    clients.forEach((client) => {
+      client.postMessage({
+        type: 'UPDATE_AVAILABLE',
+        version: APP_VERSION
+      });
+    });
+  });
 });
 
 // Fetch event - implement caching strategies
