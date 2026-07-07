@@ -13,7 +13,7 @@ export const metadata: Metadata = {
   },
   manifest: '/manifest.json',
   icons: {
-    icon: '/favicon.ico',
+    icon: '/icon-192x192.png',
     apple: '/icon-192x192.png',
   },
   appleWebApp: {
@@ -51,7 +51,7 @@ export default function RootLayout({
           href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Space+Grotesk:wght@300;400;500;600;700&display=swap" 
           rel="stylesheet"
         />
-        <link rel="preload" href="/favicon.ico" as="image" type="image/x-icon" />
+        <link rel="preload" href="/icon-192x192.png" as="image" type="image/png" />
       </head>
       <body className="font-body antialiased bg-background text-foreground overflow-x-hidden min-h-screen">
         <AuthProvider>
