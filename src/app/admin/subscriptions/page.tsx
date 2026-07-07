@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { collection, onSnapshot, orderBy, query } from "firebase/firestore";
+import { collection, doc, onSnapshot, orderBy, query, serverTimestamp, updateDoc } from "firebase/firestore";
 import {
   CalendarClock,
+  CheckCircle2,
   CreditCard,
   ExternalLink,
   Eye,
@@ -12,6 +13,7 @@ import {
   Search,
   UserRound,
   X,
+  XCircle,
 } from "lucide-react";
 import { db } from "@/lib/firebase";
 
@@ -155,6 +157,7 @@ export default function AdminSubscriptionsPage() {
   const [providerFilter, setProviderFilter] = useState<"all" | Provider>("all");
   const [tierFilter, setTierFilter] = useState<"all" | Tier>("all");
   const [selected, setSelected] = useState<SubscriptionRecord | null>(null);
+  const [cancelLoading, setCancelLoading] = useState<string | null>(null);
 
   useEffect(() => {
     if (!db) {
@@ -214,6 +217,37 @@ export default function AdminSubscriptionsPage() {
     };
   }, [subscriptions]);
 
+  const handleCancel = async (subscription: SubscriptionRecord) => {
+    if (!db) return;
+    const user = users[subscription.userId];
+    const confirmed = window.confirm(
+      `Cancel subscription for ${user?.email || subscription.userId}? This will mark it as cancelled in Firestore but will NOT cancel it with the payment provider. Cancel in ${subscription.provider === "paystack" ? "Paystack" : "PayPal"} dashboard separately.`
+    );
+    if (!confirmed) return;
+    setCancelLoading(subscription.id);
+    setError(null);
+    try {
+      await updateDoc(doc(db, "subscriptions", subscription.id), {
+        subscriptionStatus: "cancelled",
+        cancelledAt: serverTimestamp(),
+        cancelledBy: "admin",
+        updatedAt: serverTimestamp(),
+      });
+      if (subscription.userId) {
+        await updateDoc(doc(db, "users", subscription.userId), {
+          "subscription.subscriptionStatus": "cancelled",
+          "subscription.status": "cancelled",
+          updatedAt: serverTimestamp(),
+        });
+      }
+      setSelected(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to cancel subscription.");
+    } finally {
+      setCancelLoading(null);
+    }
+  };
+
   return (
     <div className="space-y-5">
       <section className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
@@ -251,9 +285,7 @@ export default function AdminSubscriptionsPage() {
       </section>
 
       {error && (
-        <div className="rounded-lg border border-red-500/25 bg-red-500/10 px-4 py-3 text-sm text-red-100">
-          {error}
-        </div>
+        <div className="rounded-lg border border-red-500/25 bg-red-500/10 px-4 py-3 text-sm text-red-100">{error}</div>
       )}
 
       <section className="overflow-hidden rounded-lg border border-white/10 bg-white/[0.035]">
@@ -353,6 +385,8 @@ export default function AdminSubscriptionsPage() {
           subscription={selected}
           user={users[selected.userId]}
           onClose={() => setSelected(null)}
+          onCancel={handleCancel}
+          cancelLoading={cancelLoading}
         />
       )}
     </div>
@@ -415,10 +449,14 @@ function SubscriptionModal({
   subscription,
   user,
   onClose,
+  onCancel,
+  cancelLoading,
 }: {
   subscription: SubscriptionRecord;
   user?: UserRecord;
   onClose: () => void;
+  onCancel: (sub: SubscriptionRecord) => void;
+  cancelLoading: string | null;
 }) {
   const links = supportLinks(subscription);
 
@@ -481,6 +519,21 @@ function SubscriptionModal({
                 </a>
               )) : (
                 <p className="text-sm text-white/45">No provider action links are available for this subscription.</p>
+              )}
+              {(subscription.subscriptionStatus === "active" || subscription.subscriptionStatus === "past_due") && (
+                <button
+                  type="button"
+                  onClick={() => onCancel(subscription)}
+                  disabled={cancelLoading === subscription.id}
+                  className="ml-auto inline-flex h-9 items-center gap-2 rounded-md border border-red-400/25 px-3 text-sm text-red-200 hover:bg-red-500/10 disabled:opacity-50"
+                >
+                  {cancelLoading === subscription.id ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <XCircle className="h-4 w-4" />
+                  )}
+                  Cancel Subscription
+                </button>
               )}
             </div>
           </section>

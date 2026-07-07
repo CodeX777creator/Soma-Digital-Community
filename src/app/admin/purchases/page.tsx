@@ -1,10 +1,19 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { collection, doc, getDoc, onSnapshot, orderBy, query } from "firebase/firestore";
-import { Loader2, Search } from "lucide-react";
-import { authFetch } from "@/lib/clientApi";
-import { db } from "@/lib/firebase";
+import {
+  arrayRemove,
+  collection,
+  doc,
+  getDoc,
+  onSnapshot,
+  orderBy,
+  query,
+  serverTimestamp,
+  updateDoc,
+} from "firebase/firestore";
+import { Loader2, Search, ShieldOff } from "lucide-react";
+import { auth, db } from "@/lib/firebase";
 
 type ProvisioningStatus = "not_required" | "access_pending" | "access_sent" | "registration_completed";
 
@@ -39,6 +48,7 @@ export default function AdminPurchasesPage() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [updatingId, setUpdatingId] = useState<string | null>(null);
+  const [revokeId, setRevokeId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -104,8 +114,12 @@ export default function AdminPurchasesPage() {
     if (provisioningNotes === null) return;
     setUpdatingId(purchase.id);
     try {
-      const response = await authFetch("/api/admin/asset-purchases/update-provisioning", {
+      const response = await fetch("/api/admin/asset-purchases/update-provisioning", {
         method: "POST",
+        headers: {
+          Authorization: `Bearer ${await auth?.currentUser?.getIdToken()}`,
+          "Content-Type": "application/json",
+        },
         body: JSON.stringify({ purchaseId: purchase.id, provisioningStatus, provisioningNotes }),
       });
       const payload = await response.json();
@@ -114,6 +128,33 @@ export default function AdminPurchasesPage() {
       setError(error instanceof Error ? error.message : "Unable to update provisioning.");
     } finally {
       setUpdatingId(null);
+    }
+  };
+
+  const revokeAccess = async (purchase: Purchase) => {
+    if (!db) return;
+    const confirmed = window.confirm(
+      `Revoke access to "${purchase.assetTitle}" for ${users[purchase.userId]?.email || purchase.userId}? This cannot be undone.`
+    );
+    if (!confirmed) return;
+    setRevokeId(purchase.id);
+    setError(null);
+    try {
+      await updateDoc(doc(db, "assetPurchases", purchase.id), {
+        revoked: true,
+        revokedAt: serverTimestamp(),
+        revokedBy: auth?.currentUser?.uid || "admin",
+        status: "revoked",
+      });
+      if (purchase.userId && purchase.assetId) {
+        await updateDoc(doc(db, "users", purchase.userId), {
+          purchasedAssets: arrayRemove(purchase.assetId),
+        });
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to revoke access.");
+    } finally {
+      setRevokeId(null);
     }
   };
 
@@ -153,6 +194,7 @@ export default function AdminPurchasesPage() {
                 <th className="px-4 py-3 font-medium">Provisioning</th>
                 <th className="px-4 py-3 font-medium">Paystack Ref</th>
                 <th className="px-4 py-3 font-medium">Paid</th>
+                <th className="px-4 py-3 font-medium text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-white/10">
@@ -182,6 +224,7 @@ export default function AdminPurchasesPage() {
                       value={purchase.provisioningStatus}
                       onChange={(event) => updateProvisioning(purchase, event.target.value as ProvisioningStatus)}
                       disabled={updatingId === purchase.id}
+                      aria-label={`Provisioning status for ${purchase.assetTitle}`}
                       className="h-9 rounded-md border border-white/10 bg-black/20 px-2 text-xs outline-none focus:border-cyan-400/50"
                     >
                       {STATUSES.map((status) => (
@@ -191,6 +234,22 @@ export default function AdminPurchasesPage() {
                   </td>
                   <td className="px-4 py-3"><code className="rounded bg-black/25 px-2 py-1 text-xs text-white/55">{purchase.paystackReference || "-"}</code></td>
                   <td className="px-4 py-3 text-white/55">{dateLabel(purchase.paidAt)}</td>
+                  <td className="px-4 py-3">
+                    <button
+                      type="button"
+                      onClick={() => revokeAccess(purchase)}
+                      disabled={revokeId === purchase.id || purchase.status === "revoked"}
+                      title={purchase.status === "revoked" ? "Already revoked" : "Revoke access"}
+                      className="inline-flex h-8 items-center gap-1.5 rounded-md border border-red-400/20 px-2.5 text-xs text-red-200/70 hover:bg-red-500/10 hover:text-red-100 disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      {revokeId === purchase.id ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <ShieldOff className="h-3.5 w-3.5" />
+                      )}
+                      {purchase.status === "revoked" ? "Revoked" : "Revoke"}
+                    </button>
+                  </td>
                 </tr>
               ))}
             </tbody>

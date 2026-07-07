@@ -1,37 +1,41 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import {
+  addDoc,
   collection,
   deleteDoc,
   doc,
+  Firestore,
   onSnapshot,
   orderBy,
   query,
+  serverTimestamp,
   updateDoc,
 } from "firebase/firestore";
 import {
   AlertTriangle,
-  CheckCircle,
+  Edit2,
   Filter,
   Loader2,
   MessageSquare,
+  Megaphone,
   Pin,
-  PinOff,
   Search,
   ThumbsUp,
   Trash2,
   Type,
   User,
+  X,
 } from "lucide-react";
-import { db } from "@/lib/firebase";
-import { Firestore } from "firebase/firestore";
+import { auth, db } from "@/lib/firebase";
 import { Post } from "@/lib/db";
 
 type ModeratedPost = Post & {
   moderationStatus?: "pending" | "approved" | "flagged";
   moderatedAt?: any;
   moderatedBy?: string;
+  editedByAdmin?: boolean;
 };
 
 type FilterStatus = "all" | "pinned" | "flagged" | "announcement" | "win";
@@ -125,6 +129,16 @@ export default function AdminContentPage() {
   const [processingId, setProcessingId] = useState<string | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
 
+  // Create announcement
+  const [announcementText, setAnnouncementText] = useState("");
+  const [postingAnnouncement, setPostingAnnouncement] = useState(false);
+  const [announcementSuccess, setAnnouncementSuccess] = useState(false);
+
+  // Edit post
+  const [editingPost, setEditingPost] = useState<ModeratedPost | null>(null);
+  const [editContent, setEditContent] = useState("");
+  const [savingEdit, setSavingEdit] = useState(false);
+
   useEffect(() => {
     setLoading(true);
     const postsQuery = query(collection(db as Firestore, "posts"), orderBy("createdAt", "desc"));
@@ -215,7 +229,7 @@ export default function AdminContentPage() {
   const handleFlagPost = async (postId: string, flag: boolean) => {
     setProcessingId(postId);
     try {
-            await updateDoc(doc(db as Firestore, "posts", postId), {
+      await updateDoc(doc(db as Firestore, "posts", postId), {
         moderationStatus: flag ? "flagged" : "approved",
         moderatedAt: new Date(),
       });
@@ -227,6 +241,60 @@ export default function AdminContentPage() {
     }
   };
 
+  const handleCreateAnnouncement = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!announcementText.trim() || !db) return;
+    setPostingAnnouncement(true);
+    setError(null);
+    try {
+      const user = auth?.currentUser;
+      await addDoc(collection(db as Firestore, "posts"), {
+        content: announcementText.trim(),
+        type: "announcement",
+        authorId: user?.uid || "admin",
+        authorName: user?.displayName || user?.email || "Admin",
+        authorAvatar: user?.photoURL || "",
+        isPinned: false,
+        likeCount: 0,
+        commentCount: 0,
+        tags: ["announcement"],
+        moderationStatus: "approved",
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+      setAnnouncementText("");
+      setAnnouncementSuccess(true);
+      setTimeout(() => setAnnouncementSuccess(false), 3000);
+    } catch (err) {
+      console.error("Error creating announcement:", err);
+      setError("Failed to create announcement.");
+    } finally {
+      setPostingAnnouncement(false);
+    }
+  };
+
+  const openEdit = (post: ModeratedPost) => {
+    setEditingPost(post);
+    setEditContent(post.content);
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editingPost || !editContent.trim() || !db) return;
+    setSavingEdit(true);
+    try {
+      await updateDoc(doc(db as Firestore, "posts", editingPost.id), {
+        content: editContent.trim(),
+        updatedAt: serverTimestamp(),
+        editedByAdmin: true,
+      });
+      setEditingPost(null);
+    } catch (err) {
+      setError("Failed to save post edit.");
+    } finally {
+      setSavingEdit(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
@@ -235,6 +303,33 @@ export default function AdminContentPage() {
         <StatCard label="Flagged" value={stats.flagged} icon={AlertTriangle} color="red" />
         <StatCard label="Announcements" value={stats.announcements} icon={MessageSquare} color="purple" />
         <StatCard label="Founder Wins" value={stats.wins} icon={ThumbsUp} color="emerald" />
+      </section>
+
+      {/* Create Announcement */}
+      <section className="rounded-lg border border-cyan-400/20 bg-cyan-400/5 p-5">
+        <div className="mb-3 flex items-center gap-2">
+          <Megaphone className="h-4 w-4 text-cyan-300" />
+          <h3 className="text-sm font-semibold text-cyan-100">Broadcast Announcement</h3>
+        </div>
+        <form onSubmit={handleCreateAnnouncement} className="space-y-3">
+          <textarea
+            value={announcementText}
+            onChange={(e) => setAnnouncementText(e.target.value)}
+            placeholder="Write your announcement to the community..."
+            rows={3}
+            required
+            className="w-full rounded-lg border border-white/10 bg-white/[0.04] px-4 py-3 text-sm text-white placeholder:text-white/30 focus:border-cyan-400/50 focus:outline-none focus:ring-1 focus:ring-cyan-400/20 resize-none"
+          />
+          <div className="flex items-center gap-3">
+            <button type="submit" disabled={postingAnnouncement || !announcementText.trim()}
+              className="inline-flex h-9 items-center gap-2 rounded-md bg-cyan-400 px-4 text-sm font-semibold text-black hover:bg-cyan-300 disabled:opacity-50">
+              {postingAnnouncement ? <Loader2 className="h-4 w-4 animate-spin" /> : <Megaphone className="h-4 w-4" />}
+              Post Announcement
+            </button>
+            {announcementSuccess && <span className="text-sm text-emerald-300">✓ Announcement posted!</span>}
+            <span className="ml-auto text-xs text-white/35">{announcementText.length}/1000 chars</span>
+          </div>
+        </form>
       </section>
 
       {error && (
@@ -334,13 +429,18 @@ export default function AdminContentPage() {
                       <span className="text-xs text-white/50">{formatDate(toDate(post.createdAt) || new Date())}</span>
                       {post.isPinned && <span className="inline-flex items-center gap-1 rounded-full bg-cyan-400/10 px-2 py-0.5 text-[10px] font-medium text-cyan-300 border border-cyan-400/20"><Pin className="h-3 w-3" />Pinned</span>}
                       {post.moderationStatus === "flagged" && <span className="inline-flex items-center gap-1 rounded-full bg-red-400/10 px-2 py-0.5 text-[10px] font-medium text-red-300 border border-red-400/20"><AlertTriangle className="h-3 w-3" />Flagged</span>}
+                      {post.editedByAdmin && <span className="inline-flex items-center gap-1 rounded-full bg-amber-400/10 px-2 py-0.5 text-[10px] font-medium text-amber-300 border border-amber-400/20">Admin edited</span>}
                     </div>
                     <p className="mt-2 text-sm text-white/80 leading-relaxed">{truncateContent(post.content)}</p>
-                    <div className="mt-3 flex flex-wrap items-center gap-3">
+                    <div className="mt-3 flex flex-wrap items-center gap-2">
                       <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium ${getPostTypeColor(post.type || "")}`}>
                         {getPostTypeIcon(post.type || "")}
                         {post.type || "Post"}
                       </span>
+                      <button type="button" onClick={() => openEdit(post)}
+                        className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[10px] font-medium text-white/50 hover:bg-white/10 hover:text-white/80">
+                        <Edit2 className="h-2.5 w-2.5" /> Edit
+                      </button>
                     </div>
                   </div>
                 </div>
@@ -349,6 +449,44 @@ export default function AdminContentPage() {
           </div>
         )}
       </section>
+
+      {/* Edit Post Modal */}
+      {editingPost && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4">
+          <div className="w-full max-w-lg rounded-lg border border-white/10 bg-[#080a0f] shadow-2xl">
+            <div className="flex items-center justify-between border-b border-white/10 px-5 py-4">
+              <div>
+                <h3 className="font-semibold">Edit Post</h3>
+                <p className="text-xs text-white/45">by {editingPost.authorName}</p>
+              </div>
+              <button type="button" onClick={() => setEditingPost(null)}
+                aria-label="Close edit dialog"
+                className="rounded-md p-2 text-white/60 hover:bg-white/10">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="p-5 space-y-4">
+              <textarea
+                id="edit-post-content"
+                aria-label="Edit post content"
+                value={editContent}
+                onChange={(e) => setEditContent(e.target.value)}
+                rows={6}
+                className="w-full rounded-lg border border-white/10 bg-white/[0.04] px-4 py-3 text-sm text-white placeholder:text-white/30 focus:border-cyan-400/50 focus:outline-none resize-none"
+              />
+              <div className="flex justify-end gap-3">
+                <button type="button" onClick={() => setEditingPost(null)}
+                  className="h-9 rounded-md border border-white/10 px-4 text-sm text-white/60 hover:bg-white/10">Cancel</button>
+                <button type="button" onClick={handleSaveEdit} disabled={savingEdit || !editContent.trim()}
+                  className="inline-flex h-9 items-center gap-2 rounded-md bg-cyan-400 px-4 text-sm font-semibold text-black hover:bg-cyan-300 disabled:opacity-50">
+                  {savingEdit ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                  Save Changes
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

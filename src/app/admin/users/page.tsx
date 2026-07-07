@@ -19,6 +19,7 @@ import {
   Loader2,
   Search,
   ShieldCheck,
+  ShieldOff,
 } from "lucide-react";
 import { auth, db } from "@/lib/firebase";
 
@@ -292,6 +293,28 @@ export default function AdminUsersPage() {
     }
   };
 
+  const toggleAdmin = async (user: UserRecord) => {
+    if (!db) { setError("Database not initialized."); return; }
+    const isAdmin = user.isAdmin === true || user.role === "admin";
+    const action = isAdmin ? "revoke" : "grant";
+    const confirmed = window.confirm(`${action === "grant" ? "Grant" : "Revoke"} admin access for ${user.email || user.name}?`);
+    if (!confirmed) return;
+    setActionLoading(`admin-${user.uid}`);
+    setError(null);
+    try {
+      await updateDoc(doc(db, "users", user.uid), {
+        isAdmin: !isAdmin,
+        role: isAdmin ? "member" : "admin",
+        updatedAt: serverTimestamp(),
+      });
+      setSelectedUser((prev) => prev ? { ...prev, isAdmin: !isAdmin, role: isAdmin ? "member" : "admin" } : null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to update admin access.");
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
   const exportCsv = () => {
     const rows = filteredUsers.map((user) => [
       user.name,
@@ -538,6 +561,41 @@ export default function AdminUsersPage() {
                   >
                     <ShieldCheck className="h-4 w-4" />
                     Apply Override
+                  </button>
+                </div>
+              </DetailCard>
+
+              <DetailCard title="Admin Access">
+                <div className="grid gap-3">
+                  <div className="flex items-center justify-between rounded-lg border border-white/10 bg-black/15 px-3 py-2 text-sm">
+                    <span className="text-white/70">Admin role</span>
+                    <span className={`inline-flex items-center gap-1.5 text-xs font-semibold ${
+                      selectedUser.isAdmin === true || selectedUser.role === "admin" ? "text-emerald-300" : "text-white/35"
+                    }`}>
+                      {selectedUser.isAdmin === true || selectedUser.role === "admin" ? (
+                        <><ShieldCheck className="h-4 w-4" /> Granted</>
+                      ) : (
+                        <><ShieldOff className="h-4 w-4" /> Not admin</>
+                      )}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => toggleAdmin(selectedUser)}
+                    disabled={actionLoading === `admin-${selectedUser.uid}`}
+                    className={`inline-flex h-10 items-center justify-center gap-2 rounded-md px-4 text-sm font-semibold disabled:opacity-50 ${
+                      selectedUser.isAdmin === true || selectedUser.role === "admin"
+                        ? "border border-red-400/25 text-red-200 hover:bg-red-500/10"
+                        : "bg-emerald-500 text-white hover:bg-emerald-400"
+                    }`}
+                  >
+                    {actionLoading === `admin-${selectedUser.uid}` ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : selectedUser.isAdmin === true || selectedUser.role === "admin" ? (
+                      <><ShieldOff className="h-4 w-4" /> Revoke Admin</>
+                    ) : (
+                      <><ShieldCheck className="h-4 w-4" /> Grant Admin</>
+                    )}
                   </button>
                 </div>
               </DetailCard>
