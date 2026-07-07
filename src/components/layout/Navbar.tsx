@@ -40,6 +40,7 @@ export const Navbar = () => {
 
   const appLinks = [
     { name: "Dashboard", href: "/dashboard" },
+    { name: "My Roadmap", href: "/roadmap" },
     { name: "Community", href: "/community" },
     { name: "AI Mentor", href: "/mentor" },
     { name: "Marketplace", href: "/marketplace" },

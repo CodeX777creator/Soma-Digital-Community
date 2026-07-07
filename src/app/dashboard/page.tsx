@@ -317,14 +317,21 @@ function DashboardContent() {
                 </div>
               </GlassCard>
 
-              <div className="p-6 rounded-3xl bg-gradient-to-br from-purple-900/20 to-transparent border border-purple-500/20 relative overflow-hidden group">
+              <div className="p-6 rounded-3xl bg-gradient-to-br from-purple-900/20 to-transparent border border-purple-500/20 relative overflow-hidden group flex flex-col gap-4">
                 <Sparkles className="absolute top-2 right-2 w-12 h-12 text-purple-500/10 -rotate-12 group-hover:scale-110 transition-transform" />
-                <p className="text-sm text-purple-200 leading-relaxed mb-4 relative z-10">
+                <p className="text-sm text-purple-200 leading-relaxed relative z-10">
                   {stats?.goal
                     ? `Your current growth goal is ${stats.goal}. Use the AI Coach to keep your roadmap aligned with that focus.`
                     : "Complete your growth profile to unlock a clearer weekly focus from Soma AI."}
                 </p>
-                <div className="flex items-center gap-2">
+                <div className="flex gap-2 relative z-10">
+                  <Button asChild variant="outline" className="h-9 px-4 rounded-xl text-xs font-bold border-purple-500/30 text-purple-200 hover:bg-purple-500/10">
+                    <Link href="/roadmap">
+                      <Target className="w-3.5 h-3.5 mr-2" /> View My Roadmap
+                    </Link>
+                  </Button>
+                </div>
+                <div className="flex items-center gap-2 mt-auto">
                   <div className="h-0.5 w-6 bg-purple-500/50" />
                   <span className="text-[10px] font-bold uppercase text-purple-400">Hub Logic Engine</span>
                 </div>
