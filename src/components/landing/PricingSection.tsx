@@ -171,8 +171,8 @@ export function PricingSection() {
                 variant={plan.buttonVariant}
                 className={cn(
                   "w-full h-14 rounded-full font-bold transition-all duration-300 relative overflow-hidden group",
-                  plan.popular ? "bg-primary hover:bg-primary/90 blue-glow" : "border-white/10 hover:bg-white/5",
-                  plan.id === 'elite' && "hover:bg-accent hover:text-black hover:border-accent"
+                  plan.popular ? "bg-primary hover:bg-primary/90 active:scale-[0.98] active:brightness-110 blue-glow" : "border-white/10 hover:bg-white/5 active:scale-[0.98] active:bg-white/10",
+                  plan.id === 'elite' && "hover:bg-accent hover:text-black hover:border-accent active:bg-accent active:text-black"
                 )}
               >
                 {loadingPlan === plan.id ? (

@@ -121,7 +121,7 @@ export default function Home() {
 
           <div className="flex flex-col sm:flex-row items-center justify-center gap-6 animate-reveal opacity-0 animation-delay-700">
             <Link href="/open?plan=explorer">
-              <Button className="h-16 px-10 rounded-full bg-primary hover:bg-primary/90 text-xl font-bold blue-glow group transition-all">
+              <Button className="h-16 px-10 rounded-full bg-primary hover:bg-primary/90 active:scale-[0.98] active:brightness-110 text-xl font-bold blue-glow group transition-all">
                 Get Started
                 <ArrowRight className="ml-2 group-hover:translate-x-1 transition-transform" />
               </Button>
@@ -129,7 +129,7 @@ export default function Home() {
             <Button
               onClick={() => setIsVisionOpen(true)}
               variant="ghost"
-              className="h-16 px-10 rounded-full border border-white/10 bg-white/5 hover:bg-white/10 text-xl font-semibold backdrop-blur-sm"
+              className="h-16 px-10 rounded-full border border-white/10 bg-white/5 hover:bg-white/10 active:scale-[0.98] active:bg-white/10 text-xl font-semibold backdrop-blur-sm"
             >
               <Play className="mr-3 fill-white w-5 h-5" />
               Watch Vision

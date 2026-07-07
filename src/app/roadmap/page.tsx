@@ -217,9 +217,9 @@ export default function MyRoadmap() {
                     {roadmap.thirtyDayExecutionPlan?.map((step, idx) => (
                       <GlassCard key={idx} className="p-6 border-white/5 hover:border-primary/20 transition-colors">
                         <div className="flex flex-col md:flex-row gap-6 items-start md:items-center">
-                          <div className="w-24 flex-shrink-0 text-center py-2 px-4 rounded-xl bg-white/5 border border-white/10">
+                          <div className="w-full md:w-fit md:min-w-[8rem] md:max-w-[12rem] flex-shrink-0 text-center py-2 px-4 rounded-xl bg-white/5 border border-white/10">
                             <span className="text-xs font-bold text-primary uppercase block">Period</span>
-                            <span className="text-xl font-bold text-white">{step.day}</span>
+                            <span className="text-sm md:text-base font-bold text-white break-words block mt-1">{step.day}</span>
                           </div>
                           <div className="flex-1 space-y-1">
                             <h4 className="text-xl font-bold text-white">{step.task}</h4>

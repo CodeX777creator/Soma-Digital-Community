@@ -282,7 +282,7 @@ export default function AdminLoginPage() {
                   type="button"
                   onClick={() => setShowPassword((value) => !value)}
                   disabled={isBusy}
-                  className="absolute right-4 top-1/2 -translate-y-1/2 text-white/35 hover:text-white/70 transition-colors disabled:opacity-50"
+                  className="absolute right-4 top-1/2 -translate-y-1/2 text-white/60 hover:text-white transition-colors disabled:opacity-50"
                   aria-label={showPassword ? "Hide password" : "Show password"}
                 >
                   {showPassword ? (

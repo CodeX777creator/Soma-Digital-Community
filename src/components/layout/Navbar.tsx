@@ -191,12 +191,12 @@ export const Navbar = () => {
               {!isLoggedIn && (
                 <div className="flex flex-col gap-3">
                   <Link href="/open" onClick={() => setMobileMenuOpen(false)}>
-                    <Button variant="outline" className="w-full border-white/10 py-6 rounded-2xl text-lg font-bold">
+                    <Button variant="outline" className="w-full border-white/10 py-6 rounded-2xl text-lg font-bold active:scale-[0.98] active:bg-white/10">
                       Join Now
                     </Button>
                   </Link>
                   <Link href="/login" onClick={() => setMobileMenuOpen(false)}>
-                    <Button className="w-full bg-primary py-6 rounded-2xl text-lg font-bold blue-glow">
+                    <Button className="w-full bg-primary py-6 rounded-2xl text-lg font-bold blue-glow active:scale-[0.98] active:brightness-110">
                       Enter The Community
                     </Button>
                   </Link>
