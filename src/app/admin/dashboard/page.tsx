@@ -188,6 +188,7 @@ function ChartCard({
 export default function AdminDashboardPage() {
   const [users, setUsers] = useState<FirestoreRecord[]>([]);
   const [subscriptions, setSubscriptions] = useState<FirestoreRecord[]>([]);
+  const [resellerSales, setResellerSales] = useState<FirestoreRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -195,6 +196,10 @@ export default function AdminDashboardPage() {
     const usersQuery = query(collection(db as Firestore, "users"), orderBy("createdAt", "desc"));
     const subscriptionsQuery = query(
       collection(db as Firestore, "subscriptions"),
+      orderBy("createdAt", "desc")
+    );
+    const resellerSalesQuery = query(
+      collection(db as Firestore, "resellerSales"),
       orderBy("createdAt", "desc")
     );
 
@@ -214,28 +219,37 @@ export default function AdminDashboardPage() {
       subscriptionsQuery,
       (snapshot) => {
         setSubscriptions(snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() })));
-        setLoading(false);
       },
-      () => {
-        setError("Unable to load subscriptions.");
-        setLoading(false);
-      }
+      () => { /* non-critical */ }
+    );
+
+    const unsubscribeResellerSales = onSnapshot(
+      resellerSalesQuery,
+      (snapshot) => {
+        setResellerSales(snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() })));
+      },
+      () => { /* non-critical */ }
     );
 
     return () => {
       unsubscribeUsers();
       unsubscribeSubscriptions();
+      unsubscribeResellerSales();
     };
   }, []);
 
   const analytics = useMemo(() => {
     const sevenDays = buildLastSevenDays();
     const sevenDaysAgo = sevenDays[0];
+
     const activeSubscriptions = subscriptions.filter(isActiveSubscription);
-    const mrr = activeSubscriptions.reduce(
-      (total, sub) => total + getSubscriptionPrice(sub),
+
+    // MRR = Master Resell Rights — total gross revenue from resellerSales
+    const mrrTotal = resellerSales.reduce(
+      (total, sale) => total + (typeof sale.grossAmount === "number" ? sale.grossAmount : 0),
       0
     );
+    const mrrSalesCount = resellerSales.length;
 
     const newUsers7d = users.filter((user) => {
       const createdAt = toDate(user.createdAt);
@@ -258,12 +272,33 @@ export default function AdminDashboardPage() {
       }).length,
     }));
 
-    const tierRevenue = ["explorer", "pro", "elite"].map((tier) => ({
-      tier: tier[0].toUpperCase() + tier.slice(1),
-      revenue: activeSubscriptions
-        .filter((sub) => getSubscriptionPlan(sub) === tier)
-        .reduce((total, sub) => total + getSubscriptionPrice(sub), 0),
-    }));
+    const tierRevenue = ["explorer", "pro", "elite"].map((tier) => {
+      // Primary: subscriptions collection; fallback: users.tier
+      const fromSubs = activeSubscriptions.filter(
+        (sub) => getSubscriptionPlan(sub) === tier
+      );
+      const revenue =
+        fromSubs.length > 0
+          ? fromSubs.reduce((total, sub) => total + getSubscriptionPrice(sub), 0)
+          : users
+              .filter((user) => {
+                const plan = String(
+                  user.tier || user.plan || user.subscriptionPlan || "explorer"
+                ).toLowerCase();
+                return plan === tier;
+              })
+              .reduce((total, user) => total + (TIER_PRICES[tier] || 0), 0);
+      return { tier: tier[0].toUpperCase() + tier.slice(1), revenue };
+    });
+
+    // Sub Revenue = sum across all tiers
+    const subRevenue = tierRevenue.reduce((total, t) => total + t.revenue, 0);
+    const paidUserCount = users.filter((user) => {
+      const plan = String(
+        user.tier || user.plan || user.subscriptionPlan || "explorer"
+      ).toLowerCase();
+      return plan !== "explorer" && plan !== "free" && plan !== "";
+    }).length;
 
     const signupActivity = users.slice(0, 8).map((user) => ({
       id: `user-${user.id}`,
@@ -309,14 +344,17 @@ export default function AdminDashboardPage() {
     return {
       totalUsers: users.length,
       activeSubscriptions: activeSubscriptions.length,
-      mrr,
+      mrrTotal,
+      mrrSalesCount,
+      subRevenue,
+      paidUserCount,
       newUsers7d,
       signupChart,
       subscriptionChart,
       tierRevenue,
       activity,
     };
-  }, [users, subscriptions]);
+  }, [users, subscriptions, resellerSales]);
 
   if (loading) {
     return (
@@ -337,7 +375,7 @@ export default function AdminDashboardPage() {
         </div>
       )}
 
-      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
         <StatCard
           label="Total Users"
           value={analytics.totalUsers.toLocaleString()}
@@ -353,9 +391,16 @@ export default function AdminDashboardPage() {
           trend="up"
         />
         <StatCard
-          label="MRR"
-          value={formatCurrency(analytics.mrr)}
-          note="Client-side active plan sum"
+          label="Sub Revenue"
+          value={formatCurrency(analytics.subRevenue)}
+          note={`${analytics.paidUserCount} paid member${analytics.paidUserCount !== 1 ? "s" : ""}`}
+          icon={DollarSign}
+          trend="up"
+        />
+        <StatCard
+          label="MRR Sales"
+          value={formatCurrency(analytics.mrrTotal)}
+          note={`${analytics.mrrSalesCount} Master Resell Rights sale${analytics.mrrSalesCount !== 1 ? "s" : ""}`}
           icon={DollarSign}
           trend="up"
         />
