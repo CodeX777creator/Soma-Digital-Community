@@ -1,6 +1,7 @@
 import { User } from "firebase/auth";
 
 export const GOOGLE_REDIRECT_STORAGE_KEY = "soma-google-auth-redirect";
+export const GOOGLE_REDIRECT_PENDING_KEY = "soma-google-auth-pending";
 
 export function requiresEmailVerification(user: User | null | undefined) {
   if (!user) return false;

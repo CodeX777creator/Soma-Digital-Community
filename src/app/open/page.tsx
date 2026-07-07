@@ -3,7 +3,7 @@
 import { useEffect, Suspense, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
-import { getRedirectResult, User } from "firebase/auth";
+import { getRedirectResult, onAuthStateChanged, User } from "firebase/auth";
 import { useOnboardingStore, PlanType } from "@/store/useOnboardingStore";
 import { WelcomeStep } from "@/components/onboarding/WelcomeStep";
 import { IdentityStep } from "@/components/onboarding/IdentityStep";
@@ -16,7 +16,7 @@ import { ActivationStep } from "@/components/onboarding/ActivationStep";
 import { Cpu } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { auth } from "@/lib/firebase";
-import { GOOGLE_REDIRECT_STORAGE_KEY, getSafeRedirectPath } from "@/lib/auth";
+import { GOOGLE_REDIRECT_PENDING_KEY, GOOGLE_REDIRECT_STORAGE_KEY, getSafeRedirectPath } from "@/lib/auth";
 import { dbService } from "@/lib/db";
 import { createNotification } from "@/lib/notifications";
 import { awardXP } from "@/lib/xp";
@@ -47,22 +47,40 @@ async function saveGoogleOnboardingData(user: User) {
   if (availableTime) userData.availableTime = availableTime;
 
   await dbService.saveUserProfile(user.uid, userData);
-  await awardXP(user.uid, 25, "profile", {
-    onboardingComplete: true,
-    goal: goal || null,
-    skillLevel: skillLevel || null,
-  });
-  await createNotification(
-    user.uid,
-    "welcome",
-    "Welcome to Soma Digital",
-    "Your account is ready. Start your first mission from the dashboard.",
-    "/dashboard"
-  );
 
   if (roadmap) {
     await dbService.saveRoadmap(user.uid, roadmap);
   }
+
+  try {
+    await awardXP(user.uid, 25, "profile", {
+      onboardingComplete: true,
+      goal: goal || null,
+      skillLevel: skillLevel || null,
+    });
+    await createNotification(
+      user.uid,
+      "welcome",
+      "Welcome to Soma Digital",
+      "Your account is ready. Start your first mission from the dashboard.",
+      "/dashboard"
+    );
+  } catch (error) {
+    console.error("[Google Signup] Non-critical welcome setup failed:", error);
+  }
+}
+
+function waitForCurrentUser() {
+  const currentAuth = auth;
+  if (!currentAuth) return Promise.resolve(null);
+  if (currentAuth.currentUser) return Promise.resolve(currentAuth.currentUser);
+
+  return new Promise<User | null>((resolve) => {
+    const unsubscribe = onAuthStateChanged(currentAuth, (user) => {
+      unsubscribe();
+      resolve(user);
+    });
+  });
 }
 
 function OnboardingController() {
@@ -72,6 +90,7 @@ function OnboardingController() {
   const handledEntryPlan = useRef<string | null>(null);
   const handledGoogleRedirect = useRef(false);
   const [isCheckingGoogleRedirect, setIsCheckingGoogleRedirect] = useState(true);
+  const [googleRedirectError, setGoogleRedirectError] = useState<string | null>(null);
 
   useEffect(() => {
     if (handledGoogleRedirect.current) return;
@@ -84,16 +103,21 @@ function OnboardingController() {
       }
 
       try {
+        const hasPendingGoogleSignup =
+          sessionStorage.getItem(GOOGLE_REDIRECT_PENDING_KEY) === "true";
         const result = await getRedirectResult(auth);
-        if (!result?.user) {
+        const user = result?.user || (hasPendingGoogleSignup ? await waitForCurrentUser() : null);
+
+        if (!user) {
           setIsCheckingGoogleRedirect(false);
           return;
         }
 
-        await saveGoogleOnboardingData(result.user);
+        await saveGoogleOnboardingData(user);
 
         const storedRedirect = sessionStorage.getItem(GOOGLE_REDIRECT_STORAGE_KEY);
         sessionStorage.removeItem(GOOGLE_REDIRECT_STORAGE_KEY);
+        sessionStorage.removeItem(GOOGLE_REDIRECT_PENDING_KEY);
 
         const safeRedirect = getSafeRedirectPath(storedRedirect || searchParams.get("redirect"));
         const { plan } = useOnboardingStore.getState();
@@ -107,6 +131,12 @@ function OnboardingController() {
         }
       } catch (error) {
         console.error("[Google Signup] Redirect result error:", error);
+        setGoogleRedirectError(
+          error instanceof Error
+            ? error.message
+            : "Google sign in completed, but account setup could not finish."
+        );
+        sessionStorage.removeItem(GOOGLE_REDIRECT_PENDING_KEY);
         setIsCheckingGoogleRedirect(false);
       }
     };
@@ -182,6 +212,24 @@ function OnboardingController() {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background text-primary animate-pulse">
         Completing Google sign in...
+      </div>
+    );
+  }
+
+  if (googleRedirectError) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background p-6">
+        <div className="max-w-md rounded-2xl border border-red-500/20 bg-red-500/10 p-6 text-center">
+          <h1 className="text-xl font-bold text-white">Google setup needs attention</h1>
+          <p className="mt-3 text-sm text-red-100/80">{googleRedirectError}</p>
+          <button
+            type="button"
+            onClick={() => setGoogleRedirectError(null)}
+            className="mt-6 rounded-xl bg-white px-5 py-3 text-sm font-bold text-black"
+          >
+            Back to signup
+          </button>
+        </div>
       </div>
     );
   }

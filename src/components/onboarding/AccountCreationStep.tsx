@@ -6,7 +6,7 @@ import { useOnboardingStore } from "@/store/useOnboardingStore";
 import { Badge } from "@/components/ui/badge";
 import { createUserWithEmailAndPassword, updateProfile, signInWithRedirect, GoogleAuthProvider, sendEmailVerification } from "firebase/auth";
 import { auth } from "@/lib/firebase";
-import { GOOGLE_REDIRECT_STORAGE_KEY, getSafeRedirectPath } from "@/lib/auth";
+import { GOOGLE_REDIRECT_PENDING_KEY, GOOGLE_REDIRECT_STORAGE_KEY, getSafeRedirectPath } from "@/lib/auth";
 import { dbService } from "@/lib/db";
 import { createNotification } from "@/lib/notifications";
 import { useToast } from "@/hooks/use-toast";
@@ -165,6 +165,8 @@ export function AccountCreationStep() {
       });
 
       const safeRedirect = getSafeRedirectPath(redirectUrl);
+      sessionStorage.setItem(GOOGLE_REDIRECT_PENDING_KEY, "true");
+
       if (safeRedirect) {
         sessionStorage.setItem(GOOGLE_REDIRECT_STORAGE_KEY, safeRedirect);
       }
