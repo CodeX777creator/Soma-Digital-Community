@@ -551,9 +551,16 @@ export default function Home() {
                   <Globe className="w-4 h-4" />
                 </Link>
               </div>
-              <p className="text-[10px] text-muted-foreground leading-relaxed">
-                © 2026 Soma Digital. <br /> All rights reserved. Built for you.
-              </p>
+              <div className="flex flex-col gap-2">
+                <p className="text-[10px] text-muted-foreground leading-relaxed">
+                  © 2026 Soma Digital. <br /> All rights reserved. Built for you.
+                </p>
+                <div className="flex gap-3 text-[10px] text-muted-foreground/60">
+                  <Link href="/terms" className="hover:text-white transition-colors">Terms of Service</Link>
+                  <span>·</span>
+                  <Link href="/privacy" className="hover:text-white transition-colors">Privacy Policy</Link>
+                </div>
+              </div>
             </div>
           </div>
         </footer>

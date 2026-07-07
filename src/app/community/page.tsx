@@ -168,20 +168,22 @@ export default function CommunityPage() {
   };
 
   // Derived: win posts from today
-  const founderWins = posts.filter(p => p.type === "win").slice(0, 5);
+  const founderWins = posts.filter(p => p.type === "win" && !p.deleted).slice(0, 5);
   const tagCounts = posts.reduce<Record<string, number>>((acc, post) => {
+    if (post.deleted) return acc;
     post.tags?.forEach((tag) => {
       acc[tag] = (acc[tag] || 0) + 1;
     });
     return acc;
   }, {});
   const trendingTags = Object.entries(tagCounts).sort((a, b) => b[1] - a[1]).slice(0, 8);
-  const sortedPosts = [...posts].sort((a, b) => postTimestamp(b) - postTimestamp(a));
+  const sortedPosts = [...posts].filter(p => !p.deleted).sort((a, b) => postTimestamp(b) - postTimestamp(a));
   const filteredPosts = sortedPosts.filter((post) => matchesChannel(post, activeChannel));
+  const activePosts = posts.filter(p => !p.deleted);
   const channelCounts = CHANNEL_NAV.reduce<Record<CommunityChannel, number>>((acc, channel) => {
     acc[channel.id] = channel.id === "all"
-      ? posts.length
-      : posts.filter((post) => matchesChannel(post, channel.id)).length;
+      ? activePosts.length
+      : activePosts.filter((post) => matchesChannel(post, channel.id)).length;
     return acc;
   }, {} as Record<CommunityChannel, number>);
   const spotlight = posts.find(post => !!post.authorName);

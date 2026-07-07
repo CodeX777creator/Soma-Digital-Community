@@ -33,7 +33,7 @@ export default function SearchPage() {
     const q = term.trim().toLowerCase();
     if (!q) return [];
     const postResults = posts
-      .filter((post) => post.content.toLowerCase().includes(q) || post.authorName.toLowerCase().includes(q))
+      .filter((post) => !post.deleted && (post.content.toLowerCase().includes(q) || post.authorName.toLowerCase().includes(q)))
       .map((post) => ({ title: post.authorName, detail: post.content, href: "/community", type: "Community" }));
     const assetResults = assets
       .filter((asset) => asset.title.toLowerCase().includes(q) || asset.category.toLowerCase().includes(q) || asset.description.toLowerCase().includes(q))

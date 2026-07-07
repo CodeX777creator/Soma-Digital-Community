@@ -1,4 +1,5 @@
 import { useState } from "react";
+import Link from "next/link";
 import { GlassCard } from "@/components/ui/glass-card";
 import { Button } from "@/components/ui/button";
 import { Sparkles, ArrowRight, UserPlus, Loader2, Eye, EyeOff, Lock, CheckCircle2, AlertCircle, ChevronLeft, Mail } from "lucide-react";
@@ -419,7 +420,7 @@ export function AccountCreationStep() {
           </Button>
 
           <p className="text-center text-xs text-muted-foreground/60 pt-4">
-            By creating an account, you agree to the Soma Digital <span className="text-primary hover:underline cursor-pointer">Terms of Service</span> and <span className="text-primary hover:underline cursor-pointer">Privacy Policy</span>.
+            By creating an account, you agree to the Soma Digital <Link href="/terms" className="text-primary hover:underline cursor-pointer">Terms of Service</Link> and <Link href="/privacy" className="text-primary hover:underline cursor-pointer">Privacy Policy</Link>.
           </p>
         </div>
       </GlassCard>
