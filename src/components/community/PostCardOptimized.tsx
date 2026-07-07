@@ -10,6 +10,7 @@ import {
   ThumbsUp,
   Trophy,
   ZoomIn,
+  Loader2,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { GlassCard } from "@/components/ui/glass-card";
@@ -58,9 +59,10 @@ interface PostCardProps {
   post: Post;
   onEdit?: (post: Post) => void;
   onDelete?: (postId: string, post?: Post) => void;
+  isPendingDelete?: boolean;
 }
 
-export const PostCardOptimized = memo(function PostCardOptimized({ post, onEdit, onDelete }: PostCardProps) {
+export const PostCardOptimized = memo(function PostCardOptimized({ post, onEdit, onDelete, isPendingDelete }: PostCardProps) {
   const meta = useMemo(() => POST_TYPE_META[post.type] || POST_TYPE_META.insight, [post.type]);
   const { user, userData } = useAuth();
   const { toast } = useToast();
@@ -144,10 +146,21 @@ export const PostCardOptimized = memo(function PostCardOptimized({ post, onEdit,
     >
       <GlassCard
         className={cn(
-          "p-6 rounded-3xl transition-all duration-300 hover:translate-y-[-2px] hover:shadow-xl hover:shadow-black/30",
-          post.isPinned && "border-primary/40 bg-primary/[0.03]"
+          "p-6 rounded-3xl transition-all duration-300 hover:translate-y-[-2px] hover:shadow-xl hover:shadow-black/30 relative",
+          post.isPinned && "border-primary/40 bg-primary/[0.03]",
+          isPendingDelete && "opacity-50"
         )}
       >
+        {/* Loading overlay for pending delete */}
+        {isPendingDelete && (
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm rounded-3xl flex items-center justify-center z-10">
+            <div className="flex items-center gap-3 text-white/90">
+              <Loader2 className="w-5 h-5 animate-spin text-primary" />
+              <span className="text-sm font-medium">Deleting...</span>
+            </div>
+          </div>
+        )}
+        
         {post.isPinned && (
           <div className="flex items-center gap-2 mb-4 text-[10px] font-bold text-primary uppercase tracking-widest">
             <Pin className="w-3 h-3 fill-primary" /> Pinned

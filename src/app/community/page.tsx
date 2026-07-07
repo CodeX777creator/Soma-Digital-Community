@@ -343,13 +343,14 @@ export default function CommunityPage() {
               <div className="flex flex-col gap-5">
                 <AnimatePresence initial={false}>
                                     {filteredPosts.map(post => (
-                    <PostCardOptimized 
-                      key={post.id} 
-                      post={post} 
-                      onEdit={handleEditPost}
-                      onDelete={handleDeletePost}
-                    />
-                  ))}
+                                                        <PostCardOptimized 
+                                                          key={post.id} 
+                                                          post={post} 
+                                                          onEdit={handleEditPost}
+                                                          onDelete={handleDeletePost}
+                                                          isPendingDelete={pendingDeleteId === post.id}
+                                                        />
+                                                      ))}
                                 </AnimatePresence>
               </div>
             )}

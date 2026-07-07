@@ -10,7 +10,8 @@ import {
   Link as LinkIcon, 
   Pin,
   Ban,
-  EyeOff
+  EyeOff,
+  Loader2
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -19,6 +20,16 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/providers/AuthProvider";
 import { Post, postService } from "@/lib/db";
@@ -47,6 +58,7 @@ export function PostOptionsMenu({
   const { user, userData } = useAuth();
   const { toast, dismiss } = useToast();
   const [isDeleting, setIsDeleting] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   
   const isAuthor = user?.uid === post.authorId;
   
@@ -108,12 +120,10 @@ export function PostOptionsMenu({
     });
   };
 
-  const handleDelete = async () => {
-    if (!confirm("Are you sure you want to delete this post? This action cannot be undone.")) {
-      return;
-    }
-    
+  const handleDeleteConfirm = async () => {
+    setShowDeleteConfirm(false);
     setIsDeleting(true);
+    
     try {
       await postService.deletePost(post.id);
       
@@ -153,6 +163,10 @@ export function PostOptionsMenu({
     }
   };
 
+  const handleDeleteClick = () => {
+    setShowDeleteConfirm(true);
+  };
+
   const handlePin = async () => {
     try {
       await postService.pinPost(post.id, !post.isPinned);
@@ -173,6 +187,7 @@ export function PostOptionsMenu({
   };
 
   return (
+    <>
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button 
@@ -199,13 +214,13 @@ export function PostOptionsMenu({
             >
               <Edit3 className="w-4 h-4 mr-2" />
               Edit post
-            {remainingMinutes !== null && remainingMinutes <= 5 && (
-              <span className="ml-auto text-[10px] text-yellow-500">
-                {remainingMinutes}m left
-              </span>
-            )}
-          </DropdownMenuItem>
-        )}
+              {remainingMinutes !== null && remainingMinutes <= 5 && (
+                <span className="ml-auto text-[10px] text-yellow-500">
+                  {remainingMinutes}m left
+                </span>
+              )}
+            </DropdownMenuItem>
+          )}
         {!canEdit && isAuthor && (
           <DropdownMenuItem disabled className="cursor-not-allowed opacity-50 px-2 py-1.5 rounded-md">
             <Edit3 className="w-4 h-4 mr-2" />
@@ -257,16 +272,56 @@ export function PostOptionsMenu({
         {/* Delete - Last and dangerous */}
         {canDelete && (
           <DropdownMenuItem 
-            onClick={handleDelete} 
-            className="flex items-center gap-2 px-2 py-1.5 rounded-md cursor-pointer text-red-500 focus:text-red-500 hover:bg-white/5 focus:bg-white/5 transition-colors"
+            onClick={handleDeleteClick}
+            className={cn(
+              "flex items-center gap-2 px-2 py-1.5 rounded-md cursor-pointer text-red-500 focus:text-red-500 hover:bg-white/5 focus:bg-white/5 transition-colors",
+              isDeleting && "opacity-50 cursor-wait"
+            )}
             disabled={isDeleting}
           >
-            <Trash2 className="w-4 h-4 mr-2" />
+            {isDeleting ? (
+              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+            ) : (
+              <Trash2 className="w-4 h-4 mr-2" />
+            )}
             {isDeleting ? "Deleting..." : "Delete post"}
           </DropdownMenuItem>
         )}
         </motion.div>
       </DropdownMenuContent>
     </DropdownMenu>
+
+    {/* Delete Confirmation Dialog */}
+    <AlertDialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
+      <AlertDialogContent className="bg-card border border-white/10">
+        <AlertDialogHeader>
+          <AlertDialogTitle className="text-white">Are you absolutely sure?</AlertDialogTitle>
+          <AlertDialogDescription className="text-muted-foreground">
+            This action cannot be undone. This will permanently delete your post
+            and remove it from our servers.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel className="bg-white/5 hover:bg-white/10 text-white border border-white/10">
+            Cancel
+          </AlertDialogCancel>
+          <AlertDialogAction
+            onClick={handleDeleteConfirm}
+            disabled={isDeleting}
+            className="bg-red-600 hover:bg-red-700 text-white focus:ring-red-500"
+          >
+            {isDeleting ? (
+              <>
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                Deleting...
+              </>
+            ) : (
+              "Delete post"
+            )}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+    </>
   );
 }
