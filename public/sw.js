@@ -4,7 +4,7 @@
  */
 
 // Update this version string when deploying breaking changes
-const APP_VERSION = '1.1.0';
+const APP_VERSION = '1.1.2';
 
 // Cache name includes version to force fresh cache on updates
 const CACHE_NAME = 'soma-cache-' + APP_VERSION;
@@ -92,15 +92,14 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Cache-first strategy for static assets
-  if (isStaticAsset(request)) {
-    event.respondWith(cacheFirst(request));
+  // Skip navigation requests so the app always loads the latest HTML
+  if (request.mode === 'navigate') {
     return;
   }
 
-  // Network-first strategy for pages
-  if (isPage(request)) {
-    event.respondWith(networkFirst(request));
+  // Cache-first strategy for static assets
+  if (isStaticAsset(request)) {
+    event.respondWith(cacheFirst(request));
     return;
   }
 

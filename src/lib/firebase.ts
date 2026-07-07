@@ -25,10 +25,12 @@ if (hasConfig) {
     // Newer Firebase projects use .firebasestorage.app instead of .appspot.com
     const storageBucket = process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET 
       || `${process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID}.firebasestorage.app`;
+    const authDomain = process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN 
+      || `${process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID}.firebaseapp.com`;
     
     app = getApps().length > 0 ? getApp() : initializeApp({
       apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY!,
-      authDomain: `${process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID}.firebaseapp.com`,
+      authDomain,
       projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID!,
       storageBucket: storageBucket,
       messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID!,

@@ -114,28 +114,31 @@ export default function LoginPage() {
     
     const provider = new GoogleAuthProvider();
     provider.setCustomParameters({
-      prompt: 'select_account'
+      prompt: 'select_account',
+      access_type: 'offline'
     });
 
     try {
-      // Try redirect flow first (more reliable)
-      await signInWithRedirect(auth, provider);
-      // Page will redirect to Google and back - result handled in useEffect above
-      // Loading state is handled by the auth state listener
-    } catch (err: any) {
-      console.error("Google sign-in error:", err);
-      
-      // If redirect fails (popup blocked, COOP issues), try popup as fallback
-      if (err.code === 'auth/popup-blocked' || err.code === 'auth/popup-closed-by-user') {
+      const result = await signInWithPopup(auth, provider);
+      if (result?.user) {
+        router.replace('/dashboard');
+      }
+    } catch (popupErr: any) {
+      console.error("Google sign-in error:", popupErr);
+
+      if (popupErr?.code === 'auth/popup-blocked' || popupErr?.code === 'auth/popup-closed-by-user' || popupErr?.code === 'auth/popup-window-error' || popupErr?.code === 'auth/internal-error') {
         try {
-          await signInWithPopup(auth, provider);
-          // Popup successful - will trigger onAuthStateChanged
-        } catch (popupErr: any) {
-          setError(`Google sign-in failed: ${popupErr.message || 'Please try again.'}`);
+          await signInWithRedirect(auth, provider);
+        } catch (redirectErr: any) {
+          setError(`Google sign-in failed: ${redirectErr.message || 'Please try again.'}`);
           setIsGoogleLoading(false);
         }
       } else {
-        setError(`Google sign-in failed: ${err.message || 'Please try again.'}`);
+        setError(`Google sign-in failed: ${popupErr.message || 'Please try again.'}`);
+        setIsGoogleLoading(false);
+      }
+    } finally {
+      if (typeof window !== 'undefined' && auth.currentUser) {
         setIsGoogleLoading(false);
       }
     }

@@ -61,24 +61,31 @@ export default function Home() {
   const [stats, setStats] = useState({ memberCount: 0, discussionCount: 0, revenueGenerated: 0 });
   const [pulse, setPulse] = useState<any[]>([]);
   const [isVisionOpen, setIsVisionOpen] = useState(false);
+  const [isCommunityDataLoading, setIsCommunityDataLoading] = useState(true);
 
   useEffect(() => {
     setMounted(true);
     const fetchAllData = async () => {
-      const [statsData, recentActivity, recentMembers] = await Promise.all([
-        dbService.getGlobalStats(),
-        dbService.getRecentActivity(2),
-        dbService.getRecentMembers(2)
-      ]);
-      setStats(statsData);
+      try {
+        const [statsData, recentActivity, recentMembers] = await Promise.all([
+          dbService.getGlobalStats(),
+          dbService.getRecentActivity(2),
+          dbService.getRecentMembers(2)
+        ]);
+        setStats(statsData);
 
-      // Combine and sort by time
-      const combined = [...recentActivity, ...recentMembers].sort((a, b) => {
-        const timeA = a.time?.toDate?.()?.getTime() || 0;
-        const timeB = b.time?.toDate?.()?.getTime() || 0;
-        return timeB - timeA;
-      });
-      setPulse(combined);
+        const combined = [...recentActivity, ...recentMembers].sort((a, b) => {
+          const timeA = a.time?.toDate?.()?.getTime() || 0;
+          const timeB = b.time?.toDate?.()?.getTime() || 0;
+          return timeB - timeA;
+        });
+        setPulse(combined);
+      } catch (error) {
+        setStats({ memberCount: 0, discussionCount: 0, revenueGenerated: 0 });
+        setPulse([]);
+      } finally {
+        setIsCommunityDataLoading(false);
+      }
     };
     fetchAllData();
   }, []);
@@ -127,18 +134,24 @@ export default function Home() {
           </div>
 
           <div className="mt-20 flex flex-wrap justify-center gap-8 md:gap-16 opacity-60 animate-reveal opacity-0 animation-delay-900">
-            <div className="flex flex-col items-center">
-              <span className="text-2xl md:text-3xl font-bold font-headline">{stats.memberCount}</span>
-              <span className="text-[10px] uppercase tracking-widest font-bold text-muted-foreground whitespace-nowrap">Founding Entrepreneurs</span>
-            </div>
-            <div className="flex flex-col items-center">
-              <span className="text-2xl md:text-3xl font-bold font-headline">${stats.revenueGenerated}</span>
-              <span className="text-[10px] uppercase tracking-widest font-bold text-muted-foreground whitespace-nowrap">Community Revenue</span>
-            </div>
-            <div className="flex flex-col items-center">
-              <span className="text-2xl md:text-3xl font-bold font-headline">{stats.discussionCount}</span>
-              <span className="text-[10px] uppercase tracking-widest font-bold text-muted-foreground whitespace-nowrap">Active Discussions</span>
-            </div>
+            {isCommunityDataLoading ? (
+              <p className="text-sm text-muted-foreground">Loading community metrics…</p>
+            ) : (
+              <>
+                <div className="flex flex-col items-center">
+                  <span className="text-2xl md:text-3xl font-bold font-headline">{stats.memberCount}</span>
+                  <span className="text-[10px] uppercase tracking-widest font-bold text-muted-foreground whitespace-nowrap">Founding Entrepreneurs</span>
+                </div>
+                <div className="flex flex-col items-center">
+                  <span className="text-2xl md:text-3xl font-bold font-headline">${stats.revenueGenerated}</span>
+                  <span className="text-[10px] uppercase tracking-widest font-bold text-muted-foreground whitespace-nowrap">Community Revenue</span>
+                </div>
+                <div className="flex flex-col items-center">
+                  <span className="text-2xl md:text-3xl font-bold font-headline">{stats.discussionCount}</span>
+                  <span className="text-[10px] uppercase tracking-widest font-bold text-muted-foreground whitespace-nowrap">Active Discussions</span>
+                </div>
+              </>
+            )}
           </div>
 
           {/* Floating Dashboard Preview */}
@@ -305,7 +318,11 @@ export default function Home() {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-            {pulse.length > 0 ? pulse.map((activity, i) => (
+            {isCommunityDataLoading ? (
+              <div className="col-span-full py-12 text-center border border-dashed border-white/10 rounded-3xl opacity-50">
+                <p className="text-sm">Loading recent community activity…</p>
+              </div>
+            ) : pulse.length > 0 ? pulse.map((activity, i) => (
               <GlassCard key={i} className="flex flex-col gap-4 p-6 hover:border-primary/30 transition-all cursor-default group">
                 <div className="flex justify-between items-start">
                   <div className={`p-2 rounded-lg ${activity.type === 'join' ? 'bg-blue-500/10 text-blue-400' :

@@ -39,40 +39,41 @@ export function ServiceWorkerRegistration() {
 
   useEffect(() => {
     if (
-      typeof window !== "undefined" &&
-      "serviceWorker" in navigator &&
-      process.env.NODE_ENV === "production"
+      typeof window === "undefined" ||
+      !("serviceWorker" in navigator) ||
+      process.env.NODE_ENV !== "production" ||
+      window.location.hostname === "localhost" ||
+      window.location.hostname === "127.0.0.1"
     ) {
-      navigator.serviceWorker
-        .register("/sw.js")
-        .then((registration) => {
-          logger.info("Service Worker registered", {
-            scope: registration.scope,
-          });
-
-          // Handle updates
-          registration.addEventListener("updatefound", () => {
-            const newWorker = registration.installing;
-            if (newWorker) {
-              newWorker.addEventListener("statechange", () => {
-                if (newWorker.state === "installed" && navigator.serviceWorker.controller) {
-                  // New version available
-                  logger.info("New service worker available");
-                  
-                  // Show update notification to user
-                  toast({
-                    title: "Update available",
-                    description: "A new version is available. Please refresh to update.",
-                  });
-                }
-              });
-            }
-          });
-        })
-        .catch((error) => {
-          logger.error("Service Worker registration failed", error instanceof Error ? error : undefined);
-        });
+      return;
     }
+
+    navigator.serviceWorker
+      .register("/sw.js")
+      .then((registration) => {
+        logger.info("Service Worker registered", {
+          scope: registration.scope,
+        });
+
+        registration.addEventListener("updatefound", () => {
+          const newWorker = registration.installing;
+          if (newWorker) {
+            newWorker.addEventListener("statechange", () => {
+              if (newWorker.state === "installed" && navigator.serviceWorker.controller) {
+                logger.info("New service worker available");
+
+                toast({
+                  title: "Update available",
+                  description: "A new version is available. Please refresh to update.",
+                });
+              }
+            });
+          }
+        });
+      })
+      .catch((error) => {
+        logger.error("Service Worker registration failed", error instanceof Error ? error : undefined);
+      });
   }, [toast]);
 
   return null;

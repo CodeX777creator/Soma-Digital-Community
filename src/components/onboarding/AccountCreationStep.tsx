@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Sparkles, ArrowRight, UserPlus, Loader2, Eye, EyeOff, Lock, CheckCircle2, AlertCircle, ChevronLeft, Mail } from "lucide-react";
 import { useOnboardingStore } from "@/store/useOnboardingStore";
 import { Badge } from "@/components/ui/badge";
-import { createUserWithEmailAndPassword, updateProfile, signInWithRedirect, GoogleAuthProvider, sendEmailVerification, getRedirectResult } from "firebase/auth";
+import { createUserWithEmailAndPassword, updateProfile, signInWithRedirect, signInWithPopup, GoogleAuthProvider, sendEmailVerification, getRedirectResult } from "firebase/auth";
 import { auth } from "@/lib/firebase";
 import { dbService } from "@/lib/db";
 import { createNotification } from "@/lib/notifications";
@@ -195,7 +195,8 @@ export function AccountCreationStep() {
   };
 
   const handleGoogleSignup = async () => {
-    if (!auth) {
+    const currentAuth = auth;
+    if (!currentAuth) {
       toast({
         title: "Error",
         description: "Authentication not initialized.",
@@ -208,12 +209,33 @@ export function AccountCreationStep() {
     try {
       const provider = new GoogleAuthProvider();
       provider.setCustomParameters({
-        prompt: 'select_account'
+        prompt: 'select_account',
+        access_type: 'offline'
       });
-      
-      // Use redirect flow to avoid COOP/popup issues entirely
-      await signInWithRedirect(auth, provider);
-      // Page will redirect to Google and back
+
+      try {
+        const result = await signInWithPopup(currentAuth, provider);
+        if (result?.user) {
+          await saveUserData(result.user, result.user.displayName || name || '');
+          toast({
+            title: "Welcome to Soma Digital!",
+            description: "Your account has been created successfully.",
+          });
+          if (redirectUrl) {
+            router.push(redirectUrl);
+          } else if (plan === "pro" || plan === "elite") {
+            router.push(`/dashboard?upgrade=${plan}`);
+          } else {
+            router.push('/dashboard');
+          }
+        }
+      } catch (popupError: any) {
+        if (popupError?.code === 'auth/popup-blocked' || popupError?.code === 'auth/popup-closed-by-user' || popupError?.code === 'auth/popup-window-error' || popupError?.code === 'auth/internal-error') {
+          await signInWithRedirect(currentAuth, provider);
+        } else {
+          throw popupError;
+        }
+      }
     } catch (error: any) {
       console.error("Google sign-up error:", error);
       toast({
@@ -221,6 +243,7 @@ export function AccountCreationStep() {
         description: error.message || "Google sign-in failed.",
         variant: "destructive"
       });
+    } finally {
       setIsLoading(false);
     }
   };
@@ -303,7 +326,7 @@ export function AccountCreationStep() {
       {/* Back Button */}
       <button 
         onClick={prevStep}
-        className="absolute -left-24 top-2 hidden xl:flex items-center gap-2 text-white/30 hover:text-white transition-colors group"
+        className="absolute left-2 top-2 sm:left-4 sm:top-4 flex items-center gap-2 text-white/60 hover:text-white transition-colors group z-20"
       >
         <ChevronLeft className="w-5 h-5 group-hover:-translate-x-1 transition-transform" />
         <span className="text-xs font-bold uppercase tracking-widest">Back</span>
