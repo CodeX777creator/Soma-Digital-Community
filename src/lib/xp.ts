@@ -87,7 +87,11 @@ export async function awardXP(
     }
   });
 
-  await logXPEvent(userId, type, xp, metadata);
+  try {
+    await logXPEvent(userId, type, xp, metadata);
+  } catch (error) {
+    console.error("[XP] Failed to log XP event cloud function:", error);
+  }
 }
 
 export async function calculateWeeklyXP(userId: string): Promise<WeeklyPerformancePoint[]> {

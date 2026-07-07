@@ -78,6 +78,9 @@ export default function LoginPage() {
     // Also listen for auth state changes as backup
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (user && !error) {
+        // If we are actively logging in, let the form/button submit handler do the redirect
+        if (isLoading || isGoogleLoading) return;
+
         if (requiresEmailVerification(user)) {
           await signOut(authInstance);
           setError("Please verify your email before signing in.");

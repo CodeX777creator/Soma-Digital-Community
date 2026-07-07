@@ -4,9 +4,9 @@ import { Button } from "@/components/ui/button";
 import { Sparkles, ArrowRight, UserPlus, Loader2, Eye, EyeOff, Lock, CheckCircle2, AlertCircle, ChevronLeft, Mail } from "lucide-react";
 import { useOnboardingStore } from "@/store/useOnboardingStore";
 import { Badge } from "@/components/ui/badge";
-import { createUserWithEmailAndPassword, updateProfile, signInWithRedirect, GoogleAuthProvider, sendEmailVerification } from "firebase/auth";
+import { createUserWithEmailAndPassword, updateProfile, signInWithRedirect, signInWithPopup, GoogleAuthProvider, sendEmailVerification } from "firebase/auth";
 import { auth } from "@/lib/firebase";
-import { GOOGLE_REDIRECT_PENDING_KEY, GOOGLE_REDIRECT_STORAGE_KEY, getSafeRedirectPath } from "@/lib/auth";
+import { GOOGLE_REDIRECT_PENDING_KEY, GOOGLE_REDIRECT_STORAGE_KEY, getSafeRedirectPath, isStandaloneApp } from "@/lib/auth";
 import { dbService } from "@/lib/db";
 import { createNotification } from "@/lib/notifications";
 import { useToast } from "@/hooks/use-toast";
@@ -164,14 +164,23 @@ export function AccountCreationStep() {
         access_type: 'offline'
       });
 
-      const safeRedirect = getSafeRedirectPath(redirectUrl);
-      sessionStorage.setItem(GOOGLE_REDIRECT_PENDING_KEY, "true");
+      if (isStandaloneApp()) {
+        const safeRedirect = getSafeRedirectPath(redirectUrl);
+        sessionStorage.setItem(GOOGLE_REDIRECT_PENDING_KEY, "true");
 
-      if (safeRedirect) {
-        sessionStorage.setItem(GOOGLE_REDIRECT_STORAGE_KEY, safeRedirect);
+        if (safeRedirect) {
+          sessionStorage.setItem(GOOGLE_REDIRECT_STORAGE_KEY, safeRedirect);
+        }
+
+        await signInWithRedirect(currentAuth, provider);
+        return;
       }
 
-      await signInWithRedirect(currentAuth, provider);
+      const result = await signInWithPopup(currentAuth, provider);
+      const user = result.user;
+      
+      await saveUserData(user, user.displayName || "Explorer", true);
+      handlePostSignup();
     } catch (error: any) {
       console.error("Google sign-up error:", error);
       toast({
@@ -205,14 +214,20 @@ export function AccountCreationStep() {
           emailVerified: true,
           onboardingComplete: true,
         });
-        await awardXP(user.uid, 25, 'profile', { onboardingComplete: true, goal: goal || null, skillLevel: skillLevel || null });
-        await createNotification(
-          user.uid,
-          'welcome',
-          'Welcome to Soma Digital',
-          'Your account is ready. Start your first mission from the dashboard.',
-          '/dashboard'
-        );
+        
+        try {
+          await awardXP(user.uid, 25, 'profile', { onboardingComplete: true, goal: goal || null, skillLevel: skillLevel || null });
+          await createNotification(
+            user.uid,
+            'welcome',
+            'Welcome to Soma Digital',
+            'Your account is ready. Start your first mission from the dashboard.',
+            '/dashboard'
+          );
+        } catch (setupError) {
+          console.error("Non-critical signup setup failed:", setupError);
+        }
+        
         handlePostSignup();
       } else {
         toast({
@@ -252,11 +267,9 @@ export function AccountCreationStep() {
                 if (!auth) return;
                 const user = auth.currentUser;
                 if (user) {
-                  sendEmailVerification(user);
-                  toast({
-                    title: "Link Resent",
-                    description: "Verification email has been sent again.",
-                  });
+                  sendEmailVerification(user)
+                    .then(() => toast({title: "Link Resent", description: "Verification email has been sent again.",}))
+                    .catch((error) => toast({title: "Failed to resend", description: error.message || "Failed to resend verification email.", variant: "destructive"}));
                 }
               }}
               className="text-white/40 hover:text-white transition-colors text-sm font-medium"
