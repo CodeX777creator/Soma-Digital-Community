@@ -21,6 +21,7 @@ import {
   MessageSquare,
   Megaphone,
   Pin,
+  PinOff,
   Search,
   ThumbsUp,
   Trash2,
@@ -437,9 +438,52 @@ export default function AdminContentPage() {
                         {getPostTypeIcon(post.type || "")}
                         {post.type || "Post"}
                       </span>
+                      {/* Edit */}
                       <button type="button" onClick={() => openEdit(post)}
                         className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[10px] font-medium text-white/50 hover:bg-white/10 hover:text-white/80">
                         <Edit2 className="h-2.5 w-2.5" /> Edit
+                      </button>
+                      {/* Pin / Unpin */}
+                      <button
+                        type="button"
+                        onClick={() => handleTogglePin(post.id, !!post.isPinned)}
+                        disabled={processingId === post.id}
+                        className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium disabled:opacity-50 ${
+                          post.isPinned
+                            ? "border-cyan-400/30 bg-cyan-400/10 text-cyan-300 hover:bg-cyan-400/20"
+                            : "border-white/10 bg-white/5 text-white/50 hover:bg-white/10 hover:text-white/80"
+                        }`}
+                      >
+                        {processingId === post.id ? (
+                          <Loader2 className="h-2.5 w-2.5 animate-spin" />
+                        ) : post.isPinned ? (
+                          <PinOff className="h-2.5 w-2.5" />
+                        ) : (
+                          <Pin className="h-2.5 w-2.5" />
+                        )}
+                        {post.isPinned ? "Unpin" : "Pin"}
+                      </button>
+                      {/* Flag / Unflag */}
+                      <button
+                        type="button"
+                        onClick={() => handleFlagPost(post.id, post.moderationStatus !== "flagged")}
+                        disabled={processingId === post.id}
+                        className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium disabled:opacity-50 ${
+                          post.moderationStatus === "flagged"
+                            ? "border-amber-400/30 bg-amber-400/10 text-amber-300 hover:bg-amber-400/20"
+                            : "border-white/10 bg-white/5 text-white/50 hover:bg-amber-400/10 hover:text-amber-300"
+                        }`}
+                      >
+                        {post.moderationStatus === "flagged" ? "Unflag" : "Flag"}
+                      </button>
+                      {/* Delete */}
+                      <button
+                        type="button"
+                        onClick={() => setDeleteConfirm(post.id)}
+                        disabled={processingId === post.id}
+                        className="inline-flex items-center gap-1 rounded-full border border-red-400/20 bg-red-400/5 px-2 py-0.5 text-[10px] font-medium text-red-300/60 hover:bg-red-400/15 hover:text-red-200 disabled:opacity-50"
+                      >
+                        <Trash2 className="h-2.5 w-2.5" /> Delete
                       </button>
                     </div>
                   </div>
@@ -449,6 +493,34 @@ export default function AdminContentPage() {
           </div>
         )}
       </section>
+
+      {/* Delete Confirmation Modal */}
+      {deleteConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4">
+          <div className="w-full max-w-sm rounded-lg border border-white/10 bg-[#080a0f] shadow-2xl">
+            <div className="p-6">
+              <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-red-500/10 ring-1 ring-red-500/25">
+                <Trash2 className="h-5 w-5 text-red-400" />
+              </div>
+              <h3 className="font-semibold">Delete post?</h3>
+              <p className="mt-1.5 text-sm text-white/50">This will permanently remove the post from the community feed. This action cannot be undone.</p>
+              <div className="mt-5 flex justify-end gap-3">
+                <button type="button" onClick={() => setDeleteConfirm(null)}
+                  className="h-9 rounded-md border border-white/10 px-4 text-sm text-white/60 hover:bg-white/10">Cancel</button>
+                <button
+                  type="button"
+                  onClick={() => handleDeletePost(deleteConfirm)}
+                  disabled={processingId === deleteConfirm}
+                  className="inline-flex h-9 items-center gap-2 rounded-md bg-red-600 px-4 text-sm font-semibold text-white hover:bg-red-500 disabled:opacity-50"
+                >
+                  {processingId === deleteConfirm ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                  Delete post
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Edit Post Modal */}
       {editingPost && (
