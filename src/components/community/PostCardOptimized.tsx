@@ -302,7 +302,7 @@ export const PostCardOptimized = memo(function PostCardOptimized({ post, onEdit,
 
           <button
             type="button"
-            onClick={() => setShowComments((value) => !value)}
+            onClick={() => setShowComments((value: boolean) => !value)}
             className={cn(
               "flex h-9 items-center gap-2 rounded-xl border border-white/10 px-3 text-xs font-bold transition-all hover:border-primary/30 hover:bg-primary/10",
               showComments ? "bg-white/5 text-white border-white/20" : "text-muted-foreground hover:text-white"

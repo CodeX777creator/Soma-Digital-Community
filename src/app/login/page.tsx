@@ -36,10 +36,12 @@ export default function LoginPage() {
       return;
     }
 
-    const handleAuthState = async () => {
-      try {
-        // First, check for redirect result
-        const result = await getRedirectResult(auth);
+    const authInstance = auth; // Capture for TypeScript
+      const handleAuthState = async () => {
+        if (!authInstance) return;
+        try {
+          // First, check for redirect result
+          const result = await getRedirectResult(authInstance);
         
         if (result?.user) {
           const info = getAdditionalUserInfo(result);
@@ -81,7 +83,7 @@ export default function LoginPage() {
 
     return () => unsubscribe();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [error]);
+  }, [error, router]);
 
   const handleEmailLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -110,12 +112,12 @@ export default function LoginPage() {
     setIsGoogleLoading(true);
     setError(null);
     
+    const provider = new GoogleAuthProvider();
+    provider.setCustomParameters({
+      prompt: 'select_account'
+    });
+
     try {
-      const provider = new GoogleAuthProvider();
-      provider.setCustomParameters({
-        prompt: 'select_account'
-      });
-      
       // Try redirect flow first (more reliable)
       await signInWithRedirect(auth, provider);
       // Page will redirect to Google and back - result handled in useEffect above
