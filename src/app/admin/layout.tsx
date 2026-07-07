@@ -18,6 +18,7 @@ import {
   Settings,
   Users,
   X,
+  Bell,
 } from "lucide-react";
 import { auth, db } from "@/lib/firebase";
 
@@ -29,6 +30,7 @@ const navItems = [
   { label: "Subscriptions", href: "/admin/subscriptions", icon: CreditCard },
   { label: "Payouts", href: "/admin/payouts", icon: HandCoins },
   { label: "Content", href: "/admin/content", icon: FileText },
+  { label: "Notifications", href: "/admin/system-notifications", icon: Bell },
   { label: "Settings", href: "/admin/settings", icon: Settings },
 ];
 

@@ -14,6 +14,8 @@ import {
   Zap,
   Rocket,
   Globe,
+  Twitter,
+  Linkedin,
   Shield,
   Star,
   ArrowRight,
@@ -43,6 +45,7 @@ import {
 import { VisionModal } from "@/components/landing/VisionModal";
 import { useAuth } from "@/providers/AuthProvider";
 import { OptimizedImage } from "@/components/ui/optimized-image";
+import { SITE_CONFIG } from "@/lib/config";
 
 function timeAgo(ts: any): string {
   if (!ts?.toDate) return "just now";
@@ -544,12 +547,15 @@ export default function Home() {
             <div className="flex flex-col gap-6">
               <h4 className="font-bold uppercase tracking-widest text-xs text-muted-foreground">Stay Connected</h4>
               <div className="flex gap-4">
-                <Link href="/open" aria-label="Join Soma Digital" className="w-10 h-10 rounded-full bg-white/5 border border-white/10 flex items-center justify-center hover:bg-primary/20 hover:border-primary/30 transition-all">
-                  <Users className="w-4 h-4" />
-                </Link>
-                <Link href="/support" aria-label="Support Center" className="w-10 h-10 rounded-full bg-white/5 border border-white/10 flex items-center justify-center hover:bg-primary/20 hover:border-primary/30 transition-all">
-                  <Globe className="w-4 h-4" />
-                </Link>
+                <a href={SITE_CONFIG.socials.twitter} target="_blank" rel="noopener noreferrer" aria-label="Twitter / X" className="w-10 h-10 rounded-full bg-white/5 border border-white/10 flex items-center justify-center hover:bg-primary/20 hover:border-primary/30 transition-all text-muted-foreground hover:text-white">
+                  <Twitter className="w-4 h-4" />
+                </a>
+                <a href={SITE_CONFIG.socials.discord} target="_blank" rel="noopener noreferrer" aria-label="Discord Community" className="w-10 h-10 rounded-full bg-white/5 border border-white/10 flex items-center justify-center hover:bg-primary/20 hover:border-primary/30 transition-all text-muted-foreground hover:text-white">
+                  <MessageSquare className="w-4 h-4" />
+                </a>
+                <a href={SITE_CONFIG.socials.linkedin} target="_blank" rel="noopener noreferrer" aria-label="LinkedIn" className="w-10 h-10 rounded-full bg-white/5 border border-white/10 flex items-center justify-center hover:bg-primary/20 hover:border-primary/30 transition-all text-muted-foreground hover:text-white">
+                  <Linkedin className="w-4 h-4" />
+                </a>
               </div>
               <div className="flex flex-col gap-2">
                 <p className="text-[10px] text-muted-foreground leading-relaxed">

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { GlassCard } from "@/components/ui/glass-card";
 import { Button } from "@/components/ui/button";
@@ -18,6 +18,29 @@ import { awardXP } from "@/lib/xp";
 export function AccountCreationStep() {
   const { roadmap, nextStep, prevStep, identities, goal, skillLevel, plan, budget, availableTime } = useOnboardingStore();
   const [name, setName] = useState("");
+
+  useEffect(() => {
+    const checkUser = async () => {
+      if (!auth) return;
+      const currentUser = auth.currentUser;
+      if (currentUser) {
+        setIsLoading(true);
+        try {
+          await saveUserData(currentUser, currentUser.displayName || "Explorer", currentUser.emailVerified);
+          toast({
+            title: "Strategy Secured",
+            description: "Your custom onboarding roadmap has been linked to your account.",
+          });
+          nextStep();
+        } catch (error) {
+          console.error("Failed to secure strategy automatically:", error);
+        } finally {
+          setIsLoading(false);
+        }
+      }
+    };
+    checkUser();
+  }, []);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");

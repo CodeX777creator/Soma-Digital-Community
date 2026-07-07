@@ -1,0 +1,9 @@
+export const SITE_CONFIG = {
+  brandName: "Soma Digital",
+  supportEmail: "support@somadigital.com",
+  socials: {
+    twitter: "https://x.com/somadigital",
+    discord: "https://discord.gg/somadigital",
+    linkedin: "https://linkedin.com/company/somadigital",
+  }
+};

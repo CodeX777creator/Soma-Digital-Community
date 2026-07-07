@@ -48,7 +48,12 @@ export const Navbar = () => {
     { name: "Reseller", href: "/reseller" },
   ];
 
-  const links = isLoggedIn ? appLinks : landingLinks;
+  const links = isLoggedIn
+    ? [
+        ...appLinks,
+        ...(userData?.role === "admin" || userData?.isAdmin === true ? [{ name: "Admin", href: "/admin/dashboard" }] : [])
+      ]
+    : landingLinks;
 
   return (
     <nav

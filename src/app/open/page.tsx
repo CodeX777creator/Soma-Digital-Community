@@ -149,6 +149,19 @@ function OnboardingController() {
 
     const planParam = searchParams.get("plan");
     const stepParam = searchParams.get("step");
+
+    if (stepParam) {
+      const parsedStep = parseInt(stepParam, 10);
+      if (!isNaN(parsedStep) && parsedStep >= 1 && parsedStep <= 8) {
+        if (parsedStep === 1) {
+          reset();
+        } else if (currentStep !== parsedStep) {
+          setStep(parsedStep);
+          return;
+        }
+      }
+    }
+
     const hasCompletedRequiredSteps =
       identities.length > 0 && !!goal && !!skillLevel && !!budget && !!availableTime;
 
