@@ -7,6 +7,7 @@ import { Cpu, ArrowRight, Mail, Lock, Loader2, Eye, EyeOff, ChevronLeft } from "
 import { 
   signInWithEmailAndPassword, 
   signInWithRedirect, 
+  signInWithPopup,
   getRedirectResult, 
   GoogleAuthProvider, 
   sendPasswordResetEmail, 
@@ -16,7 +17,7 @@ import {
   onAuthStateChanged
 } from "firebase/auth";
 import { auth } from "@/lib/firebase";
-import { requiresEmailVerification } from "@/lib/auth";
+import { isStandaloneApp, requiresEmailVerification } from "@/lib/auth";
 import { useToast } from "@/hooks/use-toast";
 
 export default function LoginPage() {
@@ -136,10 +137,33 @@ export default function LoginPage() {
     });
 
     try {
-      await signInWithRedirect(auth, provider);
+      if (isStandaloneApp()) {
+        await signInWithRedirect(auth, provider);
+        return;
+      }
+
+      const result = await signInWithPopup(auth, provider);
+      const info = getAdditionalUserInfo(result);
+
+      if (info?.isNewUser) {
+        toast({
+          title: "Welcome! Let's set up your profile",
+          description: "Complete onboarding to activate your account.",
+        });
+        router.replace("/onboarding");
+        return;
+      }
+
+      router.replace("/dashboard");
     } catch (err: any) {
       console.error("Google sign-in error:", err);
-      setError(`Google sign-in failed: ${err.message || 'Please try again.'}`);
+      const message =
+        err?.code === "auth/popup-blocked"
+          ? "Google sign-in was blocked. Please allow popups for this site, or open the installed app and try again."
+          : err?.code === "auth/popup-closed-by-user"
+            ? "Google sign-in was closed before it finished."
+            : `Google sign-in failed: ${err.message || "Please try again."}`;
+      setError(message);
       setIsGoogleLoading(false);
     }
   };

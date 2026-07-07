@@ -4,8 +4,9 @@ import { Button } from "@/components/ui/button";
 import { Sparkles, ArrowRight, UserPlus, Loader2, Eye, EyeOff, Lock, CheckCircle2, AlertCircle, ChevronLeft, Mail } from "lucide-react";
 import { useOnboardingStore } from "@/store/useOnboardingStore";
 import { Badge } from "@/components/ui/badge";
-import { createUserWithEmailAndPassword, updateProfile, signInWithRedirect, GoogleAuthProvider, sendEmailVerification, getRedirectResult } from "firebase/auth";
+import { createUserWithEmailAndPassword, updateProfile, signInWithRedirect, signInWithPopup, GoogleAuthProvider, sendEmailVerification, getRedirectResult } from "firebase/auth";
 import { auth } from "@/lib/firebase";
+import { isStandaloneApp } from "@/lib/auth";
 import { dbService } from "@/lib/db";
 import { createNotification } from "@/lib/notifications";
 import { useToast } from "@/hooks/use-toast";
@@ -215,12 +216,37 @@ export function AccountCreationStep() {
         access_type: 'offline'
       });
 
-      await signInWithRedirect(currentAuth, provider);
+      if (isStandaloneApp()) {
+        await signInWithRedirect(currentAuth, provider);
+        return;
+      }
+
+      const result = await signInWithPopup(currentAuth, provider);
+      if (result?.user) {
+        await saveUserData(result.user, result.user.displayName || name || '', true);
+        toast({
+          title: "Welcome to Soma Digital!",
+          description: "Your account has been created successfully.",
+        });
+        if (redirectUrl) {
+          router.push(redirectUrl);
+        } else if (plan === "pro" || plan === "elite") {
+          router.push(`/dashboard?upgrade=${plan}`);
+        } else {
+          router.push('/dashboard');
+        }
+      }
     } catch (error: any) {
       console.error("Google sign-up error:", error);
+      const description =
+        error?.code === "auth/popup-blocked"
+          ? "Google sign-in was blocked. Please allow popups for this site, or open the installed app and try again."
+          : error?.code === "auth/popup-closed-by-user"
+            ? "Google sign-in was closed before it finished."
+            : error.message || "Google sign-in failed.";
       toast({
         title: "Error",
-        description: error.message || "Google sign-in failed.",
+        description,
         variant: "destructive"
       });
     } finally {
