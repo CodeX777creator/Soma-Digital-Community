@@ -4,6 +4,7 @@ import React, { createContext, useContext, useEffect, useState, useRef, useCallb
 import { onAuthStateChanged, User } from "firebase/auth";
 import { serverTimestamp, doc, onSnapshot, FirestoreError } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
+import { requiresEmailVerification } from "@/lib/auth";
 import { dbService, UserProfile } from "@/lib/db";
 import { useUserStore } from "@/store/useUserStore";
 import { awardXP } from "@/lib/xp";
@@ -145,6 +146,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       if (!isMounted.current) return;
+
+      if (requiresEmailVerification(firebaseUser)) {
+        setUser(null);
+        setUserData(null);
+        clearState();
+        setLoading(false);
+        return;
+      }
       
       setUser(firebaseUser);
       

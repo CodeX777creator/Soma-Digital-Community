@@ -129,7 +129,7 @@ export const Navbar = () => {
           ) : (
             <div className="flex items-center gap-2">
               <Link href="/open" className="hidden sm:block">
-                <Button variant="ghost" className="text-sm font-bold hover:text-primary transition-colors">
+                <Button variant="outline" className="rounded-full px-6 py-2 border-white/10 hover:bg-white/5 text-sm font-bold transition-colors">
                   Join
                 </Button>
               </Link>

@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Sparkles, ArrowRight, UserPlus, Loader2, Eye, EyeOff, Lock, CheckCircle2, AlertCircle, ChevronLeft, Mail } from "lucide-react";
 import { useOnboardingStore } from "@/store/useOnboardingStore";
 import { Badge } from "@/components/ui/badge";
-import { createUserWithEmailAndPassword, updateProfile, signInWithRedirect, signInWithPopup, GoogleAuthProvider, sendEmailVerification, getRedirectResult } from "firebase/auth";
+import { createUserWithEmailAndPassword, updateProfile, signInWithRedirect, GoogleAuthProvider, sendEmailVerification, getRedirectResult } from "firebase/auth";
 import { auth } from "@/lib/firebase";
 import { dbService } from "@/lib/db";
 import { createNotification } from "@/lib/notifications";
@@ -45,7 +45,7 @@ export function AccountCreationStep() {
           console.log('[Google Signup] User authenticated:', user.email);
           
           // Save user data to Firestore with onboarding data
-          await saveUserData(user, user.displayName || '');
+          await saveUserData(user, user.displayName || '', true);
           
           // Show success and redirect
           toast({
@@ -94,12 +94,13 @@ export function AccountCreationStep() {
     }
   };
 
-  const saveUserData = async (user: any, nameToSave: string) => {
+  const saveUserData = async (user: any, nameToSave: string, emailVerified = user.emailVerified === true) => {
     try {
       // Sanitize data to avoid Firestore undefined errors
       const userData: any = {
         name: nameToSave || "Explorer",
         email: user.email || email,
+        emailVerified,
         onboardingComplete: true,
       };
 
@@ -170,10 +171,11 @@ export function AccountCreationStep() {
 
     setIsLoading(true);
     try {
-      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+      const trimmedEmail = email.trim();
+      const userCredential = await createUserWithEmailAndPassword(auth, trimmedEmail, password);
       const user = userCredential.user;
       await updateProfile(user, { displayName: name });
-      await saveUserData(user, name);
+      await saveUserData(user, name, false);
       
       // Send verification email
       await sendEmailVerification(user);
@@ -213,29 +215,7 @@ export function AccountCreationStep() {
         access_type: 'offline'
       });
 
-      try {
-        const result = await signInWithPopup(currentAuth, provider);
-        if (result?.user) {
-          await saveUserData(result.user, result.user.displayName || name || '');
-          toast({
-            title: "Welcome to Soma Digital!",
-            description: "Your account has been created successfully.",
-          });
-          if (redirectUrl) {
-            router.push(redirectUrl);
-          } else if (plan === "pro" || plan === "elite") {
-            router.push(`/dashboard?upgrade=${plan}`);
-          } else {
-            router.push('/dashboard');
-          }
-        }
-      } catch (popupError: any) {
-        if (popupError?.code === 'auth/popup-blocked' || popupError?.code === 'auth/popup-closed-by-user' || popupError?.code === 'auth/popup-window-error' || popupError?.code === 'auth/internal-error') {
-          await signInWithRedirect(currentAuth, provider);
-        } else {
-          throw popupError;
-        }
-      }
+      await signInWithRedirect(currentAuth, provider);
     } catch (error: any) {
       console.error("Google sign-up error:", error);
       toast({
@@ -265,6 +245,7 @@ export function AccountCreationStep() {
     try {
       await user.reload();
       if (auth.currentUser?.emailVerified) {
+        await dbService.saveUserProfile(user.uid, { emailVerified: true });
         handlePostSignup();
       } else {
         toast({

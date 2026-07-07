@@ -7,15 +7,16 @@ import { Cpu, ArrowRight, Mail, Lock, Loader2, Eye, EyeOff, ChevronLeft } from "
 import { 
   signInWithEmailAndPassword, 
   signInWithRedirect, 
-  signInWithPopup,
   getRedirectResult, 
   GoogleAuthProvider, 
   sendPasswordResetEmail, 
+  sendEmailVerification,
   getAdditionalUserInfo, 
   signOut,
   onAuthStateChanged
 } from "firebase/auth";
 import { auth } from "@/lib/firebase";
+import { requiresEmailVerification } from "@/lib/auth";
 import { useToast } from "@/hooks/use-toast";
 
 export default function LoginPage() {
@@ -74,8 +75,14 @@ export default function LoginPage() {
     handleAuthState();
 
     // Also listen for auth state changes as backup
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (user && !error) {
+        if (requiresEmailVerification(user)) {
+          await signOut(authInstance);
+          setError("Please verify your email before signing in.");
+          return;
+        }
+
         // User is signed in
         router.push("/dashboard");
       }
@@ -94,7 +101,17 @@ export default function LoginPage() {
     setIsLoading(true);
     setError(null);
     try {
-      await signInWithEmailAndPassword(auth, email, password);
+      const credential = await signInWithEmailAndPassword(auth, email.trim(), password);
+      await credential.user.reload();
+
+      const currentUser = auth.currentUser;
+      if (requiresEmailVerification(currentUser) && currentUser) {
+        await sendEmailVerification(currentUser);
+        await signOut(auth);
+        setError("Please verify your email before signing in. We sent a new verification link to your inbox.");
+        return;
+      }
+
       router.push("/dashboard");
     } catch (err: any) {
       setError(err.message || "Failed to sign in. Please check your credentials.");
@@ -119,28 +136,11 @@ export default function LoginPage() {
     });
 
     try {
-      const result = await signInWithPopup(auth, provider);
-      if (result?.user) {
-        router.replace('/dashboard');
-      }
-    } catch (popupErr: any) {
-      console.error("Google sign-in error:", popupErr);
-
-      if (popupErr?.code === 'auth/popup-blocked' || popupErr?.code === 'auth/popup-closed-by-user' || popupErr?.code === 'auth/popup-window-error' || popupErr?.code === 'auth/internal-error') {
-        try {
-          await signInWithRedirect(auth, provider);
-        } catch (redirectErr: any) {
-          setError(`Google sign-in failed: ${redirectErr.message || 'Please try again.'}`);
-          setIsGoogleLoading(false);
-        }
-      } else {
-        setError(`Google sign-in failed: ${popupErr.message || 'Please try again.'}`);
-        setIsGoogleLoading(false);
-      }
-    } finally {
-      if (typeof window !== 'undefined' && auth.currentUser) {
-        setIsGoogleLoading(false);
-      }
+      await signInWithRedirect(auth, provider);
+    } catch (err: any) {
+      console.error("Google sign-in error:", err);
+      setError(`Google sign-in failed: ${err.message || 'Please try again.'}`);
+      setIsGoogleLoading(false);
     }
   };
 
