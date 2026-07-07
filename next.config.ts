@@ -58,12 +58,12 @@ const nextConfig: NextConfig = {
     // Content Security Policy
     const cspHeader = `
       default-src 'self';
-      script-src 'self' 'unsafe-eval' 'unsafe-inline' ${isDev ? "'unsafe-inline'" : ''} https://*.paypal.com https://*.paystack.co https://js.stripe.com;
+      script-src 'self' 'unsafe-eval' 'unsafe-inline' ${isDev ? "'unsafe-inline'" : ''} https://*.paypal.com https://*.paystack.co https://js.stripe.com https://www.gstatic.com https://apis.google.com https://accounts.google.com;
       style-src 'self' 'unsafe-inline';
       img-src 'self' blob: data: https:;
       font-src 'self';
-      connect-src 'self' https://*.googleapis.com https://*.firebaseio.com https://*.cloudfunctions.net https://*.paypal.com https://api.paystack.co https://api.moonshot.cn https://api.moonshot.ai wss://*.firebaseio.com;
-      frame-src 'self' https://*.paypal.com https://*.paystack.co https://js.stripe.com;
+      connect-src 'self' https://*.googleapis.com https://*.firebaseio.com https://*.firebaseapp.com https://securetoken.googleapis.com https://identitytoolkit.googleapis.com https://*.cloudfunctions.net https://*.paypal.com https://api.paystack.co https://api.moonshot.cn https://api.moonshot.ai wss://*.firebaseio.com;
+      frame-src 'self' https://*.firebaseapp.com https://*.web.app https://accounts.google.com https://apis.google.com https://*.paypal.com https://*.paystack.co https://js.stripe.com;
       media-src 'self' https://*.firebasestorage.app https://firebasestorage.googleapis.com;
       object-src 'none';
       base-uri 'self';

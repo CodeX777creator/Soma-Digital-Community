@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useOnboardingStore } from "@/store/useOnboardingStore";
 import { BrainCircuit, ChevronLeft } from "lucide-react";
 import { generatePersonalizedRoadmap } from "@/ai/flows/ai-mentor-personalized-roadmap-flow";
@@ -6,8 +6,15 @@ import { generatePersonalizedRoadmap } from "@/ai/flows/ai-mentor-personalized-r
 export function AIRoadmapStep() {
   const { identities, goal, skillLevel, interests, plan, setRoadmap, nextStep, prevStep } = useOnboardingStore();
   const [isSynthesizing, setIsSynthesizing] = useState(true);
+  const hasStarted = useRef(false);
 
   useEffect(() => {
+    if (hasStarted.current) return;
+    hasStarted.current = true;
+
+    let isActive = true;
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
+
     const handleAISynthesis = async () => {
       const { identities, goal, skillLevel, budget, availableTime, setRoadmap, nextStep } = useOnboardingStore.getState();
       
@@ -21,13 +28,18 @@ export function AIRoadmapStep() {
 
       try {
         const res = await generatePersonalizedRoadmap({ businessGoals: goalsText });
+        if (!isActive) return;
+
         setRoadmap(res);
         // Hold for dramatic effect
-        setTimeout(() => {
+        timeoutId = setTimeout(() => {
+          if (!isActive) return;
           setIsSynthesizing(false);
           nextStep();
         }, 2000);
       } catch (error) {
+        if (!isActive) return;
+
         console.error("AI Error:", error);
         setIsSynthesizing(false);
         nextStep(); // Fallback to next step
@@ -35,6 +47,11 @@ export function AIRoadmapStep() {
     };
 
     handleAISynthesis();
+
+    return () => {
+      isActive = false;
+      if (timeoutId) clearTimeout(timeoutId);
+    };
   }, [identities, goal, skillLevel, interests, plan, setRoadmap, nextStep]);
 
   return (

@@ -1,12 +1,12 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { GlassCard } from "@/components/ui/glass-card";
 import { Button } from "@/components/ui/button";
 import { Sparkles, ArrowRight, UserPlus, Loader2, Eye, EyeOff, Lock, CheckCircle2, AlertCircle, ChevronLeft, Mail } from "lucide-react";
 import { useOnboardingStore } from "@/store/useOnboardingStore";
 import { Badge } from "@/components/ui/badge";
-import { createUserWithEmailAndPassword, updateProfile, signInWithRedirect, signInWithPopup, GoogleAuthProvider, sendEmailVerification, getRedirectResult } from "firebase/auth";
+import { createUserWithEmailAndPassword, updateProfile, signInWithRedirect, GoogleAuthProvider, sendEmailVerification } from "firebase/auth";
 import { auth } from "@/lib/firebase";
-import { isStandaloneApp } from "@/lib/auth";
+import { GOOGLE_REDIRECT_STORAGE_KEY, getSafeRedirectPath } from "@/lib/auth";
 import { dbService } from "@/lib/db";
 import { createNotification } from "@/lib/notifications";
 import { useToast } from "@/hooks/use-toast";
@@ -22,62 +22,12 @@ export function AccountCreationStep() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
-  const [isLoading, setIsLoading] = useState(true); // Start loading to check redirect result
+  const [isLoading, setIsLoading] = useState(false);
   const [verificationSent, setVerificationSent] = useState(false);
   const { toast } = useToast();
   const router = useRouter();
   const searchParams = useSearchParams();
   const redirectUrl = searchParams.get("redirect");
-
-  // Handle Google Sign-In redirect result
-  useEffect(() => {
-    const checkRedirectResult = async () => {
-      if (!auth) {
-        setIsLoading(false);
-        return;
-      }
-      try {
-        console.log('[Google Signup] Checking redirect result...');
-        const result = await getRedirectResult(auth);
-        console.log('[Google Signup] Redirect result:', result);
-        
-        if (result?.user) {
-          const user = result.user;
-          console.log('[Google Signup] User authenticated:', user.email);
-          
-          // Save user data to Firestore with onboarding data
-          await saveUserData(user, user.displayName || '', true);
-          
-          // Show success and redirect
-          toast({
-            title: "Welcome to Soma Digital!",
-            description: "Your account has been created successfully.",
-          });
-          
-          // Redirect based on plan selection
-          if (redirectUrl) {
-            router.push(redirectUrl);
-          } else if (plan === "pro" || plan === "elite") {
-            router.push(`/dashboard?upgrade=${plan}`);
-          } else {
-            router.push("/dashboard");
-          }
-          return;
-        }
-      } catch (err: any) {
-        console.error("[Google Signup] Redirect result error:", err);
-        toast({
-          title: "Sign-in Error",
-          description: err.message || "Google sign-in failed. Please try again.",
-          variant: "destructive"
-        });
-      } finally {
-        setIsLoading(false);
-      }
-    };
-    checkRedirectResult();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   const handlePostSignup = () => {
     toast({
@@ -85,8 +35,10 @@ export function AccountCreationStep() {
       description: "Your digital wealth strategy is now secured.",
     });
 
-    if (redirectUrl) {
-      router.push(redirectUrl);
+    const safeRedirect = getSafeRedirectPath(redirectUrl);
+
+    if (safeRedirect) {
+      router.push(safeRedirect);
     } else if (plan === "pro" || plan === "elite") {
       router.push(`/dashboard?upgrade=${plan}`);
     } else {
@@ -96,24 +48,23 @@ export function AccountCreationStep() {
   };
 
   const saveUserData = async (user: any, nameToSave: string, emailVerified = user.emailVerified === true) => {
-    try {
-      // Sanitize data to avoid Firestore undefined errors
-      const userData: any = {
-        name: nameToSave || "Explorer",
-        email: user.email || email,
-        emailVerified,
-        onboardingComplete: true,
-      };
+    const userData: any = {
+      name: nameToSave || "Explorer",
+      email: user.email || email,
+      emailVerified,
+      onboardingComplete: emailVerified,
+    };
 
-      // Only add fields if they exist in the store
-      if (identities) userData.identities = identities;
-      if (goal) userData.goal = goal;
-      if (skillLevel) userData.skillLevel = skillLevel;
-      if (plan) userData.intendedPlan = plan;
-      if (budget) userData.budget = budget;
-      if (availableTime) userData.availableTime = availableTime;
+    if (identities) userData.identities = identities;
+    if (goal) userData.goal = goal;
+    if (skillLevel) userData.skillLevel = skillLevel;
+    if (plan) userData.intendedPlan = plan;
+    if (budget) userData.budget = budget;
+    if (availableTime) userData.availableTime = availableTime;
 
-      await dbService.saveUserProfile(user.uid, userData);
+    await dbService.saveUserProfile(user.uid, userData);
+
+    if (emailVerified) {
       await awardXP(user.uid, 25, 'profile', { onboardingComplete: true, goal: goal || null, skillLevel: skillLevel || null });
       await createNotification(
         user.uid,
@@ -122,13 +73,10 @@ export function AccountCreationStep() {
         'Your account is ready. Start your first mission from the dashboard.',
         '/dashboard'
       );
+    }
 
-      if (roadmap) {
-        await dbService.saveRoadmap(user.uid, roadmap);
-      }
-    } catch (err) {
-      console.error("Save Data Error:", err);
-      // Don't throw, just log. We want the user to be able to continue even if profile save fails partially.
+    if (roadmap) {
+      await dbService.saveRoadmap(user.uid, roadmap);
     }
   };
 
@@ -216,37 +164,17 @@ export function AccountCreationStep() {
         access_type: 'offline'
       });
 
-      if (isStandaloneApp()) {
-        await signInWithRedirect(currentAuth, provider);
-        return;
+      const safeRedirect = getSafeRedirectPath(redirectUrl);
+      if (safeRedirect) {
+        sessionStorage.setItem(GOOGLE_REDIRECT_STORAGE_KEY, safeRedirect);
       }
 
-      const result = await signInWithPopup(currentAuth, provider);
-      if (result?.user) {
-        await saveUserData(result.user, result.user.displayName || name || '', true);
-        toast({
-          title: "Welcome to Soma Digital!",
-          description: "Your account has been created successfully.",
-        });
-        if (redirectUrl) {
-          router.push(redirectUrl);
-        } else if (plan === "pro" || plan === "elite") {
-          router.push(`/dashboard?upgrade=${plan}`);
-        } else {
-          router.push('/dashboard');
-        }
-      }
+      await signInWithRedirect(currentAuth, provider);
     } catch (error: any) {
       console.error("Google sign-up error:", error);
-      const description =
-        error?.code === "auth/popup-blocked"
-          ? "Google sign-in was blocked. Please allow popups for this site, or open the installed app and try again."
-          : error?.code === "auth/popup-closed-by-user"
-            ? "Google sign-in was closed before it finished."
-            : error.message || "Google sign-in failed.";
       toast({
         title: "Error",
-        description,
+        description: error.message || "Google sign-in failed.",
         variant: "destructive"
       });
     } finally {
@@ -271,7 +199,18 @@ export function AccountCreationStep() {
     try {
       await user.reload();
       if (auth.currentUser?.emailVerified) {
-        await dbService.saveUserProfile(user.uid, { emailVerified: true });
+        await dbService.saveUserProfile(user.uid, {
+          emailVerified: true,
+          onboardingComplete: true,
+        });
+        await awardXP(user.uid, 25, 'profile', { onboardingComplete: true, goal: goal || null, skillLevel: skillLevel || null });
+        await createNotification(
+          user.uid,
+          'welcome',
+          'Welcome to Soma Digital',
+          'Your account is ready. Start your first mission from the dashboard.',
+          '/dashboard'
+        );
         handlePostSignup();
       } else {
         toast({

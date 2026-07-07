@@ -4,7 +4,7 @@
  */
 
 // Update this version string when deploying breaking changes
-const APP_VERSION = '1.1.2';
+const APP_VERSION = '1.1.3';
 
 // Cache name includes version to force fresh cache on updates
 const CACHE_NAME = 'soma-cache-' + APP_VERSION;

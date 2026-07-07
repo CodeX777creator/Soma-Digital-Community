@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, Suspense, useRef } from "react";
-import { useSearchParams } from "next/navigation";
+import { useEffect, Suspense, useRef, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
+import { getRedirectResult, User } from "firebase/auth";
 import { useOnboardingStore, PlanType } from "@/store/useOnboardingStore";
 import { WelcomeStep } from "@/components/onboarding/WelcomeStep";
 import { IdentityStep } from "@/components/onboarding/IdentityStep";
@@ -14,13 +15,108 @@ import { AccountCreationStep } from "@/components/onboarding/AccountCreationStep
 import { ActivationStep } from "@/components/onboarding/ActivationStep";
 import { Cpu } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { auth } from "@/lib/firebase";
+import { GOOGLE_REDIRECT_STORAGE_KEY, getSafeRedirectPath } from "@/lib/auth";
+import { dbService } from "@/lib/db";
+import { createNotification } from "@/lib/notifications";
+import { awardXP } from "@/lib/xp";
+
+async function saveGoogleOnboardingData(user: User) {
+  const {
+    identities,
+    goal,
+    skillLevel,
+    plan,
+    budget,
+    availableTime,
+    roadmap,
+  } = useOnboardingStore.getState();
+
+  const userData: Record<string, any> = {
+    name: user.displayName || "Explorer",
+    email: user.email || "",
+    emailVerified: true,
+    onboardingComplete: true,
+  };
+
+  if (identities.length > 0) userData.identities = identities;
+  if (goal) userData.goal = goal;
+  if (skillLevel) userData.skillLevel = skillLevel;
+  if (plan) userData.intendedPlan = plan;
+  if (budget) userData.budget = budget;
+  if (availableTime) userData.availableTime = availableTime;
+
+  await dbService.saveUserProfile(user.uid, userData);
+  await awardXP(user.uid, 25, "profile", {
+    onboardingComplete: true,
+    goal: goal || null,
+    skillLevel: skillLevel || null,
+  });
+  await createNotification(
+    user.uid,
+    "welcome",
+    "Welcome to Soma Digital",
+    "Your account is ready. Start your first mission from the dashboard.",
+    "/dashboard"
+  );
+
+  if (roadmap) {
+    await dbService.saveRoadmap(user.uid, roadmap);
+  }
+}
 
 function OnboardingController() {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const { currentStep, setPlan, plan, setStep, reset, identities, goal, skillLevel, budget, availableTime } = useOnboardingStore();
   const handledEntryPlan = useRef<string | null>(null);
+  const handledGoogleRedirect = useRef(false);
+  const [isCheckingGoogleRedirect, setIsCheckingGoogleRedirect] = useState(true);
 
   useEffect(() => {
+    if (handledGoogleRedirect.current) return;
+    handledGoogleRedirect.current = true;
+
+    const handleGoogleRedirect = async () => {
+      if (!auth) {
+        setIsCheckingGoogleRedirect(false);
+        return;
+      }
+
+      try {
+        const result = await getRedirectResult(auth);
+        if (!result?.user) {
+          setIsCheckingGoogleRedirect(false);
+          return;
+        }
+
+        await saveGoogleOnboardingData(result.user);
+
+        const storedRedirect = sessionStorage.getItem(GOOGLE_REDIRECT_STORAGE_KEY);
+        sessionStorage.removeItem(GOOGLE_REDIRECT_STORAGE_KEY);
+
+        const safeRedirect = getSafeRedirectPath(storedRedirect || searchParams.get("redirect"));
+        const { plan } = useOnboardingStore.getState();
+
+        if (safeRedirect) {
+          router.replace(safeRedirect);
+        } else if (plan === "pro" || plan === "elite") {
+          router.replace(`/dashboard?upgrade=${plan}`);
+        } else {
+          router.replace("/dashboard");
+        }
+      } catch (error) {
+        console.error("[Google Signup] Redirect result error:", error);
+        setIsCheckingGoogleRedirect(false);
+      }
+    };
+
+    handleGoogleRedirect();
+  }, [router, searchParams]);
+
+  useEffect(() => {
+    if (isCheckingGoogleRedirect) return;
+
     const planParam = searchParams.get("plan");
     const stepParam = searchParams.get("step");
     const hasCompletedRequiredSteps =
@@ -51,6 +147,7 @@ function OnboardingController() {
     currentStep,
     goal,
     identities.length,
+    isCheckingGoogleRedirect,
     reset,
     searchParams,
     setPlan,
@@ -80,6 +177,14 @@ function OnboardingController() {
   };
 
   const TOTAL_STEPS = 8;
+
+  if (isCheckingGoogleRedirect) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background text-primary animate-pulse">
+        Completing Google sign in...
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-background relative overflow-hidden flex flex-col items-center justify-center p-6 md:p-12">
