@@ -309,6 +309,16 @@ export const postService = {
     });
   },
 
+  // Restore a deleted post (undo delete)
+  async restorePost(postId: string, originalContent: string): Promise<void> {
+    if (!db) throw new Error('Database not initialized');
+    await updateDoc(doc(db, 'posts', postId), { 
+      deleted: false,
+      content: originalContent,
+      deletedAt: null,
+    });
+  },
+
   // Update mission progress
   async completeMission(userId: string, missionId: string): Promise<void> {
     if (!db) throw new Error('Database not initialized');

@@ -27,11 +27,12 @@ import { cn } from "@/lib/utils";
 
 // Time limit for editing posts (30 minutes in milliseconds)
 const EDIT_TIME_LIMIT = 60 * 60 * 1000;
+const UNDO_TIMEOUT = 5000; // 5 seconds
 
 interface PostOptionsMenuProps {
   post: Post;
   onEdit?: () => void;
-  onDelete?: () => void;
+  onDelete?: (postId: string, post: Post) => void;
   onPin?: () => void;
   isAdmin?: boolean;
 }
@@ -44,7 +45,7 @@ export function PostOptionsMenu({
   isAdmin = false 
 }: PostOptionsMenuProps) {
   const { user, userData } = useAuth();
-  const { toast } = useToast();
+  const { toast, dismiss } = useToast();
   const [isDeleting, setIsDeleting] = useState(false);
   
   const isAuthor = user?.uid === post.authorId;
@@ -115,11 +116,31 @@ export function PostOptionsMenu({
     setIsDeleting(true);
     try {
       await postService.deletePost(post.id);
-      toast({
+      
+      // Show undo toast with 5 second timeout
+      const toastObj = toast({
         title: "Post deleted",
         description: "Your post has been removed.",
+        duration: UNDO_TIMEOUT,
+        action: (
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => {
+              dismiss(toastObj.id);
+              // Trigger undo through parent
+              onDelete?.(post.id, post);
+            }}
+            className="h-7 px-3"
+          >
+            Undo
+          </Button>
+        ),
       });
-      onDelete?.();
+      const undoId = toastObj.id;
+      
+      // Notify parent that post was deleted (for optimistic UI update)
+      onDelete?.(post.id, post);
     } catch (error) {
       console.error('Failed to delete post:', error);
       toast({

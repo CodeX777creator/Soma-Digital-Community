@@ -57,7 +57,7 @@ function formatCount(n: number) {
 interface PostCardProps {
   post: Post;
   onEdit?: (post: Post) => void;
-  onDelete?: (postId: string) => void;
+  onDelete?: (postId: string, post?: Post) => void;
 }
 
 export const PostCardOptimized = memo(function PostCardOptimized({ post, onEdit, onDelete }: PostCardProps) {
@@ -199,7 +199,7 @@ export const PostCardOptimized = memo(function PostCardOptimized({ post, onEdit,
           <PostOptionsMenu 
             post={post}
             onEdit={() => onEdit?.(post)}
-            onDelete={() => onDelete?.(post.id)}
+            onDelete={(postId, postObj) => onDelete?.(postId, postObj)}
             onPin={() => {
               toast({
                 title: "Pin post",

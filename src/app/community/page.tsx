@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { GlassCard } from "@/components/ui/glass-card";
@@ -92,7 +92,8 @@ export default function CommunityPage() {
   const [loading, setLoading] = useState(true);
   const [activeChannel, setActiveChannel] = useState<CommunityChannel>("all");
   const [editModalPost, setEditModalPost] = useState<Post | null>(null);
-  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
+    const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
+    const [deletedPost, setDeletedPost] = useState<Post | null>(null);
 
     useEffect(() => {
     const unsub = postService.subscribeToPosts((fetched) => {
@@ -107,21 +108,58 @@ export default function CommunityPage() {
     setEditModalPost(post);
   };
 
-  const handleDeletePost = async (postId: string) => {
-    // Optimistic delete: remove immediately from UI
-    setPosts(prev => prev.filter(p => p.id !== postId));
-    setPendingDeleteId(postId);
+  const handleDeletePost = async (postId: string, post?: Post) => {
+        // If post object is provided (from undo trigger), restore it
+        if (post && post.content && post.content !== '[deleted]') {
+          try {
+            // Restore the post in Firestore
+            await postService.restorePost(postId, post.content);
+            // Restore the deleted post in UI
+            setPosts(prev => [post, ...prev]);
+            setDeletedPost(null);
+            setPendingDeleteId(null);
+          } catch (error) {
+            console.error('Failed to restore post:', error);
+            // Show error toast
+          }
+          return;
+        }
+    
+    
+      // Optimistic delete: remove immediately from UI
+      const postToRemove = posts.find(p => p.id === postId);
+      setPosts(prev => prev.filter(p => p.id !== postId));
+      setPendingDeleteId(postId);
+    
+      // Store deleted post for potential undo
+      if (postToRemove) {
+        setDeletedPost(postToRemove);
+      }
 
-    try {
-      await postService.deletePost(postId);
-      setPendingDeleteId(null);
-    } catch (error) {
-      console.error('Failed to delete post:', error);
-      // Rollback on error
-      setPendingDeleteId(null);
-      // Optionally show error toast or re-fetch
-    }
-  };
+      try {
+        await postService.deletePost(postId);
+        // Clear deleted post after successful deletion
+        setPendingDeleteId(null);
+        // Keep deletedPost for undo toast (cleared after 5 seconds or when undo is clicked)
+      } catch (error) {
+        console.error('Failed to delete post:', error);
+        // Rollback on error
+        setPendingDeleteId(null);
+        setDeletedPost(null);
+        // Optionally show error toast or re-fetch
+      }
+    };
+
+    // Cleanup deleted post state after 5 seconds (undo timeout)
+    useEffect(() => {
+      if (deletedPost) {
+        const timer = setTimeout(() => {
+          setDeletedPost(null);
+        }, 5000);
+        return () => clearTimeout(timer);
+      }
+    }, [deletedPost]);
+
 
   const handleUpdatePost = async (updatedPost: Post) => {
     // Optimistic update: update immediately in UI
