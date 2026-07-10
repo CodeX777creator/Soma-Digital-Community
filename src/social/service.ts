@@ -25,6 +25,7 @@ type SocialAccountDoc = {
   providerId: SocialPlatform;
   providerLabel: string;
   accountName: string;
+  connectionType?: 'oauth' | 'manual' | 'imported';
   handle?: string;
   providerAccountId?: string;
   notes?: string;
@@ -129,6 +130,7 @@ function serializeAccount(doc: SocialAccountDoc): SocialAccountRecord {
     providerId: doc.providerId,
     providerLabel: doc.providerLabel,
     accountName: doc.accountName,
+    connectionType: doc.connectionType,
     handle: doc.handle,
     providerAccountId: doc.providerAccountId,
     notes: doc.notes,
@@ -225,6 +227,9 @@ export async function createSocialAccount(input: SocialAccountInput): Promise<So
   const metadata = normalizeMetadata(input.metadata);
   const credentialEnvelope = resolveCredentialEnvelope(input.credentials);
   const expiresAt = resolveExpiryTimestamp(input.credentials);
+  const connectionType = input.connectionType
+    || input.credentials?.connectionType
+    || (credentialEnvelope ? 'oauth' : 'manual');
   const now = admin.firestore.FieldValue.serverTimestamp();
   const docRef = adminDb.collection('socialAccounts').doc();
 
@@ -234,6 +239,7 @@ export async function createSocialAccount(input: SocialAccountInput): Promise<So
     providerId: provider.id,
     providerLabel: provider.label,
     accountName,
+    connectionType,
     handle: input.handle ? sanitizeString(input.handle, 120) : undefined,
     providerAccountId: input.providerAccountId ? sanitizeString(input.providerAccountId, 160) : undefined,
     notes: input.notes ? sanitizeString(input.notes, 500) : undefined,
@@ -293,11 +299,16 @@ export async function updateSocialAccount(
   const expiresAt = patch.credentials === undefined
     ? current.expiresAt || null
     : resolveExpiryTimestamp(patch.credentials);
+  const connectionType = patch.connectionType
+    || patch.credentials?.connectionType
+    || current.connectionType
+    || (credentialEnvelope ? 'oauth' : 'manual');
   const nextStatus = patch.status || (credentialEnvelope ? 'connected' : current.status);
   const updated: SocialAccountDoc = {
     ...current,
     providerLabel: provider.label,
     accountName: patch.accountName ? normalizeAccountName(patch.accountName) : current.accountName,
+    connectionType,
     handle: patch.handle !== undefined ? sanitizeString(patch.handle || '', 120) || undefined : current.handle,
     providerAccountId: patch.providerAccountId !== undefined ? sanitizeString(patch.providerAccountId || '', 160) || undefined : current.providerAccountId,
     notes: patch.notes !== undefined ? sanitizeString(patch.notes || '', 500) || undefined : current.notes,

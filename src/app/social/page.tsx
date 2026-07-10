@@ -35,6 +35,7 @@ type SocialAccountResponse = {
 
 interface SocialHubFormState {
   providerId: SocialPlatform;
+  connectionType: "oauth" | "manual" | "imported";
   accountName: string;
   handle: string;
   providerAccountId: string;
@@ -108,6 +109,7 @@ export default function SocialHubPage() {
   const [showAdvancedCredentials, setShowAdvancedCredentials] = useState(false);
   const [form, setForm] = useState<SocialHubFormState>({
     providerId: DEFAULT_PROVIDER,
+    connectionType: "oauth",
     accountName: "",
     handle: "",
     providerAccountId: "",
@@ -197,6 +199,7 @@ export default function SocialHubPage() {
   const resetForm = () => {
     setForm({
       providerId: DEFAULT_PROVIDER,
+      connectionType: "oauth",
       accountName: "",
       handle: "",
       providerAccountId: "",
@@ -226,6 +229,7 @@ export default function SocialHubPage() {
         },
         body: JSON.stringify({
           providerId: form.providerId,
+          connectionType: form.connectionType,
           accountName: form.accountName,
           handle: form.handle || undefined,
           providerAccountId: form.providerAccountId || undefined,
@@ -369,18 +373,33 @@ export default function SocialHubPage() {
                   </div>
                 </div>
 
-                <div className="grid gap-4 md:grid-cols-3">
+                <div className="grid gap-4 md:grid-cols-2">
                   <div className="space-y-2">
                     <label className="text-sm font-medium">Handle</label>
                     <Input value={form.handle} onChange={(event) => updateField("handle", event.target.value)} placeholder="@somadigital" />
                   </div>
                   <div className="space-y-2">
-                    <label className="text-sm font-medium">Provider account ID</label>
-                    <Input value={form.providerAccountId} onChange={(event) => updateField("providerAccountId", event.target.value)} placeholder="External provider ID" />
-                  </div>
-                  <div className="space-y-2">
                     <label className="text-sm font-medium">Timezone</label>
                     <Input value={form.timezone} onChange={(event) => updateField("timezone", event.target.value)} placeholder="Africa/Nairobi" />
+                  </div>
+                </div>
+
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Connection type</label>
+                    <select
+                      className={cn("h-10 w-full rounded-md border border-input bg-background px-3 text-sm")}
+                      value={form.connectionType}
+                      onChange={(event) => updateField("connectionType", event.target.value as SocialHubFormState["connectionType"])}
+                    >
+                      <option value="oauth">OAuth connection</option>
+                      <option value="manual">Manual connection</option>
+                      <option value="imported">Imported credentials</option>
+                    </select>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Provider account ID</label>
+                    <Input value={form.providerAccountId} onChange={(event) => updateField("providerAccountId", event.target.value)} placeholder={form.connectionType === "oauth" ? "Assigned by provider" : "External provider ID"} />
                   </div>
                 </div>
 
@@ -534,6 +553,7 @@ export default function SocialHubPage() {
                       </div>
 
                       <div className="mt-3 grid gap-2 text-xs text-muted-foreground md:grid-cols-2">
+                        <div>Connection type: {account.connectionType || "oauth"}</div>
                         <div>Account ID: {account.providerAccountId || "Not set"}</div>
                         <div>Timezone: {account.timezone || "Not set"}</div>
                         <div>Scopes: {account.scopes.length > 0 ? account.scopes.join(", ") : "Not set"}</div>

@@ -20,6 +20,10 @@ function normalizeCredentials(value: unknown): SocialCredentialPayload | null {
 
   const payload = value as Record<string, unknown>;
   return {
+    connectionType: typeof payload.connectionType === 'string'
+      && ['oauth', 'manual', 'imported'].includes(payload.connectionType)
+      ? payload.connectionType as 'oauth' | 'manual' | 'imported'
+      : undefined,
     accessToken: typeof payload.accessToken === 'string' ? sanitizeString(payload.accessToken, 8000) : undefined,
     refreshToken: typeof payload.refreshToken === 'string' ? sanitizeString(payload.refreshToken, 8000) : undefined,
     externalAccountId: typeof payload.externalAccountId === 'string' ? sanitizeString(payload.externalAccountId, 160) : undefined,
@@ -77,6 +81,9 @@ const handler = createAPIHandler(
     const socialAccount = await createSocialAccount({
       providerId: body.providerId,
       accountName: sanitizeString(body.accountName, 120),
+      connectionType: body.connectionType === 'oauth' || body.connectionType === 'manual' || body.connectionType === 'imported'
+        ? body.connectionType
+        : undefined,
       handle: typeof body.handle === 'string' ? sanitizeString(body.handle, 120) : undefined,
       providerAccountId: typeof body.providerAccountId === 'string' ? sanitizeString(body.providerAccountId, 160) : undefined,
       notes: typeof body.notes === 'string' ? sanitizeString(body.notes, 500) : undefined,

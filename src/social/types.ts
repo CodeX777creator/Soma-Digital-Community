@@ -28,6 +28,7 @@ export interface SocialProviderDefinition {
 }
 
 export interface SocialCredentialPayload {
+  connectionType?: 'oauth' | 'manual' | 'imported';
   accessToken?: string;
   refreshToken?: string;
   externalAccountId?: string;
@@ -48,6 +49,7 @@ export interface EncryptedPayload {
 export interface SocialAccountInput {
   providerId: SocialPlatform;
   accountName: string;
+  connectionType?: 'oauth' | 'manual' | 'imported';
   handle?: string;
   providerAccountId?: string;
   notes?: string;
@@ -61,6 +63,7 @@ export interface SocialAccountInput {
 
 export interface SocialAccountUpdateInput {
   accountName?: string;
+  connectionType?: 'oauth' | 'manual' | 'imported';
   handle?: string;
   providerAccountId?: string;
   notes?: string;
@@ -77,6 +80,7 @@ export interface SocialAccountRecord {
   providerId: SocialPlatform;
   providerLabel: string;
   accountName: string;
+  connectionType?: 'oauth' | 'manual' | 'imported';
   handle?: string;
   providerAccountId?: string;
   notes?: string;
