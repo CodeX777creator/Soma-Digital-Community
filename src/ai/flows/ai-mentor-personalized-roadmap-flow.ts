@@ -1,16 +1,15 @@
 'use server';
 /**
- * @fileOverview An AI mentor agent that generates a personalized business roadmap.
- * Enhanced with cost tracking, caching, and improved context handling.
+ * @fileOverview AI mentor roadmap generation routed through the SDC AI Orchestrator.
  */
 
-import { ai, KIMI_MODELS } from '@/ai/genkit';
 import { z } from 'genkit';
 import { recordUsage } from '@/ai/analytics';
 import { globalSemanticCache, isCacheableQuery } from '@/ai/core/semantic-cache';
-import { estimateTokenCount, truncateMessages, calculateTokenBudget } from '@/ai/core/tokenizer';
+import { estimateTokenCount } from '@/ai/core/tokenizer';
 import { detectInjection } from '@/ai/guardrails';
 import { logger } from '@/lib/logger';
+import { buildRoadmapPrompt, executeTextCompletion, extractJsonObject } from '@/ai/platform';
 
 const BusinessGoalsInputSchema = z.object({
   businessGoals: z.string().describe('The user\'s business goals and aspirations.'),
@@ -30,7 +29,7 @@ const PersonalizedRoadmapOutputSchema = z.object({
     z.object({
       day: z.string().describe('Day or period (e.g. Day 1-7)'),
       task: z.string().describe('The primary focus or task'),
-      outcome: z.string().describe('The expected result')
+      outcome: z.string().describe('The expected result'),
     })
   ).describe('A structured 30-day plan.'),
   steps: z.array(
@@ -48,101 +47,83 @@ export async function generatePersonalizedRoadmap(
   input: BusinessGoalsInput
 ): Promise<PersonalizedRoadmapOutput> {
   const startTime = Date.now();
-  
+
   try {
-    // Security check
     const injectionCheck = detectInjection(input.businessGoals);
     if (!injectionCheck.passed && injectionCheck.confidence > 0.8) {
       throw new Error('Invalid input detected');
     }
 
-    // Check cache
     const cacheKey = `roadmap:${input.businessGoals.slice(0, 100)}`;
     if (input.userId && isCacheableQuery(cacheKey)) {
       const cached = await globalSemanticCache.get(cacheKey, input.userId);
       if (cached) {
         logger.info('[Roadmap] Cache hit', { userId: input.userId });
-        return JSON.parse(cached.response);
+        const cachedModel = cached.metadata.model || 'cached-model';
+        recordUsage({
+          timestamp: Date.now(),
+          userId: input.userId,
+          model: cachedModel,
+          inputTokens: 0,
+          outputTokens: 0,
+          operation: 'roadmap',
+          cached: true,
+          durationMs: Date.now() - startTime,
+        });
+        return JSON.parse(cached.response) as PersonalizedRoadmapOutput;
       }
     }
 
-    const result = await aiMentorPersonalizedRoadmapFlow({
-      ...input,
+    const prompt = buildRoadmapPrompt({
       businessGoals: injectionCheck.sanitized,
+      userContext: {
+        goals: input.businessGoals,
+        skillLevel: 'intermediate',
+        preferredTone: 'professional',
+      },
+      conversationSummary: input.existingContext,
     });
-    
-    // Record usage
+
+    const result = await executeTextCompletion({
+      task: 'roadmap_generation',
+      userId: input.userId,
+      userTier: 'pro',
+      qualityMode: 'premium',
+      messages: [
+        { role: 'system', content: prompt.systemPrompt },
+        { role: 'user', content: prompt.userPrompt },
+      ],
+      maxOutputTokens: 1800,
+    });
+
+    const output = PersonalizedRoadmapOutputSchema.parse(extractJsonObject<PersonalizedRoadmapOutput>(result.text));
+
     const durationMs = Date.now() - startTime;
-    const outputTokens = estimateTokenCount(JSON.stringify(result));
-    
+    const outputTokens = estimateTokenCount(JSON.stringify(output));
+
     recordUsage({
       timestamp: startTime,
       userId: input.userId || 'anonymous',
-      model: KIMI_MODELS.PREMIUM,
-      inputTokens: estimateTokenCount(input.businessGoals),
+      model: result.plan.modelId,
+      inputTokens: estimateTokenCount(prompt.fullPrompt),
       outputTokens,
       operation: 'roadmap',
       cached: false,
       durationMs,
     });
 
-    // Cache result
     if (input.userId && isCacheableQuery(cacheKey)) {
-      globalSemanticCache.set(cacheKey, JSON.stringify(result), {
-        model: KIMI_MODELS.PREMIUM,
+      globalSemanticCache.set(cacheKey, JSON.stringify(output), {
+        model: result.plan.modelId,
         tokensUsed: outputTokens,
         timestamp: Date.now(),
         userId: input.userId,
       });
     }
 
-    return result;
+    return output;
   } catch (error) {
     logger.error('[Roadmap] Error generating roadmap', error instanceof Error ? error : new Error(String(error)));
     throw error;
   }
 }
-
-const roadmapPrompt = ai.definePrompt({
-  name: 'aiMentorPersonalizedRoadmapPrompt',
-  model: 'kimi',
-  config: {
-    model: KIMI_MODELS.PREMIUM,
-  },
-  input: { schema: BusinessGoalsInputSchema },
-  output: { schema: PersonalizedRoadmapOutputSchema },
-  prompt: `You are a high-level Digital Wealth Strategist for the "Soma Digital Community". You are a hybrid of a ChatGPT expert, a McKinsey consultant, and a startup incubator mentor.
-
-Your mission is to generate a premium "Digital Wealth Roadmap" that is emotionally powerful, strategically sound, and highly actionable.
-
-{{#if existingContext}}
-Previous Context: {{{existingContext}}}
-{{/if}}
-
-Based on the following user profile, generate a comprehensive roadmap:
-User Profile: {{{businessGoals}}}
-
-Please provide:
-1. A compelling title for the roadmap
-2. The Primary Opportunity: A high-level strategic "Big Win"
-3. Fastest Revenue Path: How they get paid immediately
-4. Recommended Content Strategy: How to build authority and traffic
-5. Monetization Strategy: The long-term wealth engine
-6. AI Growth Forecast: How AI specifically will multiply their efforts
-7. A 30-Day Execution Plan: Broken down into phases
-8. Core Strategic Steps: Deep dives into the architecture with timeframes and resources
-
-Maintain a tone that is futuristic, intelligent, and luxurious. Avoid generic advice; be specific to their skills and niche.`,
-});
-
-const aiMentorPersonalizedRoadmapFlow = ai.defineFlow(
-  {
-    name: 'aiMentorPersonalizedRoadmapFlow',
-    inputSchema: BusinessGoalsInputSchema,
-    outputSchema: PersonalizedRoadmapOutputSchema,
-  },
-  async (input) => {
-    const { output } = await roadmapPrompt(input);
-    return output!;
-  }
-);

@@ -13,6 +13,8 @@ import {
   ChevronRight,
   Crown,
   Zap,
+  Sparkles,
+  KeyRound,
 } from "lucide-react";
 import { useAuth } from "@/providers/AuthProvider";
 import { useUserStore } from "@/store/useUserStore";
@@ -61,6 +63,20 @@ export default function SettingsPage() {
       description: "Manage your plan, payment methods, and billing history",
       href: "/settings/billing",
       badge: getPlanBadge(),
+    },
+    {
+      icon: <Sparkles className="w-5 h-5" />,
+      title: "Creator Credits",
+      description: "See your monthly AI balance and recent usage",
+      href: "/settings/credits",
+      badge: null,
+    },
+    {
+      icon: <KeyRound className="w-5 h-5" />,
+      title: "Connected AI Providers",
+      description: "Add your own API keys and choose how AI is billed",
+      href: "/settings/ai-providers",
+      badge: null,
     },
     {
       icon: <Bell className="w-5 h-5" />,

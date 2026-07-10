@@ -203,6 +203,42 @@
         { "fieldPath": "tier", "order": "ASCENDING" },
         { "fieldPath": "tags", "arrayConfig": "CONTAINS" }
       ]
+    },
+    {
+      "__comment": "Social calendar month view: supports per-user scheduled posts ordered chronologically.",
+      "collectionGroup": "scheduledPosts",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "ownerId", "order": "ASCENDING" },
+        { "fieldPath": "scheduledTime", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "__comment": "Social calendar filters: supports per-user scheduled posts filtered by status and ordered by time.",
+      "collectionGroup": "scheduledPosts",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "ownerId", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "scheduledTime", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "__comment": "Credit ledger: supports per-user credit history ordered newest first.",
+      "collectionGroup": "creatorCreditLedger",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "userId", "order": "ASCENDING" },
+        { "fieldPath": "timestamp", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "__comment": "AI usage history: supports admin analytics views ordered by request timestamp.",
+      "collectionGroup": "aiUsageEvents",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "timestamp", "order": "DESCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []

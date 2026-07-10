@@ -44,6 +44,7 @@ interface ChatThread {
 interface MentorChatApiRequest {
   message: string;
   history: Array<{ role: ChatRole; content: string }>;
+  threadId: string;
 }
 
 interface MentorChatApiResponse {
@@ -224,10 +225,11 @@ export default function MentorPage() {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${idToken}`,
         },
-        body: JSON.stringify({
-          message,
-          history,
-        } as MentorChatApiRequest),
+      body: JSON.stringify({
+        message,
+        history,
+        threadId,
+      } as MentorChatApiRequest),
       });
 
       if (!response.ok) {

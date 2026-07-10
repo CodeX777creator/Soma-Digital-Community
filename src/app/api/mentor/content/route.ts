@@ -23,6 +23,30 @@ const handler = createAPIHandler(
     if (body.contentType && typeof body.contentType !== 'string') {
       return apiError('Invalid contentType format', { status: 400, code: 'INVALID_INPUT' });
     }
+    if (body.platform && typeof body.platform !== 'string') {
+      return apiError('Invalid platform format', { status: 400, code: 'INVALID_INPUT' });
+    }
+    if (body.brandName && typeof body.brandName !== 'string') {
+      return apiError('Invalid brandName format', { status: 400, code: 'INVALID_INPUT' });
+    }
+    if (body.brandVoice && typeof body.brandVoice !== 'string') {
+      return apiError('Invalid brandVoice format', { status: 400, code: 'INVALID_INPUT' });
+    }
+    if (body.campaignGoal && typeof body.campaignGoal !== 'string') {
+      return apiError('Invalid campaignGoal format', { status: 400, code: 'INVALID_INPUT' });
+    }
+    if (body.callToAction && typeof body.callToAction !== 'string') {
+      return apiError('Invalid callToAction format', { status: 400, code: 'INVALID_INPUT' });
+    }
+    if (body.notes && typeof body.notes !== 'string') {
+      return apiError('Invalid notes format', { status: 400, code: 'INVALID_INPUT' });
+    }
+    if (body.language && typeof body.language !== 'string') {
+      return apiError('Invalid language format', { status: 400, code: 'INVALID_INPUT' });
+    }
+    if (body.keywords && !Array.isArray(body.keywords)) {
+      return apiError('Invalid keywords format', { status: 400, code: 'INVALID_INPUT' });
+    }
 
     // Length limits
     if (body.topic && body.topic.length > 1000) {
@@ -36,6 +60,16 @@ const handler = createAPIHandler(
       contentType: body.contentType || 'ad_copy',
       businessContext: body.topic,
       targetAudience: body.audience,
+      tone: body.tone,
+      platform: body.platform,
+      brandName: body.brandName,
+      brandVoice: body.brandVoice,
+      campaignGoal: body.campaignGoal,
+      callToAction: body.callToAction,
+      notes: body.notes,
+      language: body.language,
+      keywords: Array.isArray(body.keywords) ? body.keywords : undefined,
+      conversationSummary: body.conversationSummary,
     });
 
     return apiResponse({ content });

@@ -6,10 +6,11 @@
  */
 
 import { logger } from '@/lib/logger';
-import { MODEL_CONTEXT_LIMITS, ModelId } from '@/ai/core/tokenizer';
+import { admin, adminDb } from '@/lib/firebaseAdmin';
+import { MODEL_CONTEXT_LIMITS, type ModelId } from '@/ai/core/tokenizer';
 
 // Cost per 1K tokens (input/output) for each model
-const MODEL_COSTS: Record<ModelId, { input: number; output: number }> = {
+const MODEL_COSTS: Record<string, { input: number; output: number }> = {
   'moonshot-v1-8k': { input: 0.0005, output: 0.0015 },
   'moonshot-v1-32k': { input: 0.001, output: 0.003 },
   'moonshot-v1-128k': { input: 0.002, output: 0.006 },
@@ -22,11 +23,11 @@ export interface UsageRecord {
   timestamp: number;
   userId: string;
   sessionId?: string;
-  model: ModelId;
+  model: string;
   inputTokens: number;
   outputTokens: number;
   cost: number;
-  operation: 'chat' | 'content_gen' | 'roadmap' | 'strategic_advice' | 'summary';
+  operation: 'chat' | 'content_gen' | 'roadmap' | 'strategic_advice' | 'summary' | 'image_gen' | 'video_gen' | 'audio_gen';
   cached: boolean;
   durationMs: number;
 }
@@ -54,11 +55,26 @@ const usageRecords: UsageRecord[] = [];
 const userBudgets = new Map<string, { daily: number; monthly: number }>();
 const userSpending = new Map<string, { day: number; month: number; lastReset: number }>();
 
+async function persistUsageRecord(record: UsageRecord): Promise<void> {
+  try {
+    await adminDb.collection('aiUsageEvents').doc(record.id).set({
+      ...record,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+  } catch (error) {
+    logger.warn('[CostTracker] Failed to persist usage record', {
+      recordId: record.id,
+      userId: record.userId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
 /**
  * Calculates cost for a request
  */
 export function calculateCost(
-  model: ModelId,
+  model: string,
   inputTokens: number,
   outputTokens: number
 ): number {
@@ -84,6 +100,7 @@ export function recordUsage(record: Omit<UsageRecord, 'id' | 'cost'>): UsageReco
   };
 
   usageRecords.push(fullRecord);
+  void persistUsageRecord(fullRecord);
 
   // Update user spending
   const userSpend = userSpending.get(record.userId) || { day: 0, month: 0, lastReset: Date.now() };

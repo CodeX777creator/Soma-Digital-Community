@@ -1,16 +1,15 @@
 'use server';
 /**
- * @fileOverview An AI mentor that provides strategic business advice.
- * Enhanced with cost tracking, caching, and security improvements.
+ * @fileOverview AI mentor strategic advice routed through the SDC AI Orchestrator.
  */
 
-import { ai, KIMI_MODELS } from '@/ai/genkit';
 import { z } from 'genkit';
 import { recordUsage } from '@/ai/analytics';
 import { globalSemanticCache, isCacheableQuery } from '@/ai/core/semantic-cache';
 import { estimateTokenCount } from '@/ai/core/tokenizer';
 import { detectInjection } from '@/ai/guardrails';
 import { logger } from '@/lib/logger';
+import { buildStrategicAdvicePrompt, executeTextCompletion, extractJsonObject } from '@/ai/platform';
 
 const AIMentorStrategicAdviceInputSchema = z.object({
   topic: z.string().describe('The specific business topic the user wants advice on.'),
@@ -37,38 +36,67 @@ export type AIMentorStrategicAdviceOutput = z.infer<typeof AIMentorStrategicAdvi
 
 export async function aiMentorStrategicAdvice(input: AIMentorStrategicAdviceInput): Promise<AIMentorStrategicAdviceOutput> {
   const startTime = Date.now();
-  
+
   try {
-    // Security check
     const combinedInput = `${input.topic} ${input.businessDescription} ${input.userGoals} ${input.currentChallenges}`;
     const injectionCheck = detectInjection(combinedInput);
     if (!injectionCheck.passed && injectionCheck.confidence > 0.8) {
       throw new Error('Invalid input detected');
     }
 
-    // Check cache
     const cacheKey = `advice:${input.topic}:${input.businessDescription.slice(0, 50)}`;
     if (input.userId && isCacheableQuery(cacheKey)) {
       const cached = await globalSemanticCache.get(cacheKey, input.userId);
       if (cached) {
         logger.info('[StrategicAdvice] Cache hit', { userId: input.userId, topic: input.topic });
-        return JSON.parse(cached.response);
+        const cachedModel = cached.metadata.model || 'cached-model';
+        recordUsage({
+          timestamp: Date.now(),
+          userId: input.userId,
+          model: cachedModel,
+          inputTokens: 0,
+          outputTokens: 0,
+          operation: 'strategic_advice',
+          cached: true,
+          durationMs: Date.now() - startTime,
+        });
+        return JSON.parse(cached.response) as AIMentorStrategicAdviceOutput;
       }
     }
 
-    const result = await aiMentorStrategicAdviceFlow({
-      ...input,
+    const prompt = buildStrategicAdvicePrompt({
       topic: injectionCheck.sanitized.slice(0, input.topic.length),
+      businessDescription: input.businessDescription,
+      userGoals: input.userGoals,
+      currentChallenges: input.currentChallenges,
+      userContext: {
+        goals: input.userGoals,
+        skillLevel: 'intermediate',
+        preferredTone: 'professional',
+      },
     });
-    
-    // Record usage
+
+    const result = await executeTextCompletion({
+      task: 'strategic_advice',
+      userId: input.userId,
+      userTier: 'pro',
+      qualityMode: 'premium',
+      messages: [
+        { role: 'system', content: prompt.systemPrompt },
+        { role: 'user', content: prompt.userPrompt },
+      ],
+      maxOutputTokens: 1600,
+    });
+
+    const output = AIMentorStrategicAdviceOutputSchema.parse(extractJsonObject<AIMentorStrategicAdviceOutput>(result.text));
+
     const durationMs = Date.now() - startTime;
-    const outputTokens = estimateTokenCount(JSON.stringify(result));
-    
+    const outputTokens = estimateTokenCount(JSON.stringify(output));
+
     recordUsage({
       timestamp: startTime,
       userId: input.userId || 'anonymous',
-      model: KIMI_MODELS.STANDARD,
+      model: result.plan.modelId,
       inputTokens: estimateTokenCount(combinedInput),
       outputTokens,
       operation: 'strategic_advice',
@@ -76,65 +104,18 @@ export async function aiMentorStrategicAdvice(input: AIMentorStrategicAdviceInpu
       durationMs,
     });
 
-    // Cache result
     if (input.userId && isCacheableQuery(cacheKey)) {
-      globalSemanticCache.set(cacheKey, JSON.stringify(result), {
-        model: KIMI_MODELS.STANDARD,
+      globalSemanticCache.set(cacheKey, JSON.stringify(output), {
+        model: result.plan.modelId,
         tokensUsed: outputTokens,
         timestamp: Date.now(),
         userId: input.userId,
       });
     }
 
-    return result;
+    return output;
   } catch (error) {
     logger.error('[StrategicAdvice] Error', error instanceof Error ? error : new Error(String(error)));
     throw error;
   }
 }
-
-const aiMentorStrategicAdvicePrompt = ai.definePrompt({
-  name: 'aiMentorStrategicAdvicePrompt',
-  model: 'kimi',
-  config: {
-    model: KIMI_MODELS.STANDARD,
-  },
-  input: { schema: AIMentorStrategicAdviceInputSchema },
-  output: { schema: AIMentorStrategicAdviceOutputSchema },
-  prompt: `You are an AI-powered strategic business mentor, expert in digital marketing, AI business, online income, entrepreneurship, branding, funnels, and the creator economy.
-
-Analyze the following situation and provide strategic business advice:
-
-### Business Description:
-{{{businessDescription}}}
-
-### User Goals:
-{{{userGoals}}}
-
-### Current Challenges:
-{{{currentChallenges}}}
-
-### Topic for Advice:
-{{{topic}}}
-
-Provide your analysis in a structured format:
-1. Strategic advice that considers the full context
-2. Actionable steps they can take immediately
-3. Prioritized action matrix (impact vs effort)
-4. Roadmap adjustments if needed
-5. Relevant resources for deeper learning
-
-Be specific, practical, and focused on measurable outcomes.`,
-});
-
-const aiMentorStrategicAdviceFlow = ai.defineFlow(
-  {
-    name: 'aiMentorStrategicAdviceFlow',
-    inputSchema: AIMentorStrategicAdviceInputSchema,
-    outputSchema: AIMentorStrategicAdviceOutputSchema,
-  },
-  async (input) => {
-    const { output } = await aiMentorStrategicAdvicePrompt(input);
-    return output!;
-  },
-);

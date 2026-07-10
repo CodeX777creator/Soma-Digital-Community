@@ -23,7 +23,8 @@ export const MODEL_CONTEXT_LIMITS = {
   'kimi-k2.6': { context: 200000, output: 8192 },
 } as const;
 
-export type ModelId = keyof typeof MODEL_CONTEXT_LIMITS;
+export type KnownModelId = keyof typeof MODEL_CONTEXT_LIMITS;
+export type ModelId = KnownModelId | (string & {});
 
 export interface TokenBudget {
   maxInputTokens: number;
@@ -83,15 +84,12 @@ export function estimateTokenCount(text: string, contentType: keyof typeof TOKEN
  */
 export function calculateTokenBudget(
   modelId: ModelId,
-  systemPromptLength: number,
+  systemPrompt: string,
   config: Partial<ContextWindowConfig> = {}
 ): TokenBudget {
-  const limits = MODEL_CONTEXT_LIMITS[modelId];
-  if (!limits) {
-    throw new Error(`Unknown model: ${modelId}`);
-  }
+  const limits = MODEL_CONTEXT_LIMITS[modelId as KnownModelId] || MODEL_CONTEXT_LIMITS['moonshot-v1-32k'];
 
-  const systemTokens = estimateTokenCount(systemPromptLength.toString());
+  const systemTokens = estimateTokenCount(systemPrompt);
   const outputTokens = config.maxOutputTokens ?? limits.output;
   const reservedTokens = systemTokens + outputTokens;
   const availableTokens = limits.context - reservedTokens;
@@ -327,10 +325,7 @@ export function validateTokenLimits(
   modelId: ModelId,
   maxOutputTokens?: number
 ): { valid: boolean; error?: string; estimatedTokens: number } {
-  const limits = MODEL_CONTEXT_LIMITS[modelId];
-  if (!limits) {
-    return { valid: false, error: `Unknown model: ${modelId}`, estimatedTokens: 0 };
-  }
+  const limits = MODEL_CONTEXT_LIMITS[modelId as KnownModelId] || MODEL_CONTEXT_LIMITS['moonshot-v1-32k'];
 
   const totalTokens = messages.reduce(
     (sum, msg) => sum + (msg.metadata?.tokenCount || estimateTokenCount(msg.content)),

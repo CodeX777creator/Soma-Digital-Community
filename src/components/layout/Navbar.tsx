@@ -44,6 +44,8 @@ export const Navbar = () => {
     { name: "Community", href: "/community" },
     { name: "AI Mentor", href: "/mentor" },
     { name: "Marketplace", href: "/marketplace" },
+    { name: "Social Hub", href: "/social" },
+    { name: "Calendar", href: "/social/calendar" },
     { name: "My Courses", href: "/my-courses" },
     { name: "Reseller", href: "/reseller" },
   ];

@@ -81,3 +81,44 @@ export {
   type ClassifiedError,
   type RetryPolicy,
 } from './error-recovery';
+
+// Platform
+export {
+  aiPlatformConfig,
+  PROVIDER_CATALOG,
+  TASK_CATALOG,
+  isProviderConfigured,
+  getConfiguredProviderOrder,
+  createTextClient,
+  createTextStream,
+  executeTextCompletion,
+  resolveAIExecutionPlan,
+  orchestrateAIRequest,
+  buildStrategicAdvicePrompt,
+  buildContentGenerationPrompt,
+  buildRoadmapPrompt,
+  extractJsonObject,
+  type AIProviderId,
+  type AIRequestTask,
+  type AIModality,
+  type AIExecutionPlan,
+  type AITextRequest,
+  type AITextResponse,
+  type AIQualityMode,
+} from '../platform';
+
+// Content Studio
+export {
+  generateStudioContent,
+  generateMentorContent as generateStudioMentorContent,
+  buildStudioPrompt,
+  getStudioPromptLibrary,
+  resolveStudioContentType,
+  type StudioContentType,
+  type StudioGenerationInput,
+  type StudioGenerationOutput,
+  type StudioGenerationResult,
+  type StudioPromptLibraryEntry,
+  type StudioPromptPackEntry,
+  type StudioTone,
+} from '../studio';

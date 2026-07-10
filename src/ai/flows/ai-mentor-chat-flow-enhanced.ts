@@ -14,7 +14,6 @@
 
 import { ai, KIMI_MODELS } from '@/ai/genkit';
 import { z } from 'genkit';
-import OpenAI from 'openai';
 import type { ChatCompletionMessageParam } from 'openai/resources/chat/completions';
 import { 
   estimateTokenCount, 
@@ -45,28 +44,16 @@ import {
   getRelevantContext,
   vectorMemoryStore,
 } from '@/ai/memory/conversation-memory';
-import { 
-  selectModel, 
+import { hydrateMentorMemory, persistMentorMemory } from '@/ai/memory/persistent-memory';
+import {
+  selectModel,
   circuitBreaker,
   RoutingDecision,
 } from '@/ai/core/model-router';
-import { withFallbacks } from '@/ai/core/error-recovery';
 import { recordUsage, checkBudget } from '@/ai/analytics/cost-tracker';
 import { buildChatPrompt, UserContext } from '@/ai/core/prompt-builder';
+import { createTextClient, resolveAIExecutionPlan, type AIProviderId } from '@/ai/platform';
 import { logger } from '@/lib/logger';
-
-// Kimi client configuration
-const KIMI_BASE_URL = process.env.KIMI_BASE_URL || 'https://api.moonshot.ai/v1';
-
-let kimiClientInstance: OpenAI | null = null;
-function getKimiClient(): OpenAI {
-  if (!kimiClientInstance) {
-    const apiKey = process.env.KIMI_API_KEY;
-    if (!apiKey) throw new Error('KIMI_API_KEY not set');
-    kimiClientInstance = new OpenAI({ apiKey, baseURL: KIMI_BASE_URL });
-  }
-  return kimiClientInstance;
-}
 
 // Input/output schemas
 const ChatMessageSchema = z.object({
@@ -106,6 +93,101 @@ export interface AIChatOutput {
       action: string;
     };
   };
+}
+
+interface CompletionAttempt {
+  providerId: AIProviderId;
+  modelId: string;
+}
+
+function mapMentorPreferences(input: AIChatInput): Record<string, unknown> {
+  const preferences: Record<string, unknown> = {};
+  const { userContext } = input;
+
+  if (userContext?.skillLevel && ['beginner', 'intermediate', 'advanced'].includes(userContext.skillLevel)) {
+    preferences.expertiseLevel = userContext.skillLevel;
+  }
+
+  if (userContext?.preferredTone) {
+    preferences.preferredTone = userContext.preferredTone;
+  }
+
+  if (userContext?.businessStage) {
+    preferences.preferredTopics = [userContext.businessStage];
+  }
+
+  if (userContext?.industry) {
+    preferences.avoidedTopics = preferences.avoidedTopics || [];
+  }
+
+  return preferences;
+}
+
+async function captureMentorMemory(input: AIChatInput, assistantResponse: string): Promise<void> {
+  const insights = extractInsights(input.message, 'user', input.threadId);
+
+  let summary: ReturnType<typeof generateConversationSummary> | undefined;
+  if (input.history.length % 10 === 0) {
+    summary = generateConversationSummary(
+      input.threadId,
+      [...input.history, { role: 'user', content: input.message }, { role: 'assistant', content: assistantResponse }]
+    );
+  }
+
+  const preferences = mapMentorPreferences(input);
+  const businessGoals = input.userContext?.goals || undefined;
+  if (businessGoals || Object.keys(preferences).length > 0 || insights.length > 0 || summary) {
+    await persistMentorMemory({
+      userId: input.userId,
+      threadId: input.threadId,
+      businessGoals,
+      preferences: Object.keys(preferences).length > 0 ? preferences : undefined,
+      insights: insights.length > 0 ? insights : undefined,
+      summary,
+    });
+  }
+}
+
+async function completeWithFallbacks(
+  attempts: CompletionAttempt[],
+  messages: ChatCompletionMessageParam[],
+  request: { temperature?: number; maxOutputTokens?: number; topP?: number; stopSequences?: string[] }
+): Promise<{ providerId: AIProviderId; modelId: string; content: string }> {
+  let lastError: unknown;
+
+  for (const attempt of attempts) {
+    try {
+      const client = createTextClient(attempt.providerId);
+      const response = await client.chat.completions.create({
+        model: attempt.modelId,
+        messages,
+        temperature: request.temperature ?? 0.7,
+        max_tokens: request.maxOutputTokens ?? 2048,
+        top_p: request.topP ?? 0.9,
+        ...(request.stopSequences && request.stopSequences.length > 0 ? { stop: request.stopSequences } : {}),
+      });
+
+      const content = response.choices?.[0]?.message?.content || '';
+      if (!content) {
+        throw new Error('Empty response');
+      }
+
+      return {
+        providerId: attempt.providerId,
+        modelId: attempt.modelId,
+        content,
+      };
+    } catch (error) {
+      lastError = error;
+      logger.warn('[ChatFlow] Completion attempt failed', {
+        providerId: attempt.providerId,
+        modelId: attempt.modelId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  throw new Error(`All AI completion attempts failed: ${lastError instanceof Error ? lastError.message : String(lastError)}`);
 }
 
 /**
@@ -160,6 +242,20 @@ export async function aiMentorChatEnhanced(
           await vectorMemoryStore.add(input.userId, insight);
         }
 
+        const cachedModel = cached.metadata.model || 'cached-model';
+        recordUsage({
+          timestamp: Date.now(),
+          userId: input.userId,
+          model: cachedModel,
+          inputTokens: 0,
+          outputTokens: 0,
+          operation: 'chat',
+          cached: true,
+          durationMs: Date.now() - startTime,
+        });
+
+        await captureMentorMemory(input, cached.response);
+
         return {
           response: cached.response,
           metadata: {
@@ -178,6 +274,7 @@ export async function aiMentorChatEnhanced(
     }
 
     // 4. Get enhanced memory context
+    await hydrateMentorMemory(input.userId, { maxInsights: 12, maxSummaries: 6 });
     const legacyMemoryContext = getMemoryContext(input.userId, { maxInsights: 3 });
     const legacyMemoryText = formatMemoryForPrompt(legacyMemoryContext);
     
@@ -194,15 +291,23 @@ export async function aiMentorChatEnhanced(
 
     // 5. Smart model selection with routing
     const routing = selectModel(securityCheck.sanitized, {
-      history: input.history.map(h => h.content),
+      history: input.history.map((h) => h.content),
       budgetMode: input.modelHint === 'cheap' ? 'strict' : input.modelHint === 'smart' ? 'performance' : 'balanced',
       userTier: 'explorer',
     });
-    
+
+    const executionPlan = resolveAIExecutionPlan({
+      messages: [...input.history, { role: 'user', content: securityCheck.sanitized }],
+      modelHint: input.modelHint,
+      userTier: 'explorer',
+    });
+
     logger.info('[ChatFlow] Model selected', {
       model: routing.primaryModel,
       confidence: routing.confidence,
       reasoning: routing.reasoning,
+      provider: executionPlan.providerId,
+      gatewayModel: executionPlan.modelId,
     });
 
     // 6. Build conversation history with context management
@@ -234,7 +339,7 @@ export async function aiMentorChatEnhanced(
     };
 
     // 7. Calculate budget and truncate if needed
-    const budget = calculateTokenBudget(routing.primaryModel, systemPrompt.length);
+    const budget = calculateTokenBudget(executionPlan.modelId, systemPrompt);
     const { messages: truncatedHistory } = truncateMessages(
       [...historyMessages, userMessage],
       budget,
@@ -243,48 +348,35 @@ export async function aiMentorChatEnhanced(
     const allMessages = [systemMessage, ...truncatedHistory];
 
     // 8. Validate token limits
-    const validation = validateTokenLimits(allMessages, routing.primaryModel);
+    const validation = validateTokenLimits(allMessages, executionPlan.modelId);
     if (!validation.valid) {
       throw new Error(`Token limit exceeded: ${validation.error}`);
     }
 
-    // 9. Call Kimi API with fallback chain
-    const client = getKimiClient();
-    const formattedMessages = formatMessagesForProvider(allMessages, 'kimi') as ChatCompletionMessageParam[];
+    // 9. Call the AI platform with fallback chain
+    const formattedMessages = formatMessagesForProvider(allMessages, 'openai') as ChatCompletionMessageParam[];
+    const attempts: CompletionAttempt[] = [
+      { providerId: executionPlan.providerId, modelId: executionPlan.modelId },
+      ...executionPlan.fallbackPlans,
+      ...routing.fallbackChain.map((modelId) => ({
+        providerId: executionPlan.providerId,
+        modelId,
+      })),
+    ];
 
-    const response = await withFallbacks(
-      async () => {
-        const result = await client.chat.completions.create({
-          model: routing.primaryModel,
-          messages: formattedMessages,
-          temperature: 0.7,
-          max_tokens: 2048,
-        });
-        circuitBreaker.recordSuccess(routing.primaryModel);
-        return result;
-      },
-      routing.fallbackChain.map(modelId => async () => {
-        logger.info('[ChatFlow] Using fallback model', { fallback: modelId });
-        const result = await client.chat.completions.create({
-          model: modelId,
-          messages: formattedMessages as ChatCompletionMessageParam[],
-          temperature: 0.7,
-          max_tokens: 2048,
-        });
-        circuitBreaker.recordSuccess(modelId);
-        return result;
-      }),
-      {
-        onFallback: (index, error) => {
-          logger.warn(`[ChatFlow] Fallback ${index + 1} triggered`, { error: error.message });
-          if (index === 0) {
-            circuitBreaker.recordFailure(routing.primaryModel);
-          }
-        },
-      }
-    );
+    const uniqueAttempts = attempts.filter((attempt, index, self) => (
+      self.findIndex(
+        (candidate) => candidate.providerId === attempt.providerId && candidate.modelId === attempt.modelId
+      ) === index
+    ));
 
-    const content = response.choices?.[0]?.message?.content || '';
+    const completion = await completeWithFallbacks(uniqueAttempts, formattedMessages, {
+      temperature: 0.7,
+      maxOutputTokens: 2048,
+    });
+    circuitBreaker.recordSuccess(completion.modelId);
+
+    const content = completion.content;
 
     // 10. Calculate usage
     const inputTokens = validation.estimatedTokens;
@@ -296,7 +388,7 @@ export async function aiMentorChatEnhanced(
       timestamp: startTime,
       userId: input.userId,
       sessionId: input.threadId,
-      model: routing.primaryModel,
+      model: completion.modelId,
       inputTokens,
       outputTokens,
       operation: 'chat',
@@ -307,7 +399,7 @@ export async function aiMentorChatEnhanced(
     // 12. Cache the response
     if (isCacheableQuery(input.message) && content.length > 50) {
       globalSemanticCache.set(input.message, content, {
-        model: routing.primaryModel,
+        model: completion.modelId,
         tokensUsed: inputTokens + outputTokens,
         timestamp: Date.now(),
         userId: input.userId,
@@ -335,10 +427,12 @@ export async function aiMentorChatEnhanced(
       storeMemory(input.userId, { summary });
     }
 
+    await captureMentorMemory(input, content);
+
     return {
       response: content,
       metadata: {
-        model: routing.primaryModel,
+        model: completion.modelId,
         tokensUsed: { input: inputTokens, output: outputTokens },
         cost: usageRecord.cost,
         cached: false,
@@ -383,6 +477,20 @@ export async function* aiMentorChatStream(
     if (isCacheableQuery(input.message)) {
       const cached = await globalSemanticCache.get(input.message, input.userId);
       if (cached) {
+        const cachedModel = cached.metadata.model || 'cached-model';
+        recordUsage({
+          timestamp: Date.now(),
+          userId: input.userId,
+          model: cachedModel,
+          inputTokens: 0,
+          outputTokens: 0,
+          operation: 'chat',
+          cached: true,
+          durationMs: Date.now() - startTime,
+        });
+
+        await captureMentorMemory(input, cached.response);
+
         // Simulate streaming for cached response
         for await (const chunk of simulateStream(cached.response, { chunkSize: 10, delayMs: 20 })) {
           yield { ...chunk, id: requestId };
@@ -392,6 +500,7 @@ export async function* aiMentorChatStream(
     }
 
     // Build messages with vector memory context
+    await hydrateMentorMemory(input.userId, { maxInsights: 12, maxSummaries: 6 });
     const relevantMemories = await getRelevantContext(input.userId, input.message, {
       maxResults: 3,
       minSimilarity: 0.5,
@@ -409,16 +518,37 @@ export async function* aiMentorChatStream(
     const routing = selectModel(securityCheck.sanitized, {
       budgetMode: input.modelHint === 'cheap' ? 'strict' : input.modelHint === 'smart' ? 'performance' : 'balanced',
     });
-    const client = getKimiClient();
+    const executionPlan = resolveAIExecutionPlan({
+      messages: [...input.history, { role: 'user', content: securityCheck.sanitized }],
+      modelHint: input.modelHint,
+      userTier: 'explorer',
+    });
 
-    // Try primary model, then fallbacks
+    // Try primary plan, then fallbacks
     let stream;
-    let modelUsed = routing.primaryModel;
-    
-    for (const modelId of [routing.primaryModel, ...routing.fallbackChain]) {
+    let modelUsed = executionPlan.modelId;
+    let providerUsed = executionPlan.providerId;
+    const attempts: CompletionAttempt[] = [
+      { providerId: executionPlan.providerId, modelId: executionPlan.modelId },
+      ...executionPlan.fallbackPlans,
+      ...routing.fallbackChain.map((modelId) => ({
+        providerId: executionPlan.providerId,
+        modelId,
+      })),
+    ];
+
+    const dedupedAttempts = attempts.filter((candidate, index, self) => (
+      self.findIndex(
+        (item) => item.providerId === candidate.providerId && item.modelId === candidate.modelId
+      ) === index
+    ));
+    const finalAttempt = dedupedAttempts[dedupedAttempts.length - 1];
+
+    for (const attempt of dedupedAttempts) {
       try {
+        const client = createTextClient(attempt.providerId);
         stream = await client.chat.completions.create({
-          model: modelId,
+          model: attempt.modelId,
           messages: [
             { role: 'system', content: systemPrompt },
             ...input.history.slice(-6).map(h => ({ role: h.role as 'user' | 'assistant' | 'system', content: h.content })),
@@ -428,13 +558,17 @@ export async function* aiMentorChatStream(
           max_tokens: 2048,
           stream: true,
         });
-        modelUsed = modelId;
-        circuitBreaker.recordSuccess(modelId);
+        modelUsed = attempt.modelId;
+        providerUsed = attempt.providerId;
+        circuitBreaker.recordSuccess(attempt.modelId);
         break;
       } catch (error) {
-        logger.warn(`[ChatFlow] Model ${modelId} failed in stream`, { error: (error as Error).message });
-        circuitBreaker.recordFailure(modelId);
-        if (modelId === routing.fallbackChain[routing.fallbackChain.length - 1]) {
+        logger.warn(`[ChatFlow] Model ${attempt.modelId} failed in stream`, {
+          providerId: attempt.providerId,
+          error: (error as Error).message,
+        });
+        circuitBreaker.recordFailure(attempt.modelId);
+        if (finalAttempt && attempt.providerId === finalAttempt.providerId && attempt.modelId === finalAttempt.modelId) {
           throw error;
         }
       }
@@ -456,13 +590,13 @@ export async function* aiMentorChatStream(
     // Final chunk
     yield {
       id: requestId,
-      content: '',
-      isComplete: true,
-      metadata: {
-        model: modelUsed,
-        finishReason: 'stop',
-        securityThreatLevel: securityCheck.threatLevel,
-      },
+        content: '',
+        isComplete: true,
+        metadata: {
+          model: modelUsed,
+          finishReason: 'stop',
+          securityThreatLevel: securityCheck.threatLevel,
+        },
     };
 
     // Record usage and cache
@@ -493,6 +627,8 @@ export async function* aiMentorChatStream(
     for (const insight of vectorInsights) {
       await vectorMemoryStore.add(input.userId, insight);
     }
+
+    await captureMentorMemory(input, fullContent);
 
   } catch (error) {
     logger.error('[ChatFlow] Streaming error', error instanceof Error ? error : new Error(String(error)));

@@ -155,6 +155,9 @@ export { logXPEvent } from './xp';
 // AI mentor chat
 export { mentorChat } from './mentorChat';
 
+// Social publishing jobs
+export { publishScheduledSocialPosts } from './social-publishing';
+
 // Push notification functions
 export { 
   sendPushNotification, 

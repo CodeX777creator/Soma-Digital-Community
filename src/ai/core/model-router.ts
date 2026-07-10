@@ -10,7 +10,7 @@
  */
 
 import { logger } from '@/lib/logger';
-import { MODEL_CONTEXT_LIMITS, ModelId, estimateTokenCount } from './tokenizer';
+import { MODEL_CONTEXT_LIMITS, type KnownModelId, type ModelId, estimateTokenCount } from './tokenizer';
 
 export interface ModelConfig {
   id: ModelId;
@@ -29,7 +29,7 @@ export interface ModelConfig {
   };
 }
 
-export const MODEL_CONFIGS: Record<ModelId, ModelConfig> = {
+export const MODEL_CONFIGS: Record<KnownModelId, ModelConfig> = {
   'moonshot-v1-8k': {
     id: 'moonshot-v1-8k',
     costRank: 1,

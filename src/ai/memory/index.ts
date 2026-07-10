@@ -23,3 +23,10 @@ export {
   type MemoryContext,
   type VectorMemoryEntry,
 } from './conversation-memory';
+
+export {
+  hydrateMentorMemory,
+  persistMentorMemory,
+  type MentorMemorySnapshot,
+  type PersistMentorMemoryInput,
+} from './persistent-memory';

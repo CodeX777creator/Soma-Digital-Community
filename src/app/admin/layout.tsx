@@ -19,11 +19,13 @@ import {
   Users,
   X,
   Bell,
+  Activity,
 } from "lucide-react";
 import { auth, db } from "@/lib/firebase";
 
 const navItems = [
   { label: "Dashboard", href: "/admin/dashboard", icon: LayoutDashboard },
+  { label: "Analytics", href: "/admin/analytics", icon: Activity },
   { label: "Marketplace", href: "/admin/marketplace", icon: Boxes },
   { label: "Purchases", href: "/admin/purchases", icon: GraduationCap },
   { label: "Users", href: "/admin/users", icon: Users },

@@ -16,6 +16,7 @@ export interface UserMemory {
   extractedInsights: Insight[];
   conversationSummaries: ConversationSummary[];
   preferences: UserPreferences;
+  businessGoals?: string;
   lastUpdated: number;
 }
 
@@ -46,12 +47,14 @@ export interface UserPreferences {
   avoidedTopics?: string[];
   responseLength?: 'short' | 'medium' | 'long';
   timezone?: string;
+  preferredTone?: 'professional' | 'casual' | 'encouraging' | 'direct';
 }
 
 export interface MemoryContext {
   relevantInsights: Insight[];
   recentSummary?: ConversationSummary;
   userPreferences: UserPreferences;
+  businessGoals?: string;
 }
 
 // In-memory storage (replace with database in production)
@@ -223,6 +226,7 @@ export function getMemoryContext(
     relevantInsights,
     recentSummary,
     userPreferences: includePreferences ? memory.preferences : {},
+    businessGoals: memory.businessGoals,
   };
 }
 
@@ -235,6 +239,7 @@ export function storeMemory(
     insights?: Insight[];
     summary?: ConversationSummary;
     preferences?: Partial<UserPreferences>;
+    businessGoals?: string;
   }
 ): void {
   let memory = memoryStore.get(userId);
@@ -272,7 +277,14 @@ export function storeMemory(
   }
 
   if (updates.summary) {
-    memory.conversationSummaries.push(updates.summary);
+    const isDuplicateSummary = memory.conversationSummaries.some(existing =>
+      existing.id === updates.summary!.id ||
+      (existing.threadId === updates.summary!.threadId && existing.summary === updates.summary!.summary)
+    );
+
+    if (!isDuplicateSummary) {
+      memory.conversationSummaries.push(updates.summary);
+    }
     
     // Limit stored summaries
     if (memory.conversationSummaries.length > 20) {
@@ -284,6 +296,10 @@ export function storeMemory(
 
   if (updates.preferences) {
     memory.preferences = { ...memory.preferences, ...updates.preferences };
+  }
+
+  if (typeof updates.businessGoals === 'string' && updates.businessGoals.trim()) {
+    memory.businessGoals = updates.businessGoals.trim();
   }
 
   memory.lastUpdated = Date.now();
@@ -326,8 +342,16 @@ export function formatMemoryForPrompt(context: MemoryContext): string {
     parts.push(`\nUser prefers ${context.userPreferences.communicationStyle} communication.`);
   }
 
+  if (context.userPreferences.preferredTone) {
+    parts.push(`User prefers a ${context.userPreferences.preferredTone} tone.`);
+  }
+
   if (context.userPreferences.expertiseLevel) {
     parts.push(`User has ${context.userPreferences.expertiseLevel} level expertise.`);
+  }
+
+  if (context.businessGoals) {
+    parts.push(`Business goals: ${context.businessGoals}`);
   }
 
   return parts.join('\n');
