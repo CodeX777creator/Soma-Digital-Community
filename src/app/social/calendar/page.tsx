@@ -38,7 +38,7 @@ import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/providers/AuthProvider";
 import { cn } from "@/lib/utils";
-import { SOCIAL_PROVIDER_REGISTRY } from "@/social/providers";
+import { SOCIAL_PROVIDER_REGISTRY } from "@/lib/social-data";
 import { SCHEDULED_POST_STATUSES, type ScheduledPostRecord, type ScheduledPostStatus, type SocialPlatform } from "@/social/types";
 
 type CalendarResponse = {

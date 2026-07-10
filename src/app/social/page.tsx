@@ -3,7 +3,7 @@
 import Link from "next/link";
 import type { ReactNode, FormEvent } from "react";
 import { useEffect, useMemo, useState } from "react";
-import { CalendarDays, CheckCircle2, Facebook, Instagram, Loader2, Send, Shield, Smartphone, Trash2, Youtube, Linkedin, X, Music4 } from "lucide-react";
+import { CalendarDays, CheckCircle2, ChevronDown, ChevronUp, Facebook, Instagram, Loader2, Send, Shield, Smartphone, Trash2, Youtube, Linkedin, X, Music4 } from "lucide-react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import { Button } from "@/components/ui/button";
@@ -13,7 +13,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/providers/AuthProvider";
 import { cn } from "@/lib/utils";
-import { SOCIAL_PROVIDER_REGISTRY } from "@/social/providers";
+import { SOCIAL_PROVIDER_REGISTRY } from "@/lib/social-data";
 import type { SocialAccountRecord, SocialPlatform } from "@/social/types";
 
 type SocialHubResponse = {
@@ -105,6 +105,7 @@ export default function SocialHubPage() {
   });
   const [loading, setLoading] = useState(false);
   const [loadingHistory, setLoadingHistory] = useState(true);
+  const [showAdvancedCredentials, setShowAdvancedCredentials] = useState(false);
   const [form, setForm] = useState<SocialHubFormState>({
     providerId: DEFAULT_PROVIDER,
     accountName: "",
@@ -388,21 +389,47 @@ export default function SocialHubPage() {
                   <Input value={form.scopes} onChange={(event) => updateField("scopes", event.target.value)} placeholder="Comma-separated scopes or permissions" />
                 </div>
 
-                <div className="grid gap-4 md:grid-cols-2">
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">Access token</label>
-                    <Textarea value={form.accessToken} onChange={(event) => updateField("accessToken", event.target.value)} rows={4} placeholder="Stored encrypted in Firestore." />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">Refresh token</label>
-                    <Textarea value={form.refreshToken} onChange={(event) => updateField("refreshToken", event.target.value)} rows={4} placeholder="Optional refresh token." />
-                  </div>
+                <div className="rounded-md border border-white/10 bg-white/[0.03] p-4">
+                  <button
+                    type="button"
+                    className="flex w-full items-center justify-between text-left"
+                    onClick={() => setShowAdvancedCredentials((current) => !current)}
+                  >
+                    <div>
+                      <div className="text-sm font-medium">Advanced credentials</div>
+                      <div className="text-xs text-muted-foreground">Only use this when importing an existing connection.</div>
+                    </div>
+                    {showAdvancedCredentials ? <ChevronUp className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
+                  </button>
+
+                  {showAdvancedCredentials && (
+                    <div className="mt-4 grid gap-4 md:grid-cols-2">
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium">Access token</label>
+                        <Input
+                          type="password"
+                          value={form.accessToken}
+                          onChange={(event) => updateField("accessToken", event.target.value)}
+                          placeholder="Optional"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium">Refresh token</label>
+                        <Input
+                          type="password"
+                          value={form.refreshToken}
+                          onChange={(event) => updateField("refreshToken", event.target.value)}
+                          placeholder="Optional"
+                        />
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 <div className="grid gap-4 md:grid-cols-3">
                   <div className="space-y-2">
                     <label className="text-sm font-medium">External account ID</label>
-                    <Input value={form.externalAccountId} onChange={(event) => updateField("externalAccountId", event.target.value)} placeholder="Provider user or page ID" />
+                    <Input value={form.externalAccountId} onChange={(event) => updateField("externalAccountId", event.target.value)} placeholder="Optional" />
                   </div>
                   <div className="space-y-2">
                     <label className="text-sm font-medium">Token type</label>
