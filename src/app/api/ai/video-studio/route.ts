@@ -12,6 +12,7 @@ import {
   VIDEO_STYLE_PRESETS,
   type BrandTemplate,
   type VideoAspectRatio,
+  type VideoScene,
   type VideoStylePreset,
 } from '@/ai/studio/types';
 import { sanitizeString } from '@/lib/security';
@@ -36,6 +37,25 @@ function normalizeBrandTemplate(value: unknown): BrandTemplate | null {
     fonts: Array.isArray(template.fonts) ? template.fonts.filter((item): item is string => typeof item === 'string') : undefined,
     notes: typeof template.notes === 'string' ? template.notes : undefined,
   };
+}
+
+function normalizeScenes(value: unknown): VideoScene[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+
+  const scenes = value.slice(0, 12).map((scene, index) => {
+    const item = scene as Record<string, unknown>;
+    return {
+      sceneNumber: typeof item.sceneNumber === 'number' ? item.sceneNumber : index + 1,
+      durationSeconds: typeof item.durationSeconds === 'number' ? Math.max(3, Math.min(180, Math.round(item.durationSeconds))) : 10,
+      visualDescription: typeof item.visualDescription === 'string' ? sanitizeString(item.visualDescription, 600) : 'Business-focused scene',
+      narration: typeof item.narration === 'string' ? sanitizeString(item.narration, 600) : '',
+      onScreenText: typeof item.onScreenText === 'string' ? sanitizeString(item.onScreenText, 240) : '',
+      cameraDirection: typeof item.cameraDirection === 'string' ? sanitizeString(item.cameraDirection, 240) : undefined,
+      transition: typeof item.transition === 'string' ? sanitizeString(item.transition, 160) : undefined,
+    } satisfies VideoScene;
+  });
+
+  return scenes.length > 0 ? scenes : undefined;
 }
 
 function parseLimit(req: NextRequest): number {
@@ -83,6 +103,7 @@ const handler = createAPIHandler(
       prompt: sanitizeString(body.prompt, 4000),
       promptEdits: typeof body.promptEdits === 'string' ? sanitizeString(body.promptEdits, 2000) : undefined,
       negativePrompt: typeof body.negativePrompt === 'string' ? sanitizeString(body.negativePrompt, 1000) : undefined,
+      scenes: normalizeScenes(body.scenes),
       stylePreset: isAllowedStylePreset(body.stylePreset) ? body.stylePreset : undefined,
       aspectRatio: isAllowedAspectRatio(body.aspectRatio) ? body.aspectRatio : undefined,
       durationSeconds: typeof body.durationSeconds === 'number' ? body.durationSeconds : undefined,

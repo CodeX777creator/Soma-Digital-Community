@@ -225,6 +225,7 @@ export interface VideoGenerationInput {
   prompt: string;
   promptEdits?: string;
   negativePrompt?: string;
+  scenes?: VideoScene[];
   stylePreset?: VideoStylePreset;
   aspectRatio?: VideoAspectRatio;
   durationSeconds?: number;
@@ -259,9 +260,11 @@ export interface VideoAssetRecord {
   brandName?: string;
   storagePath: string;
   thumbnail: string;
+  posterFrameUrl?: string;
   provider: string;
   model: string;
   promptVersion: string;
+  renderStrategy?: 'ffmpeg' | 'cloud' | 'bundle';
   visibility: 'private' | 'team' | 'public';
   tags: string[];
   checksum: string;

@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import { History, Loader2, Play, Sparkles, Video, Wand2, Download } from "lucide-react";
+import { ChevronDown, ChevronUp, Download, History, Loader2, Play, Plus, RotateCcw, Sparkles, Trash2, Video, Wand2 } from "lucide-react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import { Button } from "@/components/ui/button";
@@ -56,6 +56,52 @@ interface VideoStudioFormState {
 
 const DEFAULT_PROMPT = "Create a polished business explainer video that makes the audience understand the value quickly and clearly.";
 
+function createSceneDraft(prompt: string, index: number, durationSeconds: number): VideoScene {
+  const base = Math.max(4, Math.round(durationSeconds / 3));
+  const sceneThemes = [
+    {
+      visualDescription: `Opening hook that introduces ${prompt.toLowerCase()}`,
+      narration: "Set up the problem and why it matters.",
+      onScreenText: "Start here",
+    },
+    {
+      visualDescription: "Middle scene showing the workflow, transformation, or proof.",
+      narration: "Show the value in motion.",
+      onScreenText: "The opportunity",
+    },
+    {
+      visualDescription: "Closing scene with a strong call to action and brand finish.",
+      narration: "Invite the viewer to take the next step.",
+      onScreenText: "Take action",
+    },
+  ];
+
+  const template = sceneThemes[index % sceneThemes.length];
+
+  return {
+    sceneNumber: index + 1,
+    durationSeconds: base,
+    visualDescription: template.visualDescription,
+    narration: template.narration,
+    onScreenText: template.onScreenText,
+  };
+}
+
+function createDefaultTimeline(prompt: string, durationSeconds: number): VideoScene[] {
+  return [0, 1, 2].map((index) => createSceneDraft(prompt, index, durationSeconds));
+}
+
+function normalizeTimelineScenes(scenes: VideoScene[]): VideoScene[] {
+  return scenes.map((scene, index) => ({
+    ...scene,
+    sceneNumber: index + 1,
+    durationSeconds: Math.max(3, Math.round(scene.durationSeconds || 3)),
+    visualDescription: scene.visualDescription || "Business-focused scene",
+    narration: scene.narration || "",
+    onScreenText: scene.onScreenText || "",
+  }));
+}
+
 function buildBrandTemplate(form: VideoStudioFormState): BrandTemplate | null {
   const colors = form.brandColors
     .split(",")
@@ -102,12 +148,17 @@ export default function VideoStudioPage() {
     brandFonts: "",
     visibility: "private",
   });
+  const [timelineScenes, setTimelineScenes] = useState<VideoScene[]>(() => createDefaultTimeline(DEFAULT_PROMPT, 30));
   const [history, setHistory] = useState<VideoAssetRecord[]>([]);
   const [latestVideo, setLatestVideo] = useState<VideoGenerationResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [loadingHistory, setLoadingHistory] = useState(true);
 
   const brandTemplate = useMemo(() => buildBrandTemplate(state), [state]);
+  const totalTimelineDuration = useMemo(
+    () => timelineScenes.reduce((sum, scene) => sum + (Number(scene.durationSeconds) || 0), 0),
+    [timelineScenes]
+  );
 
   const loadHistory = async () => {
     if (!user) return;
@@ -172,6 +223,40 @@ export default function VideoStudioPage() {
     setState((current) => ({ ...current, [key]: value }));
   };
 
+  const resetTimeline = () => {
+    setTimelineScenes(createDefaultTimeline(state.prompt || DEFAULT_PROMPT, state.durationSeconds));
+  };
+
+  const addScene = () => {
+    setTimelineScenes((current) => normalizeTimelineScenes([...current, createSceneDraft(state.prompt || DEFAULT_PROMPT, current.length, state.durationSeconds)]));
+  };
+
+  const moveScene = (index: number, direction: -1 | 1) => {
+    setTimelineScenes((current) => {
+      const nextIndex = index + direction;
+      if (nextIndex < 0 || nextIndex >= current.length) return current;
+      const next = [...current];
+      const [item] = next.splice(index, 1);
+      next.splice(nextIndex, 0, item);
+      return normalizeTimelineScenes(next);
+    });
+  };
+
+  const removeScene = (index: number) => {
+    setTimelineScenes((current) => {
+      if (current.length <= 1) return current;
+      return normalizeTimelineScenes(current.filter((_, itemIndex) => itemIndex !== index));
+    });
+  };
+
+  const updateScene = <K extends keyof VideoScene>(index: number, key: K, value: VideoScene[K]) => {
+    setTimelineScenes((current) =>
+      normalizeTimelineScenes(
+        current.map((scene, itemIndex) => (itemIndex === index ? { ...scene, [key]: value } : scene))
+      )
+    );
+  };
+
   const handleGenerate = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!user || loading) return;
@@ -189,6 +274,7 @@ export default function VideoStudioPage() {
           prompt: state.prompt,
           promptEdits: state.promptEdits || undefined,
           negativePrompt: state.negativePrompt || undefined,
+          scenes: timelineScenes,
           stylePreset: state.stylePreset,
           aspectRatio: state.aspectRatio,
           durationSeconds: state.durationSeconds,
@@ -208,6 +294,9 @@ export default function VideoStudioPage() {
 
       const data = (await response.json()) as VideoStudioResponse;
       setLatestVideo(data.video);
+      if (Array.isArray(data.video.scenes) && data.video.scenes.length > 0) {
+        setTimelineScenes(normalizeTimelineScenes(data.video.scenes));
+      }
       await loadHistory();
       toast({
         title: "Video prepared",
@@ -329,6 +418,133 @@ export default function VideoStudioPage() {
                   <Textarea value={state.brandTemplateNotes} onChange={(event) => updateField("brandTemplateNotes", event.target.value)} rows={3} placeholder="Describe the visual identity, pacing, or audience goals." />
                 </div>
 
+                <div className="rounded-md border border-border p-4 space-y-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <h3 className="text-sm font-semibold">Timeline</h3>
+                      <p className="text-xs text-muted-foreground">
+                        Reorder or edit scenes before generation. Total duration: {totalTimelineDuration}s
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Button type="button" variant="outline" size="sm" onClick={resetTimeline}>
+                        <RotateCcw className="h-4 w-4" />
+                        Reset
+                      </Button>
+                      <Button type="button" variant="outline" size="sm" onClick={addScene}>
+                        <Plus className="h-4 w-4" />
+                        Add scene
+                      </Button>
+                    </div>
+                  </div>
+
+                  <div className="space-y-3">
+                    {timelineScenes.map((scene, index) => (
+                      <div key={`${scene.sceneNumber}-${index}`} className="rounded-md border border-border p-3">
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <p className="text-sm font-medium">Scene {index + 1}</p>
+                            <p className="text-xs text-muted-foreground">Timeline order and content</p>
+                          </div>
+                          <div className="flex items-center gap-1">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="h-8 w-8 p-0"
+                              onClick={() => moveScene(index, -1)}
+                              disabled={index === 0}
+                            >
+                              <ChevronUp className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="h-8 w-8 p-0"
+                              onClick={() => moveScene(index, 1)}
+                              disabled={index === timelineScenes.length - 1}
+                            >
+                              <ChevronDown className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="h-8 w-8 p-0"
+                              onClick={() => removeScene(index)}
+                              disabled={timelineScenes.length === 1}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </div>
+
+                        <div className="mt-3 grid gap-3 md:grid-cols-2">
+                          <div className="space-y-2">
+                            <label className="text-xs font-medium text-muted-foreground">Duration</label>
+                            <Input
+                              type="number"
+                              min={3}
+                              max={180}
+                              value={scene.durationSeconds}
+                              onChange={(event) => updateScene(index, "durationSeconds", Number(event.target.value) || 3)}
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <label className="text-xs font-medium text-muted-foreground">On-screen text</label>
+                            <Input
+                              value={scene.onScreenText}
+                              onChange={(event) => updateScene(index, "onScreenText", event.target.value)}
+                              placeholder="Short, legible message"
+                            />
+                          </div>
+                        </div>
+
+                        <div className="mt-3 grid gap-3 md:grid-cols-2">
+                          <div className="space-y-2">
+                            <label className="text-xs font-medium text-muted-foreground">Visual description</label>
+                            <Textarea
+                              rows={3}
+                              value={scene.visualDescription}
+                              onChange={(event) => updateScene(index, "visualDescription", event.target.value)}
+                              placeholder="Describe what the viewer sees."
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <label className="text-xs font-medium text-muted-foreground">Narration</label>
+                            <Textarea
+                              rows={3}
+                              value={scene.narration}
+                              onChange={(event) => updateScene(index, "narration", event.target.value)}
+                              placeholder="Voiceover or spoken line."
+                            />
+                          </div>
+                        </div>
+
+                        <div className="mt-3 grid gap-3 md:grid-cols-2">
+                          <div className="space-y-2">
+                            <label className="text-xs font-medium text-muted-foreground">Camera direction</label>
+                            <Input
+                              value={scene.cameraDirection || ""}
+                              onChange={(event) => updateScene(index, "cameraDirection", event.target.value)}
+                              placeholder="Slow push-in, static frame, etc."
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <label className="text-xs font-medium text-muted-foreground">Transition</label>
+                            <Input
+                              value={scene.transition || ""}
+                              onChange={(event) => updateScene(index, "transition", event.target.value)}
+                              placeholder="Cut, fade, swipe, etc."
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
                 <div className="grid gap-4 md:grid-cols-2">
                   <label className="flex items-center gap-2 text-sm font-medium">
                     <input
@@ -365,7 +581,13 @@ export default function VideoStudioPage() {
               {latestVideo ? (
                 <div className="mt-4 space-y-4">
                   <div className="overflow-hidden rounded-md border border-border bg-black/20">
-                    {latestVideo.downloadUrl && latestVideo.mimeType.startsWith("video/") ? (
+                    {latestVideo.posterFrameUrl ? (
+                      <img
+                        src={latestVideo.posterFrameUrl}
+                        alt={latestVideo.title}
+                        className="w-full aspect-video object-cover"
+                      />
+                    ) : latestVideo.downloadUrl && latestVideo.mimeType.startsWith("video/") ? (
                       <video controls className="w-full aspect-video object-cover" src={latestVideo.downloadUrl} />
                     ) : (
                       <div className="flex aspect-video items-center justify-center p-6 text-sm text-muted-foreground">
@@ -420,7 +642,9 @@ export default function VideoStudioPage() {
                 {history.length > 0 ? history.map((asset) => (
                   <div key={asset.assetId} className="flex gap-3 rounded-md border border-border p-3">
                     <div className="h-16 w-16 flex-none overflow-hidden rounded-sm border border-border bg-black/10">
-                      {asset.downloadUrl && asset.status === "completed" ? (
+                      {asset.posterFrameUrl ? (
+                        <img src={asset.posterFrameUrl} alt={asset.title} className="h-full w-full object-cover" />
+                      ) : asset.downloadUrl && asset.status === "completed" ? (
                         <video src={asset.downloadUrl} className="h-full w-full object-cover" muted playsInline />
                       ) : (
                         <div className="flex h-full w-full items-center justify-center bg-black/10">

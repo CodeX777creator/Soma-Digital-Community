@@ -385,6 +385,15 @@ export function buildVideoPrompt(context: {
   prompt: string;
   promptEdits?: string;
   negativePrompt?: string;
+  scenes?: Array<{
+    sceneNumber: number;
+    durationSeconds: number;
+    visualDescription: string;
+    narration: string;
+    onScreenText: string;
+    cameraDirection?: string;
+    transition?: string;
+  }>;
   stylePreset?: string;
   aspectRatio?: string;
   durationSeconds?: number;
@@ -419,6 +428,7 @@ Rules:
     userPromptTemplate: `Primary Prompt: {{prompt}}
 Prompt Edits: {{promptEdits}}
 Negative Prompt: {{negativePrompt}}
+Provided Scenes: {{scenes}}
 Style Preset: {{stylePreset}}
 Aspect Ratio: {{aspectRatio}}
 Duration Seconds: {{durationSeconds}}
@@ -446,6 +456,7 @@ Generate the JSON video blueprint now.`,
       prompt: context.prompt,
       promptEdits: context.promptEdits || 'none',
       negativePrompt: context.negativePrompt || 'none',
+      scenes: context.scenes && context.scenes.length > 0 ? JSON.stringify(context.scenes, null, 2) : 'none',
       stylePreset: context.stylePreset || 'cinematic',
       aspectRatio: context.aspectRatio || '16:9',
       durationSeconds: context.durationSeconds || 30,

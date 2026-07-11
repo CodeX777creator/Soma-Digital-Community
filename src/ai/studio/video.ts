@@ -6,7 +6,8 @@ import { detectInjection } from '@/ai/guardrails';
 import { estimateTokenCount } from '@/ai/core/tokenizer';
 import { recordUsage } from '@/ai/analytics';
 import { extractJsonObject } from '@/ai/platform';
-import { executeMonetizedTextRequest, executeMonetizedVideoRequest, normalizeRoutingPlan } from '@/services/ai-platform';
+import { executeMonetizedTextRequest, normalizeRoutingPlan } from '@/services/ai-platform';
+import { renderVideoAsset, type VideoRenderResult } from './video-renderer';
 import {
   VIDEO_ASPECT_RATIOS,
   VIDEO_STYLE_PRESETS,
@@ -39,6 +40,10 @@ function buildBundlePath(ownerId: string, assetId: string): string {
   return `generated-assets/${ownerId}/videos/${assetId}.json`;
 }
 
+function buildPosterPath(ownerId: string, assetId: string): string {
+  return `generated-assets/${ownerId}/videos/${assetId}-poster.png`;
+}
+
 function buildThumbnailPrompt(input: VideoGenerationInput, scenes: VideoScene[]): string {
   const firstScene = scenes[0]?.visualDescription || input.prompt;
   return [
@@ -50,6 +55,38 @@ function buildThumbnailPrompt(input: VideoGenerationInput, scenes: VideoScene[])
     `Aspect ratio: ${input.aspectRatio || '16:9'}`,
     `Make the thumbnail high contrast, clear, and business focused.`,
   ].filter(Boolean).join('\n');
+}
+
+function normalizeInputScenes(scenes: VideoGenerationInput['scenes'], defaultDuration: number): VideoScene[] {
+  const list = Array.isArray(scenes) ? scenes : [];
+  const normalized = list.map((scene: any, index: number) => ({
+    sceneNumber: typeof scene?.sceneNumber === 'number' ? scene.sceneNumber : index + 1,
+    durationSeconds: typeof scene?.durationSeconds === 'number' ? Math.max(3, Math.round(scene.durationSeconds)) : Math.max(3, Math.round(defaultDuration / Math.max(list.length || 1, 1))),
+    visualDescription: typeof scene?.visualDescription === 'string' && scene.visualDescription.trim() ? scene.visualDescription : 'Business-focused scene',
+    narration: typeof scene?.narration === 'string' ? scene.narration : '',
+    onScreenText: typeof scene?.onScreenText === 'string' ? scene.onScreenText : '',
+    cameraDirection: typeof scene?.cameraDirection === 'string' ? scene.cameraDirection : undefined,
+    transition: typeof scene?.transition === 'string' ? scene.transition : undefined,
+  } as VideoScene));
+
+  if (normalized.length > 0) {
+    return normalized.map((scene, index) => ({ ...scene, sceneNumber: index + 1 }));
+  }
+
+  return [];
+}
+
+function deriveSceneBlueprint(input: VideoGenerationInput, scenes: VideoScene[]) {
+  const script = scenes.map((scene) => `${scene.sceneNumber}. ${scene.narration || scene.visualDescription}`).join('\n');
+  const voiceoverScript = scenes.map((scene) => scene.narration || scene.visualDescription).join(' ');
+  const captions = scenes.map((scene) => scene.onScreenText).filter(Boolean);
+
+  return {
+    script,
+    voiceoverScript,
+    captions,
+    thumbnailPrompt: buildThumbnailPrompt(input, scenes),
+  };
 }
 
 async function saveBufferToStorage(buffer: Buffer, storagePath: string, contentType: string, ownerId: string): Promise<string> {
@@ -74,6 +111,10 @@ async function saveBufferToStorage(buffer: Buffer, storagePath: string, contentT
   });
 
   return downloadUrl;
+}
+
+async function savePosterFrame(buffer: Buffer, storagePath: string, ownerId: string): Promise<string> {
+  return saveBufferToStorage(buffer, storagePath, 'image/png', ownerId);
 }
 
 async function saveJsonBundle(storagePath: string, ownerId: string, payload: Record<string, unknown>): Promise<string> {
@@ -169,6 +210,7 @@ async function planVideoBlueprint(input: VideoGenerationInput) {
     prompt: input.prompt,
     promptEdits: input.promptEdits,
     negativePrompt: input.negativePrompt,
+    scenes: input.scenes,
     stylePreset: input.stylePreset,
     aspectRatio: input.aspectRatio,
     durationSeconds: input.durationSeconds,
@@ -203,27 +245,35 @@ async function planVideoBlueprint(input: VideoGenerationInput) {
   });
 
   const parsed = extractJsonObject<Record<string, any>>(completion.text);
+  const providerId = (completion as any)?.plan?.providerId || 'vercel-ai-gateway';
+  const modelId = (completion as any)?.plan?.modelId || 'video-blueprint';
   const durationSeconds = Math.max(6, Math.min(180, input.durationSeconds || 30));
-  const scenes = normalizeScenariosToScenes(parsed, durationSeconds);
+  const providedScenes = normalizeInputScenes(input.scenes, durationSeconds);
+  const scenes = providedScenes.length > 0 ? providedScenes : normalizeScenariosToScenes(parsed, durationSeconds);
   const renderPrompt = typeof parsed.renderPrompt === 'string'
     ? parsed.renderPrompt
     : `${input.prompt} | ${input.brandName || input.brandTemplate?.name || ''} | ${input.stylePreset || 'cinematic'} | ${input.aspectRatio || '16:9'}`;
+  const sceneBlueprint = providedScenes.length > 0 ? deriveSceneBlueprint(input, scenes) : null;
 
   return {
     prompt,
     parsed,
+    providerId,
+    modelId,
     durationSeconds,
     scenes,
     renderPrompt,
     title: typeof parsed.title === 'string' && parsed.title.trim() ? parsed.title : (input.title?.trim() || 'Generated video'),
     summary: typeof parsed.summary === 'string' ? parsed.summary : '',
-    voiceoverScript: typeof parsed.voiceoverScript === 'string'
+    voiceoverScript: sceneBlueprint?.voiceoverScript || (typeof parsed.voiceoverScript === 'string'
       ? parsed.voiceoverScript
-      : scenes.map((scene) => scene.narration).join(' '),
-    captions: Array.isArray(parsed.captions) ? parsed.captions.filter((item: unknown): item is string => typeof item === 'string') : scenes.map((scene) => scene.onScreenText).filter(Boolean),
-    thumbnailPrompt: typeof parsed.thumbnailPrompt === 'string' ? parsed.thumbnailPrompt : buildThumbnailPrompt(input, scenes),
-    renderNotes: typeof parsed.renderNotes === 'string' ? parsed.renderNotes : 'No additional render notes supplied.',
-    script: typeof parsed.script === 'string' ? parsed.script : scenes.map((scene) => `${scene.sceneNumber}. ${scene.narration}`).join('\n'),
+      : scenes.map((scene) => scene.narration).join(' ')),
+    captions: sceneBlueprint?.captions || (Array.isArray(parsed.captions) ? parsed.captions.filter((item: unknown): item is string => typeof item === 'string') : scenes.map((scene) => scene.onScreenText).filter(Boolean)),
+    thumbnailPrompt: sceneBlueprint?.thumbnailPrompt || (typeof parsed.thumbnailPrompt === 'string' ? parsed.thumbnailPrompt : buildThumbnailPrompt(input, scenes)),
+    renderNotes: providedScenes.length > 0
+      ? `${typeof parsed.renderNotes === 'string' ? parsed.renderNotes : 'No additional render notes supplied.'} User-edited timeline was preserved.`
+      : typeof parsed.renderNotes === 'string' ? parsed.renderNotes : 'No additional render notes supplied.',
+    script: sceneBlueprint?.script || (typeof parsed.script === 'string' ? parsed.script : scenes.map((scene) => `${scene.sceneNumber}. ${scene.narration}`).join('\n')),
   };
 }
 
@@ -241,6 +291,7 @@ export async function generateVideoStudioAsset(
   const stylePreset = normalizeStylePreset(input.stylePreset);
   const durationSeconds = Math.max(6, Math.min(180, Math.floor(input.durationSeconds || 30)));
   const assetId = `vid_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+  const providedScenes = normalizeInputScenes(input.scenes, durationSeconds);
 
   const injectionCheck = detectInjection([
     normalizedPrompt,
@@ -256,9 +307,10 @@ export async function generateVideoStudioAsset(
 
   const blueprint = await planVideoBlueprint({
     ...input,
-      prompt: injectionCheck.sanitized || normalizedPrompt,
+    prompt: injectionCheck.sanitized || normalizedPrompt,
     promptEdits: normalizedEdits,
     negativePrompt: normalizedNegative,
+    scenes: providedScenes.length > 0 ? providedScenes : undefined,
     brandName: normalizedBrandName,
     conversationSummary: normalizedSummary,
     aspectRatio,
@@ -266,76 +318,77 @@ export async function generateVideoStudioAsset(
     durationSeconds,
   });
 
-  const renderInput = {
-    prompt: blueprint.renderPrompt,
-    task: 'video_generation' as const,
-    userId: ownerId,
-    userTier: input.userTier || 'pro',
-    providerPreference: input.providerPreference as any,
-    aspectRatio,
-    durationSeconds,
-    stylePreset,
-    negativePrompt: normalizedNegative,
-    captionsEnabled: input.captionsEnabled ?? true,
-    voiceoverScript: blueprint.voiceoverScript,
-    renderNotes: blueprint.renderNotes,
+  let renderOutcome: VideoRenderResult = {
+    renderer: 'bundle',
+    status: 'queued',
+    mimeType: 'application/json',
   };
-
   let videoBuffer: Buffer | undefined;
+  let posterFrameUrl: string | undefined;
   let mimeType = 'video/mp4';
   let downloadUrl: string | undefined;
   let renderState: 'completed' | 'queued' | 'failed' = 'queued';
   let jobStatus: 'queued' | 'completed' | 'failed' = 'queued';
   let actualStoragePath = '';
   let rawPlan: Record<string, any> = blueprint.parsed;
-  let providerId = 'vercel-ai-gateway';
-  let modelId = 'veo-3';
+  let providerId = blueprint.providerId;
+  let modelId = blueprint.modelId;
   let queue = 'video-studio';
   let jobId = `job_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
 
   try {
-    const generation = await executeMonetizedVideoRequest(renderInput, {
-      userId: ownerId,
-      task: 'video_generation',
-      feature: 'video_generation',
-      modality: 'video',
-      message: renderInput.prompt,
-      userTier: input.userTier || 'pro',
-      providerPreference: input.providerPreference as any,
-      providerMode: 'hybrid',
-      allowByok: false,
-      requestId: `vid_${assetId}`,
+    renderOutcome = await renderVideoAsset({
+      title: blueprint.title,
+      prompt: normalizedPrompt,
+      renderPrompt: blueprint.renderPrompt,
+      scenes: blueprint.scenes,
+      stylePreset,
+      aspectRatio,
+      durationSeconds,
+      captionsEnabled: input.captionsEnabled ?? true,
+      voiceoverScript: blueprint.voiceoverScript,
+      thumbnailPrompt: blueprint.thumbnailPrompt,
+      renderNotes: blueprint.renderNotes,
+      brandName: normalizedBrandName,
+      brandTemplateName: input.brandTemplate?.name,
+      voiceoverTone: input.voiceoverTone,
     });
-    providerId = generation.plan.providerId;
-    modelId = generation.plan.modelId;
+    renderState = renderOutcome.status;
+    jobStatus = renderOutcome.status;
     rawPlan = {
       ...rawPlan,
-      renderJobId: generation.jobId,
-      raw: generation.raw,
+      renderer: renderOutcome.renderer,
+      renderStatus: renderOutcome.status,
+      renderNotes: renderOutcome.notes || blueprint.renderNotes,
+      raw: renderOutcome.raw || null,
     };
 
-    if (generation.videoBuffer) {
-      videoBuffer = generation.videoBuffer;
-      mimeType = generation.mimeType || 'video/mp4';
-      actualStoragePath = buildStoragePath(ownerId, assetId);
-      downloadUrl = await saveBufferToStorage(videoBuffer, actualStoragePath, mimeType, ownerId);
-      renderState = 'completed';
-      jobStatus = 'completed';
-    } else if (generation.sourceUrl) {
-      const response = await fetch(generation.sourceUrl);
-      if (response.ok) {
-        const arrayBuffer = await response.arrayBuffer();
-        videoBuffer = Buffer.from(arrayBuffer);
-        mimeType = response.headers.get('content-type') || generation.mimeType || 'video/mp4';
+    if (renderOutcome.status === 'completed') {
+      if (renderOutcome.videoBuffer) {
+        videoBuffer = renderOutcome.videoBuffer;
+        mimeType = renderOutcome.mimeType || 'video/mp4';
         actualStoragePath = buildStoragePath(ownerId, assetId);
         downloadUrl = await saveBufferToStorage(videoBuffer, actualStoragePath, mimeType, ownerId);
-        renderState = 'completed';
-        jobStatus = 'completed';
-      } else {
-        renderState = 'queued';
-        jobStatus = 'queued';
+        if (renderOutcome.posterFrameBuffer) {
+          posterFrameUrl = await savePosterFrame(renderOutcome.posterFrameBuffer, buildPosterPath(ownerId, assetId), ownerId);
+        }
+      } else if (renderOutcome.sourceUrl) {
+        const response = await fetch(renderOutcome.sourceUrl);
+        if (response.ok) {
+          const arrayBuffer = await response.arrayBuffer();
+          videoBuffer = Buffer.from(arrayBuffer);
+          mimeType = response.headers.get('content-type') || renderOutcome.mimeType || 'video/mp4';
+          actualStoragePath = buildStoragePath(ownerId, assetId);
+          downloadUrl = await saveBufferToStorage(videoBuffer, actualStoragePath, mimeType, ownerId);
+          if (renderOutcome.posterFrameBuffer) {
+            posterFrameUrl = await savePosterFrame(renderOutcome.posterFrameBuffer, buildPosterPath(ownerId, assetId), ownerId);
+          }
+        } else {
+          renderState = 'queued';
+          jobStatus = 'queued';
+        }
       }
-    } else {
+    } else if (renderOutcome.status === 'queued') {
       renderState = 'queued';
       jobStatus = 'queued';
     }
@@ -374,6 +427,7 @@ export async function generateVideoStudioAsset(
       renderNotes: blueprint.renderNotes,
       renderPrompt: blueprint.renderPrompt,
       renderState,
+      renderer: renderOutcome.renderer,
     });
     downloadUrl = bundleDownloadUrl;
     mimeType = 'application/json';
@@ -407,10 +461,12 @@ export async function generateVideoStudioAsset(
     brandTemplate: input.brandTemplate || null,
     brandName: normalizedBrandName,
     storagePath: actualStoragePath,
-    thumbnail: downloadUrl || '',
+    thumbnail: posterFrameUrl || downloadUrl || '',
+    posterFrameUrl,
     provider: providerId,
     model: modelId,
     promptVersion: 'video-studio@1.0.0',
+    renderStrategy: renderOutcome.renderer,
     visibility: input.visibility || 'private',
     tags: Array.from(new Set([stylePreset, aspectRatio, normalizedBrandName || '', input.brandTemplate?.id || '', ...(input.tags || [])].filter(Boolean))),
     checksum,
@@ -455,6 +511,7 @@ export async function generateVideoStudioAsset(
     model: modelId,
     renderState,
     sceneCount: blueprint.scenes.length,
+    renderStrategy: renderOutcome.renderer,
   });
 
   return {
@@ -495,7 +552,7 @@ export async function listVideoStudioAssets(ownerId: string, limit = 12): Promis
       schemaVariant: data.schemaVariant || 'video-generation-v1',
       assetId: typeof data.assetId === 'string' ? data.assetId : doc.id,
       downloadUrl,
-      thumbnail: downloadUrl || data.thumbnail,
+      thumbnail: data.posterFrameUrl || data.thumbnail || downloadUrl || '',
     });
   }
 

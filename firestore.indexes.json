@@ -233,14 +233,6 @@
       ]
     },
     {
-      "__comment": "AI usage history: supports admin analytics views ordered by request timestamp.",
-      "collectionGroup": "aiUsageEvents",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "timestamp", "order": "DESCENDING" }
-      ]
-    },
-    {
       "__comment": "Semantic cache: supports global cache lookups ordered by freshness.",
       "collectionGroup": "aiSemanticCache",
       "queryScope": "COLLECTION",
