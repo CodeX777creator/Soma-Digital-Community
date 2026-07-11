@@ -623,6 +623,7 @@ export default function AIStudioPage() {
                     <div className="space-y-2">
                       <label className="text-sm font-medium">Content type</label>
                       <select
+                        aria-label="Composer content type"
                         className={cn("h-10 w-full rounded-md border border-input bg-background px-3 text-sm")}
                         value={composer.contentType}
                         onChange={(event) => handleComposerChange("contentType", event.target.value as StudioContentType)}
@@ -637,6 +638,7 @@ export default function AIStudioPage() {
                     <div className="space-y-2">
                       <label className="text-sm font-medium">Tone</label>
                       <select
+                        aria-label="Composer tone"
                         className={cn("h-10 w-full rounded-md border border-input bg-background px-3 text-sm")}
                         value={composer.tone}
                         onChange={(event) => handleComposerChange("tone", event.target.value as StudioTone)}
@@ -747,6 +749,7 @@ export default function AIStudioPage() {
                       />
                     </div>
                     <select
+                      aria-label="Prompt library content type filter"
                       className={cn("h-10 rounded-md border border-input bg-background px-3 text-sm")}
                       value={typeFilter}
                       onChange={(event) => setTypeFilter(event.target.value as StudioContentType | "all")}

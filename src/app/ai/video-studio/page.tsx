@@ -504,7 +504,7 @@ export default function VideoStudioPage() {
                 <div className="grid gap-4 md:grid-cols-4">
                   <div className="space-y-2">
                     <label className="text-sm font-medium">Style preset</label>
-                    <select className={cn("h-10 w-full rounded-md border border-input bg-background px-3 text-sm")} value={state.stylePreset} onChange={(event) => updateField("stylePreset", event.target.value as VideoStylePreset)}>
+                    <select aria-label="Video style preset" className={cn("h-10 w-full rounded-md border border-input bg-background px-3 text-sm")} value={state.stylePreset} onChange={(event) => updateField("stylePreset", event.target.value as VideoStylePreset)}>
                       {VIDEO_STYLE_PRESETS.map((preset) => (
                         <option key={preset} value={preset}>
                           {preset.replace(/_/g, " ")}
@@ -514,7 +514,7 @@ export default function VideoStudioPage() {
                   </div>
                   <div className="space-y-2">
                     <label className="text-sm font-medium">Aspect ratio</label>
-                    <select className={cn("h-10 w-full rounded-md border border-input bg-background px-3 text-sm")} value={state.aspectRatio} onChange={(event) => updateField("aspectRatio", event.target.value as VideoAspectRatio)}>
+                    <select aria-label="Video aspect ratio" className={cn("h-10 w-full rounded-md border border-input bg-background px-3 text-sm")} value={state.aspectRatio} onChange={(event) => updateField("aspectRatio", event.target.value as VideoAspectRatio)}>
                       {VIDEO_ASPECT_RATIOS.map((ratio) => (
                         <option key={ratio} value={ratio}>
                           {ratio}
@@ -797,7 +797,7 @@ export default function VideoStudioPage() {
                   </label>
                   <div className="space-y-2">
                     <label className="text-sm font-medium">Visibility</label>
-                    <select className={cn("h-10 w-full rounded-md border border-input bg-background px-3 text-sm")} value={state.visibility} onChange={(event) => updateField("visibility", event.target.value as VideoStudioFormState["visibility"])}>
+                    <select aria-label="Video visibility" className={cn("h-10 w-full rounded-md border border-input bg-background px-3 text-sm")} value={state.visibility} onChange={(event) => updateField("visibility", event.target.value as VideoStudioFormState["visibility"])}>
                       <option value="private">Private</option>
                       <option value="team">Team</option>
                       <option value="public">Public</option>

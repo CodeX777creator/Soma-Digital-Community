@@ -471,7 +471,7 @@ export default function AudioStudioPage() {
                 <div className="grid gap-4 md:grid-cols-3">
                   <div className="space-y-2">
                     <label className="text-sm font-medium">Voice preset</label>
-                    <select className={cn("h-10 w-full rounded-md border border-input bg-background px-3 text-sm")} value={state.voicePreset} onChange={(event) => updateField("voicePreset", event.target.value as AudioVoicePreset)}>
+                    <select aria-label="Audio voice preset" className={cn("h-10 w-full rounded-md border border-input bg-background px-3 text-sm")} value={state.voicePreset} onChange={(event) => updateField("voicePreset", event.target.value as AudioVoicePreset)}>
                       {AUDIO_VOICE_PRESETS.map((preset) => (
                         <option key={preset} value={preset}>
                           {preset}
@@ -492,7 +492,7 @@ export default function AudioStudioPage() {
                 <div className="grid gap-4 md:grid-cols-4">
                   <div className="space-y-2">
                     <label className="text-sm font-medium">Language</label>
-                    <select className={cn("h-10 w-full rounded-md border border-input bg-background px-3 text-sm")} value={state.language} onChange={(event) => updateField("language", event.target.value)}>
+                    <select aria-label="Audio language" className={cn("h-10 w-full rounded-md border border-input bg-background px-3 text-sm")} value={state.language} onChange={(event) => updateField("language", event.target.value)}>
                       {AUDIO_LANGUAGES.map((language) => (
                         <option key={language} value={language}>
                           {language}
@@ -682,7 +682,7 @@ export default function AudioStudioPage() {
                   </label>
                   <div className="space-y-2">
                     <label className="text-sm font-medium">Visibility</label>
-                    <select className={cn("h-10 w-full rounded-md border border-input bg-background px-3 text-sm")} value={state.visibility} onChange={(event) => updateField("visibility", event.target.value as AudioStudioFormState["visibility"])}>
+                    <select aria-label="Audio visibility" className={cn("h-10 w-full rounded-md border border-input bg-background px-3 text-sm")} value={state.visibility} onChange={(event) => updateField("visibility", event.target.value as AudioStudioFormState["visibility"])}>
                       <option value="private">Private</option>
                       <option value="team">Team</option>
                       <option value="public">Public</option>

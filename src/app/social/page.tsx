@@ -2,15 +2,38 @@
 
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import type { ReactNode, FormEvent } from "react";
+import type { ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
-import { CalendarDays, CheckCircle2, ChevronDown, ChevronUp, ExternalLink, Facebook, Instagram, Loader2, Send, Shield, Smartphone, Trash2, Youtube, Linkedin, X, Music4 } from "lucide-react";
+import {
+  ArrowRight,
+  BarChart3,
+  CalendarDays,
+  CheckCircle2,
+  ChevronRight,
+  Facebook,
+  Instagram,
+  Link2,
+  Linkedin,
+  Loader2,
+  LockKeyhole,
+  Megaphone,
+  MessageSquareText,
+  MoreHorizontal,
+  Plus,
+  RefreshCw,
+  ShieldCheck,
+  Smartphone,
+  Sparkles,
+  Trash2,
+  TrendingUp,
+  Wand2,
+  X,
+  Youtube,
+} from "lucide-react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import { Button } from "@/components/ui/button";
 import { GlassCard } from "@/components/ui/glass-card";
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/providers/AuthProvider";
 import { cn } from "@/lib/utils";
@@ -30,10 +53,6 @@ type SocialHubResponse = {
   accounts: SocialAccountRecord[];
 };
 
-type SocialAccountResponse = {
-  socialAccount: SocialAccountRecord;
-};
-
 type OAuthStartResponse = {
   provider: SocialPlatform;
   socialAccountId: string;
@@ -47,31 +66,45 @@ type OAuthStartResponse = {
   nextStep: string;
 };
 
-interface SocialHubFormState {
-  providerId: SocialPlatform;
-  connectionType: "oauth" | "manual" | "imported";
-  accountName: string;
-  handle: string;
-  providerAccountId: string;
-  notes: string;
-  timezone: string;
-  scopes: string;
-  accessToken: string;
-  refreshToken: string;
-  externalAccountId: string;
-  expiresInSeconds: string;
-  tokenType: string;
-}
-
 const DEFAULT_PROVIDER: SocialPlatform = "instagram";
 
+const PLATFORM_STYLES: Record<SocialPlatform, { gradient: string }> = {
+  tiktok: {
+    gradient: "from-cyan-400 via-white to-rose-500",
+  },
+  instagram: {
+    gradient: "from-fuchsia-500 via-rose-500 to-amber-400",
+  },
+  facebook: {
+    gradient: "from-blue-500 via-sky-400 to-blue-700",
+  },
+  linkedin: {
+    gradient: "from-sky-500 via-blue-500 to-cyan-300",
+  },
+  x: {
+    gradient: "from-zinc-100 via-zinc-500 to-zinc-950",
+  },
+  youtube: {
+    gradient: "from-red-500 via-rose-500 to-red-700",
+  },
+};
+
+const QUICK_ACTIONS = [
+  { label: "Create New Post", description: "Design content with AI", icon: Wand2 },
+  { label: "Schedule Post", description: "Plan your content calendar", icon: CalendarDays },
+  { label: "Bulk Upload", description: "Prepare multiple posts", icon: Plus },
+  { label: "Content Planner", description: "Build a campaign plan", icon: Megaphone },
+];
+
+const SOCIAL_TABS = ["Connected Accounts", "Scheduling", "Analytics", "Content Planner", "Automations", "Integrations"];
+
 const PLATFORM_ICON: Record<SocialPlatform, ReactNode> = {
-  tiktok: <Smartphone className="h-4 w-4" />,
-  instagram: <Instagram className="h-4 w-4" />,
-  facebook: <Facebook className="h-4 w-4" />,
-  linkedin: <Linkedin className="h-4 w-4" />,
-  x: <X className="h-4 w-4" />,
-  youtube: <Youtube className="h-4 w-4" />,
+  tiktok: <Smartphone className="h-6 w-6" />,
+  instagram: <Instagram className="h-6 w-6" />,
+  facebook: <Facebook className="h-6 w-6" />,
+  linkedin: <Linkedin className="h-6 w-6" />,
+  x: <X className="h-6 w-6" />,
+  youtube: <Youtube className="h-6 w-6" />,
 };
 
 function formatDate(value?: string | null): string {
@@ -79,23 +112,6 @@ function formatDate(value?: string | null): string {
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return value;
   return parsed.toLocaleString();
-}
-
-function statusClass(status: SocialAccountRecord["status"]): string {
-  switch (status) {
-    case "connected":
-      return "bg-emerald-500/15 text-emerald-300 border-emerald-500/25";
-    case "pending":
-      return "bg-amber-500/15 text-amber-300 border-amber-500/25";
-    case "expired":
-      return "bg-orange-500/15 text-orange-300 border-orange-500/25";
-    case "disconnected":
-      return "bg-white/5 text-white/45 border-white/10";
-    case "error":
-      return "bg-red-500/15 text-red-300 border-red-500/25";
-    default:
-      return "bg-white/5 text-white/70 border-white/10";
-  }
 }
 
 export default function SocialHubPage() {
@@ -121,7 +137,7 @@ export default function SocialHubPage() {
   });
   const [loading, setLoading] = useState(false);
   const [loadingHistory, setLoadingHistory] = useState(true);
-  const [showAdvancedCredentials, setShowAdvancedCredentials] = useState(false);
+  const [connectingProvider, setConnectingProvider] = useState<SocialPlatform | null>(null);
   const [oauthHandshake, setOAuthHandshake] = useState<OAuthStartResponse | null>(null);
 
   useEffect(() => {
@@ -140,27 +156,6 @@ export default function SocialHubPage() {
       variant: oauthStatus === "connected" ? "default" : "destructive",
     });
   }, [searchParams, toast]);
-  const [form, setForm] = useState<SocialHubFormState>({
-    providerId: DEFAULT_PROVIDER,
-    connectionType: "oauth",
-    accountName: "",
-    handle: "",
-    providerAccountId: "",
-    notes: "",
-    timezone: "",
-    scopes: "",
-    accessToken: "",
-    refreshToken: "",
-    externalAccountId: "",
-    expiresInSeconds: "",
-    tokenType: "bearer",
-  });
-
-  const activeProvider = useMemo(
-    () => providers.find((provider) => provider.id === form.providerId) || providers[0],
-    [form.providerId, providers]
-  );
-
   const loadAccounts = async () => {
     if (!user) return;
 
@@ -225,107 +220,43 @@ export default function SocialHubPage() {
     };
   }, [toast, user]);
 
-  const updateField = <K extends keyof SocialHubFormState>(key: K, value: SocialHubFormState[K]) => {
-    setForm((current) => ({ ...current, [key]: value }));
-  };
-
-  const resetForm = () => {
-    setForm({
-      providerId: DEFAULT_PROVIDER,
-      connectionType: "oauth",
-      accountName: "",
-      handle: "",
-      providerAccountId: "",
-      notes: "",
-      timezone: "",
-      scopes: "",
-      accessToken: "",
-      refreshToken: "",
-      externalAccountId: "",
-      expiresInSeconds: "",
-      tokenType: "bearer",
-    });
-  };
-
-  const handleCreate = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    if (!user || loading) return;
-
-    try {
-      setLoading(true);
-      const idToken = await user.getIdToken();
-      const response = await fetch("/api/social/accounts", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${idToken}`,
-        },
-        body: JSON.stringify({
-          providerId: form.providerId,
-          connectionType: form.connectionType,
-          accountName: form.accountName,
-          handle: form.handle || undefined,
-          providerAccountId: form.providerAccountId || undefined,
-          notes: form.notes || undefined,
-          timezone: form.timezone || undefined,
-          scopes: form.scopes
-            .split(",")
-            .map((value) => value.trim())
-            .filter(Boolean),
-          credentials: form.accessToken || form.refreshToken || form.externalAccountId
-            ? {
-                accessToken: form.accessToken || undefined,
-                refreshToken: form.refreshToken || undefined,
-                externalAccountId: form.externalAccountId || undefined,
-                expiresInSeconds: form.expiresInSeconds ? Number(form.expiresInSeconds) : undefined,
-                tokenType: form.tokenType || undefined,
-              }
-            : undefined,
-        }),
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ error: "Unknown error" }));
-        throw new Error(errorData.error || "Connection failed.");
+  const connectedByProvider = useMemo(() => {
+    return accounts.reduce<Partial<Record<SocialPlatform, SocialAccountRecord>>>((current, account) => {
+      if (account.status === "connected" && !current[account.providerId]) {
+        current[account.providerId] = account;
       }
+      return current;
+    }, {});
+  }, [accounts]);
 
-      await loadAccounts();
-      resetForm();
-      toast({
-        title: "Account connected",
-        description: "The social account has been stored securely.",
-      });
-    } catch (error) {
-      toast({
-        title: "Connection failed",
-        description: error instanceof Error ? error.message : "The social connection could not be saved.",
-        variant: "destructive",
-      });
-    } finally {
-      setLoading(false);
-    }
-  };
+  const pendingByProvider = useMemo(() => {
+    return accounts.reduce<Partial<Record<SocialPlatform, SocialAccountRecord>>>((current, account) => {
+      if (account.status !== "connected" && !current[account.providerId]) {
+        current[account.providerId] = account;
+      }
+      return current;
+    }, {});
+  }, [accounts]);
 
-  const startOAuthHandshake = async () => {
+  const startOAuthHandshake = async (providerId: SocialPlatform, existingAccount?: SocialAccountRecord) => {
     if (!user || loading) return;
 
     try {
       setLoading(true);
+      setConnectingProvider(providerId);
+      const provider = providers.find((entry) => entry.id === providerId);
       const idToken = await user.getIdToken();
-      const response = await fetch(`/api/social/oauth/${form.providerId}/start`, {
+      const response = await fetch(`/api/social/oauth/${providerId}/start`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${idToken}`,
         },
         body: JSON.stringify({
-          accountName: form.accountName || `${activeProvider?.label || form.providerId} account`,
-          handle: form.handle || undefined,
-          providerAccountId: form.providerAccountId || undefined,
-          scopes: form.scopes
-            .split(",")
-            .map((value) => value.trim())
-            .filter(Boolean),
+          socialAccountId: existingAccount?.socialAccountId,
+          accountName: existingAccount?.accountName || `${provider?.label || providerId} account`,
+          handle: existingAccount?.handle || undefined,
+          providerAccountId: existingAccount?.providerAccountId || undefined,
           returnTo: "/social",
         }),
       });
@@ -338,23 +269,25 @@ export default function SocialHubPage() {
       const data = (await response.json()) as OAuthStartResponse;
       setOAuthHandshake(data);
       if (data.authorizationUrl) {
-        window.open(data.authorizationUrl, "_blank", "noopener,noreferrer");
+        window.location.assign(data.authorizationUrl);
+        return;
       }
       await loadAccounts();
       toast({
-        title: "OAuth handoff prepared",
+        title: "Connection prepared",
         description: data.authorizationUrl
-          ? "The provider authorization window has been opened."
-          : "Provider authorization URL is not configured yet, but the callback handoff is ready.",
+          ? "Redirecting you to the provider."
+          : "This provider still needs its authorization URL configured before customers can connect it.",
       });
     } catch (error) {
       toast({
-        title: "OAuth handoff failed",
+        title: "Connection failed",
         description: error instanceof Error ? error.message : "Could not prepare the OAuth connection.",
         variant: "destructive",
       });
     } finally {
       setLoading(false);
+      setConnectingProvider(null);
     }
   };
 
@@ -393,281 +326,312 @@ export default function SocialHubPage() {
   return (
     <ProtectedRoute>
       <AppLayout>
-        <div className="grid gap-6 lg:grid-cols-[1.05fr_0.95fr]">
-          <section className="space-y-6">
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <h1 className="text-2xl font-semibold tracking-tight">Social Media Hub</h1>
-                <p className="text-sm text-muted-foreground">
-                  Manage connected accounts, secure OAuth credentials, and prepare the platform layer for publishing.
-                </p>
-              </div>
-              <div className="flex items-center gap-2">
-                <Button asChild variant="outline" size="sm">
-                  <Link href="/social/calendar">
-                    <CalendarDays className="h-4 w-4" />
-                    Calendar
-                  </Link>
-                </Button>
-                <Button type="button" variant="outline" size="sm" onClick={loadAccounts} disabled={loadingHistory || loading}>
-                  {loadingHistory ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-                  Refresh
-                </Button>
+        <div className="space-y-8">
+          <section className="overflow-hidden rounded-[28px] border border-white/10 bg-[#0b1020] shadow-2xl shadow-black/30">
+            <div className="relative min-h-[220px] p-6 sm:p-8">
+              <div className="absolute inset-0 bg-[radial-gradient(circle_at_74%_18%,rgba(139,92,246,0.42),transparent_32%),radial-gradient(circle_at_22%_26%,rgba(79,157,255,0.2),transparent_30%)]" />
+              <div className="absolute right-8 top-8 hidden h-40 w-[48%] rounded-full border border-violet-300/20 bg-violet-500/10 blur-sm lg:block" />
+              <div className="relative z-10 flex flex-col gap-8 lg:flex-row lg:items-end lg:justify-between">
+                <div className="max-w-2xl">
+                  <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/8 px-3 py-1 text-xs text-violet-100">
+                    <Sparkles className="h-3.5 w-3.5" />
+                    Social operating center
+                  </div>
+                  <h1 className="text-4xl font-semibold tracking-tight text-white sm:text-5xl">Social Hub</h1>
+                  <p className="mt-4 max-w-xl text-base leading-7 text-white/72">
+                    Connect, manage, and grow across every platform from one calm workspace. No token forms, no secret fields, just secure OAuth.
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-3 gap-3 sm:grid-cols-6 lg:w-[420px]">
+                  {providers.map((provider) => (
+                    <div
+                      key={provider.id}
+                      className={cn(
+                        "flex h-14 w-14 items-center justify-center rounded-2xl border border-white/10 bg-gradient-to-br text-slate-950 shadow-lg shadow-black/30",
+                        PLATFORM_STYLES[provider.id].gradient
+                      )}
+                    >
+                      {PLATFORM_ICON[provider.id]}
+                    </div>
+                  ))}
+                </div>
               </div>
             </div>
 
-            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-              <GlassCard className="p-4">
-                <div className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Connected</div>
-                <div className="mt-2 text-2xl font-semibold">{summary.connectedAccounts}</div>
-              </GlassCard>
-              <GlassCard className="p-4">
-                <div className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Pending</div>
-                <div className="mt-2 text-2xl font-semibold">{summary.pendingAccounts}</div>
-              </GlassCard>
-              <GlassCard className="p-4">
-                <div className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Needs attention</div>
-                <div className="mt-2 text-2xl font-semibold">{summary.expiredAccounts + summary.disconnectedAccounts}</div>
-              </GlassCard>
-              <GlassCard className="p-4">
-                <div className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Providers</div>
-                <div className="mt-2 text-2xl font-semibold">{providers.length}</div>
-              </GlassCard>
-            </div>
-
-            <GlassCard className="p-5">
-              <form className="space-y-4" onSubmit={handleCreate}>
-                <div className="grid gap-4 md:grid-cols-2">
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">Provider</label>
-                    <select
-                      className={cn("h-10 w-full rounded-md border border-input bg-background px-3 text-sm")}
-                      value={form.providerId}
-                      onChange={(event) => updateField("providerId", event.target.value as SocialPlatform)}
-                    >
-                      {providers.map((provider) => (
-                        <option key={provider.id} value={provider.id}>
-                          {provider.label}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">Account name</label>
-                    <Input value={form.accountName} onChange={(event) => updateField("accountName", event.target.value)} placeholder="Soma Digital" />
-                  </div>
-                </div>
-
-                <div className="grid gap-4 md:grid-cols-2">
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">Handle</label>
-                    <Input value={form.handle} onChange={(event) => updateField("handle", event.target.value)} placeholder="@somadigital" />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">Timezone</label>
-                    <Input value={form.timezone} onChange={(event) => updateField("timezone", event.target.value)} placeholder="Africa/Nairobi" />
-                  </div>
-                </div>
-
-                <div className="grid gap-4 md:grid-cols-2">
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">Connection type</label>
-                    <select
-                      className={cn("h-10 w-full rounded-md border border-input bg-background px-3 text-sm")}
-                      value={form.connectionType}
-                      onChange={(event) => updateField("connectionType", event.target.value as SocialHubFormState["connectionType"])}
-                    >
-                      <option value="oauth">OAuth connection</option>
-                      <option value="manual">Manual connection</option>
-                      <option value="imported">Imported credentials</option>
-                    </select>
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">Provider account ID</label>
-                    <Input value={form.providerAccountId} onChange={(event) => updateField("providerAccountId", event.target.value)} placeholder={form.connectionType === "oauth" ? "Assigned by provider" : "External provider ID"} />
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">Scopes</label>
-                  <Input value={form.scopes} onChange={(event) => updateField("scopes", event.target.value)} placeholder="Comma-separated scopes or permissions" />
-                </div>
-
-                <div className="rounded-md border border-white/10 bg-white/[0.03] p-4">
-                  <button
-                    type="button"
-                    className="flex w-full items-center justify-between text-left"
-                    onClick={() => setShowAdvancedCredentials((current) => !current)}
-                  >
-                    <div>
-                      <div className="text-sm font-medium">Advanced credentials</div>
-                      <div className="text-xs text-muted-foreground">Only use this when importing an existing connection.</div>
-                    </div>
-                    {showAdvancedCredentials ? <ChevronUp className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
-                  </button>
-
-                  {showAdvancedCredentials && (
-                    <div className="mt-4 grid gap-4 md:grid-cols-2">
-                      <div className="space-y-2">
-                        <label className="text-sm font-medium">Access token</label>
-                        <Input
-                          type="password"
-                          value={form.accessToken}
-                          onChange={(event) => updateField("accessToken", event.target.value)}
-                          placeholder="Optional"
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <label className="text-sm font-medium">Refresh token</label>
-                        <Input
-                          type="password"
-                          value={form.refreshToken}
-                          onChange={(event) => updateField("refreshToken", event.target.value)}
-                          placeholder="Optional"
-                        />
-                      </div>
-                    </div>
+            <div className="relative flex gap-2 overflow-x-auto border-t border-white/10 bg-black/15 px-4 py-3 sm:px-6">
+              {SOCIAL_TABS.map((tab, index) => (
+                <Link
+                  key={tab}
+                  href={index === 1 ? "/social/calendar" : "/social"}
+                  className={cn(
+                    "whitespace-nowrap rounded-full px-4 py-2 text-sm text-white/58 transition hover:bg-white/8 hover:text-white",
+                    index === 0 && "bg-violet-500/15 text-violet-100 ring-1 ring-violet-400/25"
                   )}
-                </div>
-
-                <div className="grid gap-4 md:grid-cols-3">
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">External account ID</label>
-                    <Input value={form.externalAccountId} onChange={(event) => updateField("externalAccountId", event.target.value)} placeholder="Optional" />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">Token type</label>
-                    <Input value={form.tokenType} onChange={(event) => updateField("tokenType", event.target.value)} placeholder="bearer" />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">Expires in seconds</label>
-                    <Input value={form.expiresInSeconds} onChange={(event) => updateField("expiresInSeconds", event.target.value)} placeholder="3600" inputMode="numeric" />
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">Notes</label>
-                  <Textarea value={form.notes} onChange={(event) => updateField("notes", event.target.value)} rows={3} placeholder={`Current connection mode for ${activeProvider?.label || "this provider"}.`} />
-                </div>
-
-                <div className="flex flex-wrap items-center gap-3">
-                  <Button type="submit" disabled={loading}>
-                    {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Shield className="h-4 w-4" />}
-                    Save Connection
-                  </Button>
-                  <Button type="button" variant="outline" onClick={startOAuthHandshake} disabled={loading || form.connectionType !== "oauth"}>
-                    <ExternalLink className="h-4 w-4" />
-                    Start OAuth
-                  </Button>
-                  <Button type="button" variant="outline" onClick={resetForm} disabled={loading}>
-                    Clear
-                  </Button>
-                </div>
-
-                {oauthHandshake ? (
-                  <div className="rounded-md border border-border p-3 text-sm">
-                    <div className="font-medium">OAuth handoff ready</div>
-                    <div className="mt-1 text-muted-foreground">
-                      {oauthHandshake.authorizationUrl
-                        ? "Authorization is configured. The provider window should open now."
-                        : "The callback handoff is ready, but provider authorization still needs to be configured."}
-                    </div>
-                    <div className="mt-2 text-xs text-muted-foreground">Callback: {oauthHandshake.callbackUrl}</div>
-                  </div>
-                ) : null}
-              </form>
-            </GlassCard>
+                >
+                  {tab}
+                </Link>
+              ))}
+            </div>
           </section>
 
-          <section className="space-y-6">
-            <GlassCard className="p-5">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <h2 className="text-lg font-semibold">Provider overview</h2>
-                  <p className="text-sm text-muted-foreground">Connected accounts are stored as encrypted records in Firestore.</p>
+          <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_336px]">
+            <main className="space-y-8">
+              <section>
+                <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+                  <div>
+                    <h2 className="text-xl font-semibold text-white">Connected Accounts</h2>
+                    <p className="mt-1 text-sm text-white/58">Manage the accounts already connected to SDC.</p>
+                  </div>
+                  <Button type="button" variant="outline" onClick={loadAccounts} disabled={loadingHistory || loading}>
+                    {loadingHistory ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                    Refresh
+                  </Button>
                 </div>
-                <Music4 className="h-5 w-5 text-primary" />
-              </div>
 
-              <div className="mt-4 grid gap-3">
-                {providers.map((provider) => (
-                  <div key={provider.id} className="flex items-start justify-between gap-4 rounded-md border border-white/10 bg-white/5 p-4">
-                    <div className="flex items-start gap-3">
-                      <div className="rounded-md border border-white/10 bg-black/20 p-2 text-primary">
-                        {PLATFORM_ICON[provider.id]}
-                      </div>
+                {loadingHistory ? (
+                  <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                    {[0, 1, 2].map((item) => (
+                      <div key={item} className="h-56 animate-pulse rounded-3xl border border-white/10 bg-white/[0.04]" />
+                    ))}
+                  </div>
+                ) : accounts.filter((account) => account.status === "connected").length === 0 ? (
+                  <GlassCard className="overflow-hidden rounded-[24px] border-white/10 bg-white/[0.04] p-8">
+                    <div className="grid gap-8 lg:grid-cols-[1fr_320px] lg:items-center">
                       <div>
-                        <div className="font-medium">{provider.label}</div>
-                        <div className="text-sm text-muted-foreground">{provider.description}</div>
-                        <div className="mt-1 text-xs text-muted-foreground">{provider.notes}</div>
+                        <div className="mb-5 flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-500 to-violet-500 shadow-lg shadow-violet-950/40">
+                          <Link2 className="h-7 w-7 text-white" />
+                        </div>
+                        <h3 className="text-2xl font-semibold text-white">Connect your first social account</h3>
+                        <p className="mt-3 max-w-2xl text-sm leading-6 text-white/62">
+                          Choose a platform below and SDC will send you to the provider to authorize access. Credentials are handled server-side and never shown in the browser.
+                        </p>
+                      </div>
+                      <div className="rounded-3xl border border-violet-300/15 bg-violet-500/10 p-5">
+                        <div className="flex items-center gap-3 text-sm font-medium text-white">
+                          <ShieldCheck className="h-5 w-5 text-emerald-300" />
+                          Secure by default
+                        </div>
+                        <p className="mt-2 text-sm leading-6 text-white/58">
+                          OAuth callbacks store encrypted connection records in Firestore, ready for scheduling and analytics.
+                        </p>
                       </div>
                     </div>
-                    <div className="text-right text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                      {summary.byProvider[provider.id] || 0} linked
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </GlassCard>
-
-            <GlassCard className="p-5">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <h2 className="text-lg font-semibold">Connected accounts</h2>
-                  <p className="text-sm text-muted-foreground">Use this list to audit active, pending, and disconnected connections.</p>
-                </div>
-                <CheckCircle2 className="h-5 w-5 text-primary" />
-              </div>
-
-              <div className="mt-4 space-y-3">
-                {accounts.length === 0 ? (
-                  <div className="rounded-md border border-dashed border-white/10 p-6 text-sm text-muted-foreground">
-                    No connected social accounts yet.
-                  </div>
+                  </GlassCard>
                 ) : (
-                  accounts.map((account) => (
-                    <div key={account.socialAccountId} className="rounded-md border border-white/10 bg-white/5 p-4">
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="flex items-start gap-3">
-                          <div className="rounded-md border border-white/10 bg-black/20 p-2 text-primary">
-                            {PLATFORM_ICON[account.providerId]}
+                  <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                    {accounts
+                      .filter((account) => account.status === "connected")
+                      .map((account) => (
+                        <GlassCard key={account.socialAccountId} className="group overflow-hidden rounded-[24px] border-white/10 bg-white/[0.045] p-5 transition duration-300 hover:-translate-y-1 hover:bg-white/[0.065]">
+                          <div className="flex items-start justify-between gap-4">
+                            <div className="flex items-center gap-4">
+                              <div className={cn("flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br text-slate-950 shadow-lg shadow-black/30", PLATFORM_STYLES[account.providerId].gradient)}>
+                                {PLATFORM_ICON[account.providerId]}
+                              </div>
+                              <div>
+                                <div className="font-semibold text-white">{account.providerLabel}</div>
+                                <div className="text-sm text-white/52">{account.handle || account.accountName}</div>
+                              </div>
+                            </div>
+                            <Button type="button" variant="ghost" size="icon" className="rounded-full text-white/50 hover:text-white" aria-label={`${account.providerLabel} account options`}>
+                              <MoreHorizontal className="h-4 w-4" />
+                            </Button>
                           </div>
-                          <div>
-                            <div className="flex flex-wrap items-center gap-2">
-                              <div className="font-medium">{account.accountName}</div>
-                              <span className={cn("rounded-full border px-2 py-0.5 text-[10px] uppercase tracking-[0.18em]", statusClass(account.status))}>
-                                {account.status}
-                              </span>
+
+                          <div className="mt-5 inline-flex rounded-full border border-emerald-400/20 bg-emerald-500/12 px-3 py-1 text-xs font-medium text-emerald-200">
+                            Connected
+                          </div>
+
+                          <div className="mt-6 grid grid-cols-2 gap-3 text-sm">
+                            <div>
+                              <div className="text-white/42">Authorization</div>
+                              <div className="mt-1 font-medium text-white">{account.hasCredentials ? "Encrypted" : "Pending sync"}</div>
                             </div>
-                            <div className="text-sm text-muted-foreground">
-                              {account.providerLabel}{account.handle ? ` - ${account.handle}` : ""}
+                            <div>
+                              <div className="text-white/42">Updated</div>
+                              <div className="mt-1 font-medium text-white">{formatDate(account.updatedAt)}</div>
                             </div>
-                            <div className="mt-1 text-xs text-muted-foreground">
-                              {account.hasCredentials ? "Encrypted credentials stored" : "No credentials stored"}
-                              {account.expiresAt ? ` - Expires ${formatDate(account.expiresAt)}` : ""}
+                          </div>
+
+                          <div className="mt-5 flex gap-2">
+                            <Button type="button" className="flex-1 rounded-2xl bg-white/8 text-white hover:bg-white/12" variant="ghost">
+                              View Analytics
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="rounded-2xl text-white/48 hover:text-red-200"
+                              onClick={() => disconnectAccount(account.socialAccountId)}
+                              disabled={loading}
+                              aria-label={`Disconnect ${account.providerLabel}`}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </GlassCard>
+                      ))}
+                  </div>
+                )}
+              </section>
+
+              <section>
+                <div className="mb-4 flex items-end justify-between gap-4">
+                  <div>
+                    <h2 className="text-xl font-semibold text-white">Connect More Platforms</h2>
+                    <p className="mt-1 text-sm text-white/58">Authorize a platform in one click. SDC handles the secure handoff.</p>
+                  </div>
+                </div>
+
+                <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                  {providers.map((provider) => {
+                    const connected = connectedByProvider[provider.id];
+                    const pending = pendingByProvider[provider.id];
+                    const isConnecting = connectingProvider === provider.id;
+
+                    return (
+                      <GlassCard key={provider.id} className="group overflow-hidden rounded-[24px] border-white/10 bg-white/[0.04] p-5 transition duration-300 hover:-translate-y-1 hover:bg-white/[0.06]">
+                        <div className="flex items-start gap-4">
+                          <div className={cn("flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br text-slate-950 shadow-lg shadow-black/30", PLATFORM_STYLES[provider.id].gradient)}>
+                            {PLATFORM_ICON[provider.id]}
+                          </div>
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2">
+                              <h3 className="font-semibold text-white">{provider.label}</h3>
+                              {provider.id === DEFAULT_PROVIDER ? (
+                                <span className="rounded-full border border-violet-300/20 bg-violet-500/12 px-2 py-0.5 text-[10px] font-medium uppercase tracking-[0.16em] text-violet-100">Recommended</span>
+                              ) : null}
                             </div>
+                            <p className="mt-2 text-sm leading-6 text-white/58">{provider.description}</p>
                           </div>
                         </div>
-                        <Button type="button" variant="ghost" size="icon" onClick={() => disconnectAccount(account.socialAccountId)} disabled={loading}>
-                          <Trash2 className="h-4 w-4" />
+
+                        <Button
+                          type="button"
+                          className="mt-5 h-11 w-full rounded-2xl bg-gradient-to-r from-blue-500 via-violet-500 to-fuchsia-500 text-white shadow-lg shadow-violet-950/30 hover:shadow-violet-700/25"
+                          onClick={() => startOAuthHandshake(provider.id, pending)}
+                          disabled={loading || Boolean(connected)}
+                        >
+                          {isConnecting ? <Loader2 className="h-4 w-4 animate-spin" /> : connected ? <CheckCircle2 className="h-4 w-4" /> : <Link2 className="h-4 w-4" />}
+                          {connected ? "Connected" : pending ? `Continue ${provider.label}` : provider.connectLabel}
                         </Button>
-                      </div>
+                      </GlassCard>
+                    );
+                  })}
+                </div>
+              </section>
 
-                      <div className="mt-3 grid gap-2 text-xs text-muted-foreground md:grid-cols-2">
-                        <div>Connection type: {account.connectionType || "oauth"}</div>
-                        <div>Account ID: {account.providerAccountId || "Not set"}</div>
-                        <div>Timezone: {account.timezone || "Not set"}</div>
-                        <div>Scopes: {account.scopes.length > 0 ? account.scopes.join(", ") : "Not set"}</div>
-                        <div>Updated: {formatDate(account.updatedAt)}</div>
+              <section className="rounded-[28px] border border-white/10 bg-white/[0.035] p-6">
+                <h2 className="text-xl font-semibold text-white">How It Works</h2>
+                <div className="mt-5 grid gap-4 md:grid-cols-3">
+                  {[
+                    { title: "Connect", description: "Choose a platform and start the secure OAuth flow.", icon: Link2 },
+                    { title: "Authorize", description: "Approve the permissions requested by the provider.", icon: LockKeyhole },
+                    { title: "Optimize", description: "Use SDC to plan, schedule, and analyze content.", icon: TrendingUp },
+                  ].map((step, index) => (
+                    <div key={step.title} className="relative rounded-3xl border border-white/10 bg-[#111827]/70 p-5">
+                      <div className="flex items-center gap-4">
+                        <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-violet-500/15 text-violet-100">
+                          <step.icon className="h-5 w-5" />
+                        </div>
+                        <div>
+                          <div className="text-sm text-white/42">{index + 1}.</div>
+                          <div className="font-semibold text-white">{step.title}</div>
+                        </div>
                       </div>
-
-                      {account.notes ? <div className="mt-3 text-sm text-muted-foreground">{account.notes}</div> : null}
+                      <p className="mt-4 text-sm leading-6 text-white/58">{step.description}</p>
+                      {index < 2 ? <ChevronRight className="absolute -right-5 top-1/2 hidden h-5 w-5 -translate-y-1/2 text-white/18 md:block" /> : null}
                     </div>
-                  ))
-                )}
-              </div>
-            </GlassCard>
-          </section>
+                  ))}
+                </div>
+                <div className="mt-5 flex items-center justify-center gap-2 text-sm text-white/50">
+                  <ShieldCheck className="h-4 w-4 text-emerald-300" />
+                  We never ask creators to paste access tokens into the app.
+                </div>
+              </section>
+            </main>
+
+            <aside className="space-y-5">
+              <GlassCard className="rounded-[24px] border-white/10 bg-white/[0.045] p-5">
+                <div className="flex items-center justify-between gap-3">
+                  <h2 className="font-semibold text-white">Social Overview</h2>
+                  <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-white/54">This Month</span>
+                </div>
+                <div className="mt-5 space-y-4">
+                  {[
+                    ["Connected accounts", summary.connectedAccounts, "Ready"],
+                    ["Pending handoffs", summary.pendingAccounts, "Review"],
+                    ["Needs attention", summary.expiredAccounts + summary.disconnectedAccounts, "Fix"],
+                    ["Supported platforms", providers.length, "Available"],
+                  ].map(([label, value, status]) => (
+                    <div key={label} className="flex items-center justify-between gap-3 rounded-2xl border border-white/8 bg-white/[0.035] p-3">
+                      <div className="flex items-center gap-3">
+                        <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-violet-500/14 text-violet-100">
+                          <BarChart3 className="h-4 w-4" />
+                        </div>
+                        <div className="text-sm text-white/62">{label}</div>
+                      </div>
+                      <div className="text-right">
+                        <div className="font-semibold text-white">{value}</div>
+                        <div className="text-xs text-emerald-300">{status}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </GlassCard>
+
+              <GlassCard className="rounded-[24px] border-white/10 bg-white/[0.045] p-5">
+                <h2 className="font-semibold text-white">Quick Actions</h2>
+                <div className="mt-4 space-y-3">
+                  {QUICK_ACTIONS.map((action) => (
+                    <Link key={action.label} href={action.label === "Schedule Post" ? "/social/calendar" : "/ai/studio"} className="flex items-center justify-between gap-3 rounded-2xl border border-white/8 bg-white/[0.035] p-3 transition hover:bg-white/[0.07]">
+                      <div className="flex items-center gap-3">
+                        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-blue-500 to-violet-500 text-white">
+                          <action.icon className="h-4 w-4" />
+                        </div>
+                        <div>
+                          <div className="text-sm font-medium text-white">{action.label}</div>
+                          <div className="text-xs text-white/48">{action.description}</div>
+                        </div>
+                      </div>
+                      <ArrowRight className="h-4 w-4 text-white/35" />
+                    </Link>
+                  ))}
+                </div>
+              </GlassCard>
+
+              <GlassCard className="rounded-[24px] border-white/10 bg-gradient-to-br from-violet-500/18 via-blue-500/10 to-transparent p-5">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-violet-500/20 text-violet-100">
+                    <MessageSquareText className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <h2 className="font-semibold text-white">AI Social Assistant</h2>
+                    <div className="text-xs uppercase tracking-[0.18em] text-violet-100/72">Beta</div>
+                  </div>
+                </div>
+                <p className="mt-4 text-sm leading-6 text-white/62">
+                  Generate platform-specific post ideas and campaign plans after your accounts are connected.
+                </p>
+                <Button asChild className="mt-5 h-11 w-full rounded-2xl bg-gradient-to-r from-blue-500 to-violet-500 text-white">
+                  <Link href="/ai/studio">
+                    Get Suggestions
+                    <Sparkles className="h-4 w-4" />
+                  </Link>
+                </Button>
+              </GlassCard>
+
+              {oauthHandshake && !oauthHandshake.authorizationUrl ? (
+                <GlassCard className="rounded-[24px] border-amber-400/20 bg-amber-500/10 p-5">
+                  <div className="font-semibold text-amber-100">Provider setup needed</div>
+                  <p className="mt-2 text-sm leading-6 text-amber-100/70">
+                    The secure handoff was created, but this provider still needs its authorization settings configured before redirect.
+                  </p>
+                </GlassCard>
+              ) : null}
+            </aside>
+          </div>
         </div>
       </AppLayout>
     </ProtectedRoute>

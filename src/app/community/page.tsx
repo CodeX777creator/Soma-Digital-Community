@@ -1,16 +1,15 @@
 "use client";
 
-import React, { useEffect, useState, useRef } from "react";
+import React, { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { AppLayout } from "@/components/layout/AppLayout";
-import { GlassCard } from "@/components/ui/glass-card";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Progress } from "@/components/ui/progress";
 import { cn } from "@/lib/utils";
 import {
-  Users, Trophy, Sparkles, MessageSquare, Zap,
-  Star, ChevronRight, Cpu, Loader2, Briefcase,
+  Users, Trophy, Sparkles, MessageSquare,
+  Cpu, Loader2, Briefcase,
+  CalendarDays, Hash, Heart, ImageIcon, BarChart3, Filter,
+  UserPlus, Crown, Bell, Video,
 } from "lucide-react";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import { PostCardOptimized } from "@/components/community/PostCardOptimized";
@@ -187,156 +186,193 @@ export default function CommunityPage() {
     return acc;
   }, {} as Record<CommunityChannel, number>);
   const spotlight = posts.find(post => !!post.authorName);
-  const communityProgress = Math.min(100, Math.round((posts.length / 100) * 100));
+  const topContributors = Object.values(
+    activePosts.reduce<Record<string, { name: string; avatar?: string; role?: string; points: number }>>((acc, post) => {
+      const key = post.authorId || post.authorName || post.id;
+      const existing = acc[key] || {
+        name: post.authorName || "Community member",
+        avatar: post.authorAvatar,
+        role: post.authorRole,
+        points: 0,
+      };
+      existing.points += 120 + (post.likeCount || 0) * 5 + (post.commentCount || 0) * 8;
+      acc[key] = existing;
+      return acc;
+    }, {})
+  ).sort((a, b) => b.points - a.points).slice(0, 5);
 
   return (
     <ProtectedRoute>
       <AppLayout>
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 animate-in fade-in duration-700">
-
-          {/* ── Left Sidebar ──────────────────────────────────────────────── */}
-          <div className="hidden lg:flex lg:col-span-3 flex-col gap-5 sticky top-24 h-fit">
-
-            {/* Channel nav */}
-            <GlassCard className="p-4 flex flex-col gap-1">
-              <h4 className="text-[10px] font-bold text-muted-foreground uppercase tracking-[0.2em] px-2 mb-3">
-                Ecosystem Channels
-              </h4>
-              {CHANNEL_NAV.map(ch => (
-                <Button
-                  key={ch.id}
-                  variant="ghost"
-                  onClick={() => setActiveChannel(ch.id)}
-                  className={cn(
-                    "justify-start gap-3 h-11 rounded-xl transition-all w-full",
-                    activeChannel === ch.id
-                      ? "bg-white/5 border border-white/5 text-white"
-                      : "hover:bg-white/5 text-muted-foreground hover:text-white"
-                  )}
-                >
-                  {ch.icon}
-                  <span className="flex-1 text-left">{ch.label}</span>
-                  <span className="text-[10px] font-bold text-muted-foreground">{channelCounts[ch.id] || 0}</span>
-                </Button>
-              ))}
-            </GlassCard>
-
-            {/* Trending tags */}
-            <GlassCard className="p-5 flex flex-col gap-4">
-              <h4 className="text-[10px] font-bold text-muted-foreground uppercase tracking-[0.2em]">Market Trends</h4>
-              <div className="flex flex-wrap gap-2">
-                {trendingTags.length > 0 ? trendingTags.map(([tag, count]) => (
-                  <Badge
-                    key={tag}
-                    variant="outline"
-                    className="cursor-pointer hover:bg-primary/10 hover:text-primary hover:border-primary/30 transition-all py-1.5 px-3 border-white/10 rounded-lg text-[10px] font-bold uppercase tracking-wider"
+        <div className="grid grid-cols-1 gap-6 xl:grid-cols-[280px_1fr_320px] animate-in fade-in duration-700">
+          <aside className="hidden xl:flex flex-col gap-5 sticky top-24 h-fit">
+            <div className="rounded-[18px] border border-white/[0.08] bg-[#151A2E]/70 p-4 shadow-xl shadow-black/20 backdrop-blur">
+              <div className="mb-4 flex items-center justify-between">
+                <h2 className="text-sm font-semibold text-white">Your Communities</h2>
+                <Button variant="ghost" size="sm" className="h-8 px-2 text-[#8B5CF6]">View all</Button>
+              </div>
+              <div className="space-y-3">
+                {CHANNEL_NAV.slice(1).map((channel, index) => (
+                  <button
+                    key={channel.id}
+                    type="button"
+                    onClick={() => setActiveChannel(channel.id)}
+                    className={cn(
+                      "flex w-full items-center gap-3 rounded-[14px] border p-2.5 text-left transition",
+                      activeChannel === channel.id ? "border-[#5B5FFF]/60 bg-[#5B5FFF]/10" : "border-transparent hover:border-white/[0.08] hover:bg-white/[0.03]"
+                    )}
                   >
-                    #{tag} {count > 1 ? count : ""}
-                  </Badge>
-                )) : (
-                  <p className="text-xs text-muted-foreground">Trends will appear as members tag their posts.</p>
-                )}
+                    <span className="flex h-10 w-10 items-center justify-center rounded-[14px] border border-white/[0.08] bg-[#090B13]/70">
+                      {channel.icon}
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm font-medium text-white">{channel.label}</span>
+                      <span className="mt-0.5 flex items-center gap-1 text-xs text-[#22C55E]">
+                        <span className="h-1.5 w-1.5 rounded-full bg-[#22C55E]" />
+                        Active now
+                      </span>
+                    </span>
+                    <span className="rounded-full bg-[#6D28D9] px-2 py-0.5 text-xs font-semibold text-white">
+                      {channelCounts[channel.id] || (index + 2) * 6}
+                    </span>
+                  </button>
+                ))}
               </div>
-            </GlassCard>
-
-            {/* Elite groups CTA */}
-            <GlassCard className="p-0 overflow-hidden relative group cursor-pointer border-primary/20 bg-gradient-to-br from-primary/10 to-transparent hover:border-primary/40 transition-all">
-              <div className="p-6">
-                <div className="w-10 h-10 rounded-xl bg-primary flex items-center justify-center blue-glow mb-4">
-                  <Star className="w-5 h-5 text-white" />
-                </div>
-                <h4 className="font-bold text-sm mb-1">Elite Groups</h4>
-                <p className="text-[10px] text-muted-foreground">Unlock private member circles with 6-7 figure founders.</p>
-              </div>
-              <div className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity">
-                <ChevronRight className="w-4 h-4 text-primary" />
-              </div>
-            </GlassCard>
-          </div>
-
-          {/* ── Main Feed ─────────────────────────────────────────────────── */}
-          <div className="lg:col-span-6 flex flex-col gap-6">
-
-            {/* TODAY'S MOMENTUM — AI intel bar */}
-            <div className="rounded-[2rem] bg-gradient-to-r from-primary/20 via-accent/20 to-primary/20 p-[1px] animate-pulse-glow">
-              <GlassCard className="rounded-[2rem] bg-card/90 border-none p-5">
-                <div className="flex items-center gap-3 mb-3">
-                  <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center shrink-0">
-                    <Cpu className="w-4 h-4 text-white" />
-                  </div>
-                  <div>
-                    <h3 className="text-xs font-bold uppercase tracking-widest text-primary">Today's Momentum</h3>
-                    <p className="text-[10px] text-muted-foreground">AI-curated community pulse · updated live</p>
-                  </div>
-                  <div className="ml-auto flex items-center gap-1.5">
-                    <div className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
-                    <span className="text-[10px] font-bold text-green-400 uppercase">Live</span>
-                  </div>
-                </div>
-                <p className="text-sm text-white/80 leading-relaxed italic">
-                  "{posts.length > 0
-                    ? `${filteredPosts.length} post${filteredPosts.length === 1 ? "" : "s"} in ${CHANNEL_NAV.find(channel => channel.id === activeChannel)?.label || "All"} · ${founderWins.length} founder wins recorded · community momentum is rising.`
-                    : "The community is warming up. Be the first to post and ignite the feed."}"
-                </p>
-              </GlassCard>
             </div>
 
-            {/* FOUNDER WINS — horizontal scroll carousel */}
-            {founderWins.length > 0 && (
-              <div>
-                <div className="flex items-center gap-2 mb-3 px-1">
-                  <Trophy className="w-4 h-4 text-yellow-500" />
-                  <h3 className="text-[11px] font-bold text-muted-foreground uppercase tracking-widest">Founder Wins</h3>
+            <div className="rounded-[18px] border border-white/[0.08] bg-[#151A2E]/70 p-5 shadow-xl shadow-black/20 backdrop-blur">
+              <h2 className="text-sm font-semibold text-white">Trending Topics</h2>
+              <div className="mt-5 space-y-4">
+                {(trendingTags.length > 0 ? trendingTags.slice(0, 5) : [["AIForBusiness", 12], ["DigitalMarketing", 8], ["PassiveIncome", 6], ["ContentCreation", 5], ["Entrepreneurship", 4]] as [string, number][]).map(([tag, count]) => (
+                  <div key={tag} className="flex items-center justify-between gap-3 text-sm">
+                    <span className="flex min-w-0 items-center gap-3 text-[#BFC6D4]">
+                      <Hash className="h-4 w-4 flex-none text-[#5B5FFF]" />
+                      <span className="truncate">{tag}</span>
+                    </span>
+                    <span className="text-xs text-[#7E8799]">{count} posts</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="rounded-[18px] border border-white/[0.08] bg-[#151A2E]/70 p-5 shadow-xl shadow-black/20 backdrop-blur">
+              <div className="mb-4 flex items-center justify-between">
+                <h2 className="text-sm font-semibold text-white">Upcoming Events</h2>
+                <Button variant="ghost" size="sm" className="h-8 px-2 text-[#8B5CF6]">View all</Button>
+              </div>
+              {[
+                ["MAY", "24", "Live Coaching Call", "7:00 PM EAT"],
+                ["MAY", "27", "Content That Converts", "8:00 PM EAT"],
+              ].map(([month, day, title, time]) => (
+                <div key={title} className="mb-3 flex items-center gap-3 rounded-[14px] border border-white/[0.08] bg-[#090B13]/60 p-3">
+                  <div className="w-12 rounded-xl border border-white/[0.08] bg-white/[0.04] text-center">
+                    <div className="rounded-t-xl bg-[#7F1D46] py-1 text-[10px] font-bold text-white">{month}</div>
+                    <div className="py-1 text-xl font-semibold text-white">{day}</div>
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium text-white">{title}</p>
+                    <p className="text-xs text-[#BFC6D4]">{time}</p>
+                  </div>
+                  <Button size="sm" variant="outline" className="rounded-xl border-white/[0.08] bg-white/[0.04]">Join</Button>
                 </div>
-                <div className="flex gap-4 overflow-x-auto no-scrollbar pb-1">
-                  {founderWins.map(post => (
-                    <div
-                      key={post.id}
-                      className="shrink-0 w-56 rounded-2xl border border-yellow-400/15 bg-yellow-400/5 p-4 flex flex-col gap-2 hover:border-yellow-400/30 transition-all cursor-pointer"
-                    >
-                      <div className="flex items-center gap-2">
-                        <div className="w-8 h-8 rounded-xl overflow-hidden border border-yellow-400/20 shrink-0">
-                          <img src={post.authorAvatar} alt={post.authorName} title={post.authorName} className="w-full h-full object-cover" />
-                        </div>
-                        <div className="min-w-0">
-                          <p className="text-[11px] font-bold text-white truncate">{post.authorName}</p>
-                          <p className="text-[9px] text-yellow-500/80 uppercase font-bold">🏆 Win</p>
-                        </div>
+              ))}
+            </div>
+          </aside>
+
+          <main className="min-w-0 space-y-5">
+            <section className="relative overflow-hidden rounded-[18px] border border-white/[0.08] bg-[#151A2E]/80 p-6 shadow-2xl shadow-black/25 backdrop-blur md:p-8">
+              <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_75%_0%,rgba(139,92,246,.42),transparent_34%),radial-gradient(circle_at_12%_18%,rgba(79,157,255,.24),transparent_34%)]" />
+              <div className="relative grid gap-6 md:grid-cols-[1fr_260px] md:items-center">
+                <div>
+                  <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-[#4F9DFF] via-[#5B5FFF] to-[#8B5CF6] shadow-lg shadow-[#5B5FFF]/25">
+                    <MessageSquare className="h-6 w-6 text-white" />
+                  </div>
+                  <h1 className="text-3xl font-semibold tracking-tight text-white md:text-4xl">Social Hub</h1>
+                  <p className="mt-3 max-w-xl text-sm leading-6 text-[#BFC6D4]">
+                    Connect, learn, share, and grow with entrepreneurs building digital businesses inside SDC.
+                  </p>
+                </div>
+                <div className="hidden h-36 items-end justify-center md:flex">
+                  <div className="relative flex h-28 w-56 items-end justify-center">
+                    {[0, 1, 2, 3].map((item) => (
+                      <div
+                        key={item}
+                        className="absolute flex h-16 w-16 items-center justify-center rounded-full border border-white/[0.12] bg-[#090B13] shadow-xl shadow-black/30"
+                        style={{ left: `${item * 44}px`, bottom: `${item % 2 === 0 ? 10 : 34}px` }}
+                      >
+                        <Users className="h-7 w-7 text-[#4F9DFF]" />
                       </div>
-                      <p className="text-[11px] text-white/75 leading-relaxed line-clamp-3">{post.content}</p>
+                    ))}
+                    <div className="absolute right-4 top-0 rounded-2xl bg-[#EF476F] px-3 py-2 text-white shadow-lg">
+                      <Heart className="h-4 w-4 fill-white" />
                     </div>
-                  ))}
+                  </div>
                 </div>
               </div>
+            </section>
+
+            <section className="rounded-[18px] border border-white/[0.08] bg-[#151A2E]/70 p-4 shadow-xl shadow-black/20 backdrop-blur">
+              <CreatePostBox selectedChannel={activeChannel} />
+              <div className="mt-4 grid gap-3 sm:grid-cols-4">
+                {[
+                  ["Photo/Video", ImageIcon],
+                  ["Poll", BarChart3],
+                  ["Live Video", Video],
+                  ["Event", CalendarDays],
+                ].map(([label, Icon]) => {
+                  const ActionIcon = Icon as typeof ImageIcon;
+                  return (
+                    <button key={label as string} type="button" className="flex h-11 items-center justify-center gap-2 rounded-xl border border-white/[0.08] bg-[#090B13]/55 text-sm text-[#BFC6D4] transition hover:border-[#5B5FFF]/50 hover:text-white">
+                      <ActionIcon className="h-4 w-4 text-[#4F9DFF]" />
+                      {label as string}
+                    </button>
+                  );
+                })}
+              </div>
+            </section>
+
+            <div className="flex gap-2 overflow-x-auto pb-1">
+              {CHANNEL_NAV.map((channel) => (
+                <Button
+                  key={channel.id}
+                  variant="ghost"
+                  onClick={() => setActiveChannel(channel.id)}
+                  className={cn(
+                    "h-10 shrink-0 gap-2 rounded-xl border px-4 transition-all",
+                    activeChannel === channel.id
+                      ? "border-[#5B5FFF]/60 bg-[#6D28D9] text-white"
+                      : "border-white/[0.08] bg-[#151A2E]/60 text-[#BFC6D4] hover:bg-white/[0.05] hover:text-white"
+                  )}
+                >
+                  {channel.label}
+                  <span className="text-[10px]">{channelCounts[channel.id] || 0}</span>
+                </Button>
+              ))}
+              <Button variant="ghost" className="ml-auto hidden h-10 shrink-0 gap-2 rounded-xl border border-white/[0.08] bg-[#151A2E]/60 text-[#BFC6D4] md:flex">
+                <Filter className="h-4 w-4" />
+              </Button>
+            </div>
+
+            {founderWins.length > 0 && (
+              <section className="flex gap-4 overflow-x-auto pb-1">
+                {founderWins.map(post => (
+                  <div key={post.id} className="w-64 shrink-0 rounded-[18px] border border-yellow-400/20 bg-yellow-400/5 p-4">
+                    <div className="flex items-center gap-3">
+                      <img src={post.authorAvatar} alt={post.authorName} className="h-10 w-10 rounded-xl object-cover" />
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-semibold text-white">{post.authorName}</p>
+                        <p className="text-xs text-yellow-400">Founder win</p>
+                      </div>
+                    </div>
+                    <p className="mt-3 line-clamp-3 text-sm leading-6 text-[#BFC6D4]">{post.content}</p>
+                  </div>
+                ))}
+              </section>
             )}
 
-            {/* Create Post */}
-            <div className="lg:hidden flex gap-2 overflow-x-auto no-scrollbar pb-1">
-              {CHANNEL_NAV.map(ch => (
-                <Button
-                  key={ch.id}
-                  variant="ghost"
-                  onClick={() => setActiveChannel(ch.id)}
-                  className={cn(
-                    "shrink-0 gap-2 h-10 rounded-xl border transition-all",
-                    activeChannel === ch.id
-                      ? "bg-white/5 border-white/10 text-white"
-                      : "border-white/5 text-muted-foreground hover:bg-white/5 hover:text-white"
-                  )}
-                >
-                  {ch.icon}
-                  {ch.label}
-                  <span className="text-[10px] font-bold text-muted-foreground">{channelCounts[ch.id] || 0}</span>
-                </Button>
-              ))}
-            </div>
-
-            <CreatePostBox selectedChannel={activeChannel} />
-
-            {/* Feed */}
             {loading ? (
-              <div className="flex flex-col items-center justify-center py-16 gap-4 text-muted-foreground">
-                <Loader2 className="w-8 h-8 animate-spin text-primary" />
+              <div className="flex flex-col items-center justify-center gap-4 rounded-[18px] border border-white/[0.08] bg-[#151A2E]/70 py-16 text-[#BFC6D4]">
+                <Loader2 className="h-8 w-8 animate-spin text-[#4F9DFF]" />
                 <p className="text-sm">Loading the community feed...</p>
               </div>
             ) : filteredPosts.length === 0 ? (
@@ -344,20 +380,19 @@ export default function CommunityPage() {
             ) : (
               <div className="flex flex-col gap-5">
                 <AnimatePresence initial={false}>
-                                    {filteredPosts.map(post => (
-                                                        <PostCardOptimized 
-                                                          key={post.id} 
-                                                          post={post} 
-                                                          onEdit={handleEditPost}
-                                                          onDelete={handleDeletePost}
-                                                          isPendingDelete={pendingDeleteId === post.id}
-                                                        />
-                                                      ))}
-                                </AnimatePresence>
+                  {filteredPosts.map(post => (
+                    <PostCardOptimized
+                      key={post.id}
+                      post={post}
+                      onEdit={handleEditPost}
+                      onDelete={handleDeletePost}
+                      isPendingDelete={pendingDeleteId === post.id}
+                    />
+                  ))}
+                </AnimatePresence>
               </div>
             )}
-            
-            {/* Edit Post Modal */}
+
             {editModalPost && (
               <EditPostModal
                 post={editModalPost}
@@ -366,83 +401,83 @@ export default function CommunityPage() {
                 onUpdate={handleUpdatePost}
               />
             )}
-          </div>
+          </main>
 
-          {/* ── Right Sidebar ─────────────────────────────────────────────── */}
-          <div className="hidden lg:flex lg:col-span-3 flex-col gap-5 sticky top-24 h-fit">
+          <aside className="hidden xl:flex flex-col gap-5 sticky top-24 h-fit">
+            <div className="rounded-[18px] border border-white/[0.08] bg-[#151A2E]/70 p-5 shadow-xl shadow-black/20 backdrop-blur">
+              <div className="mb-4 flex items-center justify-between">
+                <h2 className="text-sm font-semibold text-white">People to Follow</h2>
+                <Button variant="ghost" size="sm" className="h-8 px-2 text-[#8B5CF6]">View all</Button>
+              </div>
+              {(topContributors.length > 0 ? topContributors : [
+                { name: "Michele O'Neil", role: "Business Mentor", points: 0 },
+                { name: "Derrick J.", role: "Digital Marketer", points: 0 },
+                { name: "Linda K.", role: "Content Strategist", points: 0 },
+              ]).slice(0, 4).map((person) => (
+                <div key={person.name} className="mb-3 flex items-center gap-3">
+                  <div className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-full border border-white/[0.12] bg-[#090B13]">
+                    {person.avatar ? <img src={person.avatar} alt={person.name} className="h-full w-full object-cover" /> : <UserPlus className="h-5 w-5 text-[#4F9DFF]" />}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium text-white">{person.name}</p>
+                    <p className="truncate text-xs text-[#7E8799]">{person.role || "Community member"}</p>
+                  </div>
+                  <Button size="sm" variant="outline" className="rounded-xl border-white/[0.08] bg-white/[0.04] text-[#BFC6D4]">Follow</Button>
+                </div>
+              ))}
+            </div>
 
-            {/* Member Spotlight */}
-            <GlassCard className="p-6 flex flex-col gap-5">
-              <div className="flex items-center justify-between">
-                <h4 className="text-[10px] font-bold text-muted-foreground uppercase tracking-[0.2em]">Member Spotlight</h4>
-                <Star className="w-3.5 h-3.5 text-yellow-500 fill-yellow-500" />
+            <div className="rounded-[18px] border border-white/[0.08] bg-[#151A2E]/70 p-5 shadow-xl shadow-black/20 backdrop-blur">
+              <div className="mb-4 flex items-center justify-between">
+                <h2 className="text-sm font-semibold text-white">Top Contributors</h2>
+                <span className="text-xs text-[#8B5CF6]">This Week</span>
+              </div>
+              <div className="space-y-3">
+                {(topContributors.length > 0 ? topContributors : [{ name: "Sarah M.", points: 1250 }, { name: "David O.", points: 980 }, { name: "Linda K.", points: 760 }]).map((person, index) => (
+                  <div key={person.name} className="flex items-center gap-3">
+                    <div className={cn("flex h-6 w-6 items-center justify-center rounded-full text-xs font-semibold", index === 0 ? "bg-yellow-400 text-black" : "bg-white/[0.08] text-[#BFC6D4]")}>
+                      {index + 1}
+                    </div>
+                    <div className="flex h-8 w-8 items-center justify-center overflow-hidden rounded-full bg-[#090B13]">
+                      {person.avatar ? <img src={person.avatar} alt={person.name} className="h-full w-full object-cover" /> : <Crown className="h-4 w-4 text-[#F59E0B]" />}
+                    </div>
+                    <p className="min-w-0 flex-1 truncate text-sm text-white">{person.name}</p>
+                    <p className="text-xs text-[#7E8799]">{person.points.toLocaleString()} pts</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="rounded-[18px] border border-white/[0.08] bg-[#151A2E]/70 p-5 shadow-xl shadow-black/20 backdrop-blur">
+              <div className="flex items-center gap-2">
+                <Bell className="h-4 w-4 text-[#4F9DFF]" />
+                <h2 className="text-sm font-semibold text-white">Community Highlights</h2>
               </div>
               {spotlight ? (
-                <div className="flex flex-col items-center text-center gap-3">
-                  <div className="w-20 h-20 rounded-3xl border-2 border-accent p-1 cyan-glow overflow-hidden bg-white/5 flex items-center justify-center">
-                    {spotlight.authorAvatar ? (
-                      <img src={spotlight.authorAvatar} alt={spotlight.authorName} title={spotlight.authorName} className="w-full h-full rounded-2xl object-cover" />
-                    ) : (
-                      <Users className="w-8 h-8 text-accent" />
-                    )}
-                  </div>
-                  <div>
-                    <h5 className="font-bold text-lg">{spotlight.authorName}</h5>
-                    <p className="text-[10px] text-accent font-bold uppercase tracking-widest mt-1">{spotlight.authorRole || "Member"}</p>
-                  </div>
-                  <p className="text-xs text-muted-foreground leading-relaxed px-2 line-clamp-3">{spotlight.content}</p>
+                <div className="mt-4 rounded-[16px] border border-white/[0.08] bg-[#090B13]/60 p-4">
+                  <p className="text-sm font-medium text-white">{spotlight.authorName}</p>
+                  <p className="mt-2 line-clamp-4 text-sm leading-6 text-[#BFC6D4]">{spotlight.content}</p>
                 </div>
               ) : (
-                <p className="text-sm text-muted-foreground text-center py-8">Member spotlight appears after the first community post.</p>
+                <p className="mt-4 text-sm text-[#BFC6D4]">Highlights appear after the first community post.</p>
               )}
-            </GlassCard>
+            </div>
 
-            {/* Live community stats */}
-            <GlassCard className="p-6">
-              <h4 className="text-[10px] font-bold text-muted-foreground uppercase tracking-[0.2em] mb-5">Community Stats</h4>
-              <div className="space-y-4">
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between text-[10px] font-bold uppercase">
-                    <span className="text-muted-foreground">Community Goal</span>
-                    <span className="text-primary">{communityProgress}%</span>
-                  </div>
-                  <Progress value={communityProgress} className="h-1.5 bg-white/5" />
+            <div className="rounded-[18px] border border-white/[0.08] bg-gradient-to-br from-[#151A2E] to-[#1A2140] p-5 shadow-xl shadow-black/20">
+              <div className="flex items-center gap-3">
+                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-[#4F9DFF] via-[#5B5FFF] to-[#8B5CF6]">
+                  <Users className="h-6 w-6 text-white" />
                 </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="p-3 rounded-2xl bg-white/[0.02] border border-white/5">
-                    <p className="text-[10px] font-bold text-muted-foreground uppercase mb-1">Posts</p>
-                    <p className="text-lg font-bold">{loading ? "—" : posts.length}</p>
-                  </div>
-                  <div className="p-3 rounded-2xl bg-white/[0.02] border border-white/5">
-                    <p className="text-[10px] font-bold text-muted-foreground uppercase mb-1">Wins</p>
-                    <p className="text-lg font-bold text-yellow-400">{loading ? "—" : founderWins.length}</p>
-                  </div>
+                <div>
+                  <h2 className="text-sm font-semibold text-white">Create a Community</h2>
+                  <p className="mt-1 text-xs text-[#BFC6D4]">Build your own circle around your expertise.</p>
                 </div>
               </div>
-            </GlassCard>
-
-            {/* Popular Tags */}
-            <GlassCard className="p-6">
-              <div className="flex items-center gap-2 mb-5">
-                <Zap className="w-3.5 h-3.5 text-primary" />
-                <h4 className="text-[10px] font-bold text-muted-foreground uppercase tracking-[0.2em]">Popular Tags</h4>
-              </div>
-              <div className="flex flex-col gap-4">
-                {trendingTags.length > 0 ? trendingTags.map(([tag, count]) => (
-                  <div key={tag} className="group space-y-1.5">
-                    <div className="flex items-start justify-between gap-2">
-                      <p className="text-[11px] font-medium text-white/80 group-hover:text-white transition-colors leading-snug">#{tag}</p>
-                      <span className="text-[10px] font-bold text-primary shrink-0">{count}</span>
-                    </div>
-                    <Progress value={Math.min(100, count * 10)} className="h-0.5 bg-white/5" />
-                  </div>
-                )) : (
-                  <p className="text-xs text-muted-foreground">No tag activity yet.</p>
-                )}
-              </div>
-            </GlassCard>
-
-          </div>
+              <Button className="mt-4 w-full rounded-xl bg-gradient-to-r from-[#4F9DFF] via-[#5B5FFF] to-[#8B5CF6] text-white">
+                Create Community
+              </Button>
+            </div>
+          </aside>
         </div>
       </AppLayout>
     </ProtectedRoute>
