@@ -47,6 +47,7 @@ import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import { useDashboardLeaderboard, useWeeklyPerformance, useDailyMissions, useDashboardStats,
 } from "@/hooks/useDashboardData";
 import { useSubscription } from "@/hooks/useSubscription";
+import { authFetch } from "@/lib/clientApi";
 import Link from "next/link";
 import { User } from "firebase/auth";
 import { UserProfile } from "@/lib/db";
@@ -77,6 +78,38 @@ function DashboardContent() {
   const [mounted, setMounted] = useState(false);
   const [showUpgrade, setShowUpgrade] = useState(false);
   const [initialUpgradePlan, setInitialUpgradePlan] = useState<'pro' | 'elite' | null>(null);
+  const [creditDashboard, setCreditDashboard] = useState<{
+    snapshot: {
+      remainingCredits: number;
+      monthlyCreditsGranted: number;
+      monthlyCreditsUsed: number;
+      monthlyCreditsReserved: number;
+      byokEnabled: boolean;
+      providerMode: string;
+      resetAt: string;
+      nextResetAt: string;
+    };
+    budgetSummary: {
+      monthlyCap: number;
+      dailyCap: number;
+      concurrentJobs: number;
+    };
+    recentActivity: Array<{
+      entryId: string;
+      timestamp: string;
+      feature: string;
+      providerId: string;
+      modelId: string;
+      billingSource: string;
+      creditsReserved: number;
+      creditsCharged: number;
+      creditsRefunded: number;
+      status: string;
+      durationMs: number;
+    }>;
+  } | null>(null);
+  const [creditLoading, setCreditLoading] = useState(true);
+  const [creditError, setCreditError] = useState<string | null>(null);
   const { refreshUserToken } = useSubscription();
 
   // Fetch real data
@@ -106,6 +139,45 @@ function DashboardContent() {
       });
     }
   }, [router, searchParams, refreshUserToken]);
+
+  useEffect(() => {
+    let mounted = true;
+
+    const loadCredits = async () => {
+      if (!user) {
+        if (mounted) setCreditLoading(false);
+        return;
+      }
+
+      try {
+        setCreditLoading(true);
+        setCreditError(null);
+        const response = await authFetch("/api/creator-credits");
+        if (!response.ok) {
+          throw new Error("Unable to load credit dashboard.");
+        }
+
+        const json = await response.json();
+        if (mounted) {
+          setCreditDashboard(json);
+        }
+      } catch (error) {
+        if (mounted) {
+          setCreditError(error instanceof Error ? error.message : "Unable to load credit dashboard.");
+        }
+      } finally {
+        if (mounted) {
+          setCreditLoading(false);
+        }
+      }
+    };
+
+    void loadCredits();
+
+    return () => {
+      mounted = false;
+    };
+  }, [user?.uid]);
 
   if (!mounted) return null;
 
@@ -315,6 +387,68 @@ function DashboardContent() {
                     </div>
                   ))}
                 </div>
+              </GlassCard>
+
+              <GlassCard className="p-5 flex flex-col gap-4">
+                <div className="flex items-center justify-between gap-3">
+                  <h3 className="font-bold text-xs uppercase tracking-widest flex items-center gap-2 text-cyan-300">
+                    <Sparkles className="w-4 h-4" /> AI Account
+                  </h3>
+                  <Link href="/settings" className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground hover:text-white">
+                    Open settings
+                  </Link>
+                </div>
+
+                {creditLoading ? (
+                  <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4 text-sm text-muted-foreground">
+                    Loading your AI balance...
+                  </div>
+                ) : creditError ? (
+                  <div className="rounded-xl border border-red-500/20 bg-red-500/10 p-4 text-sm text-red-200">
+                    {creditError}
+                  </div>
+                ) : creditDashboard ? (
+                  <>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
+                        <p className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground">Credits left</p>
+                        <p className="mt-1 text-lg font-bold">{creditDashboard.snapshot.remainingCredits}</p>
+                      </div>
+                      <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
+                        <p className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground">BYOK</p>
+                        <p className="mt-1 text-lg font-bold">{creditDashboard.snapshot.byokEnabled ? "On" : "Off"}</p>
+                      </div>
+                      <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
+                        <p className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground">Mode</p>
+                        <p className="mt-1 text-lg font-bold capitalize">{creditDashboard.snapshot.providerMode}</p>
+                      </div>
+                      <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
+                        <p className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground">Reset</p>
+                        <p className="mt-1 text-xs font-medium text-white/80">
+                          {new Date(creditDashboard.snapshot.nextResetAt).toLocaleDateString()}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="space-y-2 text-xs text-muted-foreground">
+                      <p>{creditDashboard.snapshot.monthlyCreditsUsed} used this month</p>
+                      <p>{creditDashboard.snapshot.monthlyCreditsReserved} reserved for active jobs</p>
+                      <p>Daily cap {creditDashboard.budgetSummary.dailyCap} · monthly cap {creditDashboard.budgetSummary.monthlyCap}</p>
+                    </div>
+
+                    <div className="flex flex-wrap gap-2">
+                      <Button asChild size="sm" variant="outline">
+                        <Link href="/settings/credits">Credits</Link>
+                      </Button>
+                      <Button asChild size="sm" variant="outline">
+                        <Link href="/settings/ai-providers">Providers</Link>
+                      </Button>
+                      <Button asChild size="sm" variant="outline">
+                        <Link href="/settings">All settings</Link>
+                      </Button>
+                    </div>
+                  </>
+                ) : null}
               </GlassCard>
 
               <div className="p-6 rounded-3xl bg-gradient-to-br from-purple-900/20 to-transparent border border-purple-500/20 relative overflow-hidden group flex flex-col gap-4">
