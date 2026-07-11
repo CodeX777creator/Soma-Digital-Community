@@ -13,7 +13,7 @@ import Link from "next/link";
 import { getUpgradeLabel, getUpgradeTarget } from "@/lib/plan-ui";
 
 export function UsageTracker() {
-  const { user, userData } = useAuth();
+  const { user } = useAuth();
   const [credits, setCredits] = useState<UserCredits | null>(null);
   const [loading, setLoading] = useState(true);
   const [showCreditPurchase, setShowCreditPurchase] = useState(false);
@@ -56,6 +56,7 @@ export function UsageTracker() {
   const upgradeTarget = getUpgradeTarget(tier);
   const aiProgress = isElite ? 100 : (credits.usedThisMonth / credits.monthlyQuota) * 100;
   const isLowCredits = !isElite && credits.remainingFree < 3;
+  const canBuyCredits = tier !== "elite";
 
   return (
     <>
@@ -66,18 +67,34 @@ export function UsageTracker() {
               <Zap className="w-4 h-4 text-primary" />
             </div>
             <div>
-              <h3 className="font-bold text-sm text-white">Premium Features</h3>
+              <h3 className="font-bold text-sm text-white">Creator Credits</h3>
               <p className="text-[10px] text-muted-foreground capitalize">
                 {tier} Plan
               </p>
             </div>
           </div>
-          
-          {upgradeTarget && (
-            <Button size="sm" asChild className="h-7 text-[10px] bg-cyan-500 hover:bg-cyan-600 text-black">
-              <Link href={`/dashboard?upgrade=${upgradeTarget}`}>{getUpgradeLabel(tier)}</Link>
-            </Button>
-          )}
+          <div className="flex items-center gap-2">
+            {canBuyCredits && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setShowCreditPurchase(true)}
+                className="h-7 text-[10px] border-primary/30 bg-white/[0.03]"
+              >
+                <Plus className="w-3 h-3 mr-1" />
+                Buy Credits
+              </Button>
+            )}
+            {upgradeTarget ? (
+              <Button size="sm" asChild className="h-7 text-[10px] bg-cyan-500 hover:bg-cyan-600 text-black">
+                <Link href={`/dashboard?upgrade=${upgradeTarget}`}>{getUpgradeLabel(tier)}</Link>
+              </Button>
+            ) : (
+              <Button size="sm" asChild className="h-7 text-[10px] bg-white/[0.06] hover:bg-white/[0.1] text-white">
+                <Link href="/settings/credits">View Credits</Link>
+              </Button>
+            )}
+          </div>
         </div>
 
         {/* Community Notice */}
@@ -126,25 +143,8 @@ export function UsageTracker() {
 
           {/* Low Credit Warning */}
           {isLowCredits && (
-            <div className="flex gap-2 mt-3">
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => setShowCreditPurchase(true)}
-                className="flex-1 h-8 text-[10px] border-primary/50"
-              >
-                <Plus className="w-3 h-3 mr-1" />
-                Buy Credits
-              </Button>
-              {upgradeTarget ? (
-                <Button
-                  size="sm"
-                  asChild
-                  className="flex-1 h-8 text-[10px] bg-cyan-500 hover:bg-cyan-600 text-black"
-                >
-                  <Link href={`/dashboard?upgrade=${upgradeTarget}`}>{getUpgradeLabel(tier)}</Link>
-                </Button>
-              ) : null}
+            <div className="mt-3 rounded-lg border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-[10px] text-amber-100">
+              You are close to your free limit. Buy credits or upgrade to keep creating without interruption.
             </div>
           )}
         </div>

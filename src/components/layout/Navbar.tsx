@@ -46,7 +46,9 @@ export const Navbar = () => {
     { name: "AI Studio", href: "/ai/studio" },
     { name: "Marketplace", href: "/marketplace" },
     { name: "Social Hub", href: "/social" },
-    { name: "Calendar", href: "/social/calendar" },
+    { name: "Scheduler", href: "/social/calendar?mode=scheduler" },
+    { name: "Events", href: "/social/calendar?mode=events" },
+    { name: "Automation", href: "/tools/autopilot" },
     { name: "My Courses", href: "/my-courses" },
     { name: "Settings", href: "/settings" },
     { name: "Reseller", href: "/reseller" },
@@ -145,7 +147,8 @@ export const Navbar = () => {
         <div className="hidden lg:block rounded-2xl border border-white/5 bg-white/[0.03] px-3 py-2">
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm font-medium">
             {links.map((link) => {
-              const isActive = pathname === link.href || (link.href.startsWith("/#") && pathname === "/");
+              const linkPath = link.href.split("?")[0];
+              const isActive = pathname === linkPath || (linkPath.startsWith("/#") && pathname === "/");
               return (
                 <Link
                   key={link.name}
@@ -187,7 +190,7 @@ export const Navbar = () => {
                   onClick={() => setMobileMenuOpen(false)}
                   className={cn(
                     "text-lg font-bold transition-colors",
-                    pathname === link.href ? "text-primary" : "text-white/70"
+                    pathname === link.href.split("?")[0] ? "text-primary" : "text-white/70"
                   )}
                 >
                   {link.name}

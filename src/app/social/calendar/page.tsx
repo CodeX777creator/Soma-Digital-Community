@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { FormEvent, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import {
   addMonths,
   eachDayOfInterval,
@@ -242,7 +243,38 @@ function getCampaignLabel(campaignMap: Record<string, SocialCampaignRecord>, cam
 
 export default function SocialCalendarPage() {
   const { user } = useAuth();
+  const searchParams = useSearchParams();
   const { toast } = useToast();
+  const calendarMode = searchParams.get("mode") === "events" ? "events" : "scheduler";
+  const isEventsMode = calendarMode === "events";
+  const pageLabel = isEventsMode ? "Events" : "Scheduler";
+  const pageTitle = isEventsMode ? "Manage live events across the month" : "Schedule content across the month";
+  const pageDescription = isEventsMode
+    ? "Plan and move live classes, workshops, and sessions in one visual calendar."
+    : "Plan, edit, and move social content in one visual calendar. Drag a post to a new day when a reschedule makes more sense.";
+  const createEntryLabel = isEventsMode ? "Create event" : "Create post";
+  const emptyStateLabel = isEventsMode
+    ? "Create your first scheduled event, generate a session outline in AI Studio, or connect another platform."
+    : "Create your first scheduled post, generate content in AI Studio, or connect another platform.";
+  const createCardHeading = isEventsMode ? "Create event" : "Create post";
+  const createCardDescription = isEventsMode
+    ? "Update the event details or move it to a better time."
+    : "Update the content or move it to a better time.";
+  const postHeadingLabel = isEventsMode ? "Event details" : "Post copy";
+  const campaignSectionLabel = isEventsMode ? "Series" : "Campaigns";
+  const campaignSectionHelper = isEventsMode
+    ? "A quick list of this month&apos;s live event series."
+    : "A quick list of the month&apos;s scheduled entries.";
+  const campaignEmptyLabel = isEventsMode ? "No event series yet." : "No scheduled content for this month yet.";
+  const campaignOptionalLabel = isEventsMode
+    ? "Series are optional. You can organize events later."
+    : "Campaigns are optional. You can organize posts later.";
+  const campaignEditorLabel = isEventsMode ? "Create series" : "Create campaign";
+  const campaignEditorDescription = isEventsMode
+    ? "Group related live sessions under a shared series."
+    : "Group related posts under a shared campaign.";
+  const saveDraftLabel = isEventsMode ? "Save draft" : "Save draft";
+  const scheduleLabel = isEventsMode ? "Schedule event" : "Schedule post";
   const [currentMonth, setCurrentMonth] = useState(() => startOfMonth(new Date()));
   const [viewMode, setViewMode] = useState<CalendarViewMode>("month");
   const [campaignFilter, setCampaignFilter] = useState<string>("all");
@@ -378,6 +410,9 @@ export default function SocialCalendarPage() {
   const selectedProvider = useMemo(() => {
     return SOCIAL_PROVIDER_REGISTRY.find((provider) => provider.id === form.platform);
   }, [form.platform]);
+  const postPlaceholderLabel = isEventsMode
+    ? `Describe the ${selectedProvider?.label || "event"} here...`
+    : `Write the ${selectedProvider?.label || "social"} post here...`;
   const canPublishToSelectedPlatform = connectedPlatforms.has(form.platform);
 
   useEffect(() => {
@@ -849,11 +884,11 @@ export default function SocialCalendarPage() {
             <div className="space-y-2">
               <div className="flex items-center gap-2 text-primary">
                 <CalendarDays className="h-5 w-5" />
-                <span className="text-xs font-semibold uppercase tracking-[0.24em]">Content Calendar</span>
+                <span className="text-xs font-semibold uppercase tracking-[0.24em]">{pageLabel}</span>
               </div>
-              <h1 className="text-2xl font-semibold tracking-tight">Schedule content across the month</h1>
+              <h1 className="text-2xl font-semibold tracking-tight">{pageTitle}</h1>
               <p className="max-w-2xl text-sm text-muted-foreground">
-                Plan, edit, and move social content in one visual calendar. Drag a post to a new day when a reschedule makes more sense.
+                {pageDescription}
               </p>
             </div>
 
@@ -926,13 +961,13 @@ export default function SocialCalendarPage() {
                 <div>
                   <h2 className="text-lg font-semibold text-white">Your calendar is ready</h2>
                   <p className="mt-1 max-w-2xl text-sm leading-6 text-muted-foreground">
-                    Create your first scheduled post, generate content in AI Studio, or connect another platform.
+                    {emptyStateLabel}
                   </p>
                 </div>
                 <div className="flex flex-wrap gap-2">
                   <Button type="button" onClick={() => clearForm()} className="rounded-[16px]">
                     <Plus className="h-4 w-4" />
-                    Create post
+                    {createEntryLabel}
                   </Button>
                   <Button asChild variant="outline" className="rounded-[16px]">
                     <Link href="/ai/studio">Generate with AI</Link>
@@ -1159,9 +1194,13 @@ export default function SocialCalendarPage() {
                 <div className="border-b border-white/10 bg-gradient-to-br from-[#151A2E] to-[#090B13] p-5">
                   <div className="flex items-center justify-between gap-3">
                     <div>
-                      <h2 className="text-lg font-semibold">{selectedPost ? "Edit post" : "Create post"}</h2>
+                      <h2 className="text-lg font-semibold">{selectedPost ? (isEventsMode ? "Edit event" : "Edit post") : createCardHeading}</h2>
                       <p className="text-sm text-muted-foreground">
-                        {selectedPost ? "Update the content or move it to a better time." : "Write once, choose a platform, and schedule it."}
+                        {selectedPost
+                          ? createCardDescription
+                          : isEventsMode
+                            ? "Write once, choose a platform, and schedule the session."
+                            : "Write once, choose a platform, and schedule it."}
                       </p>
                     </div>
                     <PencilLine className="h-5 w-5 text-primary" />
@@ -1208,7 +1247,7 @@ export default function SocialCalendarPage() {
                   </div>
 
                   <div className="space-y-2">
-                    <label className="text-sm font-medium">Post copy</label>
+                    <label className="text-sm font-medium">{postHeadingLabel}</label>
                     <Textarea
                       value={form.caption}
                       onChange={(event) => updateField("caption", event.target.value)}
@@ -1230,12 +1269,12 @@ export default function SocialCalendarPage() {
                   </div>
 
                   <div className="space-y-2">
-                    <label className="text-sm font-medium">Campaign</label>
+                    <label className="text-sm font-medium">{isEventsMode ? "Series" : "Campaign"}</label>
                     <select
                       className={cn("h-11 w-full rounded-[16px] border border-white/10 bg-background px-3 text-sm")}
                       value={form.campaignId}
                       onChange={(event) => updateField("campaignId", event.target.value)}
-                      aria-label="Choose campaign for scheduled post"
+                      aria-label={isEventsMode ? "Choose series for scheduled event" : "Choose campaign for scheduled post"}
                     >
                       <option value="">No campaign</option>
                       {campaigns.map((campaign) => (
@@ -1245,7 +1284,7 @@ export default function SocialCalendarPage() {
                       ))}
                     </select>
                     {campaigns.length === 0 ? (
-                      <p className="text-xs text-muted-foreground">Campaigns are optional. You can organize posts later.</p>
+                      <p className="text-xs text-muted-foreground">{campaignOptionalLabel}</p>
                     ) : null}
                   </div>
 
@@ -1284,16 +1323,16 @@ export default function SocialCalendarPage() {
                   <div className="grid gap-2 sm:grid-cols-2">
                     <Button type="button" variant="outline" disabled={loading || !form.caption.trim() || !canPublishToSelectedPlatform} onClick={() => savePost("draft")} className="h-11 rounded-[16px]">
                       {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <PencilLine className="h-4 w-4" />}
-                      Save draft
+                      {saveDraftLabel}
                     </Button>
                     <Button type="button" disabled={loading || !form.caption.trim() || !canPublishToSelectedPlatform} onClick={() => savePost("scheduled")} className="h-11 rounded-[16px]">
                       {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
-                      Schedule post
+                      {scheduleLabel}
                     </Button>
                   </div>
                   {!canPublishToSelectedPlatform ? (
                     <p className="text-xs leading-5 text-muted-foreground">
-                      Connect {selectedProvider?.label || "this platform"} before saving posts for it.
+                      Connect {selectedProvider?.label || "this platform"} before {isEventsMode ? "saving events" : "saving posts"} for it.
                     </p>
                   ) : null}
                   <div className="flex flex-wrap items-center gap-2">
@@ -1313,10 +1352,10 @@ export default function SocialCalendarPage() {
               <GlassCard className="p-5">
                 <div className="flex items-center justify-between gap-3">
                   <div>
-                    <h2 className="text-lg font-semibold">{selectedCampaign ? "Edit campaign" : "Create campaign"}</h2>
-                    <p className="text-sm text-muted-foreground">
-                      {selectedCampaign ? "Update the selected campaign or archive it." : "Group related posts under a shared campaign."}
-                    </p>
+                      <h2 className="text-lg font-semibold">{selectedCampaign ? (isEventsMode ? "Edit series" : "Edit campaign") : campaignEditorLabel}</h2>
+                      <p className="text-sm text-muted-foreground">
+                      {selectedCampaign ? "Update the selected campaign or archive it." : campaignEditorDescription}
+                      </p>
                   </div>
                   <Sparkles className="h-5 w-5 text-primary" />
                 </div>
@@ -1413,8 +1452,8 @@ export default function SocialCalendarPage() {
               <GlassCard className="p-5">
                 <div className="flex items-center justify-between gap-3">
                   <div>
-                    <h2 className="text-lg font-semibold">Upcoming items</h2>
-                    <p className="text-sm text-muted-foreground">A quick list of the month&apos;s scheduled entries.</p>
+                    <h2 className="text-lg font-semibold">{isEventsMode ? "Upcoming events" : "Upcoming items"}</h2>
+                    <p className="text-sm text-muted-foreground">{campaignSectionHelper}</p>
                   </div>
                   <Sparkles className="h-5 w-5 text-primary" />
                 </div>
@@ -1444,7 +1483,7 @@ export default function SocialCalendarPage() {
 
                   {posts.length === 0 ? (
                     <div className="rounded-md border border-dashed border-white/10 p-4 text-sm text-muted-foreground">
-                      No scheduled content for this month yet.
+                      {campaignEmptyLabel}
                     </div>
                   ) : null}
                 </div>
@@ -1453,7 +1492,7 @@ export default function SocialCalendarPage() {
               <GlassCard className="p-5">
                 <div className="flex items-center justify-between gap-3">
                   <div>
-                    <h2 className="text-lg font-semibold">Campaigns</h2>
+                    <h2 className="text-lg font-semibold">{campaignSectionLabel}</h2>
                     <p className="text-sm text-muted-foreground">
                       {campaignSummary.totalCampaigns} total · {campaignSummary.activeCampaigns} active
                     </p>

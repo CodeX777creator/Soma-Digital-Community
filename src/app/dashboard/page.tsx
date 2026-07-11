@@ -11,16 +11,11 @@ import {
   CheckCircle2,
   ChevronRight,
   Crown,
-  ImageIcon,
   Loader,
   MessageSquare,
-  PackageOpen,
-  PenLine,
-  ShoppingBag,
   Sparkles,
   Target,
   Users,
-  Video,
   Zap,
 } from "lucide-react";
 import { User } from "firebase/auth";
@@ -31,6 +26,7 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { UserAvatar } from "@/components/ui/user-avatar";
 import { UpgradeModal } from "@/components/premium/UpgradeModal";
+import { UsageTracker } from "@/components/billing/UsageTracker";
 import { useAuth } from "@/providers/AuthProvider";
 import { useSubscription } from "@/hooks/useSubscription";
 import {
@@ -291,7 +287,7 @@ function DashboardContent() {
                 <OperatingCard title="Ask AI Mentor" description="Get guidance on the next business move." href="/mentor" icon={Bot} tone="purple" />
                 <OperatingCard title="Go to AI Studio" description="Create images, video, voice, and copy." href="/ai/studio" icon={Sparkles} tone="blue" />
                 <OperatingCard title="Post in Community" description="Share progress and get feedback." href="/community" icon={Users} tone="green" />
-                <OperatingCard title="Explore Marketplace" description="Find products, templates, and offers." href="/marketplace" icon={ShoppingBag} tone="pink" />
+                <OperatingCard title="Automation" description="Automate content and workflow tasks." href="/tools/autopilot" icon={Zap} tone="pink" />
               </div>
             </section>
 
@@ -392,7 +388,7 @@ function DashboardContent() {
 
           <aside className="space-y-6">
             <div className="rounded-[18px] border border-white/[0.08] bg-[#151A2E]/72 p-5 shadow-[0_18px_60px_rgba(0,0,0,0.22)]">
-                <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between">
                 <h2 className="text-lg font-semibold text-white">{planLabel}</h2>
                 {upgradeTarget ? (
                   <Button
@@ -437,6 +433,8 @@ function DashboardContent() {
               </p>
             </div>
 
+            <UsageTracker />
+
             <div className="rounded-[18px] border border-white/[0.08] bg-[#151A2E]/72 p-5 shadow-[0_18px_60px_rgba(0,0,0,0.22)]">
               <div className="flex items-center justify-between">
                 <h2 className="text-lg font-semibold text-white">Daily goals</h2>
@@ -470,7 +468,7 @@ function DashboardContent() {
               <div className="flex items-center justify-between">
                 <h2 className="text-lg font-semibold text-white">Upcoming events</h2>
                 <Button asChild variant="ghost" className="rounded-2xl text-[#BFC6D4]">
-                  <Link href="/social/calendar">View all</Link>
+                  <Link href="/social/calendar?mode=events">View all</Link>
                 </Button>
               </div>
               <div className="mt-5 rounded-[16px] border border-dashed border-white/[0.08] p-5 text-sm leading-6 text-[#BFC6D4]">

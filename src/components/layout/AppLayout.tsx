@@ -54,8 +54,10 @@ const primaryNav: NavItem[] = [
   { name: "AI Studio", href: "/ai/studio", icon: Sparkles },
   { name: "AI Mentor", href: "/mentor", icon: Bot },
   { name: "Marketplace", href: "/marketplace", icon: Store },
+  { name: "Scheduler", href: "/social/calendar?mode=scheduler", icon: CalendarDays },
+  { name: "Events", href: "/social/calendar?mode=events", icon: CalendarDays },
+  { name: "Automation", href: "/tools/autopilot", icon: Zap },
   { name: "Resources", href: "/my-courses", icon: LibraryBig },
-  { name: "Events", href: "/social/calendar", icon: CalendarDays },
 ];
 
 const businessNav: NavItem[] = [
@@ -69,7 +71,7 @@ const businessNav: NavItem[] = [
 const accountNav: NavItem[] = [
   { name: "Profile", href: "/profile", icon: UserCircle },
   { name: "Billing", href: "/settings/billing", icon: CreditCard },
-  { name: "Subscription", href: "/settings/credits", icon: PackageCheck },
+  { name: "Creator Credits", href: "/settings/credits", icon: PackageCheck },
   { name: "Settings", href: "/settings", icon: Settings },
 ];
 
@@ -94,7 +96,8 @@ function NavSection({
       <div className="space-y-1.5">
         {items.map((item) => {
           const Icon = item.icon;
-          const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
+          const itemPath = item.href.split("?")[0];
+          const active = pathname === itemPath || pathname.startsWith(`${itemPath}/`);
 
           return (
             <Link
@@ -144,7 +147,7 @@ export const AppLayout = ({ children }: React.PropsWithChildren) => {
   const navWithMessages = React.useMemo<NavItem[]>(
     () => [
       ...primaryNav,
-      { name: "Messages", href: "/notifications", icon: MessageSquare, badge: unreadCount > 0 ? unreadCount : undefined },
+              { name: "Messages", href: "/notifications", icon: MessageSquare, badge: unreadCount > 0 ? unreadCount : undefined },
     ],
     [unreadCount]
   );
