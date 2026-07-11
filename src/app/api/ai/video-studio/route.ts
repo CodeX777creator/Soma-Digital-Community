@@ -14,6 +14,7 @@ import {
   type VideoAspectRatio,
   type VideoScene,
   type VideoStylePreset,
+  type ProductRules,
 } from '@/ai/studio/types';
 import { sanitizeString } from '@/lib/security';
 
@@ -36,6 +37,23 @@ function normalizeBrandTemplate(value: unknown): BrandTemplate | null {
     colors: Array.isArray(template.colors) ? template.colors.filter((item): item is string => typeof item === 'string') : undefined,
     fonts: Array.isArray(template.fonts) ? template.fonts.filter((item): item is string => typeof item === 'string') : undefined,
     notes: typeof template.notes === 'string' ? template.notes : undefined,
+  };
+}
+
+function normalizeProductRules(value: unknown): ProductRules | null {
+  if (!value || typeof value !== 'object') return null;
+  const rules = value as Record<string, unknown>;
+  return {
+    productName: typeof rules.productName === 'string' ? sanitizeString(rules.productName, 200) : undefined,
+    productCategory: typeof rules.productCategory === 'string' ? sanitizeString(rules.productCategory, 160) : undefined,
+    productPromise: typeof rules.productPromise === 'string' ? sanitizeString(rules.productPromise, 500) : undefined,
+    targetAudience: typeof rules.targetAudience === 'string' ? sanitizeString(rules.targetAudience, 320) : undefined,
+    differentiators: Array.isArray(rules.differentiators) ? rules.differentiators.filter((item): item is string => typeof item === 'string').map((item) => sanitizeString(item, 120)) : undefined,
+    proofPoints: Array.isArray(rules.proofPoints) ? rules.proofPoints.filter((item): item is string => typeof item === 'string').map((item) => sanitizeString(item, 120)) : undefined,
+    prohibitedClaims: Array.isArray(rules.prohibitedClaims) ? rules.prohibitedClaims.filter((item): item is string => typeof item === 'string').map((item) => sanitizeString(item, 120)) : undefined,
+    complianceNotes: typeof rules.complianceNotes === 'string' ? sanitizeString(rules.complianceNotes, 800) : undefined,
+    preferredCallToAction: typeof rules.preferredCallToAction === 'string' ? sanitizeString(rules.preferredCallToAction, 180) : undefined,
+    brandTone: typeof rules.brandTone === 'string' ? sanitizeString(rules.brandTone, 120) : undefined,
   };
 }
 
@@ -110,6 +128,7 @@ const handler = createAPIHandler(
       captionsEnabled: body.captionsEnabled !== false,
       voiceoverTone: typeof body.voiceoverTone === 'string' ? sanitizeString(body.voiceoverTone, 120) : undefined,
       brandTemplate: normalizeBrandTemplate(body.brandTemplate),
+      productRules: normalizeProductRules(body.productRules),
       brandName: typeof body.brandName === 'string' ? sanitizeString(body.brandName, 200) : undefined,
       title: typeof body.title === 'string' ? sanitizeString(body.title, 120) : undefined,
       tags: Array.isArray(body.tags) ? body.tags.filter((item: unknown): item is string => typeof item === 'string') : undefined,

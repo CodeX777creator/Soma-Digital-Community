@@ -155,6 +155,7 @@ export { cleanupStaleGeneratedAssets } from './storage-lifecycle';
 export { logXPEvent } from './xp';
 // Social publishing jobs
 export { publishScheduledSocialPosts } from './social-publishing';
+export { queueSocialTokenRefreshJobs } from './social-token-refresh';
 
 // Push notification functions
 export { 

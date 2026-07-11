@@ -427,6 +427,7 @@ export async function generateVideoStudioAsset(
       renderNotes: blueprint.renderNotes,
       renderPrompt: blueprint.renderPrompt,
       renderState,
+      productRules: input.productRules || null,
       renderer: renderOutcome.renderer,
     });
     downloadUrl = bundleDownloadUrl;
@@ -459,6 +460,7 @@ export async function generateVideoStudioAsset(
     captionsEnabled: input.captionsEnabled ?? true,
     voiceoverTone: input.voiceoverTone,
     brandTemplate: input.brandTemplate || null,
+    productRules: input.productRules || null,
     brandName: normalizedBrandName,
     storagePath: actualStoragePath,
     thumbnail: posterFrameUrl || downloadUrl || '',
@@ -468,7 +470,7 @@ export async function generateVideoStudioAsset(
     promptVersion: 'video-studio@1.0.0',
     renderStrategy: renderOutcome.renderer,
     visibility: input.visibility || 'private',
-    tags: Array.from(new Set([stylePreset, aspectRatio, normalizedBrandName || '', input.brandTemplate?.id || '', ...(input.tags || [])].filter(Boolean))),
+    tags: Array.from(new Set([stylePreset, aspectRatio, normalizedBrandName || '', input.brandTemplate?.id || '', input.productRules?.productName || '', ...(input.tags || [])].filter(Boolean))),
     checksum,
     status: jobStatus === 'completed' ? 'completed' : 'queued',
     renderState,

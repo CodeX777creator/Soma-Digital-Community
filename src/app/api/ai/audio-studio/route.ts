@@ -14,6 +14,8 @@ import {
   type AudioVoicePreset,
   type AudioVoiceProfile,
   type BrandTemplate,
+  type ProductRules,
+  type VoiceBrandProfile,
 } from '@/ai/studio/types';
 import { sanitizeString } from '@/lib/security';
 
@@ -51,6 +53,46 @@ function normalizeVoiceProfile(value: unknown): AudioVoiceProfile | null {
     stability: typeof profile.stability === 'number' ? profile.stability : undefined,
     similarityBoost: typeof profile.similarityBoost === 'number' ? profile.similarityBoost : undefined,
     speed: typeof profile.speed === 'number' ? profile.speed : undefined,
+  };
+}
+
+function normalizeVoiceBrandProfile(value: unknown): VoiceBrandProfile | null {
+  if (!value || typeof value !== 'object') return null;
+  const profile = value as Record<string, unknown>;
+  return {
+    voiceId: typeof profile.voiceId === 'string' ? profile.voiceId : undefined,
+    name: typeof profile.name === 'string' ? profile.name : undefined,
+    profileName: typeof profile.profileName === 'string' ? profile.profileName : undefined,
+    provider: typeof profile.provider === 'string' ? profile.provider : undefined,
+    description: typeof profile.description === 'string' ? profile.description : undefined,
+    language: isAllowedLanguage(profile.language) ? (profile.language as AudioLanguage) : undefined,
+    style: typeof profile.style === 'string' ? profile.style : undefined,
+    stability: typeof profile.stability === 'number' ? profile.stability : undefined,
+    similarityBoost: typeof profile.similarityBoost === 'number' ? profile.similarityBoost : undefined,
+    speed: typeof profile.speed === 'number' ? profile.speed : undefined,
+    isClonedVoice: typeof profile.isClonedVoice === 'boolean' ? profile.isClonedVoice : undefined,
+    cloneSourceName: typeof profile.cloneSourceName === 'string' ? profile.cloneSourceName : undefined,
+    cloneConsentConfirmed: typeof profile.cloneConsentConfirmed === 'boolean' ? profile.cloneConsentConfirmed : undefined,
+    accent: typeof profile.accent === 'string' ? profile.accent : undefined,
+    brandTone: typeof profile.brandTone === 'string' ? profile.brandTone : undefined,
+    usageNotes: typeof profile.usageNotes === 'string' ? profile.usageNotes : undefined,
+  };
+}
+
+function normalizeProductRules(value: unknown): ProductRules | null {
+  if (!value || typeof value !== 'object') return null;
+  const rules = value as Record<string, unknown>;
+  return {
+    productName: typeof rules.productName === 'string' ? sanitizeString(rules.productName, 200) : undefined,
+    productCategory: typeof rules.productCategory === 'string' ? sanitizeString(rules.productCategory, 160) : undefined,
+    productPromise: typeof rules.productPromise === 'string' ? sanitizeString(rules.productPromise, 500) : undefined,
+    targetAudience: typeof rules.targetAudience === 'string' ? sanitizeString(rules.targetAudience, 320) : undefined,
+    differentiators: Array.isArray(rules.differentiators) ? rules.differentiators.filter((item): item is string => typeof item === 'string').map((item) => sanitizeString(item, 120)) : undefined,
+    proofPoints: Array.isArray(rules.proofPoints) ? rules.proofPoints.filter((item): item is string => typeof item === 'string').map((item) => sanitizeString(item, 120)) : undefined,
+    prohibitedClaims: Array.isArray(rules.prohibitedClaims) ? rules.prohibitedClaims.filter((item): item is string => typeof item === 'string').map((item) => sanitizeString(item, 120)) : undefined,
+    complianceNotes: typeof rules.complianceNotes === 'string' ? sanitizeString(rules.complianceNotes, 800) : undefined,
+    preferredCallToAction: typeof rules.preferredCallToAction === 'string' ? sanitizeString(rules.preferredCallToAction, 180) : undefined,
+    brandTone: typeof rules.brandTone === 'string' ? sanitizeString(rules.brandTone, 120) : undefined,
   };
 }
 
@@ -99,6 +141,7 @@ const handler = createAPIHandler(
       voicePreset: isAllowedVoicePreset(body.voicePreset) ? body.voicePreset : undefined,
       voiceId: typeof body.voiceId === 'string' ? sanitizeString(body.voiceId, 120) : undefined,
       voiceProfile: normalizeVoiceProfile(body.voiceProfile),
+      voiceBrandProfile: normalizeVoiceBrandProfile(body.voiceBrandProfile || body.voiceProfile),
       language: isAllowedLanguage(body.language) ? body.language : undefined,
       secondaryVoiceId: typeof body.secondaryVoiceId === 'string' ? sanitizeString(body.secondaryVoiceId, 120) : undefined,
       backgroundMusic: body.backgroundMusic === true,
@@ -106,6 +149,7 @@ const handler = createAPIHandler(
       includeOutro: body.includeOutro !== false,
       durationSeconds: typeof body.durationSeconds === 'number' ? body.durationSeconds : undefined,
       brandTemplate: normalizeBrandTemplate(body.brandTemplate),
+      productRules: normalizeProductRules(body.productRules),
       brandName: typeof body.brandName === 'string' ? sanitizeString(body.brandName, 200) : undefined,
       tone: typeof body.tone === 'string' ? sanitizeString(body.tone, 120) : undefined,
       scriptStyle: typeof body.scriptStyle === 'string' ? sanitizeString(body.scriptStyle, 120) : undefined,

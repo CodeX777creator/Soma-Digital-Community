@@ -106,6 +106,58 @@ export interface SocialHubSummary {
   byProvider: Record<SocialPlatform, number>;
 }
 
+export const SOCIAL_CAMPAIGN_STATUSES = [
+  'draft',
+  'active',
+  'paused',
+  'completed',
+  'archived',
+] as const;
+
+export type SocialCampaignStatus = (typeof SOCIAL_CAMPAIGN_STATUSES)[number];
+
+export interface SocialCampaignInput {
+  campaignName: string;
+  platform?: SocialPlatform;
+  goal?: string;
+  status?: SocialCampaignStatus;
+  startDate?: string;
+  endDate?: string;
+  notes?: string;
+  color?: string;
+  userId?: string;
+  metadata?: Record<string, unknown>;
+}
+
+export interface SocialCampaignUpdateInput {
+  campaignName?: string;
+  platform?: SocialPlatform;
+  goal?: string;
+  status?: SocialCampaignStatus;
+  startDate?: string;
+  endDate?: string;
+  notes?: string;
+  color?: string;
+  metadata?: Record<string, unknown>;
+}
+
+export interface SocialCampaignRecord {
+  socialCampaignId: string;
+  ownerId: string;
+  campaignName: string;
+  platform?: SocialPlatform;
+  goal?: string;
+  status: SocialCampaignStatus;
+  startDate?: string | null;
+  endDate?: string | null;
+  notes?: string;
+  color?: string;
+  metadata: Record<string, unknown>;
+  scheduledPostCount?: number;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+}
+
 export const SCHEDULED_POST_STATUSES = [
   'draft',
   'scheduled',

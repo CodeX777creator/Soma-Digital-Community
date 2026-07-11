@@ -2,6 +2,7 @@ import * as admin from 'firebase-admin';
 import crypto from 'crypto';
 import { onSchedule } from 'firebase-functions/v2/scheduler';
 import { defineInt, defineSecret, defineString } from 'firebase-functions/params';
+import { sendNotificationWithPush } from './push-notifications';
 
 const db = admin.firestore();
 
@@ -357,6 +358,12 @@ async function markPublishFailure(postRef: admin.firestore.DocumentReference<adm
     publishLeaseExpiresAt: null,
     updatedAt: admin.firestore.FieldValue.serverTimestamp(),
   }, { merge: true });
+
+  if (post.status !== 'failed') {
+    const title = post.title || post.caption.slice(0, 60) || 'Scheduled post';
+    const message = `${post.platform} post failed to publish. ${errorMessage.slice(0, 120)}`;
+    await notifyPublishStatus(post.ownerId, 'social_publish_failed', 'Post publishing failed', `${title} needs attention. ${message}`, '/social/calendar');
+  }
 }
 
 async function markPublishSuccess(
@@ -378,6 +385,29 @@ async function markPublishSuccess(
     publishLeaseExpiresAt: null,
     updatedAt: admin.firestore.FieldValue.serverTimestamp(),
   }, { merge: true });
+
+  if (post.status !== 'published') {
+    const title = post.title || post.caption.slice(0, 60) || 'Scheduled post';
+    await notifyPublishStatus(post.ownerId, 'social_publish_success', 'Post published', `${title} was published on ${post.platform}.`, '/social/calendar');
+  }
+}
+
+async function notifyPublishStatus(
+  ownerId: string,
+  type: string,
+  title: string,
+  body: string,
+  linkUrl: string
+): Promise<void> {
+  try {
+    await sendNotificationWithPush(ownerId, type, title, body, linkUrl);
+  } catch (error) {
+    console.warn('[SocialPublishing] notification hook failed', {
+      ownerId,
+      type,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
 }
 
 async function attemptPublish(post: ScheduledPostDoc, account: SocialAccountDoc): Promise<PublishOutcome> {

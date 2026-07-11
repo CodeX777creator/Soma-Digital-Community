@@ -1,9 +1,10 @@
 "use client";
 
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import type { ReactNode, FormEvent } from "react";
 import { useEffect, useMemo, useState } from "react";
-import { CalendarDays, CheckCircle2, ChevronDown, ChevronUp, Facebook, Instagram, Loader2, Send, Shield, Smartphone, Trash2, Youtube, Linkedin, X, Music4 } from "lucide-react";
+import { CalendarDays, CheckCircle2, ChevronDown, ChevronUp, ExternalLink, Facebook, Instagram, Loader2, Send, Shield, Smartphone, Trash2, Youtube, Linkedin, X, Music4 } from "lucide-react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import { Button } from "@/components/ui/button";
@@ -31,6 +32,19 @@ type SocialHubResponse = {
 
 type SocialAccountResponse = {
   socialAccount: SocialAccountRecord;
+};
+
+type OAuthStartResponse = {
+  provider: SocialPlatform;
+  socialAccountId: string;
+  callbackUrl: string;
+  authorizationUrl: string | null;
+  state: string;
+  stateHash: string;
+  flowMode: string;
+  requiresPkce: boolean;
+  supportsRefreshToken: boolean;
+  nextStep: string;
 };
 
 interface SocialHubFormState {
@@ -87,6 +101,7 @@ function statusClass(status: SocialAccountRecord["status"]): string {
 export default function SocialHubPage() {
   const { user } = useAuth();
   const { toast } = useToast();
+  const searchParams = useSearchParams();
   const [accounts, setAccounts] = useState<SocialAccountRecord[]>([]);
   const [providers, setProviders] = useState<typeof SOCIAL_PROVIDER_REGISTRY>(SOCIAL_PROVIDER_REGISTRY);
   const [summary, setSummary] = useState<SocialHubResponse["summary"]>({
@@ -107,6 +122,24 @@ export default function SocialHubPage() {
   const [loading, setLoading] = useState(false);
   const [loadingHistory, setLoadingHistory] = useState(true);
   const [showAdvancedCredentials, setShowAdvancedCredentials] = useState(false);
+  const [oauthHandshake, setOAuthHandshake] = useState<OAuthStartResponse | null>(null);
+
+  useEffect(() => {
+    const oauthStatus = searchParams.get("oauth_status");
+    if (!oauthStatus) return;
+
+    const provider = searchParams.get("oauth_provider");
+    const error = searchParams.get("oauth_error");
+    const providerLabel = provider ? provider.charAt(0).toUpperCase() + provider.slice(1) : "Provider";
+
+    toast({
+      title: oauthStatus === "connected" ? `${providerLabel} connected` : `${providerLabel} connection needs attention`,
+      description: oauthStatus === "connected"
+        ? "Your OAuth handoff completed successfully and the account is now linked."
+        : error || "The provider returned an error during the connection flow.",
+      variant: oauthStatus === "connected" ? "default" : "destructive",
+    });
+  }, [searchParams, toast]);
   const [form, setForm] = useState<SocialHubFormState>({
     providerId: DEFAULT_PROVIDER,
     connectionType: "oauth",
@@ -266,6 +299,58 @@ export default function SocialHubPage() {
       toast({
         title: "Connection failed",
         description: error instanceof Error ? error.message : "The social connection could not be saved.",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const startOAuthHandshake = async () => {
+    if (!user || loading) return;
+
+    try {
+      setLoading(true);
+      const idToken = await user.getIdToken();
+      const response = await fetch(`/api/social/oauth/${form.providerId}/start`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${idToken}`,
+        },
+        body: JSON.stringify({
+          accountName: form.accountName || `${activeProvider?.label || form.providerId} account`,
+          handle: form.handle || undefined,
+          providerAccountId: form.providerAccountId || undefined,
+          scopes: form.scopes
+            .split(",")
+            .map((value) => value.trim())
+            .filter(Boolean),
+          returnTo: "/social",
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: "Unknown error" }));
+        throw new Error(errorData.error || "OAuth handoff could not be prepared.");
+      }
+
+      const data = (await response.json()) as OAuthStartResponse;
+      setOAuthHandshake(data);
+      if (data.authorizationUrl) {
+        window.open(data.authorizationUrl, "_blank", "noopener,noreferrer");
+      }
+      await loadAccounts();
+      toast({
+        title: "OAuth handoff prepared",
+        description: data.authorizationUrl
+          ? "The provider authorization window has been opened."
+          : "Provider authorization URL is not configured yet, but the callback handoff is ready.",
+      });
+    } catch (error) {
+      toast({
+        title: "OAuth handoff failed",
+        description: error instanceof Error ? error.message : "Could not prepare the OAuth connection.",
         variant: "destructive",
       });
     } finally {
@@ -465,15 +550,31 @@ export default function SocialHubPage() {
                   <Textarea value={form.notes} onChange={(event) => updateField("notes", event.target.value)} rows={3} placeholder={`Current connection mode for ${activeProvider?.label || "this provider"}.`} />
                 </div>
 
-                <div className="flex items-center gap-3">
+                <div className="flex flex-wrap items-center gap-3">
                   <Button type="submit" disabled={loading}>
                     {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Shield className="h-4 w-4" />}
                     Save Connection
+                  </Button>
+                  <Button type="button" variant="outline" onClick={startOAuthHandshake} disabled={loading || form.connectionType !== "oauth"}>
+                    <ExternalLink className="h-4 w-4" />
+                    Start OAuth
                   </Button>
                   <Button type="button" variant="outline" onClick={resetForm} disabled={loading}>
                     Clear
                   </Button>
                 </div>
+
+                {oauthHandshake ? (
+                  <div className="rounded-md border border-border p-3 text-sm">
+                    <div className="font-medium">OAuth handoff ready</div>
+                    <div className="mt-1 text-muted-foreground">
+                      {oauthHandshake.authorizationUrl
+                        ? "Authorization is configured. The provider window should open now."
+                        : "The callback handoff is ready, but provider authorization still needs to be configured."}
+                    </div>
+                    <div className="mt-2 text-xs text-muted-foreground">Callback: {oauthHandshake.callbackUrl}</div>
+                  </div>
+                ) : null}
               </form>
             </GlassCard>
           </section>

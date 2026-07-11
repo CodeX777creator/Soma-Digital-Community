@@ -1,5 +1,5 @@
 import { buildPrompt, type PromptTemplate, type UserContext } from '@/ai/core/prompt-builder';
-import type { StudioContentType, StudioGenerationInput, StudioPromptLibraryEntry } from './types';
+import type { ProductRules, StudioContentType, StudioGenerationInput, StudioPromptLibraryEntry, VoiceBrandProfile } from './types';
 import { LEGACY_STUDIO_CONTENT_TYPE_ALIASES } from './types';
 
 export interface StudioPromptBundle {
@@ -402,6 +402,7 @@ export function buildVideoPrompt(context: {
   brandName?: string;
   brandTemplateName?: string;
   brandTemplateNotes?: string;
+  productRules?: ProductRules | null;
   conversationSummary?: string;
 }): VideoPromptBundle {
   const template: PromptTemplate = {
@@ -437,6 +438,7 @@ Voiceover Tone: {{voiceoverTone}}
 Brand Name: {{brandName}}
 Brand Template: {{brandTemplateName}}
 Brand Notes: {{brandTemplateNotes}}
+Product Rules: {{productRules}}
 Conversation Summary: {{conversationSummary}}
 
 Generate the JSON video blueprint now.`,
@@ -465,6 +467,7 @@ Generate the JSON video blueprint now.`,
       brandName: context.brandName || 'unspecified',
       brandTemplateName: context.brandTemplateName || 'none',
       brandTemplateNotes: context.brandTemplateNotes || 'none',
+      productRules: context.productRules ? JSON.stringify(context.productRules, null, 2) : 'none',
       conversationSummary: context.conversationSummary || 'none',
     },
   });
@@ -495,6 +498,7 @@ export function buildAudioPrompt(context: {
   voicePreset?: string;
   voiceId?: string;
   secondaryVoiceId?: string;
+  voiceBrandProfile?: VoiceBrandProfile | null;
   language?: string;
   backgroundMusic?: boolean;
   includeIntro?: boolean;
@@ -503,6 +507,7 @@ export function buildAudioPrompt(context: {
   brandName?: string;
   brandTemplateName?: string;
   brandTemplateNotes?: string;
+  productRules?: ProductRules | null;
   tone?: string;
   scriptStyle?: string;
   conversationSummary?: string;
@@ -534,6 +539,7 @@ Transcript: {{transcript}}
 Voice Preset: {{voicePreset}}
 Voice ID: {{voiceId}}
 Secondary Voice ID: {{secondaryVoiceId}}
+Voice Brand Profile: {{voiceBrandProfile}}
 Language: {{language}}
 Background Music: {{backgroundMusic}}
 Include Intro: {{includeIntro}}
@@ -542,6 +548,7 @@ Duration Seconds: {{durationSeconds}}
 Brand Name: {{brandName}}
 Brand Template: {{brandTemplateName}}
 Brand Notes: {{brandTemplateNotes}}
+Product Rules: {{productRules}}
 Tone: {{tone}}
 Script Style: {{scriptStyle}}
 Conversation Summary: {{conversationSummary}}
@@ -566,6 +573,7 @@ Generate the JSON audio blueprint now.`,
       voicePreset: context.voicePreset || 'narrator',
       voiceId: context.voiceId || 'default',
       secondaryVoiceId: context.secondaryVoiceId || 'none',
+      voiceBrandProfile: context.voiceBrandProfile ? JSON.stringify(context.voiceBrandProfile, null, 2) : 'none',
       language: context.language || 'English',
       backgroundMusic: typeof context.backgroundMusic === 'boolean' ? String(context.backgroundMusic) : 'false',
       includeIntro: typeof context.includeIntro === 'boolean' ? String(context.includeIntro) : 'true',
@@ -574,6 +582,7 @@ Generate the JSON audio blueprint now.`,
       brandName: context.brandName || 'unspecified',
       brandTemplateName: context.brandTemplateName || 'none',
       brandTemplateNotes: context.brandTemplateNotes || 'none',
+      productRules: context.productRules ? JSON.stringify(context.productRules, null, 2) : 'none',
       tone: context.tone || 'professional',
       scriptStyle: context.scriptStyle || 'clear and concise',
       conversationSummary: context.conversationSummary || 'none',

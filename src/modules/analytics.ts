@@ -118,9 +118,11 @@ export type AdminAnalyticsDashboard = {
     successCount: number;
     failedCount: number;
     skippedCount: number;
+    retryableFailedCount: number;
     successRate: number;
     byPlatform: Array<{ platform: string; success: number; failed: number; total: number; successRate: number }>;
     chart: Array<{ date: string; attempts: number; success: number; failed: number }>;
+    attempts: Array<{ id: string; scheduledPostId: string; platform: string; account: string; title: string; attemptNumber: number; status: string; retryable: boolean; externalPostId: string | null; detail: string; time: string | null; tone: string }>;
     recentAttempts: Array<{ id: string; type: string; title: string; detail: string; time: string | null; tone: string }>;
   };
   users: {
@@ -235,6 +237,7 @@ export async function getAdminAnalyticsDashboard(req: Request): Promise<AdminAna
   const publishSuccessCount = publishAttempts.filter((attempt) => attempt.status === 'success').length;
   const publishFailedCount = publishAttempts.filter((attempt) => attempt.status === 'failed').length;
   const publishSkippedCount = publishAttempts.filter((attempt) => attempt.status === 'skipped').length;
+  const publishRetryableFailedCount = publishAttempts.filter((attempt) => attempt.status === 'failed' && attempt.retryable === true).length;
   const publishSuccessRate = publishTotal > 0 ? (publishSuccessCount / publishTotal) * 100 : 0;
 
   const byPlatform = publishAttempts.reduce<Record<string, { success: number; failed: number; total: number }>>((acc, attempt) => {
@@ -514,6 +517,21 @@ export async function getAdminAnalyticsDashboard(req: Request): Promise<AdminAna
     tone: record.status === 'success' ? 'emerald' : record.status === 'failed' ? 'red' : 'slate',
   }));
 
+  const publishAttemptRows = publishAttempts.slice(0, 20).map((record) => ({
+    id: record.id,
+    scheduledPostId: String(record.scheduledPostId || 'unknown'),
+    platform: String(record.platform || 'unknown'),
+    account: String(record.socialAccountId || 'default account'),
+    title: String(record.metadata?.title || record.metadata?.caption || 'Untitled publish attempt'),
+    attemptNumber: typeof record.attemptNumber === 'number' ? record.attemptNumber : 1,
+    status: String(record.status || 'processing'),
+    retryable: record.retryable === true,
+    externalPostId: typeof record.externalPostId === 'string' ? record.externalPostId : null,
+    detail: record.errorMessage || record.providerResponse || 'No details recorded',
+    time: toDate(record.finishedAt || record.startedAt || record.triggeredAt)?.toISOString() || null,
+    tone: record.status === 'success' ? 'emerald' : record.status === 'failed' ? 'red' : 'slate',
+  }));
+
   const recentUsers = users.slice(0, 8).map((user) => ({
     id: `user-${user.id}`,
     type: 'New signup',
@@ -562,9 +580,11 @@ export async function getAdminAnalyticsDashboard(req: Request): Promise<AdminAna
       successCount: publishSuccessCount,
       failedCount: publishFailedCount,
       skippedCount: publishSkippedCount,
+      retryableFailedCount: publishRetryableFailedCount,
       successRate: publishSuccessRate,
       byPlatform: publishPlatformRows,
       chart: publishChart,
+      attempts: publishAttemptRows,
       recentAttempts: recentPublishActions,
     },
     users: {

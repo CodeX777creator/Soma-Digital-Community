@@ -6,6 +6,10 @@ import { sealSocialPayload } from './credentials';
 import type {
   ContentCalendarSummary,
   EncryptedPayload,
+  SocialCampaignInput,
+  SocialCampaignRecord,
+  SocialCampaignStatus,
+  SocialCampaignUpdateInput,
   SocialAccountInput,
   SocialAccountRecord,
   SocialAccountStatus,
@@ -191,6 +195,114 @@ export async function getSocialHubSummary(ownerId: string): Promise<SocialHubSum
   return overview.summary;
 }
 
+export async function listSocialCampaigns(ownerId: string): Promise<SocialCampaignRecord[]> {
+  const snapshot = await adminDb
+    .collection('socialCampaigns')
+    .where('ownerId', '==', ownerId)
+    .get();
+
+  const campaigns = snapshot.docs.map((doc) => {
+    const data = doc.data() as SocialCampaignDoc;
+    return serializeCampaign({
+      ...data,
+      socialCampaignId: typeof data.socialCampaignId === 'string' ? data.socialCampaignId : doc.id,
+    });
+  });
+
+  const postSnapshot = await adminDb
+    .collection('scheduledPosts')
+    .where('ownerId', '==', ownerId)
+    .get();
+
+  const counts = postSnapshot.docs.reduce<Record<string, number>>((acc, doc) => {
+    const data = doc.data() as ScheduledPostDoc;
+    if (!data.campaignId) return acc;
+    acc[data.campaignId] = (acc[data.campaignId] || 0) + 1;
+    return acc;
+  }, {});
+
+  return campaigns
+    .map((campaign) => ({
+      ...campaign,
+      scheduledPostCount: counts[campaign.socialCampaignId] || 0,
+    }))
+    .sort((left, right) => String(right.updatedAt || right.createdAt || '').localeCompare(String(left.updatedAt || left.createdAt || '')));
+}
+
+export async function createSocialCampaign(input: SocialCampaignInput): Promise<SocialCampaignRecord> {
+  const ownerId = input.userId || 'anonymous';
+  const campaignName = normalizeCampaignName(input.campaignName);
+  const campaignId = adminDb.collection('socialCampaigns').doc().id;
+  const now = admin.firestore.FieldValue.serverTimestamp();
+  const doc: SocialCampaignDoc = {
+    socialCampaignId: campaignId,
+    ownerId,
+    campaignName,
+    platform: input.platform,
+    goal: input.goal ? sanitizeString(input.goal, 500) : undefined,
+    status: normalizeCampaignStatus(input.status),
+    startDate: normalizeCampaignDate(input.startDate),
+    endDate: normalizeCampaignDate(input.endDate),
+    notes: input.notes ? sanitizeString(input.notes, 1000) : undefined,
+    color: input.color ? sanitizeString(input.color, 24) : undefined,
+    metadata: normalizeMetadata(input.metadata),
+    createdAt: now,
+    updatedAt: now,
+  };
+
+  await adminDb.collection('socialCampaigns').doc(campaignId).set(doc);
+  logger.info('[Social] Created campaign', { socialCampaignId: campaignId, ownerId, campaignName });
+  return serializeCampaign(doc);
+}
+
+async function readSocialCampaignOrThrow(ownerId: string, campaignId: string): Promise<SocialCampaignDoc> {
+  const snapshot = await adminDb.collection('socialCampaigns').doc(campaignId).get();
+  if (!snapshot.exists) {
+    throw new Error('Campaign not found');
+  }
+
+  const data = snapshot.data() as SocialCampaignDoc;
+  if (data.ownerId !== ownerId) {
+    throw new Error('Campaign not found');
+  }
+
+  return {
+    ...data,
+    socialCampaignId: typeof data.socialCampaignId === 'string' ? data.socialCampaignId : snapshot.id,
+  };
+}
+
+export async function updateSocialCampaign(
+  ownerId: string,
+  campaignId: string,
+  patch: SocialCampaignUpdateInput
+): Promise<SocialCampaignRecord> {
+  const current = await readSocialCampaignOrThrow(ownerId, campaignId);
+  const updated: SocialCampaignDoc = {
+    ...current,
+    campaignName: patch.campaignName ? normalizeCampaignName(patch.campaignName) : current.campaignName,
+    platform: patch.platform || current.platform,
+    goal: patch.goal !== undefined ? sanitizeString(patch.goal || '', 500) || undefined : current.goal,
+    status: patch.status || current.status,
+    startDate: patch.startDate !== undefined ? normalizeCampaignDate(patch.startDate) : current.startDate || null,
+    endDate: patch.endDate !== undefined ? normalizeCampaignDate(patch.endDate) : current.endDate || null,
+    notes: patch.notes !== undefined ? sanitizeString(patch.notes || '', 1000) || undefined : current.notes,
+    color: patch.color !== undefined ? sanitizeString(patch.color || '', 24) || undefined : current.color,
+    metadata: patch.metadata ? normalizeMetadata(patch.metadata) : current.metadata,
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  };
+
+  await adminDb.collection('socialCampaigns').doc(campaignId).set(updated, { merge: true });
+  logger.info('[Social] Updated campaign', { socialCampaignId: campaignId, ownerId, status: updated.status });
+  return serializeCampaign(updated);
+}
+
+export async function deleteSocialCampaign(ownerId: string, campaignId: string): Promise<void> {
+  await readSocialCampaignOrThrow(ownerId, campaignId);
+  await adminDb.collection('socialCampaigns').doc(campaignId).delete();
+  logger.info('[Social] Deleted campaign', { socialCampaignId: campaignId, ownerId });
+}
+
 export async function getSocialHubOverview(ownerId: string): Promise<{
   accounts: SocialAccountRecord[];
   summary: SocialHubSummary;
@@ -373,6 +485,22 @@ type ScheduledPostDoc = {
   publishProviderResponse?: string | null;
 };
 
+type SocialCampaignDoc = {
+  socialCampaignId: string;
+  ownerId: string;
+  campaignName: string;
+  platform?: SocialPlatform;
+  goal?: string;
+  status: SocialCampaignStatus;
+  startDate?: admin.firestore.Timestamp | null;
+  endDate?: admin.firestore.Timestamp | null;
+  notes?: string;
+  color?: string;
+  metadata: Record<string, unknown>;
+  createdAt?: admin.firestore.Timestamp | admin.firestore.FieldValue;
+  updatedAt?: admin.firestore.Timestamp | admin.firestore.FieldValue;
+};
+
 function normalizeScheduledStatus(status?: ScheduledPostStatus): ScheduledPostStatus {
   return status || 'draft';
 }
@@ -417,6 +545,44 @@ function serializeScheduledPost(doc: ScheduledPostDoc): ScheduledPostRecord {
     lastError: doc.lastError || null,
     externalPostId: doc.externalPostId || null,
     publishProviderResponse: doc.publishProviderResponse || null,
+  };
+}
+
+function normalizeCampaignName(name: string): string {
+  const value = sanitizeString(name, 140).trim();
+  if (!value) {
+    throw new Error('Campaign name is required');
+  }
+  return value;
+}
+
+function normalizeCampaignStatus(status?: SocialCampaignStatus): SocialCampaignStatus {
+  return status || 'draft';
+}
+
+function normalizeCampaignDate(value?: string): admin.firestore.Timestamp | null {
+  if (!value) return null;
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return admin.firestore.Timestamp.fromDate(parsed);
+}
+
+function serializeCampaign(doc: SocialCampaignDoc, scheduledPostCount = 0): SocialCampaignRecord {
+  return {
+    socialCampaignId: doc.socialCampaignId,
+    ownerId: doc.ownerId,
+    campaignName: doc.campaignName,
+    platform: doc.platform,
+    goal: doc.goal,
+    status: doc.status,
+    startDate: toIso(doc.startDate),
+    endDate: toIso(doc.endDate),
+    notes: doc.notes,
+    color: doc.color,
+    metadata: doc.metadata || {},
+    scheduledPostCount,
+    createdAt: toIso(doc.createdAt),
+    updatedAt: toIso(doc.updatedAt),
   };
 }
 
@@ -622,4 +788,31 @@ export async function getContentCalendarSummary(
   }
 
   return summary;
+}
+
+export async function getContentCalendarCampaignSummary(ownerId: string): Promise<{
+  totalCampaigns: number;
+  byStatus: Record<SocialCampaignStatus, number>;
+  activeCampaigns: number;
+  campaigns: SocialCampaignRecord[];
+}> {
+  const campaigns = await listSocialCampaigns(ownerId);
+  const byStatus: Record<SocialCampaignStatus, number> = {
+    draft: 0,
+    active: 0,
+    paused: 0,
+    completed: 0,
+    archived: 0,
+  };
+
+  for (const campaign of campaigns) {
+    byStatus[campaign.status] += 1;
+  }
+
+  return {
+    totalCampaigns: campaigns.length,
+    activeCampaigns: byStatus.active,
+    byStatus,
+    campaigns,
+  };
 }

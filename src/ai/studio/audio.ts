@@ -7,6 +7,7 @@ import { estimateTokenCount } from '@/ai/core/tokenizer';
 import { recordUsage } from '@/ai/analytics';
 import { extractJsonObject } from '@/ai/platform';
 import { executeMonetizedAudioRequest, executeMonetizedTextRequest, normalizeRoutingPlan } from '@/services/ai-platform';
+import { renderAudioAsset, type AudioRenderResult } from './audio-renderer';
 import {
   AUDIO_LANGUAGES,
   AUDIO_VOICE_PRESETS,
@@ -14,8 +15,11 @@ import {
   type AudioGenerationInput,
   type AudioGenerationResult,
   type AudioLanguage,
+  type AudioTranscriptSegment,
   type AudioVoicePreset,
   type AudioVoiceProfile,
+  type BrandTemplate,
+  type VoiceBrandProfile,
 } from './types';
 import { buildAudioPrompt } from './prompts';
 
@@ -38,6 +42,10 @@ function buildStoragePath(ownerId: string, assetId: string, mimeType: string): s
 
 function buildBundlePath(ownerId: string, assetId: string): string {
   return `generated-assets/${ownerId}/audio/${assetId}.json`;
+}
+
+function buildWaveformPath(ownerId: string, assetId: string): string {
+  return `generated-assets/${ownerId}/audio/${assetId}-waveform.svg`;
 }
 
 async function saveBufferToStorage(buffer: Buffer, storagePath: string, contentType: string, ownerId: string): Promise<string> {
@@ -67,6 +75,10 @@ async function saveBufferToStorage(buffer: Buffer, storagePath: string, contentT
 async function saveJsonBundle(storagePath: string, ownerId: string, payload: Record<string, unknown>): Promise<string> {
   const buffer = Buffer.from(JSON.stringify(payload, null, 2), 'utf8');
   return saveBufferToStorage(buffer, storagePath, 'application/json', ownerId);
+}
+
+async function saveWaveformPreview(storagePath: string, ownerId: string, buffer: Buffer, mimeType = 'image/svg+xml'): Promise<string> {
+  return saveBufferToStorage(buffer, storagePath, mimeType, ownerId);
 }
 
 async function persistAudioAsset(record: AudioAssetRecord): Promise<void> {
@@ -121,16 +133,65 @@ function buildFallbackNarration(input: AudioGenerationInput): string {
   return lines.join(' ');
 }
 
-function buildVoiceProfile(input: AudioGenerationInput): AudioVoiceProfile {
-  return input.voiceProfile || {
+function buildVoiceProfile(input: AudioGenerationInput): VoiceBrandProfile {
+  if (input.voiceBrandProfile) {
+    return {
+      ...input.voiceBrandProfile,
+      name: input.voiceBrandProfile.name || input.voiceBrandProfile.profileName || input.voicePreset || 'narrator',
+      profileName: input.voiceBrandProfile.profileName || input.voiceBrandProfile.name || input.voicePreset || 'narrator',
+    };
+  }
+
+  if (input.voiceProfile) {
+    return {
+      ...input.voiceProfile,
+      profileName: input.voiceProfile.name || input.voicePreset || 'narrator',
+      provider: input.providerPreference,
+      isClonedVoice: Boolean(input.voiceProfile.voiceId || input.voiceId),
+      cloneSourceName: input.voiceProfile.name || input.voicePreset || undefined,
+      cloneConsentConfirmed: false,
+      brandTone: input.tone,
+    };
+  }
+
+  return {
     voiceId: input.voiceId,
     name: input.voicePreset || 'narrator',
+    profileName: input.voicePreset || 'narrator',
     description: `${input.voicePreset || 'Narrator'} voice profile`,
     language: normalizeLanguage(input.language) as AudioLanguage,
     stability: 0.45,
     similarityBoost: 0.8,
     speed: 1,
+    provider: input.providerPreference,
+    isClonedVoice: Boolean(input.voiceId),
+    cloneConsentConfirmed: false,
+    brandTone: input.tone,
   };
+}
+
+function buildTranscriptSegments(text: string, durationSeconds: number): AudioTranscriptSegment[] {
+  const chunks = text
+    .split(/(?<=[.!?])\s+|\n+/)
+    .map((chunk) => chunk.trim())
+    .filter(Boolean);
+
+  if (chunks.length === 0) {
+    return [];
+  }
+
+  const totalMs = Math.max(1, durationSeconds) * 1000;
+  const segmentMs = Math.max(1000, Math.floor(totalMs / chunks.length));
+
+  return chunks.map((chunk, index) => {
+    const startMs = index * segmentMs;
+    return {
+      index,
+      text: chunk,
+      startMs,
+      endMs: index === chunks.length - 1 ? totalMs : Math.min(totalMs, startMs + segmentMs),
+    };
+  });
 }
 
 async function planAudioBlueprint(input: AudioGenerationInput) {
@@ -273,29 +334,82 @@ export async function generateAudioStudioAsset(
   });
 
   const assetId = `aud_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+  const transcriptSegments = buildTranscriptSegments(blueprint.transcript || synthesisText || normalizedNarration || normalizedPrompt, durationSeconds);
+  let renderOutcome: AudioRenderResult = {
+    renderer: 'bundle',
+    status: 'queued',
+    mimeType: 'application/json',
+  };
   let storagePath = '';
+  let waveformStoragePath = '';
   let downloadUrl: string | undefined;
   let mimeType = synthesis.mimeType || 'audio/mpeg';
   let renderState: 'completed' | 'queued' | 'failed' = synthesis.audioBuffer ? 'completed' : 'queued';
   let status: 'completed' | 'queued' | 'failed' = synthesis.audioBuffer ? 'completed' : 'queued';
+  let waveformPreviewUrl: string | undefined;
 
-  if (synthesis.audioBuffer) {
+  try {
+    renderOutcome = await renderAudioAsset({
+      title: blueprint.title,
+      prompt: normalizedPrompt,
+      narrationText: synthesisText,
+      transcript: blueprint.transcript,
+      language,
+      voicePreset,
+      durationSeconds,
+      backgroundMusic: input.backgroundMusic ?? false,
+      includeIntro: input.includeIntro ?? true,
+      includeOutro: input.includeOutro ?? true,
+      tone: input.tone,
+      scriptStyle: input.scriptStyle,
+      brandName: normalizedBrandName,
+      brandTemplateName: input.brandTemplate?.name,
+      renderNotes: blueprint.renderNotes,
+    }, synthesis.audioBuffer);
+  } catch (error) {
+    logger.warn('[AudioStudio] Audio renderer unavailable or failed; using synthesis output', {
+      ownerId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+
+  const finalAudioBuffer = renderOutcome.audioBuffer || synthesis.audioBuffer;
+  const finalAudioUrl = renderOutcome.sourceUrl || synthesis.sourceUrl;
+
+  if (finalAudioBuffer) {
+    mimeType = renderOutcome.audioBuffer ? (renderOutcome.mimeType || 'audio/mpeg') : (synthesis.mimeType || 'audio/mpeg');
     storagePath = buildStoragePath(ownerId, assetId, mimeType);
-    downloadUrl = await saveBufferToStorage(synthesis.audioBuffer, storagePath, mimeType, ownerId);
-  } else if (synthesis.sourceUrl) {
-    const response = await fetch(synthesis.sourceUrl);
+    downloadUrl = await saveBufferToStorage(finalAudioBuffer, storagePath, mimeType, ownerId);
+    renderState = 'completed';
+    status = 'completed';
+  } else if (finalAudioUrl) {
+    const response = await fetch(finalAudioUrl);
     if (response.ok) {
       const arrayBuffer = await response.arrayBuffer();
       const buffer = Buffer.from(arrayBuffer);
-      mimeType = response.headers.get('content-type') || synthesis.mimeType || 'audio/mpeg';
+      mimeType = response.headers.get('content-type') || renderOutcome.mimeType || synthesis.mimeType || 'audio/mpeg';
       storagePath = buildStoragePath(ownerId, assetId, mimeType);
       downloadUrl = await saveBufferToStorage(buffer, storagePath, mimeType, ownerId);
       renderState = 'completed';
       status = 'completed';
-    } else {
-      renderState = 'queued';
-      status = 'queued';
     }
+  }
+
+  if (renderOutcome.waveformPreviewBuffer) {
+    waveformStoragePath = buildWaveformPath(ownerId, assetId);
+    waveformPreviewUrl = await saveWaveformPreview(
+      waveformStoragePath,
+      ownerId,
+      renderOutcome.waveformPreviewBuffer,
+      renderOutcome.waveformPreviewMimeType || 'image/svg+xml'
+    );
+  } else if (synthesis.audioBuffer) {
+    waveformStoragePath = buildWaveformPath(ownerId, assetId);
+    waveformPreviewUrl = await saveWaveformPreview(
+      waveformStoragePath,
+      ownerId,
+      Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="320"><rect width="100%" height="100%" fill="#0f172a"/><text x="60" y="160" fill="#f8fafc" font-size="28" font-family="Inter, Arial, sans-serif">Waveform preview unavailable</text></svg>`, 'utf8')
+    );
   }
 
   if (!downloadUrl) {
@@ -311,6 +425,7 @@ export async function generateAudioStudioAsset(
       voicePreset,
       voiceId: synthesis.voiceId || input.voiceId || voiceProfile.voiceId || 'default',
       secondaryVoiceId: input.secondaryVoiceId,
+      voiceBrandProfile: voiceProfile,
       language,
       backgroundMusic: input.backgroundMusic ?? false,
       includeIntro: input.includeIntro ?? true,
@@ -321,8 +436,12 @@ export async function generateAudioStudioAsset(
       pronunciationNotes: blueprint.pronunciationNotes,
       voiceDirections: blueprint.voiceDirections,
       alternateVoices: blueprint.alternateVoices,
+      productRules: input.productRules || null,
       renderNotes: blueprint.renderNotes,
       renderState,
+      renderer: renderOutcome.renderer,
+      waveformPreviewUrl,
+      transcriptSegments,
     });
     mimeType = 'application/json';
   }
@@ -350,6 +469,7 @@ export async function generateAudioStudioAsset(
     voicePreset,
     voiceId: synthesis.voiceId || input.voiceId || voiceProfile.voiceId || 'default',
     secondaryVoiceId: input.secondaryVoiceId,
+    voiceBrandProfile: voiceProfile,
     language,
     backgroundMusic: input.backgroundMusic ?? false,
     includeIntro: input.includeIntro ?? true,
@@ -358,19 +478,24 @@ export async function generateAudioStudioAsset(
     tone: input.tone,
     scriptStyle: input.scriptStyle,
     brandTemplate: input.brandTemplate || null,
+    productRules: input.productRules || null,
     brandName: normalizedBrandName,
     storagePath,
-    thumbnail: downloadUrl || '',
+    waveformStoragePath,
+    thumbnail: waveformPreviewUrl || downloadUrl || '',
+    waveformPreviewUrl,
     provider: synthesis.plan.providerId,
     model: synthesis.plan.modelId,
     promptVersion: 'audio-studio@1.0.0',
+    renderStrategy: renderOutcome.renderer,
     visibility: input.visibility || 'private',
-    tags: Array.from(new Set([voicePreset, language, normalizedBrandName || '', input.brandTemplate?.id || '', ...(input.tags || [])].filter(Boolean))),
+    tags: Array.from(new Set([voicePreset, language, normalizedBrandName || '', input.brandTemplate?.id || '', input.productRules?.productName || '', ...(input.tags || [])].filter(Boolean))),
     checksum,
     status,
     renderState,
     downloadUrl,
     mimeType,
+    transcriptSegments,
   };
 
   await persistAudioAsset(record);
@@ -383,7 +508,11 @@ export async function generateAudioStudioAsset(
     queue: 'audio-studio',
     attempts: 1,
     assetId,
-    plan: JSON.stringify(synthesis.raw || {}),
+    plan: JSON.stringify({
+      ...(synthesis.raw || {}),
+      renderer: renderOutcome.renderer,
+      waveformPreviewUrl,
+    }),
     startedAt,
     completedAt: status === 'completed' ? Date.now() : undefined,
   });
@@ -407,6 +536,7 @@ export async function generateAudioStudioAsset(
     model: synthesis.plan.modelId,
     voiceId: record.voiceId,
     language,
+    renderStrategy: renderOutcome.renderer,
   });
 
   return {
@@ -414,6 +544,7 @@ export async function generateAudioStudioAsset(
     durationMs: Date.now() - startedAt,
     promptPreview: blueprint.prompt.fullPrompt.slice(0, 160),
     synthesisText,
+    transcriptSegments,
   };
 }
 
@@ -430,6 +561,7 @@ export async function listAudioStudioAssets(ownerId: string, limit = 12): Promis
   for (const doc of snapshot.docs) {
     const data = doc.data() as AudioAssetRecord;
     let downloadUrl = data.downloadUrl;
+    let waveformPreviewUrl = data.waveformPreviewUrl;
 
     if (!downloadUrl && data.storagePath) {
       const file = adminStorage.bucket().file(data.storagePath);
@@ -437,12 +569,20 @@ export async function listAudioStudioAssets(ownerId: string, limit = 12): Promis
       downloadUrl = signed;
     }
 
+    if (!waveformPreviewUrl && data.waveformStoragePath) {
+      const waveformFile = adminStorage.bucket().file(data.waveformStoragePath);
+      const [signedWaveform] = await waveformFile.getSignedUrl({ action: 'read', expires: '03-01-2500' });
+      waveformPreviewUrl = signedWaveform;
+    }
+
     records.push({
       ...data,
       schemaVariant: data.schemaVariant || 'voice-generation-v1',
       assetId: typeof data.assetId === 'string' ? data.assetId : doc.id,
       downloadUrl,
-      thumbnail: downloadUrl || data.thumbnail,
+      thumbnail: waveformPreviewUrl || data.thumbnail || downloadUrl || '',
+      waveformPreviewUrl,
+      waveformStoragePath: data.waveformStoragePath,
     });
   }
 

@@ -24,6 +24,7 @@ import {
   Megaphone,
   ReceiptText,
   Sparkles,
+  X,
   Users,
 } from "lucide-react";
 import { auth } from "@/lib/firebase";
@@ -63,9 +64,11 @@ type DashboardResponse = {
     successCount: number;
     failedCount: number;
     skippedCount: number;
+    retryableFailedCount: number;
     successRate: number;
     byPlatform: Array<{ platform: string; success: number; failed: number; total: number; successRate: number }>;
     chart: Array<{ date: string; attempts: number; success: number; failed: number }>;
+    attempts: Array<{ id: string; scheduledPostId: string; platform: string; account: string; title: string; attemptNumber: number; status: string; retryable: boolean; externalPostId: string | null; detail: string; time: string | null; tone: string }>;
     recentAttempts: Array<{ id: string; type: string; title: string; detail: string; time: string | null; tone: string }>;
   };
   users: {
@@ -174,6 +177,10 @@ export default function AdminAnalyticsPage() {
   const [data, setData] = useState<DashboardResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [publishPlatformFilter, setPublishPlatformFilter] = useState("all");
+  const [publishStatusFilter, setPublishStatusFilter] = useState("all");
+  const [publishRetryabilityFilter, setPublishRetryabilityFilter] = useState("all");
+  const [selectedAttemptId, setSelectedAttemptId] = useState<string | null>(null);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth as any, async (user) => {
@@ -212,6 +219,32 @@ export default function AdminAnalyticsPage() {
   const routingRows = useMemo(() => data?.routing.byModel || [], [data]);
   const providerRows = useMemo(() => data?.providerPerformance.byProvider || [], [data]);
   const performanceModelRows = useMemo(() => data?.providerPerformance.byModel || [], [data]);
+  const publishAttempts = useMemo(() => data?.publishing.attempts || [], [data]);
+  const publishPlatforms = useMemo(
+    () => Array.from(new Set(publishAttempts.map((item) => item.platform))).sort((left, right) => left.localeCompare(right)),
+    [publishAttempts],
+  );
+  const publishStatuses = useMemo(
+    () => Array.from(new Set(publishAttempts.map((item) => item.status))).sort((left, right) => left.localeCompare(right)),
+    [publishAttempts],
+  );
+  const filteredPublishAttempts = useMemo(
+    () =>
+      publishAttempts.filter((item) => {
+        const matchesPlatform = publishPlatformFilter === "all" || item.platform === publishPlatformFilter;
+        const matchesStatus = publishStatusFilter === "all" || item.status === publishStatusFilter;
+        const matchesRetryability =
+          publishRetryabilityFilter === "all" ||
+          (publishRetryabilityFilter === "retryable" ? item.retryable : !item.retryable);
+
+        return matchesPlatform && matchesStatus && matchesRetryability;
+      }),
+    [publishAttempts, publishPlatformFilter, publishRetryabilityFilter, publishStatusFilter],
+  );
+  const selectedAttempt = useMemo(
+    () => publishAttempts.find((item) => item.id === selectedAttemptId) || null,
+    [publishAttempts, selectedAttemptId],
+  );
 
   if (loading) {
     return (
@@ -505,28 +538,104 @@ export default function AdminAnalyticsPage() {
 
         <section className="rounded-lg border border-white/10 bg-white/[0.035]">
           <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
-            <h2 className="text-sm font-semibold">Recent Publish Attempts</h2>
+            <h2 className="text-sm font-semibold">Publish Attempt Dashboard</h2>
             <Activity className="h-4 w-4 text-white/45" />
           </div>
+          <div className="grid gap-2 border-b border-white/10 px-4 py-3 sm:grid-cols-4">
+            <div className="rounded-md border border-white/8 bg-white/[0.03] px-3 py-2 text-sm">
+              <span className="text-white/60">Attempts</span>
+              <div className="mt-1 text-lg font-semibold text-white">{data?.publishing.totalAttempts || 0}</div>
+            </div>
+            <div className="rounded-md border border-white/8 bg-white/[0.03] px-3 py-2 text-sm">
+              <span className="text-white/60">Successful</span>
+              <div className="mt-1 text-lg font-semibold text-emerald-200">{data?.publishing.successCount || 0}</div>
+            </div>
+            <div className="rounded-md border border-white/8 bg-white/[0.03] px-3 py-2 text-sm">
+              <span className="text-white/60">Failed</span>
+              <div className="mt-1 text-lg font-semibold text-red-200">{data?.publishing.failedCount || 0}</div>
+            </div>
+            <div className="rounded-md border border-white/8 bg-white/[0.03] px-3 py-2 text-sm">
+              <span className="text-white/60">Retryable</span>
+              <div className="mt-1 text-lg font-semibold text-white">{data?.publishing.retryableFailedCount || 0}</div>
+            </div>
+          </div>
+          <div className="grid gap-3 border-b border-white/10 px-4 py-3 lg:grid-cols-3">
+            <label className="space-y-1 text-xs text-white/60">
+              <span className="block">Platform</span>
+              <select
+                value={publishPlatformFilter}
+                onChange={(event) => setPublishPlatformFilter(event.target.value)}
+                className="w-full rounded-md border border-white/10 bg-slate-950/70 px-3 py-2 text-sm text-white outline-none transition focus:border-cyan-400/60"
+              >
+                <option value="all">All platforms</option>
+                {publishPlatforms.map((platform) => (
+                  <option key={platform} value={platform}>
+                    {platform}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="space-y-1 text-xs text-white/60">
+              <span className="block">Status</span>
+              <select
+                value={publishStatusFilter}
+                onChange={(event) => setPublishStatusFilter(event.target.value)}
+                className="w-full rounded-md border border-white/10 bg-slate-950/70 px-3 py-2 text-sm text-white outline-none transition focus:border-cyan-400/60"
+              >
+                <option value="all">All statuses</option>
+                {publishStatuses.map((status) => (
+                  <option key={status} value={status}>
+                    {status}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="space-y-1 text-xs text-white/60">
+              <span className="block">Retryability</span>
+              <select
+                value={publishRetryabilityFilter}
+                onChange={(event) => setPublishRetryabilityFilter(event.target.value)}
+                className="w-full rounded-md border border-white/10 bg-slate-950/70 px-3 py-2 text-sm text-white outline-none transition focus:border-cyan-400/60"
+              >
+                <option value="all">All attempts</option>
+                <option value="retryable">Retryable only</option>
+                <option value="final">Final attempts only</option>
+              </select>
+            </label>
+          </div>
           <div className="divide-y divide-white/10">
-            {(data?.publishing.recentAttempts || []).slice(0, 8).map((item) => (
-              <div key={item.id} className="grid gap-2 px-4 py-3 sm:grid-cols-[140px_1fr_140px] sm:items-center">
-                <div
-                  className={cn(
-                    "text-xs font-medium",
-                    item.tone === "emerald"
-                      ? "text-emerald-200"
-                      : item.tone === "red"
-                        ? "text-red-200"
-                        : "text-white/55"
-                  )}
-                >
-                  {item.type}
-                </div>
-                <div className="truncate text-sm text-white/80">{item.title}</div>
-                <div className="text-xs text-white/40 sm:text-right">{formatTime(item.time)}</div>
+            {filteredPublishAttempts.length === 0 ? (
+              <div className="px-4 py-8 text-center text-sm text-white/45">
+                No publish attempts match the selected filters.
               </div>
-            ))}
+            ) : (
+              filteredPublishAttempts.slice(0, 8).map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => setSelectedAttemptId(item.id)}
+                  className="grid w-full gap-2 px-4 py-3 text-left transition hover:bg-white/[0.03] sm:grid-cols-[1.1fr_0.8fr_0.8fr_140px] sm:items-start"
+                >
+                <div>
+                  <div className={cn("text-xs font-medium uppercase tracking-wider", item.tone === "emerald" ? "text-emerald-200" : item.tone === "red" ? "text-red-200" : "text-white/55")}>
+                    {item.status}
+                  </div>
+                  <div className="mt-1 truncate text-sm text-white/80">{item.title}</div>
+                  <div className="mt-1 text-xs text-white/45">Attempt #{item.attemptNumber} · {item.platform}</div>
+                </div>
+                <div className="text-xs text-white/55">
+                  <div className="font-medium text-white/75">{item.account}</div>
+                  <div className="mt-1 truncate">{item.scheduledPostId}</div>
+                  <div className="mt-1">{item.retryable ? "Retryable" : "Final"}</div>
+                </div>
+                <div className="text-xs text-white/55">
+                  <div className="truncate">{item.externalPostId || "No external post ID"}</div>
+                  <div className="mt-1 line-clamp-2 text-white/40">{item.detail}</div>
+                </div>
+                <div className="text-xs text-white/40 sm:text-right">{formatTime(item.time)}</div>
+                </button>
+              ))
+            )}
           </div>
         </section>
       </section>
@@ -567,6 +676,10 @@ export default function AdminAnalyticsPage() {
               <span className="font-medium text-red-200">{data?.publishing.failedCount || 0}</span>
             </div>
             <div className="flex items-center justify-between rounded-md border border-white/8 bg-white/[0.03] px-3 py-2 text-sm">
+              <span className="text-white/60">Retryable failures</span>
+              <span className="font-medium text-white">{data?.publishing.retryableFailedCount || 0}</span>
+            </div>
+            <div className="flex items-center justify-between rounded-md border border-white/8 bg-white/[0.03] px-3 py-2 text-sm">
               <span className="text-white/60">Skipped attempts</span>
               <span className="font-medium text-white">{data?.publishing.skippedCount || 0}</span>
             </div>
@@ -581,6 +694,78 @@ export default function AdminAnalyticsPage() {
           </div>
         </section>
       </section>
+
+      {selectedAttempt ? (
+        <div className="fixed inset-0 z-50">
+          <button
+            type="button"
+            aria-label="Close publish attempt details"
+            className="absolute inset-0 bg-slate-950/70 backdrop-blur-sm"
+            onClick={() => setSelectedAttemptId(null)}
+          />
+          <aside className="absolute inset-y-4 right-4 flex w-[min(560px,calc(100vw-2rem))] flex-col overflow-hidden rounded-lg border border-white/10 bg-slate-950 shadow-2xl shadow-black/40">
+            <div className="flex items-start justify-between gap-4 border-b border-white/10 px-5 py-4">
+              <div>
+                <div className={cn("text-xs font-semibold uppercase tracking-wider", selectedAttempt.tone === "emerald" ? "text-emerald-200" : selectedAttempt.tone === "red" ? "text-red-200" : "text-white/55")}>
+                  {selectedAttempt.status}
+                </div>
+                <h3 className="mt-1 text-lg font-semibold text-white">{selectedAttempt.title}</h3>
+                <p className="mt-1 text-sm text-white/50">
+                  {selectedAttempt.platform} · {selectedAttempt.account}
+                </p>
+              </div>
+              <button
+                type="button"
+                aria-label="Close details"
+                onClick={() => setSelectedAttemptId(null)}
+                className="rounded-md border border-white/10 p-2 text-white/60 transition hover:bg-white/[0.06] hover:text-white"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="grid gap-3 overflow-y-auto px-5 py-4">
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="rounded-md border border-white/8 bg-white/[0.03] p-3">
+                  <div className="text-xs text-white/45">Attempt</div>
+                  <div className="mt-1 text-sm font-medium text-white">#{selectedAttempt.attemptNumber}</div>
+                </div>
+                <div className="rounded-md border border-white/8 bg-white/[0.03] p-3">
+                  <div className="text-xs text-white/45">Retryability</div>
+                  <div className="mt-1 text-sm font-medium text-white">{selectedAttempt.retryable ? "Retryable" : "Final attempt"}</div>
+                </div>
+                <div className="rounded-md border border-white/8 bg-white/[0.03] p-3">
+                  <div className="text-xs text-white/45">Scheduled Post</div>
+                  <div className="mt-1 break-all text-sm font-medium text-white">{selectedAttempt.scheduledPostId}</div>
+                </div>
+                <div className="rounded-md border border-white/8 bg-white/[0.03] p-3">
+                  <div className="text-xs text-white/45">External Post</div>
+                  <div className="mt-1 break-all text-sm font-medium text-white">{selectedAttempt.externalPostId || "No external post ID"}</div>
+                </div>
+              </div>
+
+              <div className="rounded-md border border-white/8 bg-white/[0.03] p-3">
+                <div className="text-xs text-white/45">Retry / failure details</div>
+                <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-white/80">{selectedAttempt.detail}</p>
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="rounded-md border border-white/8 bg-white/[0.03] p-3">
+                  <div className="text-xs text-white/45">Platform</div>
+                  <div className="mt-1 text-sm font-medium text-white">{selectedAttempt.platform}</div>
+                </div>
+                <div className="rounded-md border border-white/8 bg-white/[0.03] p-3">
+                  <div className="text-xs text-white/45">Recorded time</div>
+                  <div className="mt-1 text-sm font-medium text-white">{formatTime(selectedAttempt.time)}</div>
+                </div>
+                <div className="rounded-md border border-white/8 bg-white/[0.03] p-3 sm:col-span-2">
+                  <div className="text-xs text-white/45">Account</div>
+                  <div className="mt-1 text-sm font-medium text-white">{selectedAttempt.account}</div>
+                </div>
+              </div>
+            </div>
+          </aside>
+        </div>
+      ) : null}
     </div>
   );
 }

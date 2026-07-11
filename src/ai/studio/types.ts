@@ -141,6 +141,30 @@ export interface BrandTemplate {
   notes?: string;
 }
 
+export interface ProductRules {
+  productName?: string;
+  productCategory?: string;
+  productPromise?: string;
+  targetAudience?: string;
+  differentiators?: string[];
+  proofPoints?: string[];
+  prohibitedClaims?: string[];
+  complianceNotes?: string;
+  preferredCallToAction?: string;
+  brandTone?: string;
+}
+
+export interface VoiceBrandProfile extends AudioVoiceProfile {
+  profileName?: string;
+  provider?: string;
+  isClonedVoice?: boolean;
+  cloneSourceName?: string;
+  cloneConsentConfirmed?: boolean;
+  accent?: string;
+  brandTone?: string;
+  usageNotes?: string;
+}
+
 export interface ImageGenerationInput {
   schemaVariant?: ImageGenerationSchemaVariant;
   prompt: string;
@@ -149,6 +173,7 @@ export interface ImageGenerationInput {
   stylePreset?: ImageStylePreset;
   aspectRatio?: ImageAspectRatio;
   brandTemplate?: BrandTemplate | null;
+  productRules?: ProductRules | null;
   brandName?: string;
   title?: string;
   tags?: string[];
@@ -171,6 +196,7 @@ export interface ImageAssetRecord {
   stylePreset: ImageStylePreset;
   aspectRatio: ImageAspectRatio;
   brandTemplate?: BrandTemplate | null;
+  productRules?: ProductRules | null;
   brandName?: string;
   storagePath: string;
   thumbnail: string;
@@ -232,6 +258,7 @@ export interface VideoGenerationInput {
   captionsEnabled?: boolean;
   voiceoverTone?: string;
   brandTemplate?: BrandTemplate | null;
+  productRules?: ProductRules | null;
   brandName?: string;
   title?: string;
   tags?: string[];
@@ -257,6 +284,7 @@ export interface VideoAssetRecord {
   captionsEnabled: boolean;
   voiceoverTone?: string;
   brandTemplate?: BrandTemplate | null;
+  productRules?: ProductRules | null;
   brandName?: string;
   storagePath: string;
   thumbnail: string;
@@ -337,6 +365,7 @@ export interface AudioGenerationInput {
   voicePreset?: AudioVoicePreset;
   voiceId?: string;
   voiceProfile?: AudioVoiceProfile | null;
+  voiceBrandProfile?: VoiceBrandProfile | null;
   language?: AudioLanguage | string;
   secondaryVoiceId?: string;
   backgroundMusic?: boolean;
@@ -344,6 +373,7 @@ export interface AudioGenerationInput {
   includeOutro?: boolean;
   durationSeconds?: number;
   brandTemplate?: BrandTemplate | null;
+  productRules?: ProductRules | null;
   brandName?: string;
   tone?: string;
   scriptStyle?: string;
@@ -353,6 +383,13 @@ export interface AudioGenerationInput {
   userTier?: 'free' | 'explorer' | 'pro' | 'elite';
   providerPreference?: string;
   conversationSummary?: string;
+}
+
+export interface AudioTranscriptSegment {
+  index: number;
+  text: string;
+  startMs: number;
+  endMs: number;
 }
 
 export interface AudioAssetRecord {
@@ -367,6 +404,7 @@ export interface AudioAssetRecord {
   voicePreset: AudioVoicePreset;
   voiceId: string;
   secondaryVoiceId?: string;
+  voiceBrandProfile?: VoiceBrandProfile | null;
   language: string;
   backgroundMusic: boolean;
   includeIntro: boolean;
@@ -375,12 +413,16 @@ export interface AudioAssetRecord {
   tone?: string;
   scriptStyle?: string;
   brandTemplate?: BrandTemplate | null;
+  productRules?: ProductRules | null;
   brandName?: string;
   storagePath: string;
+  waveformStoragePath?: string;
   thumbnail: string;
+  waveformPreviewUrl?: string;
   provider: string;
   model: string;
   promptVersion: string;
+  renderStrategy?: 'ffmpeg' | 'cloud' | 'bundle';
   visibility: 'private' | 'team' | 'public';
   tags: string[];
   checksum: string;
@@ -388,6 +430,7 @@ export interface AudioAssetRecord {
   renderState: 'completed' | 'queued' | 'failed';
   downloadUrl?: string;
   mimeType: string;
+  transcriptSegments?: AudioTranscriptSegment[];
   createdAt?: unknown;
   updatedAt?: unknown;
 }
@@ -397,4 +440,5 @@ export interface AudioGenerationResult extends AudioAssetRecord {
   promptPreview: string;
   synthesisText: string;
   promptVersion: string;
+  transcriptSegments: AudioTranscriptSegment[];
 }

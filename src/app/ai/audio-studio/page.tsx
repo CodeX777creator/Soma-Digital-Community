@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { Download, Headphones, History, Loader2, Music2, Sparkles, Volume2 } from "lucide-react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
@@ -17,8 +17,10 @@ import {
   type AudioAssetRecord,
   type AudioLanguage,
   type AudioVoicePreset,
-  type AudioVoiceProfile,
   type BrandTemplate,
+  type ProductRules,
+  type VoiceBrandProfile,
+  type AudioTranscriptSegment,
 } from "@/ai/studio/types";
 
 type AudioStudioHistoryResponse = {
@@ -61,6 +63,11 @@ type AudioStudioResponse = {
     renderState: "completed" | "queued" | "failed";
     downloadUrl?: string;
     mimeType: string;
+    productRules?: ProductRules | null;
+    voiceBrandProfile?: VoiceBrandProfile | null;
+    waveformPreviewUrl?: string;
+    transcriptSegments?: AudioTranscriptSegment[];
+    renderStrategy?: "ffmpeg" | "cloud" | "bundle";
     durationMs: number;
     promptPreview: string;
     synthesisText: string;
@@ -86,6 +93,23 @@ interface AudioStudioFormState {
   brandLogoUrl: string;
   brandColors: string;
   brandFonts: string;
+  productName: string;
+  productCategory: string;
+  productPromise: string;
+  targetAudience: string;
+  differentiators: string;
+  proofPoints: string;
+  prohibitedClaims: string;
+  complianceNotes: string;
+  preferredCallToAction: string;
+  brandTone: string;
+  voiceBrandProfileName: string;
+  voiceBrandProfileDescription: string;
+  voiceBrandProfileProvider: string;
+  voiceBrandProfileSource: string;
+  voiceBrandProfileAccent: string;
+  voiceBrandProfileUsageNotes: string;
+  voiceBrandProfileCloneConsentConfirmed: boolean;
   tone: string;
   scriptStyle: string;
   visibility: "private" | "team" | "public";
@@ -93,13 +117,71 @@ interface AudioStudioFormState {
 
 const DEFAULT_PROMPT = "Create a clear, persuasive voiceover for a business offer that sounds natural, trustworthy, and ready for publishing.";
 
-function buildVoiceProfile(form: AudioStudioFormState): AudioVoiceProfile | null {
-  const hasData = form.voiceId || form.secondaryVoiceId || form.voicePreset;
+function splitList(value: string): string[] {
+  return value
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function buildProductRules(form: AudioStudioFormState): ProductRules | null {
+  const differentiators = splitList(form.differentiators);
+  const proofPoints = splitList(form.proofPoints);
+  const prohibitedClaims = splitList(form.prohibitedClaims);
+  const hasData =
+    form.productName ||
+    form.productCategory ||
+    form.productPromise ||
+    form.targetAudience ||
+    differentiators.length > 0 ||
+    proofPoints.length > 0 ||
+    prohibitedClaims.length > 0 ||
+    form.complianceNotes ||
+    form.preferredCallToAction ||
+    form.brandTone;
+
   if (!hasData) return null;
+
+  return {
+    productName: form.productName || undefined,
+    productCategory: form.productCategory || undefined,
+    productPromise: form.productPromise || undefined,
+    targetAudience: form.targetAudience || undefined,
+    differentiators: differentiators.length > 0 ? differentiators : undefined,
+    proofPoints: proofPoints.length > 0 ? proofPoints : undefined,
+    prohibitedClaims: prohibitedClaims.length > 0 ? prohibitedClaims : undefined,
+    complianceNotes: form.complianceNotes || undefined,
+    preferredCallToAction: form.preferredCallToAction || undefined,
+    brandTone: form.brandTone || undefined,
+  };
+}
+
+function buildVoiceBrandProfile(form: AudioStudioFormState): VoiceBrandProfile | null {
+  const hasData =
+    form.voiceId ||
+    form.secondaryVoiceId ||
+    form.voicePreset ||
+    form.voiceBrandProfileName ||
+    form.voiceBrandProfileDescription ||
+    form.voiceBrandProfileProvider ||
+    form.voiceBrandProfileSource ||
+    form.voiceBrandProfileAccent ||
+    form.voiceBrandProfileUsageNotes;
+
+  if (!hasData) return null;
+
   return {
     voiceId: form.voiceId || undefined,
-    name: form.voicePreset,
-    description: `${form.voicePreset} voice profile`,
+    name: form.voicePreset || form.voiceBrandProfileName || "narrator",
+    profileName: form.voiceBrandProfileName || form.voicePreset || "narrator",
+    description: form.voiceBrandProfileDescription || `${form.voicePreset || "Narrator"} voice profile`,
+    provider: form.voiceBrandProfileProvider || undefined,
+    isClonedVoice: Boolean(form.voiceBrandProfileSource || form.voiceId),
+    cloneSourceName: form.voiceBrandProfileSource || undefined,
+    cloneConsentConfirmed: form.voiceBrandProfileCloneConsentConfirmed,
+    accent: form.voiceBrandProfileAccent || undefined,
+    brandTone: form.brandTone || undefined,
+    usageNotes: form.voiceBrandProfileUsageNotes || undefined,
     language: form.language as AudioLanguage,
     stability: 0.45,
     similarityBoost: 0.8,
@@ -144,6 +226,23 @@ export default function AudioStudioPage() {
     brandLogoUrl: "",
     brandColors: "",
     brandFonts: "",
+    productName: "",
+    productCategory: "",
+    productPromise: "",
+    targetAudience: "",
+    differentiators: "",
+    proofPoints: "",
+    prohibitedClaims: "",
+    complianceNotes: "",
+    preferredCallToAction: "",
+    brandTone: "",
+    voiceBrandProfileName: "",
+    voiceBrandProfileDescription: "",
+    voiceBrandProfileProvider: "",
+    voiceBrandProfileSource: "",
+    voiceBrandProfileAccent: "",
+    voiceBrandProfileUsageNotes: "",
+    voiceBrandProfileCloneConsentConfirmed: false,
     tone: "confident and clear",
     scriptStyle: "commercial",
     visibility: "private",
@@ -152,9 +251,25 @@ export default function AudioStudioPage() {
   const [latestAudio, setLatestAudio] = useState<AudioStudioResponse["audio"] | null>(null);
   const [loading, setLoading] = useState(false);
   const [loadingHistory, setLoadingHistory] = useState(true);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const [playbackTimeMs, setPlaybackTimeMs] = useState(0);
 
   const brandTemplate = useMemo(() => buildBrandTemplate(state), [state]);
-  const voiceProfile = useMemo(() => buildVoiceProfile(state), [state]);
+  const productRules = useMemo(() => buildProductRules(state), [state]);
+  const voiceBrandProfile = useMemo(() => buildVoiceBrandProfile(state), [state]);
+  const transcriptSegments = latestAudio?.transcriptSegments || [];
+  const activeTranscriptIndex = useMemo(() => {
+    if (!transcriptSegments.length) return -1;
+    return transcriptSegments.findIndex((segment, index) => {
+      const next = transcriptSegments[index + 1];
+      const isLast = !next;
+      return playbackTimeMs >= segment.startMs && (isLast || playbackTimeMs < next.startMs);
+    });
+  }, [playbackTimeMs, transcriptSegments]);
+
+  const waveformAlt = latestAudio
+    ? `Waveform preview for ${latestAudio.title}`
+    : "Waveform preview";
 
   const loadHistory = async () => {
     if (!user) return;
@@ -219,6 +334,22 @@ export default function AudioStudioPage() {
     setState((current) => ({ ...current, [key]: value }));
   };
 
+  const handleAudioTimeUpdate = () => {
+    const current = audioRef.current;
+    if (!current) return;
+    setPlaybackTimeMs(Math.round(current.currentTime * 1000));
+  };
+
+  const handleAudioLoaded = () => {
+    const current = audioRef.current;
+    if (!current) return;
+    setPlaybackTimeMs(Math.round(current.currentTime * 1000));
+  };
+
+  const handleAudioEnded = () => {
+    setPlaybackTimeMs(0);
+  };
+
   const handleGenerate = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!user || loading) return;
@@ -247,10 +378,12 @@ export default function AudioStudioPage() {
           durationSeconds: state.durationSeconds,
           brandName: state.brandName || undefined,
           brandTemplate: brandTemplate || undefined,
+          productRules: productRules || undefined,
           tone: state.tone || undefined,
           scriptStyle: state.scriptStyle || undefined,
           visibility: state.visibility,
-          voiceProfile: voiceProfile || undefined,
+          voiceBrandProfile: voiceBrandProfile || undefined,
+          voiceProfile: voiceBrandProfile || undefined,
         }),
       });
 
@@ -397,6 +530,108 @@ export default function AudioStudioPage() {
                   <Textarea value={state.brandTemplateNotes} onChange={(event) => updateField("brandTemplateNotes", event.target.value)} rows={3} placeholder="Describe the sound, pace, or audience goals." />
                 </div>
 
+                <div className="rounded-md border border-border p-4 space-y-4">
+                  <div>
+                    <h3 className="text-sm font-semibold">Product rules</h3>
+                    <p className="text-xs text-muted-foreground">
+                      Keep the generated content aligned with the product promise and the claims we want to avoid.
+                    </p>
+                  </div>
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium">Product name</label>
+                      <Input value={state.productName} onChange={(event) => updateField("productName", event.target.value)} placeholder="Product or offer name" />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium">Category</label>
+                      <Input value={state.productCategory} onChange={(event) => updateField("productCategory", event.target.value)} placeholder="Course, membership, service, app..." />
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Product promise</label>
+                    <Textarea value={state.productPromise} onChange={(event) => updateField("productPromise", event.target.value)} rows={3} placeholder="What outcome should the audience expect?" />
+                  </div>
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium">Target audience</label>
+                      <Textarea value={state.targetAudience} onChange={(event) => updateField("targetAudience", event.target.value)} rows={3} placeholder="Who this is for and why they care." />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium">Preferred CTA</label>
+                      <Textarea value={state.preferredCallToAction} onChange={(event) => updateField("preferredCallToAction", event.target.value)} rows={3} placeholder="What should the listener do next?" />
+                    </div>
+                  </div>
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium">Differentiators</label>
+                      <Textarea value={state.differentiators} onChange={(event) => updateField("differentiators", event.target.value)} rows={3} placeholder="Comma-separated differentiators" />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium">Proof points</label>
+                      <Textarea value={state.proofPoints} onChange={(event) => updateField("proofPoints", event.target.value)} rows={3} placeholder="Comma-separated proof points" />
+                    </div>
+                  </div>
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium">Prohibited claims</label>
+                      <Textarea value={state.prohibitedClaims} onChange={(event) => updateField("prohibitedClaims", event.target.value)} rows={3} placeholder="Comma-separated claims to avoid" />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium">Compliance notes</label>
+                      <Textarea value={state.complianceNotes} onChange={(event) => updateField("complianceNotes", event.target.value)} rows={3} placeholder="Any legal, regulatory, or brand guardrails." />
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Brand tone</label>
+                    <Input value={state.brandTone} onChange={(event) => updateField("brandTone", event.target.value)} placeholder="Premium, direct, friendly, etc." />
+                  </div>
+                </div>
+
+                <div className="rounded-md border border-border p-4 space-y-4">
+                  <div>
+                    <h3 className="text-sm font-semibold">Voice cloning and branding profile</h3>
+                    <p className="text-xs text-muted-foreground">
+                      Use this for a branded voice, cloned voice, or a reusable narration identity.
+                    </p>
+                  </div>
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium">Profile name</label>
+                      <Input value={state.voiceBrandProfileName} onChange={(event) => updateField("voiceBrandProfileName", event.target.value)} placeholder="Brand narrator or campaign voice" />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium">Provider</label>
+                      <Input value={state.voiceBrandProfileProvider} onChange={(event) => updateField("voiceBrandProfileProvider", event.target.value)} placeholder="ElevenLabs, OpenAI, etc." />
+                    </div>
+                  </div>
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium">Voice source / clone base</label>
+                      <Input value={state.voiceBrandProfileSource} onChange={(event) => updateField("voiceBrandProfileSource", event.target.value)} placeholder="Original voice, talent name, or reference" />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium">Accent</label>
+                      <Input value={state.voiceBrandProfileAccent} onChange={(event) => updateField("voiceBrandProfileAccent", event.target.value)} placeholder="Neutral, British, Kenyan English..." />
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Profile description</label>
+                    <Textarea value={state.voiceBrandProfileDescription} onChange={(event) => updateField("voiceBrandProfileDescription", event.target.value)} rows={3} placeholder="Describe the delivery, tone, and pacing." />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Usage notes</label>
+                    <Textarea value={state.voiceBrandProfileUsageNotes} onChange={(event) => updateField("voiceBrandProfileUsageNotes", event.target.value)} rows={3} placeholder="Where and how this voice should be used." />
+                  </div>
+                  <label className="flex items-center gap-2 text-sm font-medium">
+                    <input
+                      type="checkbox"
+                      checked={state.voiceBrandProfileCloneConsentConfirmed}
+                      onChange={(event) => updateField("voiceBrandProfileCloneConsentConfirmed", event.target.checked)}
+                    />
+                    Clone consent confirmed
+                  </label>
+                </div>
+
                 <div className="grid gap-4 md:grid-cols-2">
                   <label className="flex items-center gap-2 text-sm font-medium">
                     <input type="checkbox" checked={state.backgroundMusic} onChange={(event) => updateField("backgroundMusic", event.target.checked)} />
@@ -449,8 +684,25 @@ export default function AudioStudioPage() {
               </div>
               {latestAudio ? (
                 <div className="mt-4 space-y-4">
+                  {latestAudio.waveformPreviewUrl ? (
+                    <div className="overflow-hidden rounded-md border border-border bg-black/20">
+                      <img
+                        src={latestAudio.waveformPreviewUrl}
+                        alt={waveformAlt}
+                        className="w-full aspect-[5/1] object-cover"
+                      />
+                    </div>
+                  ) : null}
                   {latestAudio.downloadUrl ? (
-                    <audio controls className="w-full" src={latestAudio.downloadUrl} />
+                    <audio
+                      ref={audioRef}
+                      controls
+                      className="w-full"
+                      src={latestAudio.downloadUrl}
+                      onTimeUpdate={handleAudioTimeUpdate}
+                      onLoadedMetadata={handleAudioLoaded}
+                      onEnded={handleAudioEnded}
+                    />
                   ) : (
                     <div className="rounded-md border border-dashed border-border p-6 text-sm text-muted-foreground">
                       Audio package saved. Download the bundle from history.
@@ -477,6 +729,47 @@ export default function AudioStudioPage() {
                     </div>
                     <p className="text-muted-foreground">{latestAudio.narrationText}</p>
                   </div>
+                  <div className="space-y-2 rounded-md border border-border p-3 text-sm">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <Music2 className="h-4 w-4 text-primary" />
+                        <span className="font-medium">Transcript</span>
+                      </div>
+                      <span className="text-xs text-muted-foreground">
+                        {latestAudio.renderStrategy === "ffmpeg"
+                          ? "Processed locally"
+                          : latestAudio.renderStrategy === "cloud"
+                            ? "Processed in the cloud"
+                            : "Saved as bundle"}
+                      </span>
+                    </div>
+                    {transcriptSegments.length > 0 ? (
+                      <div className="space-y-2">
+                        {transcriptSegments.map((segment, index) => {
+                          const active = index === activeTranscriptIndex;
+                          return (
+                            <div
+                              key={`${segment.index}-${segment.startMs}`}
+                              className={cn(
+                                "rounded-md border px-3 py-2 transition-colors",
+                                active ? "border-primary bg-primary/10 text-foreground" : "border-border bg-background/50 text-muted-foreground"
+                              )}
+                            >
+                              <div className="flex items-center justify-between gap-2 text-xs">
+                                <span>Line {index + 1}</span>
+                                <span>
+                                  {Math.max(0, Math.floor(segment.startMs / 1000))}s - {Math.max(0, Math.floor(segment.endMs / 1000))}s
+                                </span>
+                              </div>
+                              <p className="mt-1 leading-relaxed">{segment.text}</p>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <p className="text-muted-foreground">No transcript segments were generated for this asset.</p>
+                    )}
+                  </div>
                 </div>
               ) : (
                 <div className="mt-4 rounded-md border border-dashed border-border p-6 text-sm text-muted-foreground">
@@ -494,14 +787,23 @@ export default function AudioStudioPage() {
                 {history.length > 0 ? history.map((asset) => (
                   <div key={asset.assetId} className="rounded-md border border-border p-3">
                     <div className="flex items-start gap-3">
-                      <div className="flex h-12 w-12 items-center justify-center rounded-sm border border-border bg-black/10">
-                        <Headphones className="h-4 w-4 text-muted-foreground" />
+                      <div className="flex h-12 w-12 items-center justify-center overflow-hidden rounded-sm border border-border bg-black/10">
+                        {asset.waveformPreviewUrl ? (
+                          <img src={asset.waveformPreviewUrl} alt={asset.title} className="h-full w-full object-cover" />
+                        ) : (
+                          <Headphones className="h-4 w-4 text-muted-foreground" />
+                        )}
                       </div>
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-sm font-medium">{asset.title}</p>
                         <p className="truncate text-xs text-muted-foreground">
                           {asset.voicePreset} · {asset.language} · {asset.durationSeconds}s
                         </p>
+                        {Array.isArray(asset.transcriptSegments) && asset.transcriptSegments.length > 0 ? (
+                          <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">
+                            {asset.transcriptSegments.slice(0, 2).map((segment) => segment.text).join(" ")}
+                          </p>
+                        ) : null}
                         {asset.downloadUrl ? (
                           <div className="mt-3 flex items-center gap-2">
                             <audio controls className="w-full" src={asset.downloadUrl} />
