@@ -822,6 +822,7 @@ export default function SocialCalendarPage() {
                 className={cn("h-9 rounded-md border border-input bg-background px-3 text-sm")}
                 value={campaignFilter}
                 onChange={(event) => setCampaignFilter(event.target.value)}
+                aria-label="Filter calendar by campaign"
               >
                 <option value="all">All campaigns</option>
                 {campaigns.map((campaign) => (
@@ -1094,6 +1095,7 @@ export default function SocialCalendarPage() {
                         className={cn("h-10 w-full rounded-md border border-input bg-background px-3 text-sm")}
                         value={form.platform}
                         onChange={(event) => updateField("platform", event.target.value as SocialPlatform)}
+                        aria-label="Scheduled post platform"
                       >
                         {SOCIAL_PROVIDER_REGISTRY.map((provider) => (
                           <option key={provider.id} value={provider.id}>
@@ -1108,6 +1110,7 @@ export default function SocialCalendarPage() {
                         className={cn("h-10 w-full rounded-md border border-input bg-background px-3 text-sm")}
                         value={form.status}
                         onChange={(event) => updateField("status", event.target.value as ScheduledPostStatus)}
+                        aria-label="Scheduled post status"
                       >
                         {SCHEDULED_POST_STATUSES.map((status) => (
                           <option key={status} value={status}>
@@ -1150,6 +1153,7 @@ export default function SocialCalendarPage() {
                         className={cn("h-10 w-full rounded-md border border-input bg-background px-3 text-sm")}
                         value={form.campaignId}
                         onChange={(event) => updateField("campaignId", event.target.value)}
+                        aria-label="Scheduled post campaign"
                       >
                         <option value="">No campaign</option>
                         {campaigns.map((campaign) => (
@@ -1213,6 +1217,7 @@ export default function SocialCalendarPage() {
                         className={cn("h-10 w-full rounded-md border border-input bg-background px-3 text-sm")}
                         value={campaignForm.platform}
                         onChange={(event) => updateCampaignField("platform", event.target.value as SocialPlatform | "")}
+                        aria-label="Campaign platform"
                       >
                         <option value="">All platforms</option>
                         {SOCIAL_PROVIDER_REGISTRY.map((provider) => (
@@ -1228,6 +1233,7 @@ export default function SocialCalendarPage() {
                         className={cn("h-10 w-full rounded-md border border-input bg-background px-3 text-sm")}
                         value={campaignForm.status}
                         onChange={(event) => updateCampaignField("status", event.target.value as SocialCampaignStatus)}
+                        aria-label="Campaign status"
                       >
                         {SOCIAL_CAMPAIGN_STATUSES.map((status) => (
                           <option key={status} value={status}>
