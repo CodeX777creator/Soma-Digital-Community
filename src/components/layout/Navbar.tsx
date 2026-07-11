@@ -64,20 +64,86 @@ export const Navbar = () => {
       className={cn(
         "sticky top-0 z-[100] transition-all duration-500",
         isScrolled
-          ? "py-3 px-4 md:px-8 bg-black/60 backdrop-blur-xl border-b border-white/5"
-          : "py-6 px-4 md:px-8 bg-transparent"
+          ? "py-3 px-4 md:px-6 xl:px-8 bg-black/70 backdrop-blur-xl border-b border-white/5"
+          : "py-4 px-4 md:px-6 xl:px-8 bg-transparent"
       )}
     >
-      <div className="max-w-7xl mx-auto flex items-center justify-between">
-        <div className="flex items-center gap-12">
-          <Link href="/" className="flex items-center gap-2 group">
+      <div className="mx-auto flex max-w-screen-2xl flex-col gap-3">
+        <div className="flex items-center justify-between gap-4">
+          <Link href="/" className="flex items-center gap-2.5 group shrink-0">
             <div className="w-9 h-9 rounded-xl bg-primary flex items-center justify-center blue-glow group-hover:scale-110 transition-transform">
               <Zap className="text-white w-5 h-5 fill-white" />
             </div>
             <span className="font-headline font-bold text-xl tracking-tighter text-white">SOMA DIGITAL</span>
           </Link>
 
-          <div className="hidden md:flex items-center gap-8 text-sm font-medium">
+          <div className="flex items-center gap-3">
+            {isLoggedIn ? (
+              <div className="hidden lg:flex items-center gap-3">
+                <div className="hidden xl:flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/5 border border-white/10 text-[10px] font-bold text-accent cyan-glow tracking-widest">
+                  <Zap className="w-3 h-3 fill-accent" />
+                  <span>LVL {level}</span>
+                </div>
+                <Button asChild variant="ghost" size="icon" className="hidden xl:flex text-muted-foreground hover:text-white">
+                  <Link href="/search" aria-label="Search">
+                    <Search className="w-5 h-5" />
+                  </Link>
+                </Button>
+                <Button asChild variant="ghost" size="icon" className="text-muted-foreground hover:text-white relative">
+                  <Link href="/notifications" aria-label="Notifications">
+                    <Bell className="w-5 h-5" />
+                    {unreadCount > 0 ? (
+                      <span className="absolute -top-1 -right-1 min-w-[18px] h-4 rounded-full bg-primary px-1.5 text-[10px] font-bold leading-4 text-black flex items-center justify-center">
+                        {unreadCount > 9 ? "9+" : unreadCount}
+                      </span>
+                    ) : (
+                      <span className="absolute top-2.5 right-2.5 w-1.5 h-1.5 bg-primary rounded-full" />
+                    )}
+                  </Link>
+                </Button>
+                <Link href="/profile" aria-label="Profile">
+                  <UserAvatar
+                    src={userData?.photoURL || userData?.avatarUrl}
+                    name={userData?.name}
+                    size="sm"
+                    className="border-primary/30 blue-glow"
+                  />
+                </Link>
+              </div>
+            ) : (
+              <div className="hidden sm:flex items-center gap-2">
+                <Link href="/open">
+                  <Button variant="outline" className="rounded-full px-5 py-2 border-white/10 hover:bg-white/5 text-sm font-bold transition-colors">
+                    Join
+                  </Button>
+                </Link>
+                <Link href="/login">
+                  <Button className="rounded-full px-5 py-5 bg-primary hover:bg-primary/90 text-sm font-bold blue-glow group">
+                    Enter The Community
+                    <motion.span
+                      animate={{ x: [0, 5, 0] }}
+                      transition={{ repeat: Infinity, duration: 1.5 }}
+                    >
+                      <ArrowRight className="ml-2 w-4 h-4" />
+                    </motion.span>
+                  </Button>
+                </Link>
+              </div>
+            )}
+
+            <Button
+              variant="ghost"
+              size="icon"
+              className="lg:hidden text-white"
+              onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+            >
+              {mobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
+            </Button>
+          </div>
+        </div>
+
+        <div className="hidden lg:block rounded-2xl border border-white/5 bg-white/[0.03] px-3 py-2">
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm font-medium">
             {links.map((link) => {
               const isActive = pathname === link.href || (link.href.startsWith("/#") && pathname === "/");
               return (
@@ -85,15 +151,15 @@ export const Navbar = () => {
                   key={link.name}
                   href={link.href}
                   className={cn(
-                    "relative py-2 transition-colors",
-                    isActive ? "text-white" : "text-muted-foreground hover:text-white"
+                    "relative rounded-full px-3 py-2 transition-colors",
+                    isActive ? "bg-white/10 text-white" : "text-muted-foreground hover:bg-white/5 hover:text-white"
                   )}
                 >
                   {link.name}
                   {isActive && (
                     <motion.div
                       layoutId="nav-indicator"
-                      className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary blue-glow"
+                      className="absolute inset-x-3 bottom-1 h-0.5 bg-primary blue-glow"
                       transition={{ type: "spring", bounce: 0.25, duration: 0.5 }}
                     />
                   )}
@@ -101,70 +167,6 @@ export const Navbar = () => {
               );
             })}
           </div>
-        </div>
-
-        <div className="flex items-center gap-4">
-          {isLoggedIn ? (
-            <div className="flex items-center gap-4">
-              <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/5 border border-white/10 text-[10px] font-bold text-accent cyan-glow tracking-widest">
-                <Zap className="w-3 h-3 fill-accent" />
-                <span>LVL {level}</span>
-              </div>
-              <Button asChild variant="ghost" size="icon" className="hidden sm:flex text-muted-foreground hover:text-white">
-                <Link href="/search" aria-label="Search">
-                  <Search className="w-5 h-5" />
-                </Link>
-              </Button>
-              <Button asChild variant="ghost" size="icon" className="text-muted-foreground hover:text-white relative">
-                <Link href="/notifications" aria-label="Notifications">
-                  <Bell className="w-5 h-5" />
-                  {unreadCount > 0 ? (
-                    <span className="absolute -top-1 -right-1 min-w-[18px] h-4 rounded-full bg-primary px-1.5 text-[10px] font-bold leading-4 text-black flex items-center justify-center">
-                      {unreadCount > 9 ? "9+" : unreadCount}
-                    </span>
-                  ) : (
-                    <span className="absolute top-2.5 right-2.5 w-1.5 h-1.5 bg-primary rounded-full" />
-                  )}
-                </Link>
-              </Button>
-              <Link href="/profile" aria-label="Profile">
-                <UserAvatar
-                  src={userData?.photoURL || userData?.avatarUrl}
-                  name={userData?.name}
-                  size="sm"
-                  className="border-primary/30 blue-glow"
-                />
-              </Link>
-            </div>
-          ) : (
-            <div className="flex items-center gap-2">
-              <Link href="/open" className="hidden sm:block">
-                <Button variant="outline" className="rounded-full px-6 py-2 border-white/10 hover:bg-white/5 text-sm font-bold transition-colors">
-                  Join
-                </Button>
-              </Link>
-              <Link href="/login">
-                <Button className="rounded-full px-6 py-5 bg-primary hover:bg-primary/90 text-sm font-bold blue-glow group">
-                  Enter The Community
-                  <motion.span
-                    animate={{ x: [0, 5, 0] }}
-                    transition={{ repeat: Infinity, duration: 1.5 }}
-                  >
-                    <ArrowRight className="ml-2 w-4 h-4" />
-                  </motion.span>
-                </Button>
-              </Link>
-            </div>
-          )}
-
-          <Button
-            variant="ghost"
-            size="icon"
-            className="md:hidden text-white"
-            onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-          >
-            {mobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
-          </Button>
         </div>
       </div>
 

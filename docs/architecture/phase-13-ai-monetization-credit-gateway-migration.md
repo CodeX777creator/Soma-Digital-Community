@@ -51,4 +51,3 @@
 - Provider keys are encrypted at rest and never returned to the browser.
 - Credit usage is represented as Creator Credits, not provider pricing.
 - The production build currently still fails on an existing social app server/client boundary unrelated to this monetization slice.
-
