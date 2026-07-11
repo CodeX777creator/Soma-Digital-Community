@@ -413,7 +413,29 @@ export default function AudioStudioPage() {
   return (
     <ProtectedRoute>
       <AppLayout>
-        <div className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
+        <div className="space-y-8">
+          <section className="overflow-hidden rounded-[18px] border border-white/[0.08] bg-[#151A2E]/80 p-5 shadow-2xl shadow-black/30 backdrop-blur md:p-8">
+            <div className="grid gap-6 xl:grid-cols-[1fr_360px]">
+              <div className="space-y-4">
+                <div className="inline-flex items-center gap-2 rounded-full border border-white/[0.08] bg-white/[0.04] px-3 py-1 text-xs font-medium text-[#BFC6D4]">
+                  <Headphones className="h-3.5 w-3.5 text-[#4F9DFF]" />
+                  Narration, multilingual voice, waveform previews
+                </div>
+                <h1 className="text-3xl font-semibold tracking-tight text-white md:text-5xl">AI Audio Studio</h1>
+                <p className="max-w-2xl text-sm leading-6 text-[#BFC6D4] md:text-base">
+                  Create narrated voice assets with reusable voice profiles, multilingual support, transcript highlighting, and saved history.
+                </p>
+              </div>
+              <div className="rounded-[18px] border border-white/[0.08] bg-[#090B13]/70 p-4">
+                <p className="text-xs uppercase tracking-[0.22em] text-[#7E8799]">Current focus</p>
+                <p className="mt-2 text-sm leading-6 text-[#BFC6D4]">
+                  Use one voice identity across campaigns, keep transcripts readable, and preserve downloadable render bundles.
+                </p>
+              </div>
+            </div>
+          </section>
+
+          <div className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
           <section className="space-y-6">
             <div className="flex items-start justify-between gap-4">
               <div>
@@ -827,6 +849,7 @@ export default function AudioStudioPage() {
               </div>
             </GlassCard>
           </aside>
+        </div>
         </div>
       </AppLayout>
     </ProtectedRoute>
