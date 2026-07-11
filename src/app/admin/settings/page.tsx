@@ -75,7 +75,7 @@ async function loadSettingsStatus() {
 
 function Panel({ title, icon: Icon, children, className = "" }: { title: string; icon: typeof ShieldCheck; children: React.ReactNode; className?: string }) {
   return (
-    <section className={`rounded-lg border border-white/10 bg-white/[0.035] p-5 ${className}`}>
+    <section className={`rounded-lg border border-white/10 bg-white/[0.035] p-4 sm:p-5 ${className}`}>
       <div className="mb-4 flex items-center gap-2">
         <Icon className="h-4 w-4 text-cyan-300" />
         <h3 className="font-semibold text-sm">{title}</h3>
@@ -121,6 +121,7 @@ export default function AdminSettingsPage() {
   const [adminAction, setAdminAction] = useState<"grant" | "revoke">("grant");
   const [adminActionLoading, setAdminActionLoading] = useState(false);
   const [adminActionMsg, setAdminActionMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [envListExpanded, setEnvListExpanded] = useState(false);
 
   useEffect(() => {
     let unsubProfile: (() => void) | undefined;
@@ -249,6 +250,9 @@ export default function AdminSettingsPage() {
   const envWarnings = useMemo(() => (status ? status.env.filter((item) => item.required && !item.configured) : []), [status]);
   const configuredCount = status?.env.filter((item) => item.configured).length || 0;
   const adminReady = Boolean(status?.setup.adminSetupComplete && hasAdminAccess(profile));
+  const envPreviewCount = 5;
+  const shouldCollapseEnv = Boolean(status && status.env.length > envPreviewCount);
+  const visibleEnv = status ? (envListExpanded ? status.env : status.env.slice(0, envPreviewCount)) : [];
 
   return (
     <div className="space-y-6">
@@ -284,14 +288,14 @@ export default function AdminSettingsPage() {
               onChange={(e) => setPricingDraft({ ...pricingDraft, elite: Number(e.target.value) })} />
           </Field>
         </div>
-        <div className="mt-4 flex items-center gap-3">
+        <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center">
           <button type="button" onClick={savePricing} disabled={savingPricing}
             className="inline-flex h-9 items-center gap-2 rounded-md bg-cyan-400 px-4 text-sm font-semibold text-black hover:bg-cyan-300 disabled:opacity-50">
             {savingPricing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
             Save Pricing
           </button>
           {pricingSaved && <span className="flex items-center gap-1.5 text-sm text-emerald-300"><CheckCircle2 className="h-4 w-4" /> Saved</span>}
-          <span className="ml-auto text-xs text-white/35">Currently: Pro ${pricing.pro}/mo · Elite ${pricing.elite}/mo</span>
+          <span className="text-xs text-white/35 sm:ml-auto">Currently: Pro ${pricing.pro}/mo · Elite ${pricing.elite}/mo</span>
         </div>
       </Panel>
 
@@ -329,7 +333,7 @@ export default function AdminSettingsPage() {
               onChange={(e) => setSiteDraft({ ...siteDraft, linkedinUrl: e.target.value })} />
           </Field>
         </div>
-        <div className="mt-4 flex items-center gap-3">
+        <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center">
           <button type="button" onClick={saveSite} disabled={savingSite}
             className="inline-flex h-9 items-center gap-2 rounded-md bg-cyan-400 px-4 text-sm font-semibold text-black hover:bg-cyan-300 disabled:opacity-50">
             {savingSite ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
@@ -359,7 +363,7 @@ export default function AdminSettingsPage() {
               <ShieldOff className="h-4 w-4 text-red-300" /> Revoke admin
             </label>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
             <button type="submit" disabled={adminActionLoading || !adminTarget.trim()}
               className={`inline-flex h-9 items-center gap-2 rounded-md px-4 text-sm font-semibold disabled:opacity-50 ${adminAction === "grant" ? "bg-emerald-500 text-white hover:bg-emerald-400" : "bg-red-500 text-white hover:bg-red-400"}`}>
               {adminActionLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : adminAction === "grant" ? <ShieldCheck className="h-4 w-4" /> : <ShieldOff className="h-4 w-4" />}
@@ -440,7 +444,19 @@ export default function AdminSettingsPage() {
                   ))}
                 </div>
               )}
-              <div className="mt-4 grid gap-2">
+              <div className="mt-4 space-y-2 md:hidden">
+                {visibleEnv.map((item) => <EnvRow key={item.name} item={item} />)}
+                {shouldCollapseEnv && (
+                  <button
+                    type="button"
+                    onClick={() => setEnvListExpanded((current) => !current)}
+                    className="inline-flex w-full items-center justify-center rounded-lg border border-white/10 bg-black/15 px-3 py-2 text-sm text-white/70 hover:bg-white/10 hover:text-white"
+                  >
+                    {envListExpanded ? "Show fewer environment values" : `View all ${status.env.length} environment values`}
+                  </button>
+                )}
+              </div>
+              <div className="mt-4 hidden gap-2 md:grid">
                 {status.env.map((item) => <EnvRow key={item.name} item={item} />)}
               </div>
             </Panel>
@@ -477,7 +493,7 @@ function Metric({ label, value, icon: Icon, tone = "neutral" }: { label: string;
 
 function StatusRow({ label, ok, detail }: { label: string; ok: boolean; detail: string }) {
   return (
-    <div className="mb-2 flex items-center justify-between gap-3 rounded-lg border border-white/10 bg-black/15 px-3 py-2 text-sm">
+    <div className="mb-2 flex flex-col gap-1 rounded-lg border border-white/10 bg-black/15 px-3 py-2 text-sm sm:flex-row sm:items-center sm:justify-between sm:gap-3">
       <span className="text-white/70">{label}</span>
       <span className={`inline-flex items-center gap-1.5 ${ok ? "text-emerald-200" : "text-amber-100"}`}>
         {ok ? <CheckCircle2 className="h-4 w-4" /> : <AlertTriangle className="h-4 w-4" />}
@@ -489,7 +505,7 @@ function StatusRow({ label, ok, detail }: { label: string; ok: boolean; detail: 
 
 function EnvRow({ item }: { item: EnvStatus }) {
   return (
-    <div className="flex items-center justify-between gap-3 rounded-lg border border-white/10 bg-black/15 px-3 py-2 text-sm">
+    <div className="flex flex-col gap-2 rounded-lg border border-white/10 bg-black/15 px-3 py-3 text-sm sm:flex-row sm:items-center sm:justify-between sm:gap-3 sm:py-2">
       <div className="min-w-0">
         <p className="truncate text-white/75">{item.name}</p>
         <p className="text-xs text-white/35">{item.public ? "Public client value" : "Server value"}{item.required ? " · Required" : ""}</p>
