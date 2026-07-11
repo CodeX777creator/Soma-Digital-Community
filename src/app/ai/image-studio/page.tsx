@@ -5,7 +5,6 @@ import { Copy, Download, Filter, History, ImageIcon, Loader2, RefreshCcw, Search
 import { AppLayout } from "@/components/layout/AppLayout";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import { Button } from "@/components/ui/button";
-import { GlassCard } from "@/components/ui/glass-card";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
@@ -391,54 +390,50 @@ export default function ImageStudioPage() {
   return (
     <ProtectedRoute>
       <AppLayout>
-        <div className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
-          <section className="space-y-6">
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <h1 className="text-2xl font-semibold tracking-tight">AI Image Studio</h1>
-                <p className="text-sm text-muted-foreground">
-                  Build branded visuals, save them to your library, and reuse them from history.
-                </p>
-              </div>
-              <Button type="button" variant="outline" size="sm" onClick={loadHistory} disabled={loadingHistory || loading}>
-                {loadingHistory ? <Loader2 className="h-4 w-4 animate-spin" /> : <History className="h-4 w-4" />}
-                Refresh
-              </Button>
-            </div>
-
-            <GlassCard className="p-5">
-              <form className="space-y-4" onSubmit={handleGenerate}>
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">Prompt</label>
-                  <Textarea value={state.prompt} onChange={(event) => updateField("prompt", event.target.value)} rows={5} />
+        <div className="space-y-8">
+          <form
+            onSubmit={handleGenerate}
+            className="relative overflow-hidden rounded-[18px] border border-white/[0.08] bg-[#151A2E]/80 p-5 shadow-2xl shadow-black/30 backdrop-blur md:p-8"
+          >
+            <div className="absolute inset-0 -z-10 bg-[radial-gradient(circle_at_top_left,rgba(91,95,255,.34),transparent_34%),radial-gradient(circle_at_top_right,rgba(79,157,255,.22),transparent_38%)]" />
+            <div className="grid gap-8 xl:grid-cols-[1fr_360px]">
+              <section className="space-y-6">
+                <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+                  <div className="max-w-3xl">
+                    <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-white/[0.08] bg-white/[0.04] px-3 py-1 text-xs font-medium text-[#BFC6D4]">
+                      <ImageIcon className="h-3.5 w-3.5 text-[#4F9DFF]" />
+                      Brand visuals, campaign assets, thumbnails, mockups
+                    </div>
+                    <h1 className="text-3xl font-semibold tracking-tight text-white md:text-5xl">AI Image Studio</h1>
+                    <p className="mt-3 max-w-2xl text-sm leading-6 text-[#BFC6D4] md:text-base">
+                      Create polished visuals for your brand, save every generation, and reuse high-performing prompts without starting over.
+                    </p>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={loadHistory}
+                    disabled={loadingHistory || loading}
+                    className="h-11 rounded-full border-white/[0.08] bg-white/[0.04] text-white hover:bg-white/[0.08]"
+                  >
+                    {loadingHistory ? <Loader2 className="h-4 w-4 animate-spin" /> : <History className="h-4 w-4" />}
+                    Refresh
+                  </Button>
                 </div>
 
-                <div className="grid gap-4 md:grid-cols-2">
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">Prompt edits</label>
-                    <Textarea
-                      value={state.promptEdits}
-                      onChange={(event) => updateField("promptEdits", event.target.value)}
-                      rows={3}
-                      placeholder="Add lighting, composition, mood, or style notes."
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">Negative prompt</label>
-                    <Textarea
-                      value={state.negativePrompt}
-                      onChange={(event) => updateField("negativePrompt", event.target.value)}
-                      rows={3}
-                      placeholder="Describe anything to avoid."
-                    />
-                  </div>
-                </div>
-
-                <div className="grid gap-4 md:grid-cols-3">
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">Style preset</label>
+                <div className="rounded-[18px] border border-white/[0.08] bg-[#090B13]/70 p-4 shadow-xl shadow-black/20">
+                  <Textarea
+                    value={state.prompt}
+                    onChange={(event) => updateField("prompt", event.target.value)}
+                    rows={6}
+                    aria-label="Image generation prompt"
+                    className="min-h-40 resize-none border-0 bg-transparent p-0 text-base text-white placeholder:text-[#7E8799] focus-visible:ring-0"
+                    placeholder="Describe the visual you want to create..."
+                  />
+                  <div className="mt-4 grid gap-3 md:grid-cols-3">
                     <select
-                      className={cn("h-10 w-full rounded-md border border-input bg-background px-3 text-sm")}
+                      aria-label="Style preset"
+                      className="h-11 rounded-xl border border-white/[0.08] bg-[#111827] px-3 text-sm text-white outline-none"
                       value={state.stylePreset}
                       onChange={(event) => updateField("stylePreset", event.target.value as ImageStylePreset)}
                     >
@@ -448,11 +443,9 @@ export default function ImageStudioPage() {
                         </option>
                       ))}
                     </select>
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">Aspect ratio</label>
                     <select
-                      className={cn("h-10 w-full rounded-md border border-input bg-background px-3 text-sm")}
+                      aria-label="Aspect ratio"
+                      className="h-11 rounded-xl border border-white/[0.08] bg-[#111827] px-3 text-sm text-white outline-none"
                       value={state.aspectRatio}
                       onChange={(event) => updateField("aspectRatio", event.target.value as ImageAspectRatio)}
                     >
@@ -462,11 +455,9 @@ export default function ImageStudioPage() {
                         </option>
                       ))}
                     </select>
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">Visibility</label>
                     <select
-                      className={cn("h-10 w-full rounded-md border border-input bg-background px-3 text-sm")}
+                      aria-label="Visibility"
+                      className="h-11 rounded-xl border border-white/[0.08] bg-[#111827] px-3 text-sm text-white outline-none"
                       value={state.visibility}
                       onChange={(event) => updateField("visibility", event.target.value as ImageStudioFormState["visibility"])}
                     >
@@ -475,128 +466,143 @@ export default function ImageStudioPage() {
                       <option value="public">Public</option>
                     </select>
                   </div>
-                </div>
-
-                <div className="grid gap-4 md:grid-cols-2">
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">Title</label>
-                    <Input value={state.title} onChange={(event) => updateField("title", event.target.value)} placeholder="Optional asset title" />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">Brand name</label>
-                    <Input value={state.brandName} onChange={(event) => updateField("brandName", event.target.value)} placeholder="Optional brand name" />
-                  </div>
-                </div>
-
-                <div className="grid gap-4 md:grid-cols-2">
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">Brand template name</label>
-                    <Input value={state.brandTemplateName} onChange={(event) => updateField("brandTemplateName", event.target.value)} placeholder="Campaign or brand system name" />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">Brand logo URL</label>
-                    <Input value={state.brandLogoUrl} onChange={(event) => updateField("brandLogoUrl", event.target.value)} placeholder="https://..." />
-                  </div>
-                </div>
-
-                <div className="grid gap-4 md:grid-cols-2">
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">Brand colors</label>
-                    <Input value={state.brandColors} onChange={(event) => updateField("brandColors", event.target.value)} placeholder="#0f172a, #2563eb, #eab308" />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">Brand fonts</label>
-                    <Input value={state.brandFonts} onChange={(event) => updateField("brandFonts", event.target.value)} placeholder="Inter, Sora, Geist" />
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">Brand template notes</label>
-                  <Textarea
-                    value={state.brandTemplateNotes}
-                    onChange={(event) => updateField("brandTemplateNotes", event.target.value)}
-                    rows={3}
-                    placeholder="Describe the visual identity, audience, or campaign direction."
-                  />
-                </div>
-
-                <Button type="submit" className="w-full" disabled={loading}>
-                  {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-                  Generate image
-                </Button>
-              </form>
-            </GlassCard>
-          </section>
-
-          <aside className="space-y-6">
-            <GlassCard className="p-5">
-              <div className="flex items-center gap-2">
-                <ImageIcon className="h-4 w-4 text-primary" />
-                <h2 className="text-sm font-semibold uppercase tracking-wide">Latest asset</h2>
-              </div>
-              {latestImage ? (
-                <div className="mt-4 space-y-4">
-                  <div className="overflow-hidden rounded-md border border-border bg-black/10">
-                    <img src={latestImage.thumbnail} alt={latestImage.title} className="h-auto w-full object-cover" />
-                  </div>
-                  <div className="space-y-1">
-                    <p className="font-medium">{latestImage.title}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {latestImage.stylePreset.replace(/_/g, " ")} · {latestImage.aspectRatio} · {latestImage.provider}
-                    </p>
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    <Button type="button" variant="outline" onClick={() => {
-                      setState(createPromptReuseStateFromLatest(latestImage));
-                      toast({
-                        title: "Image loaded",
-                        description: "We filled the form with the latest generated image settings.",
-                      });
-                    }}>
-                      <Copy className="h-4 w-4" />
-                      Reuse
+                  <div className="mt-4 flex flex-wrap gap-3">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="rounded-full border-white/[0.08] bg-white/[0.04] text-white hover:bg-white/[0.08]"
+                      onClick={() => updateField("promptEdits", "Make it premium, minimal, editorial, and conversion-focused.")}
+                    >
+                      <Wand2 className="h-4 w-4" />
+                      Improve prompt
                     </Button>
-                    {latestImage.downloadUrl ? (
-                      <Button asChild variant="outline">
-                        <a href={latestImage.downloadUrl} target="_blank" rel="noreferrer">
-                          <Download className="h-4 w-4" />
-                          Download
-                        </a>
-                      </Button>
-                    ) : null}
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="rounded-full border-white/[0.08] bg-white/[0.04] text-white hover:bg-white/[0.08]"
+                      onClick={() => updateField("aspectRatio", "4:5")}
+                    >
+                      <ImageIcon className="h-4 w-4" />
+                      Social format
+                    </Button>
+                    <Button
+                      type="submit"
+                      disabled={loading}
+                      className="ml-auto rounded-full bg-gradient-to-r from-[#4F9DFF] via-[#5B5FFF] to-[#8B5CF6] px-6 text-white shadow-lg shadow-[#5B5FFF]/25 hover:opacity-95"
+                    >
+                      {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+                      Generate image
+                    </Button>
                   </div>
                 </div>
-              ) : (
-                <div className="mt-4 rounded-md border border-dashed border-border p-6 text-sm text-muted-foreground">
-                  Generated images will appear here with a preview and signed download link.
-                </div>
-              )}
-            </GlassCard>
+              </section>
 
-            <GlassCard className="p-5">
-              <div className="flex items-center gap-2">
-                <Filter className="h-4 w-4 text-primary" />
-                <h2 className="text-sm font-semibold uppercase tracking-wide">Gallery</h2>
+              <aside className="rounded-[18px] border border-white/[0.08] bg-[#090B13]/60 p-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-xs uppercase tracking-[0.22em] text-[#7E8799]">Latest asset</p>
+                    <h2 className="mt-1 text-lg font-medium text-white">Generation preview</h2>
+                  </div>
+                  <Sparkles className="h-5 w-5 text-[#8B5CF6]" />
+                </div>
+                {latestImage ? (
+                  <div className="mt-5 space-y-4">
+                    <div className="overflow-hidden rounded-[16px] border border-white/[0.08] bg-black/20">
+                      <img src={latestImage.thumbnail} alt={latestImage.title} className="aspect-square w-full object-cover" />
+                    </div>
+                    <div>
+                      <p className="truncate text-sm font-medium text-white">{latestImage.title}</p>
+                      <p className="mt-1 text-xs text-[#7E8799]">
+                        {latestImage.stylePreset.replace(/_/g, " ")} / {latestImage.aspectRatio} / {latestImage.provider}
+                      </p>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="rounded-xl border-white/[0.08] bg-white/[0.04] text-white"
+                        onClick={() => {
+                          setState(createPromptReuseStateFromLatest(latestImage));
+                          toast({
+                            title: "Image loaded",
+                            description: "We filled the form with the latest generated image settings.",
+                          });
+                        }}
+                      >
+                        <Copy className="h-4 w-4" />
+                        Reuse
+                      </Button>
+                      {latestImage.downloadUrl ? (
+                        <Button asChild variant="outline" className="rounded-xl border-white/[0.08] bg-white/[0.04] text-white">
+                          <a href={latestImage.downloadUrl} target="_blank" rel="noreferrer">
+                            <Download className="h-4 w-4" />
+                            Download
+                          </a>
+                        </Button>
+                      ) : null}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="mt-5 rounded-[16px] border border-dashed border-white/[0.12] bg-white/[0.03] p-6 text-sm leading-6 text-[#BFC6D4]">
+                    Generated images appear here with a preview, reusable settings, and a signed download link.
+                  </div>
+                )}
+              </aside>
+            </div>
+          </form>
+
+          <div className="grid gap-6 xl:grid-cols-[1fr_360px]">
+            <section className="space-y-6">
+              <div className="rounded-[18px] border border-white/[0.08] bg-[#151A2E]/70 p-5 shadow-xl shadow-black/20 backdrop-blur md:p-6">
+                <div className="mb-5 flex items-center gap-2">
+                  <Wand2 className="h-4 w-4 text-[#4F9DFF]" />
+                  <h2 className="text-base font-semibold text-white">Brand controls</h2>
+                </div>
+                <div className="grid gap-4 md:grid-cols-2">
+                  <Input value={state.title} onChange={(event) => updateField("title", event.target.value)} placeholder="Asset title" className="rounded-xl border-white/[0.08] bg-[#090B13]/70" />
+                  <Input value={state.brandName} onChange={(event) => updateField("brandName", event.target.value)} placeholder="Brand name" className="rounded-xl border-white/[0.08] bg-[#090B13]/70" />
+                  <Input value={state.brandTemplateName} onChange={(event) => updateField("brandTemplateName", event.target.value)} placeholder="Brand template name" className="rounded-xl border-white/[0.08] bg-[#090B13]/70" />
+                  <Input value={state.brandLogoUrl} onChange={(event) => updateField("brandLogoUrl", event.target.value)} placeholder="Logo URL" className="rounded-xl border-white/[0.08] bg-[#090B13]/70" />
+                  <Input value={state.brandColors} onChange={(event) => updateField("brandColors", event.target.value)} placeholder="#5B5FFF, #8B5CF6, #4F9DFF" className="rounded-xl border-white/[0.08] bg-[#090B13]/70" />
+                  <Input value={state.brandFonts} onChange={(event) => updateField("brandFonts", event.target.value)} placeholder="Inter, Sora, Geist" className="rounded-xl border-white/[0.08] bg-[#090B13]/70" />
+                </div>
+                <div className="mt-4 grid gap-4 md:grid-cols-2">
+                  <Textarea value={state.promptEdits} onChange={(event) => updateField("promptEdits", event.target.value)} rows={3} placeholder="Prompt refinements, composition, mood, or visual direction." className="rounded-xl border-white/[0.08] bg-[#090B13]/70" />
+                  <Textarea value={state.negativePrompt} onChange={(event) => updateField("negativePrompt", event.target.value)} rows={3} placeholder="Anything to avoid." className="rounded-xl border-white/[0.08] bg-[#090B13]/70" />
+                </div>
+                <Textarea
+                  value={state.brandTemplateNotes}
+                  onChange={(event) => updateField("brandTemplateNotes", event.target.value)}
+                  rows={3}
+                  placeholder="Describe the visual identity, target audience, and campaign direction."
+                  className="mt-4 rounded-xl border-white/[0.08] bg-[#090B13]/70"
+                />
               </div>
 
-              <div className="mt-4 grid gap-3 md:grid-cols-2">
-                <div className="space-y-2 md:col-span-2">
-                  <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Search</label>
-                  <div className="relative">
-                    <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <div className="rounded-[18px] border border-white/[0.08] bg-[#151A2E]/70 p-5 shadow-xl shadow-black/20 backdrop-blur md:p-6">
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <Filter className="h-4 w-4 text-[#4F9DFF]" />
+                      <h2 className="text-base font-semibold text-white">Image gallery</h2>
+                    </div>
+                    <p className="mt-1 text-sm text-[#BFC6D4]">Browse, filter, reuse, and regenerate saved image assets.</p>
+                  </div>
+                  <div className="relative w-full lg:w-80">
+                    <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#7E8799]" />
                     <Input
                       value={filters.search}
                       onChange={(event) => setFilters((current) => ({ ...current, search: event.target.value }))}
-                      placeholder="Search titles, prompts, tags, or providers"
-                      className="pl-9"
+                      placeholder="Search images"
+                      className="rounded-xl border-white/[0.08] bg-[#090B13]/70 pl-9"
                     />
                   </div>
                 </div>
 
-                <div className="space-y-2">
-                  <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Style</label>
+                <div className="mt-5 grid gap-3 md:grid-cols-3">
                   <select
-                    className={cn("h-10 w-full rounded-md border border-input bg-background px-3 text-sm")}
+                    aria-label="Filter gallery by style"
+                    className="h-11 rounded-xl border border-white/[0.08] bg-[#090B13] px-3 text-sm text-white"
                     value={filters.stylePreset}
                     onChange={(event) => setFilters((current) => ({ ...current, stylePreset: event.target.value as GalleryFilters["stylePreset"] }))}
                   >
@@ -607,12 +613,9 @@ export default function ImageStudioPage() {
                       </option>
                     ))}
                   </select>
-                </div>
-
-                <div className="space-y-2">
-                  <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Aspect</label>
                   <select
-                    className={cn("h-10 w-full rounded-md border border-input bg-background px-3 text-sm")}
+                    aria-label="Filter gallery by aspect ratio"
+                    className="h-11 rounded-xl border border-white/[0.08] bg-[#090B13] px-3 text-sm text-white"
                     value={filters.aspectRatio}
                     onChange={(event) => setFilters((current) => ({ ...current, aspectRatio: event.target.value as GalleryFilters["aspectRatio"] }))}
                   >
@@ -623,12 +626,9 @@ export default function ImageStudioPage() {
                       </option>
                     ))}
                   </select>
-                </div>
-
-                <div className="space-y-2">
-                  <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Visibility</label>
                   <select
-                    className={cn("h-10 w-full rounded-md border border-input bg-background px-3 text-sm")}
+                    aria-label="Filter gallery by visibility"
+                    className="h-11 rounded-xl border border-white/[0.08] bg-[#090B13] px-3 text-sm text-white"
                     value={filters.visibility}
                     onChange={(event) => setFilters((current) => ({ ...current, visibility: event.target.value as GalleryFilters["visibility"] }))}
                   >
@@ -638,129 +638,129 @@ export default function ImageStudioPage() {
                     <option value="public">Public</option>
                   </select>
                 </div>
-              </div>
 
-              <div className="mt-5 space-y-3">
-                {selectedAsset ? (
-                  <div className="rounded-md border border-border p-3">
-                    <div className="overflow-hidden rounded-sm border border-border bg-black/10">
-                      <img src={selectedAsset.thumbnail} alt={selectedAsset.title} className="h-auto w-full object-cover" />
-                    </div>
-                    <div className="mt-3 flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-                      <div className="min-w-0">
-                        <p className="font-medium">{selectedAsset.title}</p>
-                        <p className="text-xs text-muted-foreground">
-                          {selectedAsset.stylePreset.replace(/_/g, " ")} · {selectedAsset.aspectRatio} · {selectedAsset.provider}
-                        </p>
-                      </div>
-                      <div className="flex flex-wrap gap-2">
-                        <Button type="button" size="sm" variant="outline" onClick={() => handleReuseAsset(selectedAsset)}>
-                          <Copy className="h-4 w-4" />
-                          Reuse
-                        </Button>
-                        <Button type="button" size="sm" variant="outline" onClick={() => handleRegenerateAsset(selectedAsset)}>
-                          <RefreshCcw className="h-4 w-4" />
-                          Regenerate
-                        </Button>
-                      </div>
-                    </div>
-                    <p className="mt-3 line-clamp-3 text-sm text-muted-foreground">{selectedAsset.prompt}</p>
-                  </div>
-                ) : null}
-
-                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                <div className="mt-6 grid gap-4 sm:grid-cols-2 2xl:grid-cols-3">
                   {filteredHistory.length > 0 ? (
                     filteredHistory.map((asset) => (
-                      <button
+                      <div
                         key={asset.assetId}
-                        type="button"
+                        role="button"
+                        tabIndex={0}
                         onClick={() => setSelectedAssetId(asset.assetId)}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter" || event.key === " ") {
+                            event.preventDefault();
+                            setSelectedAssetId(asset.assetId);
+                          }
+                        }}
                         className={cn(
-                          "text-left rounded-md border p-3 transition-colors",
-                          selectedAsset?.assetId === asset.assetId ? "border-primary bg-primary/5" : "border-border hover:border-primary/60"
+                          "group rounded-[16px] border bg-[#090B13]/70 p-3 text-left shadow-lg shadow-black/15 outline-none transition duration-200 hover:-translate-y-0.5 hover:border-[#5B5FFF]/60",
+                          selectedAsset?.assetId === asset.assetId ? "border-[#5B5FFF]/70" : "border-white/[0.08]"
                         )}
                       >
-                        <div className="overflow-hidden rounded-sm border border-border bg-black/10">
-                          <img src={asset.thumbnail} alt={asset.title} className="h-36 w-full object-cover" />
+                        <div className="overflow-hidden rounded-[14px] border border-white/[0.08] bg-black/20">
+                          <img src={asset.thumbnail} alt={asset.title} className="aspect-[4/3] w-full object-cover transition duration-300 group-hover:scale-[1.03]" />
                         </div>
-                        <div className="mt-3 space-y-1">
-                          <p className="truncate text-sm font-medium">{asset.title}</p>
-                          <p className="truncate text-xs text-muted-foreground">
-                            {asset.stylePreset.replace(/_/g, " ")} · {asset.aspectRatio}
+                        <div className="mt-3">
+                          <p className="truncate text-sm font-medium text-white">{asset.title}</p>
+                          <p className="mt-1 truncate text-xs text-[#7E8799]">
+                            {asset.stylePreset.replace(/_/g, " ")} / {asset.aspectRatio}
                           </p>
-                          <p className="truncate text-xs text-muted-foreground">{asset.model}</p>
+                          <p className="mt-1 truncate text-xs text-[#7E8799]">{asset.model}</p>
                         </div>
                         <div className="mt-3 flex flex-wrap gap-2">
-                          <Button type="button" size="sm" variant="outline" onClick={(event) => { event.stopPropagation(); handleReuseAsset(asset); }}>
+                          <Button type="button" size="sm" variant="outline" className="rounded-full border-white/[0.08] bg-white/[0.04]" onClick={(event) => { event.stopPropagation(); handleReuseAsset(asset); }}>
                             <Copy className="h-4 w-4" />
                             Reuse
                           </Button>
-                          <Button type="button" size="sm" variant="outline" onClick={(event) => { event.stopPropagation(); handleRegenerateAsset(asset); }}>
+                          <Button type="button" size="sm" variant="outline" className="rounded-full border-white/[0.08] bg-white/[0.04]" onClick={(event) => { event.stopPropagation(); handleRegenerateAsset(asset); }}>
                             <RefreshCcw className="h-4 w-4" />
-                            Regenerate
                           </Button>
                           {asset.downloadUrl ? (
-                            <Button asChild size="sm" variant="outline">
-                              <a href={asset.downloadUrl} target="_blank" rel="noreferrer">
+                            <Button asChild size="sm" variant="outline" className="rounded-full border-white/[0.08] bg-white/[0.04]" onClick={(event) => event.stopPropagation()}>
+                              <a href={asset.downloadUrl} target="_blank" rel="noreferrer" aria-label={`Download ${asset.title}`}>
                                 <Download className="h-4 w-4" />
                               </a>
                             </Button>
                           ) : null}
                         </div>
-                      </button>
+                      </div>
                     ))
                   ) : (
-                    <div className="rounded-md border border-dashed border-border p-6 text-sm text-muted-foreground">
+                    <div className="rounded-[16px] border border-dashed border-white/[0.12] bg-white/[0.03] p-6 text-sm text-[#BFC6D4] sm:col-span-2 2xl:col-span-3">
                       {loadingHistory ? "Loading your image gallery..." : "No generated images match the current filters."}
                     </div>
                   )}
                 </div>
               </div>
-            </GlassCard>
+            </section>
 
-            <GlassCard className="p-5">
-              <div className="flex items-center gap-2">
-                <Wand2 className="h-4 w-4 text-primary" />
-                <h2 className="text-sm font-semibold uppercase tracking-wide">History</h2>
-              </div>
-              <div className="mt-4 space-y-3">
-                {history.length > 0 ? history.map((asset) => (
-                  <div key={asset.assetId} className="flex gap-3 rounded-md border border-border p-3">
-                    <div className="h-16 w-16 flex-none overflow-hidden rounded-sm border border-border bg-black/10">
-                      <img src={asset.thumbnail} alt={asset.title} className="h-full w-full object-cover" />
+            <aside className="space-y-6">
+              <div className="rounded-[18px] border border-white/[0.08] bg-[#151A2E]/70 p-5 shadow-xl shadow-black/20 backdrop-blur">
+                <div className="flex items-center gap-2">
+                  <ImageIcon className="h-4 w-4 text-[#4F9DFF]" />
+                  <h2 className="text-base font-semibold text-white">Selected image</h2>
+                </div>
+                {selectedAsset ? (
+                  <div className="mt-4 space-y-4">
+                    <div className="overflow-hidden rounded-[16px] border border-white/[0.08] bg-black/20">
+                      <img src={selectedAsset.thumbnail} alt={selectedAsset.title} className="w-full object-cover" />
                     </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-medium">{asset.title}</p>
-                      <p className="truncate text-xs text-muted-foreground">
-                        {asset.stylePreset} · {asset.aspectRatio} · {asset.model}
+                    <div>
+                      <p className="text-sm font-medium text-white">{selectedAsset.title}</p>
+                      <p className="mt-1 text-xs text-[#7E8799]">
+                        {selectedAsset.stylePreset.replace(/_/g, " ")} / {selectedAsset.aspectRatio} / {selectedAsset.provider}
                       </p>
-                      <div className="mt-2 flex items-center gap-2">
-                        <Button type="button" size="sm" variant="outline" onClick={() => handleReuseAsset(asset)}>
-                          <Copy className="h-4 w-4" />
-                          Reuse
-                        </Button>
-                        <Button type="button" size="sm" variant="outline" onClick={() => handleRegenerateAsset(asset)}>
-                          <RefreshCcw className="h-4 w-4" />
-                          Regenerate
-                        </Button>
-                        {asset.downloadUrl ? (
-                          <Button asChild size="sm" variant="outline">
-                            <a href={asset.downloadUrl} target="_blank" rel="noreferrer">
-                              <Download className="h-4 w-4" />
-                            </a>
-                          </Button>
-                        ) : null}
-                      </div>
+                    </div>
+                    <p className="line-clamp-4 text-sm leading-6 text-[#BFC6D4]">{selectedAsset.prompt}</p>
+                    <div className="grid grid-cols-2 gap-2">
+                      <Button type="button" variant="outline" className="rounded-xl border-white/[0.08] bg-white/[0.04]" onClick={() => handleReuseAsset(selectedAsset)}>
+                        <Copy className="h-4 w-4" />
+                        Reuse
+                      </Button>
+                      <Button type="button" variant="outline" className="rounded-xl border-white/[0.08] bg-white/[0.04]" onClick={() => handleRegenerateAsset(selectedAsset)}>
+                        <RefreshCcw className="h-4 w-4" />
+                        Regenerate
+                      </Button>
                     </div>
                   </div>
-                )) : (
-                  <div className="rounded-md border border-dashed border-border p-6 text-sm text-muted-foreground">
-                    {loadingHistory ? "Loading your image library..." : "No generated images yet."}
+                ) : (
+                  <div className="mt-4 rounded-[16px] border border-dashed border-white/[0.12] bg-white/[0.03] p-6 text-sm text-[#BFC6D4]">
+                    Select a saved image to review its prompt and generation settings.
                   </div>
                 )}
               </div>
-            </GlassCard>
-          </aside>
+
+              <div className="rounded-[18px] border border-white/[0.08] bg-[#151A2E]/70 p-5 shadow-xl shadow-black/20 backdrop-blur">
+                <div className="flex items-center gap-2">
+                  <History className="h-4 w-4 text-[#4F9DFF]" />
+                  <h2 className="text-base font-semibold text-white">Recent history</h2>
+                </div>
+                <div className="mt-4 space-y-3">
+                  {history.length > 0 ? history.slice(0, 5).map((asset) => (
+                    <button
+                      key={asset.assetId}
+                      type="button"
+                      onClick={() => setSelectedAssetId(asset.assetId)}
+                      className="flex w-full gap-3 rounded-[14px] border border-white/[0.08] bg-[#090B13]/60 p-3 text-left transition hover:border-[#5B5FFF]/60"
+                    >
+                      <img src={asset.thumbnail} alt={asset.title} className="h-14 w-14 flex-none rounded-xl object-cover" />
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-sm font-medium text-white">{asset.title}</span>
+                        <span className="mt-1 block truncate text-xs text-[#7E8799]">
+                          {asset.stylePreset.replace(/_/g, " ")} / {asset.aspectRatio}
+                        </span>
+                      </span>
+                    </button>
+                  )) : (
+                    <div className="rounded-[16px] border border-dashed border-white/[0.12] bg-white/[0.03] p-6 text-sm text-[#BFC6D4]">
+                      {loadingHistory ? "Loading your image library..." : "No generated images yet."}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </aside>
+          </div>
         </div>
       </AppLayout>
     </ProtectedRoute>

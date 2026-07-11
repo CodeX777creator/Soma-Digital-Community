@@ -1,122 +1,141 @@
 "use client";
 
-import { AppLayout } from "@/components/layout/AppLayout";
-import { GlassCard } from "@/components/ui/glass-card";
-import { Progress } from "@/components/ui/progress";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { UserAvatar } from "@/components/ui/user-avatar";
-import { useAuth } from "@/providers/AuthProvider";
-import {
-  Zap,
-  TrendingUp,
-  Users,
-  Target,
-  Trophy,
-  Flame,
-  Bot,
-  CheckCircle2,
-  Video,
-  MessageSquare,
-  ChevronRight,
-  Layers,
-  Sparkles,
-  Search,
-  Bell,
-  Clock,
-  Quote,
-  Lock,
-  AlertCircle,
-  Loader,
-  Crown
-} from "lucide-react";
-import {
-  AreaChart,
-  Area,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip as RechartTooltip,
-  ResponsiveContainer
-} from "recharts";
-import { Suspense, useState, useEffect } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
-import { PremiumLock } from "@/components/premium/PremiumLock";
-import { UpgradeModal } from "@/components/premium/UpgradeModal";
-import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
-import { useDashboardLeaderboard, useWeeklyPerformance, useDailyMissions, useDashboardStats,
-} from "@/hooks/useDashboardData";
-import { useSubscription } from "@/hooks/useSubscription";
-import { authFetch } from "@/lib/clientApi";
 import Link from "next/link";
+import { Suspense, useEffect, useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import {
+  ArrowRight,
+  BarChart3,
+  Bot,
+  CalendarDays,
+  CheckCircle2,
+  ChevronRight,
+  Crown,
+  ImageIcon,
+  Loader,
+  MessageSquare,
+  PackageOpen,
+  PenLine,
+  ShoppingBag,
+  Sparkles,
+  Target,
+  Users,
+  Video,
+  Zap,
+} from "lucide-react";
 import { User } from "firebase/auth";
+import { AppLayout } from "@/components/layout/AppLayout";
+import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Progress } from "@/components/ui/progress";
+import { UserAvatar } from "@/components/ui/user-avatar";
+import { UpgradeModal } from "@/components/premium/UpgradeModal";
+import { useAuth } from "@/providers/AuthProvider";
+import { useSubscription } from "@/hooks/useSubscription";
+import {
+  useDailyMissions,
+  useDashboardLeaderboard,
+  useDashboardStats,
+  useWeeklyPerformance,
+} from "@/hooks/useDashboardData";
+import { authFetch } from "@/lib/clientApi";
 import { UserProfile } from "@/lib/db";
+import { cn } from "@/lib/utils";
 
-// Helper to get display name from Firebase Auth or Firestore profile
-function getDisplayName(user: User | null, userData: UserProfile | null): string | null {
-  // First try Firestore userData.name (most reliable, set during onboarding)
-  if (userData?.name?.trim()) {
-    return userData.name.split(' ')[0]; // Return first name
-  }
-  // Fallback to Firebase Auth displayName (from Google/OAuth)
-  if (user?.displayName?.trim()) {
-    return user.displayName.split(' ')[0];
-  }
-  return null;
+type CreditDashboard = {
+  snapshot: {
+    remainingCredits: number;
+    monthlyCreditsGranted: number;
+    monthlyCreditsUsed: number;
+    monthlyCreditsReserved: number;
+    byokEnabled: boolean;
+    providerMode: string;
+    resetAt: string;
+    nextResetAt: string;
+  };
+  budgetSummary: {
+    monthlyCap: number;
+    dailyCap: number;
+    concurrentJobs: number;
+  };
+  recentActivity: Array<{
+    entryId: string;
+    timestamp: string;
+    feature: string;
+    providerId: string;
+    modelId: string;
+    billingSource: string;
+    creditsReserved: number;
+    creditsCharged: number;
+    creditsRefunded: number;
+    status: string;
+    durationMs: number;
+  }>;
+};
+
+function getDisplayName(user: User | null, userData: UserProfile | null): string {
+  const fullName = userData?.name?.trim() || user?.displayName?.trim() || "Builder";
+  return fullName.split(" ")[0];
 }
 
 function getFullName(user: User | null, userData: UserProfile | null): string {
-  return userData?.name?.trim() || user?.displayName?.trim() || "Explorer";
+  return userData?.name?.trim() || user?.displayName?.trim() || "Digital Builder";
+}
+
+function OperatingCard({
+  title,
+  description,
+  href,
+  icon: Icon,
+  tone = "blue",
+}: {
+  title: string;
+  description: string;
+  href: string;
+  icon: typeof Sparkles;
+  tone?: "blue" | "purple" | "green" | "pink";
+}) {
+  const toneClass = {
+    blue: "from-[#4F9DFF] to-[#5B5FFF]",
+    purple: "from-[#5B5FFF] to-[#8B5CF6]",
+    green: "from-[#22C55E] to-[#4F9DFF]",
+    pink: "from-[#EF4444] to-[#8B5CF6]",
+  }[tone];
+
+  return (
+    <Link
+      href={href}
+      className="group rounded-[18px] border border-white/[0.08] bg-[#151A2E]/72 p-5 shadow-[0_18px_60px_rgba(0,0,0,0.22)] transition-all duration-200 hover:-translate-y-1 hover:border-[#8B5CF6]/35 hover:bg-[#1A2140]/85 hover:shadow-[0_24px_80px_rgba(91,95,255,0.16)]"
+    >
+      <div className={cn("flex h-12 w-12 items-center justify-center rounded-[16px] bg-gradient-to-br shadow-[0_14px_35px_rgba(91,95,255,0.24)]", toneClass)}>
+        <Icon className="h-5 w-5 text-white" />
+      </div>
+      <p className="mt-5 text-base font-medium text-white">{title}</p>
+      <p className="mt-2 min-h-10 text-sm leading-6 text-[#BFC6D4]">{description}</p>
+      <div className="mt-4 flex items-center gap-2 text-sm text-[#BFC6D4] transition-colors group-hover:text-white">
+        Open
+        <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
+      </div>
+    </Link>
+  );
 }
 
 function DashboardContent() {
-  const { user, userData, loading: authLoading } = useAuth();
-  
-
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { user, userData } = useAuth();
+  const { refreshUserToken } = useSubscription();
+  const { leaders, loading: leadersLoading } = useDashboardLeaderboard(4);
+  const { performanceData, loading: perfLoading } = useWeeklyPerformance();
+  const { missions, loading: missionsLoading, completeMission } = useDailyMissions();
+  const stats = useDashboardStats();
+
   const [mounted, setMounted] = useState(false);
   const [showUpgrade, setShowUpgrade] = useState(false);
-  const [initialUpgradePlan, setInitialUpgradePlan] = useState<'pro' | 'elite' | null>(null);
-  const [creditDashboard, setCreditDashboard] = useState<{
-    snapshot: {
-      remainingCredits: number;
-      monthlyCreditsGranted: number;
-      monthlyCreditsUsed: number;
-      monthlyCreditsReserved: number;
-      byokEnabled: boolean;
-      providerMode: string;
-      resetAt: string;
-      nextResetAt: string;
-    };
-    budgetSummary: {
-      monthlyCap: number;
-      dailyCap: number;
-      concurrentJobs: number;
-    };
-    recentActivity: Array<{
-      entryId: string;
-      timestamp: string;
-      feature: string;
-      providerId: string;
-      modelId: string;
-      billingSource: string;
-      creditsReserved: number;
-      creditsCharged: number;
-      creditsRefunded: number;
-      status: string;
-      durationMs: number;
-    }>;
-  } | null>(null);
+  const [initialUpgradePlan, setInitialUpgradePlan] = useState<"pro" | "elite" | null>(null);
+  const [creditDashboard, setCreditDashboard] = useState<CreditDashboard | null>(null);
   const [creditLoading, setCreditLoading] = useState(true);
-  const [creditError, setCreditError] = useState<string | null>(null);
-  const { refreshUserToken } = useSubscription();
-
-  // Fetch real data
-  const { leaders, loading: leadersLoading, error: leadersError } = useDashboardLeaderboard(3);
-  const { performanceData, loading: perfLoading, error: perfError } = useWeeklyPerformance();
-  const { missions, loading: missionsLoading, error: missionsError, completeMission } = useDailyMissions();
-  const stats = useDashboardStats();
 
   useEffect(() => {
     setMounted(true);
@@ -132,52 +151,50 @@ function DashboardContent() {
       router.replace("/dashboard");
     }
 
-    // Refresh token and subscription status after successful payment
     if (subscriptionSuccess === "success") {
-      refreshUserToken().then(() => {
-        router.replace("/dashboard");
-      });
+      refreshUserToken().then(() => router.replace("/dashboard"));
     }
   }, [router, searchParams, refreshUserToken]);
 
   useEffect(() => {
-    let mounted = true;
+    let active = true;
 
     const loadCredits = async () => {
       if (!user) {
-        if (mounted) setCreditLoading(false);
+        setCreditLoading(false);
         return;
       }
 
       try {
         setCreditLoading(true);
-        setCreditError(null);
         const response = await authFetch("/api/creator-credits");
-        if (!response.ok) {
-          throw new Error("Unable to load credit dashboard.");
-        }
-
+        if (!response.ok) throw new Error("Unable to load credits.");
         const json = await response.json();
-        if (mounted) {
-          setCreditDashboard(json);
-        }
-      } catch (error) {
-        if (mounted) {
-          setCreditError(error instanceof Error ? error.message : "Unable to load credit dashboard.");
-        }
+        if (active) setCreditDashboard(json);
+      } catch {
+        if (active) setCreditDashboard(null);
       } finally {
-        if (mounted) {
-          setCreditLoading(false);
-        }
+        if (active) setCreditLoading(false);
       }
     };
 
     void loadCredits();
-
     return () => {
-      mounted = false;
+      active = false;
     };
-  }, [user?.uid]);
+  }, [user]);
+
+  const creditUsage = useMemo(() => {
+    if (!creditDashboard?.snapshot.monthlyCreditsGranted) return 0;
+    return Math.min(
+      100,
+      Math.round((creditDashboard.snapshot.monthlyCreditsUsed / creditDashboard.snapshot.monthlyCreditsGranted) * 100)
+    );
+  }, [creditDashboard]);
+
+  const missionProgress = missions.length
+    ? Math.round((missions.filter((mission) => mission.completed).length / missions.length) * 100)
+    : 0;
 
   if (!mounted) return null;
 
@@ -192,476 +209,295 @@ function DashboardContent() {
           }}
           initialPlan={initialUpgradePlan}
         />
-        <div className="flex flex-col gap-8 animate-in fade-in duration-700">
 
-          {/* Top Intelligence Bar */}
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 p-4 rounded-3xl bg-white/[0.02] border border-white/5 backdrop-blur-sm">
-            <div className="flex items-center gap-4">
-              <div className="relative">
-                {authLoading ? (
-                  <div className="w-12 h-12 rounded-2xl bg-muted animate-pulse" />
-                ) : (
-                  <UserAvatar
-                    src={userData?.photoURL || user?.photoURL}
-                    name={getFullName(user, userData)}
-                    size="lg"
-                    className="border-2 border-primary/50 p-1 blue-glow rounded-2xl"
-                  />
-                )}
-                <div className="absolute -bottom-1 -right-1 w-6 h-6 bg-accent rounded-full border-2 border-background flex items-center justify-center cyan-glow">
-                  <span className="text-[10px] font-bold text-black">{stats?.level || 1}</span>
-                </div>
-              </div>
-              <div>
-                {authLoading ? (
-                  <div className="space-y-2">
-                    <div className="h-8 w-48 bg-muted animate-pulse rounded" />
-                    <div className="h-4 w-32 bg-muted animate-pulse rounded" />
-                  </div>
-                ) : (
-                  <>
-                    <h1 className="text-3xl font-bold font-headline tracking-tight">
-                      Welcome back{getDisplayName(user, userData) ? `, ${getDisplayName(user, userData)}` : ''}
-                    </h1>
-                    <div className="flex items-center gap-3 mt-1">
-                      <Badge className="bg-white/5 text-muted-foreground border-white/10 text-[9px] font-bold px-3 py-0.5 uppercase tracking-widest">{(stats?.tier || 'explorer').toUpperCase()} Tier</Badge>
-                      <p className="text-[10px] text-muted-foreground flex items-center gap-1 font-bold uppercase tracking-wider">
-                        <Clock className="w-3 h-3" /> Streak: {stats?.streak || 0} days
+        <div className="grid gap-8 xl:grid-cols-[1fr_340px]">
+          <section className="space-y-8">
+            <div className="overflow-hidden rounded-[18px] border border-white/[0.08] bg-[#151A2E]/72 shadow-[0_30px_90px_rgba(0,0,0,0.36)] backdrop-blur-2xl">
+              <div className="relative p-6 sm:p-8 lg:p-10">
+                <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_74%_16%,rgba(139,92,246,0.36),transparent_34%),radial-gradient(circle_at_14%_8%,rgba(79,157,255,0.22),transparent_36%)]" />
+                <div className="relative space-y-8">
+                  <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
+                    <div>
+                      <p className="text-sm text-[#BFC6D4]">Welcome back</p>
+                      <h1 className="mt-2 text-4xl font-semibold tracking-tight text-white sm:text-5xl">
+                        {getDisplayName(user, userData)}, ready to grow?
+                      </h1>
+                      <p className="mt-4 max-w-2xl text-base leading-7 text-[#BFC6D4]">
+                        Your business operating system is ready. Create, learn, connect, sell, and measure from one calm command center.
                       </p>
                     </div>
-                  </>
-                )}
+                    <Button
+                      onClick={() => setShowUpgrade(true)}
+                      className="h-12 rounded-[16px] bg-gradient-to-r from-[#4F9DFF] via-[#5B5FFF] to-[#8B5CF6] px-5 font-medium shadow-[0_18px_45px_rgba(91,95,255,0.28)]"
+                    >
+                      <Crown className="h-4 w-4" />
+                      Upgrade plan
+                    </Button>
+                  </div>
+
+                  <div className="grid gap-4 md:grid-cols-3">
+                    <Link href="/roadmap" className="rounded-[18px] border border-white/[0.08] bg-[#090B13]/60 p-5 transition hover:bg-white/[0.06]">
+                      <div className="flex items-center justify-between">
+                        <p className="text-sm font-medium text-white">Continue your journey</p>
+                        <ChevronRight className="h-4 w-4 text-[#BFC6D4]" />
+                      </div>
+                      <p className="mt-2 text-sm text-[#BFC6D4]">AI Business Roadmap</p>
+                      <Progress value={60} className="mt-4 h-2" />
+                    </Link>
+                    <Link href="/ai/studio" className="rounded-[18px] border border-white/[0.08] bg-[#090B13]/60 p-5 transition hover:bg-white/[0.06]">
+                      <div className="flex items-center justify-between">
+                        <p className="text-sm font-medium text-white">Your next step</p>
+                        <Sparkles className="h-4 w-4 text-[#8B5CF6]" />
+                      </div>
+                      <p className="mt-2 text-sm text-[#BFC6D4]">Create content with AI</p>
+                    </Link>
+                    <div className="rounded-[18px] border border-white/[0.08] bg-[#090B13]/60 p-5">
+                      <div className="flex items-center justify-between">
+                        <p className="text-sm font-medium text-white">Daily goal</p>
+                        <Target className="h-4 w-4 text-[#4F9DFF]" />
+                      </div>
+                      <p className="mt-2 text-sm text-[#BFC6D4]">{missionProgress}% completed</p>
+                      <Progress value={missionProgress} className="mt-4 h-2" />
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
 
-            <div className="flex flex-wrap gap-4 md:gap-8">
-              {/* Dynamic CTA based on tier */}
-              {stats?.tier === 'elite' ? (
-                <Badge className="bg-yellow-500/20 text-yellow-400 border-yellow-500/30 h-12 px-6 text-xs uppercase font-bold flex items-center gap-2">
-                  <Crown className="w-4 h-4" /> Elite Member
-                </Badge>
-              ) : stats?.tier === 'pro' ? (
-                <div className="flex items-center gap-3">
-                  <Badge className="bg-cyan-500/20 text-cyan-400 border-cyan-500/30 h-12 px-6 text-xs uppercase font-bold flex items-center gap-2">
-                    <Zap className="w-4 h-4" /> Pro Active
-                  </Badge>
-                  <Button onClick={() => { setInitialUpgradePlan('elite'); setShowUpgrade(true); }} variant="outline" className="rounded-xl h-12 px-4 font-bold text-xs border-yellow-500/30 text-yellow-400 hover:bg-yellow-500/10">
-                    <Crown className="w-4 h-4 mr-2" /> Go Elite
+            <section className="space-y-4">
+              <div>
+                <h2 className="text-xl font-semibold tracking-tight text-white">Quick actions</h2>
+                <p className="mt-1 text-sm text-[#BFC6D4]">Move faster across the SDC ecosystem.</p>
+              </div>
+              <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                <OperatingCard title="Ask AI Mentor" description="Get guidance on the next business move." href="/mentor" icon={Bot} tone="purple" />
+                <OperatingCard title="Go to AI Studio" description="Create images, video, voice, and copy." href="/ai/studio" icon={Sparkles} tone="blue" />
+                <OperatingCard title="Post in Community" description="Share progress and get feedback." href="/community" icon={Users} tone="green" />
+                <OperatingCard title="Explore Marketplace" description="Find products, templates, and offers." href="/marketplace" icon={ShoppingBag} tone="pink" />
+              </div>
+            </section>
+
+            <div className="grid gap-6 lg:grid-cols-2">
+              <div className="rounded-[18px] border border-white/[0.08] bg-[#151A2E]/72 p-5 shadow-[0_18px_60px_rgba(0,0,0,0.22)]">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h2 className="text-lg font-semibold text-white">Business progress</h2>
+                    <p className="mt-1 text-sm text-[#BFC6D4]">Your roadmap and activity signal.</p>
+                  </div>
+                  <Button asChild variant="ghost" className="rounded-2xl text-[#BFC6D4]">
+                    <Link href="/roadmap">View roadmap</Link>
                   </Button>
                 </div>
-              ) : (
-                <Button onClick={() => setShowUpgrade(true)} className="bg-primary hover:bg-primary/90 rounded-xl h-12 px-6 font-bold blue-glow transition-all active:scale-95 text-xs">
-                  <Zap className="w-4 h-4 mr-2 fill-white" /> Upgrade for Pro Stats
-                </Button>
-              )}
-              <div className="h-10 w-px bg-white/5 hidden md:block" />
-              <Button asChild size="icon" variant="ghost" className="rounded-full bg-white/5 relative">
-                <Link href="/notifications" aria-label="Notifications">
-                  <Bell className="w-5 h-5 text-muted-foreground" />
-                  <div className="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full border border-background" />
-                </Link>
-              </Button>
-            </div>
-          </div>
-
-          {/* Primary Grid Layout */}
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-
-            {/* Left Column */}
-            <div className="lg:col-span-3 flex flex-col gap-6">
-              <GlassCard className="p-5 flex flex-col gap-4">
-                <div className="flex items-center justify-between">
-                  <h3 className="font-bold text-xs uppercase tracking-widest flex items-center gap-2">
-                    <Trophy className="w-4 h-4 text-yellow-500" /> Leaderboard
-                  </h3>
-                  <Link href="/community" aria-label="Open community">
-                    <ChevronRight className="w-4 h-4 text-muted-foreground cursor-pointer hover:text-white" />
-                  </Link>
-                </div>
-                {leadersError && (
-                  <div className="flex items-center gap-2 p-3 rounded-lg bg-red-500/10 border border-red-500/20">
-                    <AlertCircle className="w-4 h-4 text-red-400" />
-                    <span className="text-xs text-red-300">Failed to load leaderboard</span>
+                <div className="mt-5 rounded-[18px] border border-white/[0.08] bg-[#090B13]/55 p-5">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="font-medium text-white">AI Business Roadmap</p>
+                      <p className="mt-1 text-sm text-[#BFC6D4]">Level {stats?.level || 1} - Foundation Builder</p>
+                    </div>
+                    <span className="text-sm text-white">60%</span>
                   </div>
-                )}
-                {leadersLoading ? (
-                  <div className="flex items-center justify-center py-8">
-                    <Loader className="w-4 h-4 animate-spin text-muted-foreground" />
-                  </div>
-                ) : (
-                  <div className="space-y-4">
-                    {leaders.map((leader, i) => (
-                      <div key={leader.uid} className="flex items-center justify-between group cursor-pointer">
-                        <div className="flex items-center gap-3">
-                          <span className="text-xs font-bold text-muted-foreground w-3">{i + 1}</span>
-                          <UserAvatar
-                            src={leader.avatar}
-                            name={leader.name}
-                            size="sm"
-                            className="border border-white/10"
-                          />
-                          <span className="text-[11px] font-bold group-hover:text-primary transition-colors">{leader.name}</span>
-                        </div>
-                        <span className="text-[9px] font-bold text-muted-foreground">{leader.xp.toLocaleString()} XP</span>
+                  <Progress value={60} className="mt-4 h-2" />
+                  <div className="mt-5 space-y-3">
+                    {["Complete profile", "Join the community", "Ask AI Mentor 3 times", "Create your first post"].map((item, index) => (
+                      <div key={item} className="flex items-center justify-between gap-3 text-sm">
+                        <span className="flex items-center gap-3 text-[#BFC6D4]">
+                          <CheckCircle2 className={cn("h-4 w-4", index < 2 ? "text-[#22C55E]" : "text-[#7E8799]")} />
+                          {item}
+                        </span>
+                        <span className="text-[#7E8799]">{index < 2 ? "Done" : "Open"}</span>
                       </div>
                     ))}
                   </div>
-                )}
-              </GlassCard>
-
-              <GlassCard className="p-5 flex flex-col gap-4">
-                <h3 className="font-bold text-xs uppercase tracking-widest flex items-center gap-2 text-accent">
-                  <Layers className="w-4 h-4" /> Power Tools
-                </h3>
-                <div className="grid grid-cols-2 gap-3">
-                  {[
-                    { 
-                      icon: <Target className="w-4 h-4" />, 
-                      label: "Strategy", 
-                      href: "/tools/strategy",
-                      description: "AI-powered strategy planning",
-                      locked: false,
-                      comingSoon: true,
-                    },
-                    { 
-                      icon: <Zap className="w-4 h-4" />, 
-                      label: "Autopilot", 
-                      href: "/tools/autopilot",
-                      locked: true,
-                      requiredTier: "pro",
-                      description: "Automated growth systems",
-                      comingSoon: true,
-                    },
-                    { 
-                      icon: <Users className="w-4 h-4" />, 
-                      label: "Network", 
-                      href: "/tools/network",
-                      locked: true,
-                      requiredTier: "pro",
-                      description: "Connect with other founders",
-                      comingSoon: true,
-                    },
-                    { 
-                      icon: <Search className="w-4 h-4" />, 
-                      label: "Insight", 
-                      href: "/tools/insights",
-                      locked: true,
-                      requiredTier: "elite",
-                      description: "Advanced analytics & insights",
-                      comingSoon: true,
-                    }
-                  ].map((tool, i) => (
-                    <div key={i} className="relative group/tooltip">
-                      <button
-                        onClick={() => router.push(tool.href)}
-                        className={`w-full flex flex-col items-center justify-center p-3 rounded-xl bg-white/5 border border-white/5 hover:border-accent/50 hover:bg-accent/5 transition-all group relative ${tool.locked ? 'opacity-60' : ''}`}
-                      >
-                        <div className={`mb-1 transition-colors ${tool.locked ? 'text-muted-foreground' : 'text-muted-foreground group-hover:text-accent'}`}>
-                          {tool.icon}
-                        </div>
-                        <span className="text-[9px] font-bold uppercase tracking-tight">{tool.label}</span>
-                        {tool.comingSoon && (
-                          <span className="absolute -top-1 -right-1 flex h-2 w-2">
-                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75"></span>
-                            <span className="relative inline-flex rounded-full h-2 w-2 bg-primary"></span>
-                          </span>
-                        )}
-                        {tool.locked && <Lock className="absolute top-1 right-1 w-2.5 h-2.5 text-muted-foreground" />}
-                      </button>
-                      
-                      {/* Tooltip */}
-                      <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-2 bg-popover border border-border rounded-lg shadow-lg opacity-0 invisible group-hover/tooltip:opacity-100 group-hover/tooltip:visible transition-all duration-200 z-50 w-44">
-                        <p className="text-[10px] font-medium text-white text-center">
-                          {tool.description}
-                        </p>
-                        <p className="text-[9px] text-primary text-center mt-1">
-                          Preview now →
-                        </p>
-                        {tool.locked && (
-                          <p className="text-[9px] text-muted-foreground text-center mt-1 border-t border-border pt-1">
-                            Requires {tool.requiredTier} tier
-                          </p>
-                      )}
-                        <div className="absolute top-full left-1/2 -translate-x-1/2 -mt-1 border-4 border-transparent border-t-popover" />
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </GlassCard>
-
-              <GlassCard className="p-5 flex flex-col gap-4">
-                <div className="flex items-center justify-between gap-3">
-                  <h3 className="font-bold text-xs uppercase tracking-widest flex items-center gap-2 text-cyan-300">
-                    <Sparkles className="w-4 h-4" /> AI Account
-                  </h3>
-                  <Link href="/settings" className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground hover:text-white">
-                    Open settings
-                  </Link>
-                </div>
-
-                {creditLoading ? (
-                  <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4 text-sm text-muted-foreground">
-                    Loading your AI balance...
-                  </div>
-                ) : creditError ? (
-                  <div className="rounded-xl border border-red-500/20 bg-red-500/10 p-4 text-sm text-red-200">
-                    {creditError}
-                  </div>
-                ) : creditDashboard ? (
-                  <>
-                    <div className="grid grid-cols-2 gap-3">
-                      <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
-                        <p className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground">Credits left</p>
-                        <p className="mt-1 text-lg font-bold">{creditDashboard.snapshot.remainingCredits}</p>
-                      </div>
-                      <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
-                        <p className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground">BYOK</p>
-                        <p className="mt-1 text-lg font-bold">{creditDashboard.snapshot.byokEnabled ? "On" : "Off"}</p>
-                      </div>
-                      <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
-                        <p className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground">Mode</p>
-                        <p className="mt-1 text-lg font-bold capitalize">{creditDashboard.snapshot.providerMode}</p>
-                      </div>
-                      <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
-                        <p className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground">Reset</p>
-                        <p className="mt-1 text-xs font-medium text-white/80">
-                          {new Date(creditDashboard.snapshot.nextResetAt).toLocaleDateString()}
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="space-y-2 text-xs text-muted-foreground">
-                      <p>{creditDashboard.snapshot.monthlyCreditsUsed} used this month</p>
-                      <p>{creditDashboard.snapshot.monthlyCreditsReserved} reserved for active jobs</p>
-                      <p>Daily cap {creditDashboard.budgetSummary.dailyCap} · monthly cap {creditDashboard.budgetSummary.monthlyCap}</p>
-                    </div>
-
-                    <div className="flex flex-wrap gap-2">
-                      <Button asChild size="sm" variant="outline">
-                        <Link href="/settings/credits">Credits</Link>
-                      </Button>
-                      <Button asChild size="sm" variant="outline">
-                        <Link href="/settings/ai-providers">Providers</Link>
-                      </Button>
-                      <Button asChild size="sm" variant="outline">
-                        <Link href="/settings">All settings</Link>
-                      </Button>
-                    </div>
-                  </>
-                ) : null}
-              </GlassCard>
-
-              <div className="p-6 rounded-3xl bg-gradient-to-br from-purple-900/20 to-transparent border border-purple-500/20 relative overflow-hidden group flex flex-col gap-4">
-                <Sparkles className="absolute top-2 right-2 w-12 h-12 text-purple-500/10 -rotate-12 group-hover:scale-110 transition-transform" />
-                <p className="text-sm text-purple-200 leading-relaxed relative z-10">
-                  {stats?.goal
-                    ? `Your current growth goal is ${stats.goal}. Use the AI Coach to keep your roadmap aligned with that focus.`
-                    : "Complete your growth profile to unlock a clearer weekly focus from Soma AI."}
-                </p>
-                <div className="flex gap-2 relative z-10">
-                  <Button asChild variant="outline" className="h-9 px-4 rounded-xl text-xs font-bold border-purple-500/30 text-purple-200 hover:bg-purple-500/10">
-                    <Link href="/roadmap">
-                      <Target className="w-3.5 h-3.5 mr-2" /> View My Roadmap
-                    </Link>
-                  </Button>
-                </div>
-                <div className="flex items-center gap-2 mt-auto">
-                  <div className="h-0.5 w-6 bg-purple-500/50" />
-                  <span className="text-[10px] font-bold uppercase text-purple-400">Hub Logic Engine</span>
                 </div>
               </div>
-            </div>
 
-            {/* Center Column */}
-            <div className="lg:col-span-6 flex flex-col gap-8">
-              <GlassCard className="p-0 overflow-hidden flex flex-col min-h-[400px]">
-                <div className="p-6 border-b border-white/5 flex items-center justify-between bg-white/[0.01]">
-                  <div className="flex flex-col">
-                    <h3 className="text-lg font-bold font-headline flex items-center gap-2">
-                      <TrendingUp className="w-5 h-5 text-primary" /> Performance Analytics
-                    </h3>
-                    <p className="text-[10px] text-muted-foreground uppercase tracking-widest font-bold">Weekly Activity View</p>
-                  </div>
-                  <div className="flex gap-2">
-                    <Badge variant="outline" className="border-white/10 hover:bg-white/5 cursor-pointer text-[9px] font-bold uppercase">Activity XP</Badge>
-                    <Badge onClick={() => setShowUpgrade(true)} variant="outline" className="border-accent/20 text-accent bg-accent/5 cursor-pointer text-[9px] font-bold uppercase">Unlock Reach Insights <Lock className="w-2 h-2 ml-1" /></Badge>
-                  </div>
-                </div>
-                {perfError && (
-                  <div className="p-6 flex items-center gap-2 text-red-300">
-                    <AlertCircle className="w-4 h-4" />
-                    <span className="text-sm">Failed to load performance data</span>
-                  </div>
-                )}
-                {perfLoading ? (
-                  <div className="p-6 h-[300px] w-full flex items-center justify-center">
-                    <Loader className="w-6 h-6 animate-spin text-muted-foreground" />
-                  </div>
-                ) : (
-                  <div className="p-6 h-[300px] w-full">
-                    {performanceData.length > 0 ? (
-                      <ResponsiveContainer width="100%" height="100%">
-                        <AreaChart data={performanceData}>
-                          <defs>
-                            <linearGradient id="colorXp" x1="0" y1="0" x2="0" y2="1">
-                              <stop offset="5%" stopColor="#1A66FF" stopOpacity={0.4} />
-                              <stop offset="95%" stopColor="#1A66FF" stopOpacity={0} />
-                            </linearGradient>
-                          </defs>
-                          <CartesianGrid strokeDasharray="3 3" stroke="#ffffff05" vertical={false} />
-                          <XAxis dataKey="name" stroke="#ffffff33" fontSize={10} tickLine={false} axisLine={false} />
-                          <YAxis stroke="#ffffff33" fontSize={10} tickLine={false} axisLine={false} />
-                          <Area type="monotone" dataKey="xp" stroke="#1A66FF" fillOpacity={1} fill="url(#colorXp)" strokeWidth={3} />
-                        </AreaChart>
-                      </ResponsiveContainer>
-                    ) : (
-                      <div className="flex items-center justify-center h-full text-muted-foreground">
-                        No data available
-                      </div>
-                    )}
-                  </div>
-                )}
-                <div className="p-4 bg-white/5 border-t border-white/5 flex justify-around">
-                  <div className="text-center">
-                    <p className="text-[9px] text-muted-foreground font-bold uppercase tracking-wider">TOTAL XP</p>
-                    <p className="text-sm font-bold">{stats?.currentXP?.toLocaleString() || 0}</p>
-                  </div>
-                  <div className="text-center opacity-40">
-                    <p className="text-[9px] text-muted-foreground font-bold uppercase tracking-wider">REACH <Lock className="inline w-2 h-2" /></p>
-                    <p className="text-sm font-bold">Locked</p>
-                  </div>
-                  <div className="text-center opacity-40">
-                    <p className="text-[9px] text-muted-foreground font-bold uppercase tracking-wider">CONV % <Lock className="inline w-2 h-2" /></p>
-                    <p className="text-sm font-bold text-green-400">Locked</p>
-                  </div>
-                </div>
-              </GlassCard>
-
-              <div className="rounded-[2.5rem] bg-[#020617] border border-primary/30 p-8 relative overflow-hidden group shadow-[0_0_50px_-12px_rgba(26,102,255,0.2)]">
-                <div className="flex items-start gap-6 relative z-10">
-                  <div className="w-14 h-14 rounded-2xl bg-primary flex items-center justify-center blue-glow shrink-0 animate-pulse">
-                    <Bot className="w-8 h-8 text-white" />
-                  </div>
-                  <div className="flex-1 flex flex-col gap-3">
-                    <div className="flex items-center justify-between">
-                      <h4 className="text-xl font-bold font-headline flex items-center gap-2">
-                        Legacy Mentor <Badge className="bg-white/5 text-muted-foreground border-white/10 uppercase tracking-widest text-[8px]">{(stats?.tier || 'explorer').toUpperCase()}</Badge>
-                      </h4>
-                      <Sparkles className="w-4 h-4 text-yellow-400" />
-                    </div>
-                    <p className="text-sm text-blue-100/80 leading-relaxed italic">
-                      "{getDisplayName(user, userData) || 'Explorer'}, you've maintained a {stats?.streak || 0}-day streak. Your trajectory is positive. {stats?.tier === 'explorer' ? 'Upgrade to Pro for enhanced insights and high-velocity market audits.' : 'Keep leveraging these tools for maximum impact.'}"
-                    </p>
-                    <div className="flex gap-4 mt-2">
-                      {stats?.tier === 'explorer' && (
-                        <button onClick={() => setShowUpgrade(true)} className="text-[10px] font-bold text-primary flex items-center gap-1 uppercase tracking-widest hover:underline">
-                          Apply Pro Logic Patch <ChevronRight className="w-3 h-3" />
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Right Column */}
-            <div className="lg:col-span-3 flex flex-col gap-6">
-              <GlassCard className="p-6 flex flex-col items-center gap-4 text-center bg-gradient-to-b from-accent/5 to-transparent border-t-2 border-t-accent">
-                <div className="relative">
-                  <div className="w-20 h-20 rounded-full bg-accent/10 flex items-center justify-center cyan-glow border-2 border-accent/20">
-                    <Flame className="w-10 h-10 text-accent animate-bounce" />
-                  </div>
-                  <div className="absolute -top-2 -right-2 bg-background border border-accent/30 rounded-full px-2 py-0.5 text-[10px] font-bold text-accent">
-                    HOT
-                  </div>
-                </div>
-                <div>
-                  <h3 className="text-3xl font-bold font-headline uppercase">{String(stats?.streak || 0).padStart(2, '0')} DAYS</h3>
-                  <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mt-1">Active Streak</p>
-                </div>
-                <div className="flex gap-2 w-full">
-                  {[...Array(7)].map((_, i) => (
-                    <div key={i} className={`h-1.5 flex-1 rounded-full ${i < (stats?.streak || 0) ? 'bg-accent cyan-glow' : 'bg-white/5'}`} />
-                  ))}
-                </div>
-              </GlassCard>
-
-              <GlassCard className="p-5 flex flex-col gap-4">
+              <div className="rounded-[18px] border border-white/[0.08] bg-[#151A2E]/72 p-5 shadow-[0_18px_60px_rgba(0,0,0,0.22)]">
                 <div className="flex items-center justify-between">
-                  <h3 className="font-bold text-xs uppercase tracking-widest flex items-center gap-2">
-                    <CheckCircle2 className="w-4 h-4 text-green-500" /> Daily Missions
-                  </h3>
+                  <div>
+                    <h2 className="text-lg font-semibold text-white">Weekly performance</h2>
+                    <p className="mt-1 text-sm text-[#BFC6D4]">Activity across your operating system.</p>
+                  </div>
+                  <BarChart3 className="h-5 w-5 text-[#4F9DFF]" />
                 </div>
-                {missionsError && (
-                  <div className="flex items-center gap-2 p-3 rounded-lg bg-red-500/10 border border-red-500/20">
-                    <AlertCircle className="w-4 h-4 text-red-400" />
-                    <span className="text-xs text-red-300">Failed to load missions</span>
-                  </div>
-                )}
-                {missionsLoading ? (
-                  <div className="flex items-center justify-center py-6">
-                    <Loader className="w-4 h-4 animate-spin text-muted-foreground" />
-                  </div>
-                ) : missions.length === 0 ? (
-                  <div className="p-4 rounded-xl border border-dashed border-white/10 text-center text-sm text-muted-foreground">
-                    No daily missions are available yet. They are assigned automatically each day.
-                  </div>
-                ) : (
-                  <div className="space-y-3">
-                    {missions.map((mission) => {
-                      const isLocked = mission.lockedForTier && mission.lockedForTier !== 'explorer' && stats?.tier === 'explorer';
+                <div className="mt-6 flex h-52 items-end gap-3">
+                  {perfLoading ? (
+                    <div className="flex w-full items-center justify-center">
+                      <Loader className="h-5 w-5 animate-spin text-[#7E8799]" />
+                    </div>
+                  ) : performanceData.length ? (
+                    performanceData.slice(-7).map((item: any, index: number) => {
+                      const value = Math.max(12, Math.min(100, Number(item.xp || item.value || 0)));
                       return (
-                        <div
-                          key={mission.id}
-                          onClick={() => {
-                            if (!isLocked && !mission.completed) {
-                              completeMission(mission.id);
-                            } else if (isLocked) {
-                              setShowUpgrade(true);
-                            }
-                          }}
-                          className={`p-3 rounded-xl border flex items-center justify-between transition-all cursor-pointer ${
-                            isLocked 
-                              ? 'opacity-40 border-dashed border-white/10' 
-                              : mission.completed
-                              ? 'bg-green-500/5 border-green-500/20'
-                              : 'bg-white/5 border-white/5 hover:bg-white/10'
-                          }`}
-                        >
-                          <div className="flex items-center gap-3">
-                            <div className={`w-4 h-4 rounded border flex items-center justify-center transition-colors ${
-                              mission.completed 
-                                ? 'bg-green-500 border-green-500' 
-                                : 'border-white/20 hover:border-primary'
-                            }`}>
-                              {mission.completed && <CheckCircle2 className="w-3 h-3 text-black" />}
-                            </div>
-                            <span className={`text-[11px] font-bold ${mission.completed ? 'line-through text-muted-foreground' : 'text-white'}`}>{mission.title}</span>
+                        <div key={`${item.name}-${index}`} className="flex flex-1 flex-col items-center gap-2">
+                          <div className="flex h-40 w-full items-end rounded-full bg-white/[0.04]">
+                            <div
+                              className="w-full rounded-full bg-gradient-to-t from-[#5B5FFF] to-[#4F9DFF] shadow-[0_8px_30px_rgba(79,157,255,0.28)]"
+                              style={{ height: `${value}%` }}
+                            />
                           </div>
-                          {isLocked ? (
-                            <Lock className="w-3 h-3" />
-                          ) : (
-                            <Badge variant="outline" className="text-[9px] text-accent font-bold border-white/10">{mission.xp > 0 ? `+${mission.xp}` : ''} XP</Badge>
-                          )}
+                          <span className="text-[11px] text-[#7E8799]">{item.name}</span>
                         </div>
                       );
-                    })}
-                  </div>
-                )}
-              </GlassCard>
-
-              <PremiumLock feature="Elite Live Sessions" description="Unlock live sessions when they are scheduled for your membership tier.">
-                <GlassCard className="p-5 flex flex-col gap-4 border-l-4 border-l-primary">
-                  <h3 className="font-bold text-xs uppercase tracking-widest flex items-center gap-2">
-                    <Video className="w-4 h-4 text-primary" /> Live Sessions
-                  </h3>
-                  <div className="p-3 rounded-xl bg-primary/5 border border-primary/10 text-sm text-muted-foreground">
-                    No live sessions are scheduled yet.
-                  </div>
-                </GlassCard>
-              </PremiumLock>
+                    })
+                  ) : (
+                    <div className="flex w-full items-center justify-center text-sm text-[#BFC6D4]">No activity yet.</div>
+                  )}
+                </div>
+              </div>
             </div>
-          </div>
+
+            <section className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="text-xl font-semibold tracking-tight text-white">Recommended for you</h2>
+                  <p className="mt-1 text-sm text-[#BFC6D4]">Content and tools aligned with your current stage.</p>
+                </div>
+                <Button asChild variant="ghost" className="rounded-2xl text-[#BFC6D4]">
+                  <Link href="/marketplace">View all</Link>
+                </Button>
+              </div>
+              <div className="grid gap-4 md:grid-cols-3">
+                {[
+                  { title: "Content That Converts", type: "Course", href: "/marketplace" },
+                  { title: "AI Writer Pro", type: "Tool", href: "/ai/studio" },
+                  { title: "Start Your Online Business", type: "Guide", href: "/my-courses" },
+                ].map((item) => (
+                  <Link key={item.title} href={item.href} className="rounded-[18px] border border-white/[0.08] bg-[#151A2E]/72 p-5 transition hover:-translate-y-1 hover:bg-[#1A2140]/85">
+                    <Badge className="rounded-full bg-white/[0.06] text-[#BFC6D4]">{item.type}</Badge>
+                    <p className="mt-4 text-base font-medium text-white">{item.title}</p>
+                    <p className="mt-2 text-sm text-[#BFC6D4]">Open inside your SDC operating system.</p>
+                  </Link>
+                ))}
+              </div>
+            </section>
+          </section>
+
+          <aside className="space-y-6">
+            <div className="rounded-[18px] border border-white/[0.08] bg-[#151A2E]/72 p-5 shadow-[0_18px_60px_rgba(0,0,0,0.22)]">
+              <div className="flex items-center justify-between">
+                <h2 className="text-lg font-semibold text-white">Your plan</h2>
+                <Button variant="ghost" className="rounded-2xl text-[#BFC6D4]" onClick={() => setShowUpgrade(true)}>
+                  Manage
+                </Button>
+              </div>
+              <div className="mt-6 flex items-center gap-5">
+                <div className="flex h-28 w-28 shrink-0 items-center justify-center rounded-full bg-[conic-gradient(from_180deg,#5B5FFF_0_68%,rgba(255,255,255,0.08)_68%_100%)] p-3">
+                  <div className="flex h-full w-full flex-col items-center justify-center rounded-full bg-[#111827]">
+                    <span className="text-2xl font-semibold">{creditLoading ? "--" : `${creditUsage}%`}</span>
+                    <span className="text-xs text-[#BFC6D4]">used</span>
+                  </div>
+                </div>
+                <div className="grid flex-1 gap-3 text-sm">
+                  <div className="flex justify-between gap-3 text-[#BFC6D4]"><span>Credits</span><span className="text-white">{creditDashboard?.snapshot.remainingCredits ?? "--"}</span></div>
+                  <div className="flex justify-between gap-3 text-[#BFC6D4]"><span>Reserved</span><span className="text-white">{creditDashboard?.snapshot.monthlyCreditsReserved ?? "--"}</span></div>
+                  <div className="flex justify-between gap-3 text-[#BFC6D4]"><span>BYOK</span><span className="text-white">{creditDashboard?.snapshot.byokEnabled ? "On" : "Off"}</span></div>
+                  <div className="flex justify-between gap-3 text-[#BFC6D4]"><span>Mode</span><span className="text-white capitalize">{creditDashboard?.snapshot.providerMode || "hybrid"}</span></div>
+                </div>
+              </div>
+              <p className="mt-5 border-t border-white/[0.06] pt-4 text-sm text-[#7E8799]">
+                {creditDashboard?.snapshot.nextResetAt
+                  ? `Resets ${new Date(creditDashboard.snapshot.nextResetAt).toLocaleDateString()}`
+                  : "Credit usage updates automatically."}
+              </p>
+            </div>
+
+            <div className="rounded-[18px] border border-white/[0.08] bg-[#151A2E]/72 p-5 shadow-[0_18px_60px_rgba(0,0,0,0.22)]">
+              <div className="flex items-center justify-between">
+                <h2 className="text-lg font-semibold text-white">Daily goals</h2>
+                <Target className="h-5 w-5 text-[#4F9DFF]" />
+              </div>
+              <div className="mt-5 space-y-3">
+                {missionsLoading ? (
+                  <div className="flex justify-center py-8"><Loader className="h-5 w-5 animate-spin text-[#7E8799]" /></div>
+                ) : missions.length ? (
+                  missions.slice(0, 4).map((mission) => (
+                    <button
+                      key={mission.id}
+                      type="button"
+                      onClick={() => !mission.completed && completeMission(mission.id)}
+                      className="flex w-full items-center justify-between gap-3 rounded-[16px] border border-white/[0.08] bg-[#090B13]/55 px-4 py-3 text-left transition hover:bg-white/[0.06]"
+                    >
+                      <span className="flex items-center gap-3 text-sm text-[#BFC6D4]">
+                        <CheckCircle2 className={cn("h-4 w-4", mission.completed ? "text-[#22C55E]" : "text-[#7E8799]")} />
+                        {mission.title}
+                      </span>
+                      <span className="text-xs text-[#7E8799]">+{mission.xp} XP</span>
+                    </button>
+                  ))
+                ) : (
+                  <p className="rounded-[16px] border border-dashed border-white/[0.08] p-4 text-sm text-[#BFC6D4]">No goals assigned yet.</p>
+                )}
+              </div>
+            </div>
+
+            <div className="rounded-[18px] border border-white/[0.08] bg-[#151A2E]/72 p-5 shadow-[0_18px_60px_rgba(0,0,0,0.22)]">
+              <div className="flex items-center justify-between">
+                <h2 className="text-lg font-semibold text-white">Upcoming events</h2>
+                <Button asChild variant="ghost" className="rounded-2xl text-[#BFC6D4]">
+                  <Link href="/social/calendar">View all</Link>
+                </Button>
+              </div>
+              <div className="mt-5 space-y-4">
+                {[
+                  ["May 24", "Live Coaching Call", "7:00 PM EAT"],
+                  ["May 27", "Content That Converts", "8:00 PM EAT"],
+                  ["May 31", "AI Masterclass", "7:00 PM EAT"],
+                ].map(([date, title, time]) => (
+                  <div key={title} className="flex items-center gap-3">
+                    <div className="flex h-12 w-12 shrink-0 flex-col items-center justify-center rounded-[14px] border border-white/[0.08] bg-[#090B13]/55 text-xs text-white">
+                      <span className="text-[10px] uppercase text-[#F59E0B]">{date.split(" ")[0]}</span>
+                      <span className="font-semibold">{date.split(" ")[1]}</span>
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium text-white">{title}</p>
+                      <p className="text-xs text-[#BFC6D4]">{time}</p>
+                    </div>
+                    <Button size="sm" variant="outline" className="rounded-2xl border-white/[0.08] bg-white/[0.04]">Join</Button>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="rounded-[18px] border border-white/[0.08] bg-[#151A2E]/72 p-5 shadow-[0_18px_60px_rgba(0,0,0,0.22)]">
+              <div className="flex items-center gap-3">
+                <Bot className="h-10 w-10 rounded-2xl bg-gradient-to-br from-[#4F9DFF] to-[#8B5CF6] p-2 text-white" />
+                <div>
+                  <h2 className="text-lg font-semibold text-white">Ask AI Mentor</h2>
+                  <p className="text-sm text-[#BFC6D4]">Your business coach, available 24/7.</p>
+                </div>
+              </div>
+              <Button asChild className="mt-5 h-12 w-full rounded-[16px] bg-gradient-to-r from-[#4F9DFF] via-[#5B5FFF] to-[#8B5CF6] font-medium">
+                <Link href="/mentor">
+                  Chat with AI Mentor
+                  <ArrowRight className="h-4 w-4" />
+                </Link>
+              </Button>
+            </div>
+
+            <div className="rounded-[18px] border border-white/[0.08] bg-[#151A2E]/72 p-5 shadow-[0_18px_60px_rgba(0,0,0,0.22)]">
+              <div className="flex items-center justify-between">
+                <h2 className="text-lg font-semibold text-white">Community activity</h2>
+                <MessageSquare className="h-5 w-5 text-[#8B5CF6]" />
+              </div>
+              <div className="mt-5 space-y-4">
+                {leadersLoading ? (
+                  <div className="flex justify-center py-8"><Loader className="h-5 w-5 animate-spin text-[#7E8799]" /></div>
+                ) : leaders.length ? (
+                  leaders.map((leader) => (
+                    <div key={leader.uid} className="flex items-center gap-3">
+                      <UserAvatar src={leader.avatar} name={leader.name} size="sm" />
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm text-white">{leader.name}</p>
+                        <p className="text-xs text-[#BFC6D4]">{leader.xp.toLocaleString()} XP this season</p>
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <p className="text-sm text-[#BFC6D4]">Community signals will appear here.</p>
+                )}
+              </div>
+            </div>
+          </aside>
         </div>
       </AppLayout>
     </ProtectedRoute>
