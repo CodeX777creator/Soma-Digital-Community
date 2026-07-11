@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import {
   addMonths,
@@ -18,6 +19,7 @@ import {
   CalendarDays,
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
   Clock3,
   Loader2,
   PencilLine,
@@ -47,6 +49,7 @@ import {
   type SocialPlatform,
   type SocialCampaignRecord,
   type SocialCampaignStatus,
+  type SocialAccountRecord,
 } from "@/social/types";
 
 type CalendarResponse = {
@@ -76,6 +79,10 @@ type CalendarCampaignListResponse = {
     campaigns: SocialCampaignRecord[];
   };
   campaigns: SocialCampaignRecord[];
+};
+
+type SocialAccountsResponse = {
+  accounts: SocialAccountRecord[];
 };
 
 interface CalendarFormState {
@@ -279,6 +286,8 @@ export default function SocialCalendarPage() {
   const [selectedPostId, setSelectedPostId] = useState<string | null>(null);
   const [selectedCampaignId, setSelectedCampaignId] = useState<string | null>(null);
   const [dragOverDay, setDragOverDay] = useState<string | null>(null);
+  const [connectedAccounts, setConnectedAccounts] = useState<SocialAccountRecord[]>([]);
+  const [showAdvancedDetails, setShowAdvancedDetails] = useState(false);
   const [form, setForm] = useState<CalendarFormState>(() => buildEmptyForm(getTodayDateString()));
   const [campaignForm, setCampaignForm] = useState<CampaignFormState>(() => buildEmptyCampaignForm());
 
@@ -362,6 +371,15 @@ export default function SocialCalendarPage() {
     return [...filteredPosts].sort((a, b) => new Date(a.scheduledTime).getTime() - new Date(b.scheduledTime).getTime());
   }, [filteredPosts]);
 
+  const connectedPlatforms = useMemo(() => {
+    return new Set(connectedAccounts.filter((account) => account.status === "connected").map((account) => account.providerId));
+  }, [connectedAccounts]);
+
+  const selectedProvider = useMemo(() => {
+    return SOCIAL_PROVIDER_REGISTRY.find((provider) => provider.id === form.platform);
+  }, [form.platform]);
+  const canPublishToSelectedPlatform = connectedPlatforms.has(form.platform);
+
   useEffect(() => {
     setSelectedPostId(null);
     setForm(buildEmptyForm(format(currentMonth, "yyyy-MM-dd")));
@@ -402,6 +420,19 @@ export default function SocialCalendarPage() {
     setCampaignSummary(data.summary);
   };
 
+  const loadConnectedAccounts = async () => {
+    if (!user) return;
+
+    const idToken = await user.getIdToken();
+    const response = await fetch("/api/social/accounts?limit=24", {
+      headers: { Authorization: `Bearer ${idToken}` },
+    });
+
+    if (!response.ok) return;
+    const data = (await response.json()) as SocialAccountsResponse;
+    setConnectedAccounts(data.accounts || []);
+  };
+
   useEffect(() => {
     let mounted = true;
 
@@ -438,6 +469,15 @@ export default function SocialCalendarPage() {
             setCampaignSummary(campaignData.summary);
           }
         }
+        const accountsResponse = await fetch("/api/social/accounts?limit=24", {
+          headers: { Authorization: `Bearer ${idToken}` },
+        });
+        if (accountsResponse.ok) {
+          const accountsData = (await accountsResponse.json()) as SocialAccountsResponse;
+          if (mounted) {
+            setConnectedAccounts(accountsData.accounts || []);
+          }
+        }
       } catch (error) {
         if (mounted) {
           toast({
@@ -470,6 +510,15 @@ export default function SocialCalendarPage() {
     setCampaignForm(buildCampaignFormFromCampaign(selectedCampaign));
   }, [selectedCampaign]);
 
+  useEffect(() => {
+    if (connectedAccounts.length === 0) return;
+    if (connectedPlatforms.has(form.platform)) return;
+    const firstConnected = connectedAccounts.find((account) => account.status === "connected");
+    if (firstConnected) {
+      updateField("platform", firstConnected.providerId);
+    }
+  }, [connectedAccounts, connectedPlatforms, form.platform]);
+
   const updateField = <K extends keyof CalendarFormState>(key: K, value: CalendarFormState[K]) => {
     setForm((current) => ({ ...current, [key]: value }));
   };
@@ -491,7 +540,7 @@ export default function SocialCalendarPage() {
   const refreshCalendar = async () => {
     try {
       setLoading(true);
-      await loadMonth();
+      await Promise.all([loadMonth(), loadConnectedAccounts()]);
       toast({
         title: "Calendar refreshed",
         description: "The latest scheduled content is loaded.",
@@ -526,8 +575,7 @@ export default function SocialCalendarPage() {
     }
   };
 
-  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
+  const savePost = async (nextStatus: ScheduledPostStatus = form.status) => {
     if (!user || loading) return;
 
     try {
@@ -537,7 +585,7 @@ export default function SocialCalendarPage() {
         title: form.title || undefined,
         caption: form.caption,
         platform: form.platform,
-        status: form.status,
+        status: nextStatus,
         scheduledTime: combineDateAndTime(form.scheduledDate, form.scheduledTime),
         assetIds: form.assetIds
           .split(",")
@@ -564,10 +612,11 @@ export default function SocialCalendarPage() {
 
       const data = (await response.json()) as CalendarPostResponse;
       setSelectedPostId(data.post.scheduledPostId);
+      setForm((current) => ({ ...current, status: data.post.status }));
       await loadMonth();
       toast({
-        title: "Scheduled post saved",
-        description: "The calendar entry has been updated.",
+        title: nextStatus === "scheduled" ? "Post scheduled" : "Draft saved",
+        description: nextStatus === "scheduled" ? "Your content has been added to the calendar." : "Your draft is saved in the calendar.",
       });
     } catch (error) {
       toast({
@@ -578,6 +627,11 @@ export default function SocialCalendarPage() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    await savePost(form.status);
   };
 
   const handleCampaignSubmit = async (event: FormEvent<HTMLFormElement>) => {
@@ -866,6 +920,31 @@ export default function SocialCalendarPage() {
             </GlassCard>
           </div>
 
+          {!loadingMonth && connectedAccounts.length > 0 && posts.length === 0 ? (
+            <GlassCard className="p-6">
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                <div>
+                  <h2 className="text-lg font-semibold text-white">Your calendar is ready</h2>
+                  <p className="mt-1 max-w-2xl text-sm leading-6 text-muted-foreground">
+                    Create your first scheduled post, generate content in AI Studio, or connect another platform.
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <Button type="button" onClick={() => clearForm()} className="rounded-[16px]">
+                    <Plus className="h-4 w-4" />
+                    Create post
+                  </Button>
+                  <Button asChild variant="outline" className="rounded-[16px]">
+                    <Link href="/ai/studio">Generate with AI</Link>
+                  </Button>
+                  <Button asChild variant="outline" className="rounded-[16px]">
+                    <Link href="/social">Connect platform</Link>
+                  </Button>
+                </div>
+              </div>
+            </GlassCard>
+          ) : null}
+
           <div className="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
             <section className="space-y-4">
               <GlassCard className="p-4">
@@ -1076,111 +1155,149 @@ export default function SocialCalendarPage() {
             </section>
 
             <aside className="space-y-6">
-              <GlassCard className="p-5">
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <h2 className="text-lg font-semibold">{selectedPost ? "Edit scheduled post" : "Create scheduled post"}</h2>
-                    <p className="text-sm text-muted-foreground">
-                      {selectedPost ? "Update the selected entry or move it to a new slot." : "Add a new calendar item for the chosen day."}
-                    </p>
+              <GlassCard className="overflow-hidden p-0">
+                <div className="border-b border-white/10 bg-gradient-to-br from-[#151A2E] to-[#090B13] p-5">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <h2 className="text-lg font-semibold">{selectedPost ? "Edit post" : "Create post"}</h2>
+                      <p className="text-sm text-muted-foreground">
+                        {selectedPost ? "Update the content or move it to a better time." : "Write once, choose a platform, and schedule it."}
+                      </p>
+                    </div>
+                    <PencilLine className="h-5 w-5 text-primary" />
                   </div>
-                  <PencilLine className="h-5 w-5 text-primary" />
                 </div>
 
-                <form className="mt-4 space-y-4" onSubmit={handleSubmit}>
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium">Platform</label>
-                      <select
-                        className={cn("h-10 w-full rounded-md border border-input bg-background px-3 text-sm")}
-                        value={form.platform}
-                        onChange={(event) => updateField("platform", event.target.value as SocialPlatform)}
-                        aria-label="Scheduled post platform"
-                      >
-                        {SOCIAL_PROVIDER_REGISTRY.map((provider) => (
-                          <option key={provider.id} value={provider.id}>
-                            {provider.label}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium">Status</label>
-                      <select
-                        className={cn("h-10 w-full rounded-md border border-input bg-background px-3 text-sm")}
-                        value={form.status}
-                        onChange={(event) => updateField("status", event.target.value as ScheduledPostStatus)}
-                        aria-label="Scheduled post status"
-                      >
-                        {SCHEDULED_POST_STATUSES.map((status) => (
-                          <option key={status} value={status}>
-                            {STATUS_LABELS[status]}
-                          </option>
-                        ))}
-                      </select>
+                {connectedAccounts.length === 0 ? (
+                  <div className="m-5 rounded-[18px] border border-dashed border-white/10 bg-white/[0.03] p-5">
+                    <h3 className="text-sm font-semibold text-white">Connect an account first</h3>
+                    <p className="mt-2 text-sm leading-6 text-muted-foreground">
+                      Connect Instagram, TikTok, YouTube, Facebook, LinkedIn, or X before scheduling live posts.
+                    </p>
+                    <Button asChild className="mt-4 rounded-[16px]">
+                      <Link href="/social">Connect social account</Link>
+                    </Button>
+                  </div>
+                ) : null}
+
+                <form className="space-y-5 p-5" onSubmit={handleSubmit}>
+                  <div className="space-y-3">
+                    <label className="text-sm font-medium">Choose platform</label>
+                    <div className="grid grid-cols-2 gap-2">
+                      {SOCIAL_PROVIDER_REGISTRY.map((provider) => {
+                        const connected = connectedPlatforms.has(provider.id);
+                        const active = form.platform === provider.id;
+                        return (
+                          <button
+                            key={provider.id}
+                            type="button"
+                            onClick={() => updateField("platform", provider.id)}
+                            disabled={!connected}
+                            className={cn(
+                              "rounded-[16px] border p-3 text-left text-sm transition",
+                              active ? "border-primary/60 bg-primary/15 text-white" : "border-white/10 bg-white/[0.03] text-muted-foreground hover:bg-white/[0.06]",
+                              !connected && "cursor-not-allowed opacity-45"
+                            )}
+                          >
+                            <span className="block font-medium">{provider.label}</span>
+                            <span className="mt-1 block text-[11px]">{connected ? "Connected" : "Not connected"}</span>
+                          </button>
+                        );
+                      })}
                     </div>
                   </div>
 
                   <div className="space-y-2">
-                    <label className="text-sm font-medium">Title</label>
-                    <Input value={form.title} onChange={(event) => updateField("title", event.target.value)} placeholder="Optional post title" />
+                    <label className="text-sm font-medium">Post copy</label>
+                    <Textarea
+                      value={form.caption}
+                      onChange={(event) => updateField("caption", event.target.value)}
+                      rows={8}
+                      placeholder={`Write the ${selectedProvider?.label || "social"} post here...`}
+                      className="rounded-[16px] border-white/10 bg-white/[0.03]"
+                    />
                   </div>
 
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">Caption</label>
-                    <Textarea value={form.caption} onChange={(event) => updateField("caption", event.target.value)} rows={5} placeholder="Write the post copy or publishing notes." />
-                  </div>
-
-                  <div className="grid gap-4 md:grid-cols-2">
+                  <div className="grid gap-3 md:grid-cols-2">
                     <div className="space-y-2">
                       <label className="text-sm font-medium">Date</label>
-                      <Input type="date" value={form.scheduledDate} onChange={(event) => updateField("scheduledDate", event.target.value)} />
+                      <Input type="date" value={form.scheduledDate} onChange={(event) => updateField("scheduledDate", event.target.value)} className="rounded-[16px] border-white/10 bg-white/[0.03]" />
                     </div>
                     <div className="space-y-2">
                       <label className="text-sm font-medium">Time</label>
-                      <Input type="time" value={form.scheduledTime} onChange={(event) => updateField("scheduledTime", event.target.value)} />
-                    </div>
-                  </div>
-
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium">Asset IDs</label>
-                      <Input value={form.assetIds} onChange={(event) => updateField("assetIds", event.target.value)} placeholder="Comma-separated asset IDs" />
-                    </div>
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium">Campaign ID</label>
-                      <select
-                        className={cn("h-10 w-full rounded-md border border-input bg-background px-3 text-sm")}
-                        value={form.campaignId}
-                        onChange={(event) => updateField("campaignId", event.target.value)}
-                        aria-label="Scheduled post campaign"
-                      >
-                        <option value="">No campaign</option>
-                        {campaigns.map((campaign) => (
-                          <option key={campaign.socialCampaignId} value={campaign.socialCampaignId}>
-                            {campaign.campaignName}
-                          </option>
-                        ))}
-                      </select>
+                      <Input type="time" value={form.scheduledTime} onChange={(event) => updateField("scheduledTime", event.target.value)} className="rounded-[16px] border-white/10 bg-white/[0.03]" />
                     </div>
                   </div>
 
                   <div className="space-y-2">
-                    <label className="text-sm font-medium">Timezone</label>
-                    <Input value={form.timezone} onChange={(event) => updateField("timezone", event.target.value)} placeholder="Africa/Nairobi" />
+                    <label className="text-sm font-medium">Campaign</label>
+                    <select
+                      className={cn("h-11 w-full rounded-[16px] border border-white/10 bg-background px-3 text-sm")}
+                      value={form.campaignId}
+                      onChange={(event) => updateField("campaignId", event.target.value)}
+                      aria-label="Choose campaign for scheduled post"
+                    >
+                      <option value="">No campaign</option>
+                      {campaigns.map((campaign) => (
+                        <option key={campaign.socialCampaignId} value={campaign.socialCampaignId}>
+                          {campaign.campaignName}
+                        </option>
+                      ))}
+                    </select>
+                    {campaigns.length === 0 ? (
+                      <p className="text-xs text-muted-foreground">Campaigns are optional. You can organize posts later.</p>
+                    ) : null}
                   </div>
 
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">Notes</label>
-                    <Textarea value={form.notes} onChange={(event) => updateField("notes", event.target.value)} rows={3} placeholder="Internal reminders, context, or approval notes." />
-                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowAdvancedDetails((current) => !current)}
+                    className="flex w-full items-center justify-between rounded-[16px] border border-white/10 bg-white/[0.03] px-4 py-3 text-left text-sm text-muted-foreground transition hover:bg-white/[0.06] hover:text-white"
+                  >
+                    Advanced details
+                    <ChevronDown className={cn("h-4 w-4 transition-transform", showAdvancedDetails && "rotate-180")} />
+                  </button>
 
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Button type="submit" disabled={loading}>
-                      {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : selectedPost ? <PencilLine className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
-                      {selectedPost ? "Save Changes" : "Add to Calendar"}
+                  {showAdvancedDetails ? (
+                    <div className="space-y-4 rounded-[18px] border border-white/10 bg-white/[0.025] p-4">
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium">Post title</label>
+                        <Input value={form.title} onChange={(event) => updateField("title", event.target.value)} placeholder="Optional title for your calendar" />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium">Internal notes</label>
+                        <Textarea value={form.notes} onChange={(event) => updateField("notes", event.target.value)} rows={3} placeholder="Private reminders or approval notes." />
+                      </div>
+                      <div className="grid gap-3 md:grid-cols-2">
+                        <div className="space-y-2">
+                          <label className="text-sm font-medium">Timezone</label>
+                          <Input value={form.timezone} onChange={(event) => updateField("timezone", event.target.value)} placeholder="Optional" />
+                        </div>
+                        <div className="space-y-2">
+                          <label className="text-sm font-medium">Attached media references</label>
+                          <Input value={form.assetIds} onChange={(event) => updateField("assetIds", event.target.value)} placeholder="Optional media references" />
+                        </div>
+                      </div>
+                    </div>
+                  ) : null}
+
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    <Button type="button" variant="outline" disabled={loading || !form.caption.trim() || !canPublishToSelectedPlatform} onClick={() => savePost("draft")} className="h-11 rounded-[16px]">
+                      {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <PencilLine className="h-4 w-4" />}
+                      Save draft
                     </Button>
-                    <Button type="button" variant="outline" onClick={clearForm} disabled={loading}>
+                    <Button type="button" disabled={loading || !form.caption.trim() || !canPublishToSelectedPlatform} onClick={() => savePost("scheduled")} className="h-11 rounded-[16px]">
+                      {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+                      Schedule post
+                    </Button>
+                  </div>
+                  {!canPublishToSelectedPlatform ? (
+                    <p className="text-xs leading-5 text-muted-foreground">
+                      Connect {selectedProvider?.label || "this platform"} before saving posts for it.
+                    </p>
+                  ) : null}
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Button type="button" variant="ghost" onClick={clearForm} disabled={loading}>
                       Clear
                     </Button>
                     {selectedPost ? (

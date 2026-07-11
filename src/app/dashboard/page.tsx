@@ -42,6 +42,8 @@ import {
 import { authFetch } from "@/lib/clientApi";
 import { UserProfile } from "@/lib/db";
 import { cn } from "@/lib/utils";
+import { getPlanLabel, getUpgradeLabel, getUpgradeTarget } from "@/lib/plan-ui";
+import { useUserStore } from "@/store/useUserStore";
 
 type CreditDashboard = {
   snapshot: {
@@ -126,6 +128,7 @@ function DashboardContent() {
   const searchParams = useSearchParams();
   const { user, userData } = useAuth();
   const { refreshUserToken } = useSubscription();
+  const { tier } = useUserStore();
   const { leaders, loading: leadersLoading } = useDashboardLeaderboard(4);
   const { performanceData, loading: perfLoading } = useWeeklyPerformance();
   const { missions, loading: missionsLoading, completeMission } = useDailyMissions();
@@ -136,6 +139,9 @@ function DashboardContent() {
   const [initialUpgradePlan, setInitialUpgradePlan] = useState<"pro" | "elite" | null>(null);
   const [creditDashboard, setCreditDashboard] = useState<CreditDashboard | null>(null);
   const [creditLoading, setCreditLoading] = useState(true);
+  const upgradeTarget = getUpgradeTarget(tier);
+  const planLabel = getPlanLabel(tier);
+  const planActionLabel = getUpgradeLabel(tier);
 
   useEffect(() => {
     setMounted(true);
@@ -226,13 +232,25 @@ function DashboardContent() {
                         Your business operating system is ready. Create, learn, connect, sell, and measure from one calm command center.
                       </p>
                     </div>
-                    <Button
-                      onClick={() => setShowUpgrade(true)}
-                      className="h-12 rounded-[16px] bg-gradient-to-r from-[#4F9DFF] via-[#5B5FFF] to-[#8B5CF6] px-5 font-medium shadow-[0_18px_45px_rgba(91,95,255,0.28)]"
-                    >
-                      <Crown className="h-4 w-4" />
-                      Upgrade plan
-                    </Button>
+                    {upgradeTarget ? (
+                      <Button
+                        onClick={() => {
+                          setInitialUpgradePlan(upgradeTarget);
+                          setShowUpgrade(true);
+                        }}
+                        className="h-12 rounded-[16px] bg-gradient-to-r from-[#4F9DFF] via-[#5B5FFF] to-[#8B5CF6] px-5 font-medium shadow-[0_18px_45px_rgba(91,95,255,0.28)]"
+                      >
+                        <Crown className="h-4 w-4" />
+                        {planActionLabel}
+                      </Button>
+                    ) : (
+                      <Button asChild className="h-12 rounded-[16px] bg-white/[0.06] px-5 font-medium text-white hover:bg-white/[0.1]">
+                        <Link href="/settings/billing">
+                          <Crown className="h-4 w-4" />
+                          Manage Plan
+                        </Link>
+                      </Button>
+                    )}
                   </div>
 
                   <div className="grid gap-4 md:grid-cols-3">
@@ -374,14 +392,32 @@ function DashboardContent() {
 
           <aside className="space-y-6">
             <div className="rounded-[18px] border border-white/[0.08] bg-[#151A2E]/72 p-5 shadow-[0_18px_60px_rgba(0,0,0,0.22)]">
-              <div className="flex items-center justify-between">
-                <h2 className="text-lg font-semibold text-white">Your plan</h2>
-                <Button variant="ghost" className="rounded-2xl text-[#BFC6D4]" onClick={() => setShowUpgrade(true)}>
-                  Manage
-                </Button>
+                <div className="flex items-center justify-between">
+                <h2 className="text-lg font-semibold text-white">{planLabel}</h2>
+                {upgradeTarget ? (
+                  <Button
+                    variant="ghost"
+                    className="rounded-2xl text-[#BFC6D4]"
+                    onClick={() => {
+                      setInitialUpgradePlan(upgradeTarget);
+                      setShowUpgrade(true);
+                    }}
+                  >
+                    {planActionLabel}
+                  </Button>
+                ) : (
+                  <Button asChild variant="ghost" className="rounded-2xl text-[#BFC6D4]">
+                    <Link href="/settings/billing">Manage</Link>
+                  </Button>
+                )}
               </div>
               <div className="mt-6 flex items-center gap-5">
-                <div className="flex h-28 w-28 shrink-0 items-center justify-center rounded-full bg-[conic-gradient(from_180deg,#5B5FFF_0_68%,rgba(255,255,255,0.08)_68%_100%)] p-3">
+                <div
+                  className="flex h-28 w-28 shrink-0 items-center justify-center rounded-full p-3"
+                  style={{
+                    background: `conic-gradient(from 180deg,#5B5FFF 0 ${creditUsage}%,rgba(255,255,255,0.08) ${creditUsage}% 100%)`,
+                  }}
+                >
                   <div className="flex h-full w-full flex-col items-center justify-center rounded-full bg-[#111827]">
                     <span className="text-2xl font-semibold">{creditLoading ? "--" : `${creditUsage}%`}</span>
                     <span className="text-xs text-[#BFC6D4]">used</span>
@@ -437,24 +473,8 @@ function DashboardContent() {
                   <Link href="/social/calendar">View all</Link>
                 </Button>
               </div>
-              <div className="mt-5 space-y-4">
-                {[
-                  ["May 24", "Live Coaching Call", "7:00 PM EAT"],
-                  ["May 27", "Content That Converts", "8:00 PM EAT"],
-                  ["May 31", "AI Masterclass", "7:00 PM EAT"],
-                ].map(([date, title, time]) => (
-                  <div key={title} className="flex items-center gap-3">
-                    <div className="flex h-12 w-12 shrink-0 flex-col items-center justify-center rounded-[14px] border border-white/[0.08] bg-[#090B13]/55 text-xs text-white">
-                      <span className="text-[10px] uppercase text-[#F59E0B]">{date.split(" ")[0]}</span>
-                      <span className="font-semibold">{date.split(" ")[1]}</span>
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-medium text-white">{title}</p>
-                      <p className="text-xs text-[#BFC6D4]">{time}</p>
-                    </div>
-                    <Button size="sm" variant="outline" className="rounded-2xl border-white/[0.08] bg-white/[0.04]">Join</Button>
-                  </div>
-                ))}
+              <div className="mt-5 rounded-[16px] border border-dashed border-white/[0.08] p-5 text-sm leading-6 text-[#BFC6D4]">
+                Scheduled events will appear here once they are published to the calendar.
               </div>
             </div>
 

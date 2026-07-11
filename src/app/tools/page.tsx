@@ -7,6 +7,7 @@ import { GlassCard } from "@/components/ui/glass-card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useUserStore } from "@/store/useUserStore";
+import { getUpgradeLabel, getUpgradeTarget } from "@/lib/plan-ui";
 import {
   Target,
   Zap,
@@ -108,6 +109,7 @@ const tools: Tool[] = [
 
 export default function ToolsHubPage() {
   const tier = useUserStore((state) => state.tier);
+  const upgradeTarget = getUpgradeTarget(tier);
 
   return (
     <ProtectedRoute>
@@ -208,9 +210,9 @@ export default function ToolsHubPage() {
               Want early access to these tools?
             </p>
             <div className="flex flex-col sm:flex-row gap-3 justify-center">
-              <Link href="/dashboard?upgrade=pro">
+              <Link href={upgradeTarget ? `/dashboard?upgrade=${upgradeTarget}` : "/settings/billing"}>
                 <Button className="bg-primary hover:bg-primary/90">
-                  <Zap className="w-4 h-4 mr-2" /> Upgrade to Pro
+                  <Zap className="w-4 h-4 mr-2" /> {upgradeTarget ? getUpgradeLabel(tier) : "Manage Plan"}
                 </Button>
               </Link>
               <Link href="/community">

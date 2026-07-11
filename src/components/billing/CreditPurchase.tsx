@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { GlassCard } from "@/components/ui/glass-card";
 import { useAuth } from "@/providers/AuthProvider";
 import { CREDIT_PACKAGES, CREDIT_PRICING, UserTier } from "@/lib/credits";
+import { getPlanLabel } from "@/lib/plan-ui";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 
@@ -95,7 +96,7 @@ export function CreditPurchase({ isOpen, onClose, onPurchase }: CreditPurchasePr
                   tier === 'elite' && "text-yellow-400",
                   tier === 'pro' && "text-cyan-400",
                 )}>
-                  {tier}
+                  {getPlanLabel(tier)}
                 </span>
               </div>
               <div className="flex items-center justify-between mt-2">
@@ -104,7 +105,12 @@ export function CreditPurchase({ isOpen, onClose, onPurchase }: CreditPurchasePr
               </div>
               {tier === 'explorer' && (
                 <p className="text-[10px] text-cyan-400 mt-3">
-                  💡 Upgrade to Pro for 50% off credits!
+                  Pro members receive lower creator credit pricing.
+                </p>
+              )}
+              {tier === 'pro' && (
+                <p className="text-[10px] text-violet-300 mt-3">
+                  Elite includes the best creator credit pricing and higher monthly limits.
                 </p>
               )}
             </div>

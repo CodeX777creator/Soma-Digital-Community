@@ -10,6 +10,7 @@ import { getUserCredits, UserCredits, FREE_QUOTAS } from "@/lib/credits";
 import { cn } from "@/lib/utils";
 import { CreditPurchase } from "./CreditPurchase";
 import Link from "next/link";
+import { getUpgradeLabel, getUpgradeTarget } from "@/lib/plan-ui";
 
 export function UsageTracker() {
   const { user, userData } = useAuth();
@@ -52,6 +53,7 @@ export function UsageTracker() {
 
   const tier = credits.tier;
   const isElite = tier === 'elite';
+  const upgradeTarget = getUpgradeTarget(tier);
   const aiProgress = isElite ? 100 : (credits.usedThisMonth / credits.monthlyQuota) * 100;
   const isLowCredits = !isElite && credits.remainingFree < 3;
 
@@ -71,9 +73,9 @@ export function UsageTracker() {
             </div>
           </div>
           
-          {tier === 'explorer' && (
+          {upgradeTarget && (
             <Button size="sm" asChild className="h-7 text-[10px] bg-cyan-500 hover:bg-cyan-600 text-black">
-              <Link href="/dashboard?upgrade=pro">Upgrade</Link>
+              <Link href={`/dashboard?upgrade=${upgradeTarget}`}>{getUpgradeLabel(tier)}</Link>
             </Button>
           )}
         </div>
@@ -134,13 +136,15 @@ export function UsageTracker() {
                 <Plus className="w-3 h-3 mr-1" />
                 Buy Credits
               </Button>
-              <Button
-                size="sm"
-                asChild
-                className="flex-1 h-8 text-[10px] bg-cyan-500 hover:bg-cyan-600 text-black"
-              >
-                <Link href="/dashboard?upgrade=pro">Upgrade to Pro</Link>
-              </Button>
+              {upgradeTarget ? (
+                <Button
+                  size="sm"
+                  asChild
+                  className="flex-1 h-8 text-[10px] bg-cyan-500 hover:bg-cyan-600 text-black"
+                >
+                  <Link href={`/dashboard?upgrade=${upgradeTarget}`}>{getUpgradeLabel(tier)}</Link>
+                </Button>
+              ) : null}
             </div>
           )}
         </div>

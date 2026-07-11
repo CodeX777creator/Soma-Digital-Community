@@ -20,6 +20,7 @@ import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useToast } from "@/hooks/use-toast";
 import { db } from "@/lib/firebase";
+import { getUpgradeLabel, getUpgradeTarget } from "@/lib/plan-ui";
 import { getEffectiveUserTier } from "@/lib/tier";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/providers/AuthProvider";
@@ -71,6 +72,8 @@ function hasMentorAccess(userData: Record<string, any> | null): boolean {
 export default function MentorPage() {
   const { user, userData } = useAuth();
   const { toast } = useToast();
+  const currentTier = getEffectiveUserTier(userData as Record<string, any> | null);
+  const upgradeTarget = getUpgradeTarget(currentTier);
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const [threads, setThreads] = useState<ChatThread[]>([]);
   const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
@@ -288,12 +291,14 @@ export default function MentorPage() {
                   </div>
                 ))}
               </div>
-              <Button asChild className="relative mt-8 h-12 rounded-full bg-gradient-to-r from-[#4F9DFF] via-[#5B5FFF] to-[#8B5CF6] px-6 text-white shadow-lg shadow-[#5B5FFF]/25">
-                <a href="/dashboard?upgrade=pro">
-                  Upgrade to Pro
-                  <ArrowRight className="h-4 w-4" />
-                </a>
-              </Button>
+              {upgradeTarget && (
+                <Button asChild className="relative mt-8 h-12 rounded-full bg-gradient-to-r from-[#4F9DFF] via-[#5B5FFF] to-[#8B5CF6] px-6 text-white shadow-lg shadow-[#5B5FFF]/25">
+                  <a href={`/dashboard?upgrade=${upgradeTarget}`}>
+                    {getUpgradeLabel(currentTier)}
+                    <ArrowRight className="h-4 w-4" />
+                  </a>
+                </Button>
+              )}
             </div>
           </div>
         </AppLayout>

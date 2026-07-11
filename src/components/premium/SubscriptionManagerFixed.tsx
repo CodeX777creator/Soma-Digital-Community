@@ -127,7 +127,7 @@ export function SubscriptionManager() {
         <CreditCard className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
         <p className="text-muted-foreground">No active subscriptions.</p>
         <p className="text-sm text-muted-foreground mt-2">
-          Upgrade to Pro to unlock premium features.
+          Choose a paid plan when you are ready to unlock premium features.
         </p>
       </GlassCard>
     );
@@ -273,7 +273,7 @@ export function SubscriptionManager() {
       {!hasActiveAccess && (
         <GlassCard className="p-6 text-center border-dashed border-2">
           <p className="text-muted-foreground mb-4">
-            No active subscription. Upgrade to access premium features.
+            No active subscription. Choose a paid plan to access premium features.
           </p>
           <Button asChild className="blue-glow">
             <a href="/#pricing">View Plans</a>

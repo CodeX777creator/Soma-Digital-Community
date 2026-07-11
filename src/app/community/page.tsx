@@ -233,7 +233,7 @@ export default function CommunityPage() {
                       </span>
                     </span>
                     <span className="rounded-full bg-[#6D28D9] px-2 py-0.5 text-xs font-semibold text-white">
-                      {channelCounts[channel.id] || (index + 2) * 6}
+                      {channelCounts[channel.id] || 0}
                     </span>
                   </button>
                 ))}
@@ -243,7 +243,7 @@ export default function CommunityPage() {
             <div className="rounded-[18px] border border-white/[0.08] bg-[#151A2E]/70 p-5 shadow-xl shadow-black/20 backdrop-blur">
               <h2 className="text-sm font-semibold text-white">Trending Topics</h2>
               <div className="mt-5 space-y-4">
-                {(trendingTags.length > 0 ? trendingTags.slice(0, 5) : [["AIForBusiness", 12], ["DigitalMarketing", 8], ["PassiveIncome", 6], ["ContentCreation", 5], ["Entrepreneurship", 4]] as [string, number][]).map(([tag, count]) => (
+                {trendingTags.length > 0 ? trendingTags.slice(0, 5).map(([tag, count]) => (
                   <div key={tag} className="flex items-center justify-between gap-3 text-sm">
                     <span className="flex min-w-0 items-center gap-3 text-[#BFC6D4]">
                       <Hash className="h-4 w-4 flex-none text-[#5B5FFF]" />
@@ -251,7 +251,11 @@ export default function CommunityPage() {
                     </span>
                     <span className="text-xs text-[#7E8799]">{count} posts</span>
                   </div>
-                ))}
+                )) : (
+                  <p className="rounded-[14px] border border-dashed border-white/[0.08] p-4 text-sm leading-6 text-[#BFC6D4]">
+                    Topics will appear after members start tagging posts.
+                  </p>
+                )}
               </div>
             </div>
 
@@ -260,22 +264,9 @@ export default function CommunityPage() {
                 <h2 className="text-sm font-semibold text-white">Upcoming Events</h2>
                 <Button variant="ghost" size="sm" className="h-8 px-2 text-[#8B5CF6]">View all</Button>
               </div>
-              {[
-                ["MAY", "24", "Live Coaching Call", "7:00 PM EAT"],
-                ["MAY", "27", "Content That Converts", "8:00 PM EAT"],
-              ].map(([month, day, title, time]) => (
-                <div key={title} className="mb-3 flex items-center gap-3 rounded-[14px] border border-white/[0.08] bg-[#090B13]/60 p-3">
-                  <div className="w-12 rounded-xl border border-white/[0.08] bg-white/[0.04] text-center">
-                    <div className="rounded-t-xl bg-[#7F1D46] py-1 text-[10px] font-bold text-white">{month}</div>
-                    <div className="py-1 text-xl font-semibold text-white">{day}</div>
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium text-white">{title}</p>
-                    <p className="text-xs text-[#BFC6D4]">{time}</p>
-                  </div>
-                  <Button size="sm" variant="outline" className="rounded-xl border-white/[0.08] bg-white/[0.04]">Join</Button>
-                </div>
-              ))}
+              <p className="rounded-[14px] border border-dashed border-white/[0.08] p-4 text-sm leading-6 text-[#BFC6D4]">
+                Community events will appear here once they are scheduled.
+              </p>
             </div>
           </aside>
 
@@ -409,11 +400,7 @@ export default function CommunityPage() {
                 <h2 className="text-sm font-semibold text-white">People to Follow</h2>
                 <Button variant="ghost" size="sm" className="h-8 px-2 text-[#8B5CF6]">View all</Button>
               </div>
-              {(topContributors.length > 0 ? topContributors : [
-                { name: "Michele O'Neil", role: "Business Mentor", points: 0 },
-                { name: "Derrick J.", role: "Digital Marketer", points: 0 },
-                { name: "Linda K.", role: "Content Strategist", points: 0 },
-              ]).slice(0, 4).map((person) => (
+              {topContributors.length > 0 ? topContributors.slice(0, 4).map((person) => (
                 <div key={person.name} className="mb-3 flex items-center gap-3">
                   <div className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-full border border-white/[0.12] bg-[#090B13]">
                     {person.avatar ? <img src={person.avatar} alt={person.name} className="h-full w-full object-cover" /> : <UserPlus className="h-5 w-5 text-[#4F9DFF]" />}
@@ -424,7 +411,11 @@ export default function CommunityPage() {
                   </div>
                   <Button size="sm" variant="outline" className="rounded-xl border-white/[0.08] bg-white/[0.04] text-[#BFC6D4]">Follow</Button>
                 </div>
-              ))}
+              )) : (
+                <p className="rounded-[14px] border border-dashed border-white/[0.08] p-4 text-sm leading-6 text-[#BFC6D4]">
+                  People suggestions will appear as members post and engage.
+                </p>
+              )}
             </div>
 
             <div className="rounded-[18px] border border-white/[0.08] bg-[#151A2E]/70 p-5 shadow-xl shadow-black/20 backdrop-blur">
@@ -433,7 +424,7 @@ export default function CommunityPage() {
                 <span className="text-xs text-[#8B5CF6]">This Week</span>
               </div>
               <div className="space-y-3">
-                {(topContributors.length > 0 ? topContributors : [{ name: "Sarah M.", points: 1250 }, { name: "David O.", points: 980 }, { name: "Linda K.", points: 760 }]).map((person, index) => (
+                {topContributors.length > 0 ? topContributors.map((person, index) => (
                   <div key={person.name} className="flex items-center gap-3">
                     <div className={cn("flex h-6 w-6 items-center justify-center rounded-full text-xs font-semibold", index === 0 ? "bg-yellow-400 text-black" : "bg-white/[0.08] text-[#BFC6D4]")}>
                       {index + 1}
@@ -444,7 +435,11 @@ export default function CommunityPage() {
                     <p className="min-w-0 flex-1 truncate text-sm text-white">{person.name}</p>
                     <p className="text-xs text-[#7E8799]">{person.points.toLocaleString()} pts</p>
                   </div>
-                ))}
+                )) : (
+                  <p className="rounded-[14px] border border-dashed border-white/[0.08] p-4 text-sm leading-6 text-[#BFC6D4]">
+                    Contributor rankings appear after community activity builds.
+                  </p>
+                )}
               </div>
             </div>
 

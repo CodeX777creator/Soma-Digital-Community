@@ -5,6 +5,7 @@ import { GlassCard } from "@/components/ui/glass-card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useUserStore } from "@/store/useUserStore";
+import { getUpgradeLabel, getUpgradeTarget } from "@/lib/plan-ui";
 import {
   ArrowLeft,
   Clock,
@@ -39,6 +40,7 @@ export function ComingSoonTemplate({
 }: ComingSoonTemplateProps) {
   const userTier = useUserStore((state) => state.tier);
   const isLocked = tier !== "explorer" && userTier === "explorer";
+  const upgradeTarget = getUpgradeTarget(userTier);
 
   const tierConfig = {
     explorer: { label: "Free", color: "text-muted-foreground", border: "border-white/20" },
@@ -155,14 +157,16 @@ export function ComingSoonTemplate({
             <p className="text-muted-foreground">
               This tool will be available with the {tier === "elite" ? "Elite" : "Pro"} tier
             </p>
-            <div className="flex flex-col sm:flex-row gap-3 justify-center">
-              <Link href={`/dashboard?upgrade=${tier}`}>
-                <Button className="bg-primary hover:bg-primary/90">
-                  <Zap className="w-4 h-4 mr-2" />
-                  Upgrade to {tier === "elite" ? "Elite" : "Pro"}
-                </Button>
-              </Link>
-            </div>
+            {upgradeTarget ? (
+              <div className="flex flex-col sm:flex-row gap-3 justify-center">
+                <Link href={`/dashboard?upgrade=${upgradeTarget}`}>
+                  <Button className="bg-primary hover:bg-primary/90">
+                    <Zap className="w-4 h-4 mr-2" />
+                    {getUpgradeLabel(userTier)}
+                  </Button>
+                </Link>
+              </div>
+            ) : null}
           </>
         ) : (
           <>

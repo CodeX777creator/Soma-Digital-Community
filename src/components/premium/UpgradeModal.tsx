@@ -44,23 +44,27 @@ export const UpgradeModal = ({ open, onOpenChange, onSuccess, initialPlan = null
     setSelectedPlan(null);
   };
 
+  const modalTitle = initialPlan
+    ? `Upgrade to ${initialPlan === 'elite' ? 'Elite' : 'Pro'} Membership`
+    : 'Choose Your Membership';
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-4xl bg-[#020617] border-white/10 p-0 overflow-hidden rounded-[2.5rem]">
         <div className="sr-only">
-          <DialogTitle>Upgrade to Pro Membership</DialogTitle>
+          <DialogTitle>{modalTitle}</DialogTitle>
           <DialogDescription>
-            Unlock your success with Soma AI pro features and unlimited resources.
+            Choose the Soma Digital plan that fits your AI operating system needs.
           </DialogDescription>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2">
           {/* Left: Branding & Visual */}
           <div className="p-10 bg-gradient-to-br from-primary/20 via-accent/5 to-transparent flex flex-col justify-center relative">
              <div className="absolute top-0 left-0 w-full h-full opacity-10 bg-grid-white/[0.05] bg-repeat mix-blend-overlay" />
-             <Badge className="w-fit mb-6 bg-primary blue-glow border-none px-4 py-1">PRO MEMBERSHIP</Badge>
+             <Badge className="w-fit mb-6 bg-primary blue-glow border-none px-4 py-1">SDC MEMBERSHIP</Badge>
              <h2 className="text-4xl font-bold font-headline mb-4 leading-tight">Unlock Your <br /><span className="text-gradient">Success.</span></h2>
              <p className="text-muted-foreground text-sm mb-8 leading-relaxed">
-               Join the pro members using the full power of Soma AI. Save your time and grow with confidence.
+               Use the full power of Soma AI to save time, create faster, and grow with confidence.
              </p>
              <div className="space-y-4">
                {[

@@ -79,7 +79,7 @@ export function SubscriptionManager() {
   if (subscriptions.length === 0) {
     return (
       <GlassCard className="p-8 text-center">
-        <p className="text-muted-foreground">No active subscriptions. Upgrade to Pro to unlock premium features.</p>
+        <p className="text-muted-foreground">No active subscriptions. Choose a paid plan to unlock premium features.</p>
       </GlassCard>
     );
   }

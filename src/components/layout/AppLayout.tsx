@@ -39,6 +39,7 @@ import { useAuth } from "@/providers/AuthProvider";
 import { useNotifications } from "@/hooks/useNotifications";
 import { useUserStore } from "@/store/useUserStore";
 import { cn } from "@/lib/utils";
+import { getPlanLabel, getUpgradeLabel, getUpgradeTarget } from "@/lib/plan-ui";
 
 type NavItem = {
   name: string;
@@ -135,7 +136,10 @@ export const AppLayout = ({ children }: React.PropsWithChildren) => {
   const [mobileNavOpen, setMobileNavOpen] = React.useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = React.useState(false);
   const useProductShell = Boolean(user) && pathname !== "/" && !pathname.startsWith("/admin");
-  const planLabel = tier ? `${tier.charAt(0).toUpperCase()}${tier.slice(1)} Plan` : "Pro Plan";
+  const planLabel = getPlanLabel(tier);
+  const upgradeTarget = getUpgradeTarget(tier);
+  const planActionLabel = getUpgradeLabel(tier);
+  const planActionHref = upgradeTarget ? `/dashboard?upgrade=${upgradeTarget}` : "/settings/billing";
   const accountName = userData?.name || user?.displayName || "Creator";
   const navWithMessages = React.useMemo<NavItem[]>(
     () => [
@@ -210,8 +214,10 @@ export const AppLayout = ({ children }: React.PropsWithChildren) => {
             <div className="mt-5 rounded-[18px] border border-white/[0.08] bg-[#151A2E]/80 p-4 shadow-[0_18px_50px_rgba(0,0,0,0.32)]">
               <p className="text-sm font-medium">SDC {planLabel}</p>
               <p className="mt-1 text-xs leading-5 text-[#BFC6D4]">Premium AI workflows, execution tools, and operating intelligence.</p>
-              <Button className="mt-4 h-10 w-full rounded-[16px] bg-gradient-to-r from-[#4F9DFF] via-[#5B5FFF] to-[#8B5CF6] text-sm font-medium">
-                Upgrade
+              <Button asChild className="mt-4 h-10 w-full rounded-[16px] bg-gradient-to-r from-[#4F9DFF] via-[#5B5FFF] to-[#8B5CF6] text-sm font-medium">
+                <Link href={planActionHref} onClick={() => setMobileNavOpen(false)}>
+                  {planActionLabel}
+                </Link>
               </Button>
             </div>
           </aside>
@@ -270,8 +276,10 @@ export const AppLayout = ({ children }: React.PropsWithChildren) => {
           <div className={cn(sidebarCollapsed && "sr-only")}>
             <p className="text-sm font-medium">SDC {planLabel}</p>
             <p className="mt-1 text-xs leading-5 text-[#BFC6D4]">Unlock premium AI creation, analytics, and execution workflows.</p>
-            <Button className="mt-4 h-10 w-full rounded-[16px] bg-gradient-to-r from-[#4F9DFF] via-[#5B5FFF] to-[#8B5CF6] text-sm font-medium shadow-[0_14px_35px_rgba(91,95,255,0.26)]">
-              Upgrade
+            <Button asChild className="mt-4 h-10 w-full rounded-[16px] bg-gradient-to-r from-[#4F9DFF] via-[#5B5FFF] to-[#8B5CF6] text-sm font-medium shadow-[0_14px_35px_rgba(91,95,255,0.26)]">
+              <Link href={planActionHref}>
+                {planActionLabel}
+              </Link>
             </Button>
           </div>
         </div>

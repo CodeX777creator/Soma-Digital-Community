@@ -11,6 +11,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/providers/AuthProvider";
+import { authFetch } from "@/lib/clientApi";
 import { cn } from "@/lib/utils";
 import {
   STUDIO_CONTENT_TYPES,
@@ -48,6 +49,18 @@ type StudioOverviewResponse = {
   promptLibrary: StudioPromptLibraryEntry[];
   artifacts: StudioArtifactRecord[];
   content?: StudioGenerationResult | null;
+};
+
+type CreditDashboard = {
+  snapshot: {
+    remainingCredits: number;
+    monthlyCreditsGranted: number;
+    monthlyCreditsUsed: number;
+    monthlyCreditsReserved: number;
+    byokEnabled: boolean;
+    providerMode: string;
+    nextResetAt: string;
+  };
 };
 
 function formatContentType(contentType: string): string {
@@ -177,6 +190,8 @@ export default function AIStudioPage() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [generating, setGenerating] = useState(false);
+  const [creditDashboard, setCreditDashboard] = useState<CreditDashboard | null>(null);
+  const [creditLoading, setCreditLoading] = useState(true);
   const [composer, setComposer] = useState<StudioComposerState>(DEFAULT_COMPOSER_STATE);
   const [latestGeneration, setLatestGeneration] = useState<StudioGenerationResult | null>(null);
   const [data, setData] = useState<StudioOverviewResponse>({
@@ -242,6 +257,41 @@ export default function AIStudioPage() {
       mounted = false;
     };
   }, [toast, user]);
+
+  useEffect(() => {
+    let mounted = true;
+
+    const loadCredits = async () => {
+      if (!user) {
+        setCreditLoading(false);
+        return;
+      }
+
+      try {
+        setCreditLoading(true);
+        const response = await authFetch("/api/creator-credits");
+        if (!response.ok) throw new Error("Unable to load credits.");
+        const payload = await response.json();
+        if (mounted) setCreditDashboard(payload);
+      } catch {
+        if (mounted) setCreditDashboard(null);
+      } finally {
+        if (mounted) setCreditLoading(false);
+      }
+    };
+
+    void loadCredits();
+    return () => {
+      mounted = false;
+    };
+  }, [user]);
+
+  const creditUsage = useMemo(() => {
+    const granted = creditDashboard?.snapshot.monthlyCreditsGranted || 0;
+    const used = creditDashboard?.snapshot.monthlyCreditsUsed || 0;
+    if (!granted) return null;
+    return Math.min(100, Math.round((used / granted) * 100));
+  }, [creditDashboard]);
 
   const filteredPrompts = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -488,22 +538,41 @@ export default function AIStudioPage() {
                 <div className="rounded-[18px] border border-white/[0.08] bg-[#090B13]/70 p-5">
                   <div className="flex items-center justify-between">
                     <p className="text-sm font-medium text-white">Your Usage</p>
-                    <p className="text-xs text-[#7E8799]">Resets in 18 days</p>
+                    <p className="text-xs text-[#7E8799]">
+                      {creditDashboard?.snapshot.nextResetAt
+                        ? `Resets ${new Date(creditDashboard.snapshot.nextResetAt).toLocaleDateString()}`
+                        : "Live usage"}
+                    </p>
                   </div>
-                  <div className="mt-6 flex items-center gap-5">
-                    <div className="flex h-28 w-28 shrink-0 items-center justify-center rounded-full bg-[conic-gradient(from_180deg,#5B5FFF_0_68%,rgba(255,255,255,0.08)_68%_100%)] p-3">
-                      <div className="flex h-full w-full flex-col items-center justify-center rounded-full bg-[#111827]">
-                        <span className="text-2xl font-semibold">68%</span>
-                        <span className="text-xs text-[#BFC6D4]">used</span>
+                  {creditLoading ? (
+                    <div className="mt-6 rounded-[16px] border border-white/[0.06] bg-white/[0.03] p-5 text-sm text-[#BFC6D4]">
+                      Loading creator credit usage...
+                    </div>
+                  ) : creditDashboard ? (
+                    <div className="mt-6 flex items-center gap-5">
+                      <div
+                        className="flex h-28 w-28 shrink-0 items-center justify-center rounded-full p-3"
+                        style={{
+                          background: `conic-gradient(from 180deg,#5B5FFF 0 ${creditUsage ?? 0}%,rgba(255,255,255,0.08) ${creditUsage ?? 0}% 100%)`,
+                        }}
+                      >
+                        <div className="flex h-full w-full flex-col items-center justify-center rounded-full bg-[#111827]">
+                          <span className="text-2xl font-semibold">{creditUsage ?? 0}%</span>
+                          <span className="text-xs text-[#BFC6D4]">used</span>
+                        </div>
+                      </div>
+                      <div className="grid flex-1 gap-3 text-sm">
+                        <div className="flex justify-between gap-3 text-[#BFC6D4]"><span>Remaining</span><span className="text-white">{creditDashboard.snapshot.remainingCredits}</span></div>
+                        <div className="flex justify-between gap-3 text-[#BFC6D4]"><span>Used</span><span className="text-white">{creditDashboard.snapshot.monthlyCreditsUsed}</span></div>
+                        <div className="flex justify-between gap-3 text-[#BFC6D4]"><span>Reserved</span><span className="text-white">{creditDashboard.snapshot.monthlyCreditsReserved}</span></div>
+                        <div className="flex justify-between gap-3 text-[#BFC6D4]"><span>BYOK</span><span className="text-white">{creditDashboard.snapshot.byokEnabled ? "On" : "Off"}</span></div>
                       </div>
                     </div>
-                    <div className="grid flex-1 gap-3 text-sm">
-                      <div className="flex justify-between gap-3 text-[#BFC6D4]"><span>AI Chat</span><span className="text-white">680 / 1,000</span></div>
-                      <div className="flex justify-between gap-3 text-[#BFC6D4]"><span>Images</span><span className="text-white">24 / 60</span></div>
-                      <div className="flex justify-between gap-3 text-[#BFC6D4]"><span>Videos</span><span className="text-white">8 / 20</span></div>
-                      <div className="flex justify-between gap-3 text-[#BFC6D4]"><span>Documents</span><span className="text-white">15 / 50</span></div>
+                  ) : (
+                    <div className="mt-6 rounded-[16px] border border-dashed border-white/[0.08] p-5 text-sm leading-6 text-[#BFC6D4]">
+                      Usage appears here after your first AI generation.
                     </div>
-                  </div>
+                  )}
                 </div>
               </div>
             </div>

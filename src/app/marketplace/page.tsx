@@ -9,10 +9,13 @@ import { Search, Download, Star, Filter, ShoppingBag, Lock } from "lucide-react"
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { getMarketplaceAssets, MarketplaceAsset } from "@/lib/marketplace";
+import { getPlanLabel, getUpgradeLabel, getUpgradeTarget } from "@/lib/plan-ui";
+import { useUserStore } from "@/store/useUserStore";
 
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 
 export default function MarketplacePage() {
+  const { tier } = useUserStore();
   const [filter, setFilter] = useState("All Assets");
   const [searchTerm, setSearchTerm] = useState("");
   const [assets, setAssets] = useState<MarketplaceAsset[]>([]);
@@ -56,6 +59,8 @@ export default function MarketplacePage() {
       || asset.tags.some((tag) => tag.toLowerCase().includes(query));
     return matchesCategory && matchesSearch;
   });
+  const upgradeTarget = getUpgradeTarget(tier);
+  const planLabel = getPlanLabel(tier);
 
   return (
     <ProtectedRoute>
@@ -111,18 +116,23 @@ export default function MarketplacePage() {
           )}
         </div>
 
-        {/* Premium Upgrade CTA Section */}
         <div className="mt-12 p-8 md:p-16 rounded-[3rem] bg-gradient-to-r from-[#0d1117] via-primary/10 to-[#0d1117] border border-primary/20 relative overflow-hidden flex flex-col items-center text-center gap-8 shadow-2xl">
           <div className="absolute top-0 left-0 w-full h-full opacity-5 bg-grid-white/[0.02] bg-repeat" />
           <div className="relative z-10 space-y-4 max-w-2xl">
-            <h2 className="text-4xl md:text-6xl font-bold font-headline leading-tight">Elite Tools. <br /><span className="text-gradient">Unlimited Access.</span></h2>
+            <h2 className="text-4xl md:text-6xl font-bold font-headline leading-tight">
+              {upgradeTarget ? "Elite Tools." : planLabel} <br /><span className="text-gradient">{upgradeTarget ? "Unlock More Access." : "You're unlocked."}</span>
+            </h2>
             <p className="text-muted-foreground text-lg">
-              Unlock every single high-converting asset in the Resource Center, from advanced sales funnels to AI business systems.
+              {upgradeTarget
+                ? "Unlock more high-converting assets in the Resource Center, from advanced sales funnels to AI business systems."
+                : "Your membership already includes premium resource access. Manage billing or keep exploring the library."}
             </p>
           </div>
           <div className="relative z-10 flex flex-col sm:flex-row gap-4">
              <Button asChild className="h-16 px-12 rounded-full bg-primary hover:bg-primary/90 text-xl font-bold blue-glow transition-all active:scale-95">
-               <Link href="/dashboard?upgrade=pro">Upgrade to Pro</Link>
+               <Link href={upgradeTarget ? `/dashboard?upgrade=${upgradeTarget}` : "/settings/billing"}>
+                 {upgradeTarget ? getUpgradeLabel(tier) : "Manage Plan"}
+               </Link>
              </Button>
              <Button asChild variant="ghost" className="h-16 px-12 rounded-full border border-white/10 hover:bg-white/5 text-xl font-semibold backdrop-blur-sm">
                <Link href="/#pricing">View Membership Plans</Link>

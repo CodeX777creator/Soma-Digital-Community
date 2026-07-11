@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { UserTier } from "@/lib/credits";
+import { getUpgradeLabel, getUpgradeTarget } from "@/lib/plan-ui";
 
 interface UpgradePromptProps {
   currentTier: UserTier;
@@ -25,7 +26,9 @@ export function UpgradePrompt({
   if (!isOpen) return null;
 
   const isExplorer = currentTier === 'explorer';
-  const isPro = currentTier === 'pro';
+  const upgradeTarget = getUpgradeTarget(currentTier);
+
+  if (!upgradeTarget) return null;
 
   return (
     <motion.div
@@ -87,8 +90,8 @@ export function UpgradePrompt({
                   asChild
                   className="flex-1 bg-cyan-500 hover:bg-cyan-600 text-black font-bold"
                 >
-                  <Link href="/dashboard?upgrade=pro">
-                    Upgrade to Pro
+                  <Link href={`/dashboard?upgrade=${upgradeTarget}`}>
+                    {getUpgradeLabel(currentTier)}
                     <ArrowRight className="w-4 h-4 ml-2" />
                   </Link>
                 </Button>
@@ -113,8 +116,8 @@ export function UpgradePrompt({
                 asChild
                 className="w-full bg-yellow-500 hover:bg-yellow-600 text-black font-bold"
               >
-                <Link href="/dashboard?upgrade=elite">
-                  Upgrade to Elite
+                <Link href={`/dashboard?upgrade=${upgradeTarget}`}>
+                  {getUpgradeLabel(currentTier)}
                   <Sparkles className="w-4 h-4 ml-2" />
                 </Link>
               </Button>
@@ -138,7 +141,8 @@ export function UpgradePrompt({
 
 // Simpler inline version for embedding in components
 export function InlineUpgrade({ tier, feature }: { tier: UserTier; feature: string }) {
-  if (tier === 'elite') return null;
+  const upgradeTarget = getUpgradeTarget(tier);
+  if (!upgradeTarget) return null;
 
   return (
     <div className={cn(
@@ -176,8 +180,8 @@ export function InlineUpgrade({ tier, feature }: { tier: UserTier; feature: stri
               : "bg-yellow-500 hover:bg-yellow-600 text-black"
           )}
         >
-          <Link href={`/dashboard?upgrade=${tier === 'explorer' ? 'pro' : 'elite'}`}>
-            Upgrade
+          <Link href={`/dashboard?upgrade=${upgradeTarget}`}>
+            {getUpgradeLabel(tier)}
           </Link>
         </Button>
       </div>
