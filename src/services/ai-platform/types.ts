@@ -136,6 +136,7 @@ export interface AIExecutionContext {
 }
 
 export interface AIExecutionLease {
+  traceId: string;
   leaseId: string;
   requestId: string;
   userId: string;
@@ -148,7 +149,10 @@ export interface AIExecutionLease {
   creditsReserved: number;
   estimatedCostUsd: number;
   providerMode: ProviderMode;
+  qualityMode?: AIQualityMode;
   periodId: string;
+  fallbackCount?: number;
+  reason?: string;
 }
 
 export function normalizeBillingPlan(tier?: LegacyCreatorTier): CreatorPlan {

@@ -89,6 +89,7 @@ export async function aiMentorStrategicAdvice(input: AIMentorStrategicAdviceInpu
     });
 
     const output = AIMentorStrategicAdviceOutputSchema.parse(extractJsonObject<AIMentorStrategicAdviceOutput>(result.text));
+    const promptVersion = prompt.metadata.version;
 
     const durationMs = Date.now() - startTime;
     const outputTokens = estimateTokenCount(JSON.stringify(output));
@@ -102,6 +103,7 @@ export async function aiMentorStrategicAdvice(input: AIMentorStrategicAdviceInpu
       operation: 'strategic_advice',
       cached: false,
       durationMs,
+      promptVersion,
     });
 
     if (input.userId && isCacheableQuery(cacheKey)) {
@@ -110,6 +112,7 @@ export async function aiMentorStrategicAdvice(input: AIMentorStrategicAdviceInpu
         tokensUsed: outputTokens,
         timestamp: Date.now(),
         userId: input.userId,
+        promptVersion,
       });
     }
 

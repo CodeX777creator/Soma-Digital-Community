@@ -150,6 +150,7 @@ export async function generateImageStudioAsset(
   const downloadUrl = await saveImageToStorage(generation.imageBuffer, storagePath, ownerId);
 
   const record: ImageAssetRecord = {
+    schemaVariant: 'image-generation-v1',
     assetId,
     ownerId,
     type: 'image',
@@ -184,6 +185,7 @@ export async function generateImageStudioAsset(
     operation: 'image_gen',
     cached: false,
     durationMs: generation.durationMs,
+    promptVersion: 'image-studio@1.0.0',
   });
 
   logger.info('[ImageStudio] Image generated', {
@@ -225,6 +227,7 @@ export async function listImageStudioAssets(ownerId: string, limit = 12): Promis
 
     records.push({
       ...data,
+      schemaVariant: data.schemaVariant || 'image-generation-v1',
       assetId: typeof data.assetId === 'string' ? data.assetId : doc.id,
       downloadUrl,
       thumbnail: downloadUrl || data.thumbnail,

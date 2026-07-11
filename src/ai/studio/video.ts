@@ -391,6 +391,7 @@ export async function generateVideoStudioAsset(
     .digest('hex');
 
   const record: VideoAssetRecord = {
+    schemaVariant: 'video-generation-v1',
     assetId,
     ownerId,
     type: 'video',
@@ -444,6 +445,7 @@ export async function generateVideoStudioAsset(
     operation: 'video_gen',
     cached: false,
     durationMs: Date.now() - startedAt,
+    promptVersion: 'video-studio@1.0.0',
   });
 
   logger.info('[VideoStudio] Video asset processed', {
@@ -490,6 +492,7 @@ export async function listVideoStudioAssets(ownerId: string, limit = 12): Promis
 
     records.push({
       ...data,
+      schemaVariant: data.schemaVariant || 'video-generation-v1',
       assetId: typeof data.assetId === 'string' ? data.assetId : doc.id,
       downloadUrl,
       thumbnail: downloadUrl || data.thumbnail,

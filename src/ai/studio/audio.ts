@@ -339,6 +339,7 @@ export async function generateAudioStudioAsset(
     .digest('hex');
 
   const record: AudioAssetRecord = {
+    schemaVariant: 'voice-generation-v1',
     assetId,
     ownerId,
     type: 'audio',
@@ -396,6 +397,7 @@ export async function generateAudioStudioAsset(
     operation: 'audio_gen',
     cached: false,
     durationMs: Date.now() - startedAt,
+    promptVersion: 'audio-studio@1.0.0',
   });
 
   logger.info('[AudioStudio] Audio asset processed', {
@@ -437,6 +439,7 @@ export async function listAudioStudioAssets(ownerId: string, limit = 12): Promis
 
     records.push({
       ...data,
+      schemaVariant: data.schemaVariant || 'voice-generation-v1',
       assetId: typeof data.assetId === 'string' ? data.assetId : doc.id,
       downloadUrl,
       thumbnail: downloadUrl || data.thumbnail,

@@ -4,6 +4,7 @@ import { logger } from '@/lib/logger';
 import { sanitizeString } from '@/lib/security';
 import { generateStudioContent, getStudioPromptLibrary, resolveStudioContentType } from '@/ai/studio';
 import { STUDIO_CONTENT_TYPES, LEGACY_STUDIO_CONTENT_TYPE_ALIASES } from '@/ai/studio/types';
+import { queryStudioArtifacts } from '@/ai/telemetry/firestore';
 
 const SUPPORTED_TYPES = new Set<string>([
   ...STUDIO_CONTENT_TYPES,
@@ -65,9 +66,18 @@ const handler = createAPIHandler(
       userTier: entitlements.subscription.plan || 'pro',
     });
 
+    const artifacts = await queryStudioArtifacts(entitlements.uid, 12).catch((error) => {
+      logger.warn('[API /ai/studio] Failed to load artifacts', {
+        userId: entitlements.uid,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return [];
+    });
+
     return apiResponse({
       content: generated,
       promptLibrary: getStudioPromptLibrary(),
+      artifacts,
     });
   },
   {
@@ -80,11 +90,22 @@ export const GET = createAPIHandler(
   async (req) => {
     logger.info('[API /ai/studio] Prompt library requested');
 
-    await requireSubscription(req as any, 'pro');
+    const entitlements = await requireSubscription(req as any, 'pro');
+
+    const url = new URL(req.url);
+    const limit = Math.min(Math.max(Number(url.searchParams.get('limit') || '12') || 12, 1), 50);
+    const artifacts = await queryStudioArtifacts(entitlements.uid, limit).catch((error) => {
+      logger.warn('[API /ai/studio] Failed to load artifacts', {
+        userId: entitlements.uid,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return [];
+    });
 
     return apiResponse({
       supportedContentTypes: STUDIO_CONTENT_TYPES,
       promptLibrary: getStudioPromptLibrary(),
+      artifacts,
     }, {
       cache: {
         maxAge: 300,

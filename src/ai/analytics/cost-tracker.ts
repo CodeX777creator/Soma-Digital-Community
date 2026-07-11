@@ -1,13 +1,11 @@
 /**
  * Cost Tracking & Analytics
- * 
- * Tracks AI usage costs, provides optimization recommendations,
- * and enforces budget constraints.
+ *
+ * Firestore-backed AI usage analytics and budget enforcement.
  */
 
 import { logger } from '@/lib/logger';
-import { admin, adminDb } from '@/lib/firebaseAdmin';
-import { MODEL_CONTEXT_LIMITS, type ModelId } from '@/ai/core/tokenizer';
+import { queryAIUsageEvents, readUserBudget, persistAIUsageEvent, upsertUserBudget } from '@/ai/telemetry/firestore';
 
 // Cost per 1K tokens (input/output) for each model
 const MODEL_COSTS: Record<string, { input: number; output: number }> = {
@@ -30,6 +28,7 @@ export interface UsageRecord {
   operation: 'chat' | 'content_gen' | 'roadmap' | 'strategic_advice' | 'summary' | 'image_gen' | 'video_gen' | 'audio_gen';
   cached: boolean;
   durationMs: number;
+  promptVersion?: string;
 }
 
 export interface CostAnalytics {
@@ -50,24 +49,15 @@ export interface BudgetAlert {
   percentage: number;
 }
 
-// In-memory storage (use database in production)
-const usageRecords: UsageRecord[] = [];
-const userBudgets = new Map<string, { daily: number; monthly: number }>();
-const userSpending = new Map<string, { day: number; month: number; lastReset: number }>();
+function toIsoDate(date: Date): string {
+  return date.toISOString().slice(0, 10);
+}
 
-async function persistUsageRecord(record: UsageRecord): Promise<void> {
-  try {
-    await adminDb.collection('aiUsageEvents').doc(record.id).set({
-      ...record,
-      createdAt: admin.firestore.FieldValue.serverTimestamp(),
-    });
-  } catch (error) {
-    logger.warn('[CostTracker] Failed to persist usage record', {
-      recordId: record.id,
-      userId: record.userId,
-      error: error instanceof Error ? error.message : String(error),
-    });
-  }
+function getWindowStart(daysAgo: number): number {
+  const date = new Date();
+  date.setUTCHours(0, 0, 0, 0);
+  date.setUTCDate(date.getUTCDate() - daysAgo);
+  return date.getTime();
 }
 
 /**
@@ -83,7 +73,7 @@ export function calculateCost(
 
   const inputCost = (inputTokens / 1000) * costs.input;
   const outputCost = (outputTokens / 1000) * costs.output;
-  
+
   return Number((inputCost + outputCost).toFixed(6));
 }
 
@@ -92,26 +82,20 @@ export function calculateCost(
  */
 export function recordUsage(record: Omit<UsageRecord, 'id' | 'cost'>): UsageRecord {
   const cost = calculateCost(record.model, record.inputTokens, record.outputTokens);
-  
+
   const fullRecord: UsageRecord = {
     ...record,
-    id: `usage_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+    id: `usage_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`,
     cost,
   };
 
-  usageRecords.push(fullRecord);
-  void persistUsageRecord(fullRecord);
-
-  // Update user spending
-  const userSpend = userSpending.get(record.userId) || { day: 0, month: 0, lastReset: Date.now() };
-  userSpend.day += cost;
-  userSpend.month += cost;
-  userSpending.set(record.userId, userSpend);
-
-  // Limit stored records
-  if (usageRecords.length > 10000) {
-    usageRecords.shift();
-  }
+  void persistAIUsageEvent(fullRecord as unknown as Record<string, unknown> & { id: string; timestamp: number }).catch((error) => {
+    logger.warn('[CostTracker] Failed to persist usage record', {
+      recordId: fullRecord.id,
+      userId: fullRecord.userId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  });
 
   logger.debug('[CostTracker] Usage recorded', {
     userId: record.userId,
@@ -119,6 +103,7 @@ export function recordUsage(record: Omit<UsageRecord, 'id' | 'cost'>): UsageReco
     model: record.model,
     cost: `$${cost.toFixed(6)}`,
     tokens: record.inputTokens + record.outputTokens,
+    promptVersion: record.promptVersion || 'unknown',
   });
 
   return fullRecord;
@@ -127,60 +112,58 @@ export function recordUsage(record: Omit<UsageRecord, 'id' | 'cost'>): UsageReco
 /**
  * Gets cost analytics for a time period
  */
-export function getAnalytics(
+export async function getAnalytics(
   options: {
     startTime?: number;
     endTime?: number;
     userId?: string;
   } = {}
-): CostAnalytics {
-  const { startTime, endTime, userId } = options;
-  
-  let records = usageRecords;
-  
-  if (startTime) {
-    records = records.filter(r => r.timestamp >= startTime);
-  }
-  if (endTime) {
-    records = records.filter(r => r.timestamp <= endTime);
-  }
-  if (userId) {
-    records = records.filter(r => r.userId === userId);
-  }
+): Promise<CostAnalytics> {
+  const records = await queryAIUsageEvents(options);
 
-  const totalCost = records.reduce((sum, r) => sum + r.cost, 0);
-  const totalTokens = records.reduce((sum, r) => sum + r.inputTokens + r.outputTokens, 0);
-  const totalLatency = records.reduce((sum, r) => sum + r.durationMs, 0);
-  
+  const normalized = records.map((record) => ({
+    ...record,
+    timestamp: typeof record.timestamp === 'number' ? record.timestamp : Number(record.timestamp || 0),
+    userId: String(record.userId || 'unknown'),
+    model: String(record.model || 'unknown'),
+    inputTokens: typeof record.inputTokens === 'number' ? record.inputTokens : 0,
+    outputTokens: typeof record.outputTokens === 'number' ? record.outputTokens : 0,
+    cost: typeof record.cost === 'number' ? record.cost : 0,
+    operation: String(record.operation || 'chat'),
+    durationMs: typeof record.durationMs === 'number' ? record.durationMs : 0,
+    cached: record.cached === true,
+  }));
+
+  const totalCost = normalized.reduce((sum, record) => sum + record.cost, 0);
+  const totalTokens = normalized.reduce((sum, record) => sum + record.inputTokens + record.outputTokens, 0);
+  const totalLatency = normalized.reduce((sum, record) => sum + record.durationMs, 0);
+
   const byModel: CostAnalytics['byModel'] = {};
   const byOperation: CostAnalytics['byOperation'] = {};
   const byUser: CostAnalytics['byUser'] = {};
 
-  for (const record of records) {
-    // By model
+  for (const record of normalized) {
     if (!byModel[record.model]) {
       byModel[record.model] = { cost: 0, tokens: 0, requests: 0 };
     }
     byModel[record.model].cost += record.cost;
     byModel[record.model].tokens += record.inputTokens + record.outputTokens;
-    byModel[record.model].requests++;
+    byModel[record.model].requests += 1;
 
-    // By operation
     if (!byOperation[record.operation]) {
       byOperation[record.operation] = { cost: 0, requests: 0 };
     }
     byOperation[record.operation].cost += record.cost;
-    byOperation[record.operation].requests++;
+    byOperation[record.operation].requests += 1;
 
-    // By user
     if (!byUser[record.userId]) {
       byUser[record.userId] = { cost: 0, requests: 0 };
     }
     byUser[record.userId].cost += record.cost;
-    byUser[record.userId].requests++;
+    byUser[record.userId].requests += 1;
   }
 
-  const cachedRequests = records.filter(r => r.cached).length;
+  const cachedRequests = normalized.filter((record) => record.cached).length;
 
   return {
     totalCost,
@@ -188,8 +171,8 @@ export function getAnalytics(
     byModel,
     byOperation,
     byUser,
-    averageLatency: records.length > 0 ? totalLatency / records.length : 0,
-    cacheHitRate: records.length > 0 ? (cachedRequests / records.length) * 100 : 0,
+    averageLatency: normalized.length > 0 ? totalLatency / normalized.length : 0,
+    cacheHitRate: normalized.length > 0 ? (cachedRequests / normalized.length) * 100 : 0,
   };
 }
 
@@ -200,69 +183,78 @@ export function setUserBudget(
   userId: string,
   budget: { daily?: number; monthly?: number }
 ): void {
-  const existing = userBudgets.get(userId) || { daily: Infinity, monthly: Infinity };
-  userBudgets.set(userId, {
-    daily: budget.daily ?? existing.daily,
-    monthly: budget.monthly ?? existing.monthly,
+  void upsertUserBudget({
+    userId,
+    dailyCap: budget.daily,
+    monthlyCap: budget.monthly,
+  }).catch((error) => {
+    logger.warn('[CostTracker] Failed to persist budget', {
+      userId,
+      error: error instanceof Error ? error.message : String(error),
+    });
   });
+}
+
+async function getSpendForWindow(userId: string, startTime: number, endTime: number): Promise<number> {
+  const records = await queryAIUsageEvents({ startMs: startTime, endMs: endTime, userId, limit: 2000 });
+  return records.reduce((sum, record) => sum + (typeof record.cost === 'number' ? record.cost : 0), 0);
 }
 
 /**
  * Checks if user has exceeded budget
  */
-export function checkBudget(userId: string): {
+export async function checkBudget(userId: string): Promise<{
   exceeded: boolean;
   alerts: BudgetAlert[];
-} {
-  const budget = userBudgets.get(userId) || { daily: Infinity, monthly: Infinity };
-  const spending = userSpending.get(userId) || { day: 0, month: 0, lastReset: Date.now() };
-  
+}> {
+  const budget = await readUserBudget(userId);
+  const dailyCap = budget?.dailyCap ?? Infinity;
+  const monthlyCap = budget?.monthlyCap ?? Infinity;
+  const dailySpend = await getSpendForWindow(userId, getWindowStart(1), Date.now());
+  const monthlySpend = await getSpendForWindow(userId, getWindowStart(30), Date.now());
+
   const alerts: BudgetAlert[] = [];
   let exceeded = false;
 
-  // Check daily budget
-  if (budget.daily !== Infinity) {
-    const dailyPercentage = (spending.day / budget.daily) * 100;
-    
-    if (spending.day >= budget.daily) {
+  if (dailyCap !== Infinity) {
+    const dailyPercentage = (dailySpend / dailyCap) * 100;
+    if (dailySpend >= dailyCap) {
       exceeded = true;
       alerts.push({
         type: 'critical',
-        message: `Daily budget exceeded: $${spending.day.toFixed(2)} / $${budget.daily.toFixed(2)}`,
-        currentSpend: spending.day,
-        budget: budget.daily,
+        message: `Daily budget exceeded: $${dailySpend.toFixed(2)} / $${dailyCap.toFixed(2)}`,
+        currentSpend: dailySpend,
+        budget: dailyCap,
         percentage: dailyPercentage,
       });
     } else if (dailyPercentage >= 80) {
       alerts.push({
         type: 'warning',
-        message: `Daily budget at ${dailyPercentage.toFixed(0)}%: $${spending.day.toFixed(2)} / $${budget.daily.toFixed(2)}`,
-        currentSpend: spending.day,
-        budget: budget.daily,
+        message: `Daily budget at ${dailyPercentage.toFixed(0)}%: $${dailySpend.toFixed(2)} / $${dailyCap.toFixed(2)}`,
+        currentSpend: dailySpend,
+        budget: dailyCap,
         percentage: dailyPercentage,
       });
     }
   }
 
-  // Check monthly budget
-  if (budget.monthly !== Infinity) {
-    const monthlyPercentage = (spending.month / budget.monthly) * 100;
-    
-    if (spending.month >= budget.monthly) {
+  if (monthlyCap !== Infinity) {
+    const monthlyPercentage = (monthlySpend / monthlyCap) * 100;
+    if (monthlySpend >= monthlyCap) {
       exceeded = true;
       alerts.push({
         type: 'critical',
-        message: `Monthly budget exceeded: $${spending.month.toFixed(2)} / $${budget.monthly.toFixed(2)}`,
-        currentSpend: spending.month,
-        budget: budget.monthly,
+        message: `Monthly budget exceeded: $${monthlySpend.toFixed(2)} / $${monthlyCap.toFixed(2)}`,
+        currentSpend: monthlySpend,
+        budget: monthlyCap,
         percentage: monthlyPercentage,
       });
     } else if (monthlyPercentage >= 90) {
       alerts.push({
         type: 'warning',
-        message: `Monthly budget at ${monthlyPercentage.toFixed(0)}%: $${spending.month.toFixed(2)} / $${budget.monthly.toFixed(2)}`,
-        currentSpend: spending.month,
-        budget: budget.monthly,
+        message: `Monthly budget at ${monthlyPercentage.toFixed(0)}%: $${monthlySpend.toFixed(2)} / $${monthlyCap.toFixed(2)}`,
+        currentSpend: monthlySpend,
+        budget: monthlyCap,
         percentage: monthlyPercentage,
       });
     }
@@ -274,16 +266,15 @@ export function checkBudget(userId: string): {
 /**
  * Gets optimization recommendations
  */
-export function getRecommendations(userId?: string): string[] {
-  const analytics = getAnalytics(userId ? { userId } : {});
+export async function getRecommendations(userId?: string): Promise<string[]> {
+  const analytics = await getAnalytics(userId ? { userId } : {});
   const recommendations: string[] = [];
 
-  // Model optimization
   const modelUsage = Object.entries(analytics.byModel);
   if (modelUsage.length > 0) {
     const sortedByCost = modelUsage.sort((a, b) => b[1].cost - a[1].cost);
     const topModel = sortedByCost[0];
-    
+
     if (topModel[0].includes('k2.6') && topModel[1].requests > 100) {
       recommendations.push(
         `Consider using a lighter model for routine queries. You're spending $${topModel[1].cost.toFixed(2)} on premium model (${topModel[0]}).`
@@ -291,15 +282,13 @@ export function getRecommendations(userId?: string): string[] {
     }
   }
 
-  // Cache optimization
   if (analytics.cacheHitRate < 10) {
     recommendations.push(
       `Cache hit rate is ${analytics.cacheHitRate.toFixed(1)}%. Consider enabling semantic caching for repeated queries.`
     );
   }
 
-  // Token efficiency
-  const avgTokensPerRequest = analytics.totalTokens / (Object.values(analytics.byOperation).reduce((sum, o) => sum + o.requests, 0) || 1);
+  const avgTokensPerRequest = analytics.totalTokens / (Object.values(analytics.byOperation).reduce((sum, operation) => sum + operation.requests, 0) || 1);
   if (avgTokensPerRequest > 3000) {
     recommendations.push(
       `Average ${avgTokensPerRequest.toFixed(0)} tokens per request. Consider using conversation summarization to reduce context window.`
@@ -310,26 +299,17 @@ export function getRecommendations(userId?: string): string[] {
 }
 
 /**
- * Resets daily spending (call at midnight)
+ * Resets daily spending state.
+ * Firestore now holds the source of truth, so this is a lightweight no-op hook.
  */
 export function resetDailySpending(): void {
-  for (const [userId, spending] of userSpending.entries()) {
-    spending.day = 0;
-    spending.lastReset = Date.now();
-  }
-  logger.info('[CostTracker] Daily spending reset');
+  logger.info('[CostTracker] Daily spending reset handled by Firestore-backed usage windows');
 }
 
 /**
- * Resets monthly spending (call at month start)
+ * Resets monthly spending state.
+ * Firestore now holds the source of truth, so this is a lightweight no-op hook.
  */
 export function resetMonthlySpending(): void {
-  for (const [userId, spending] of userSpending.entries()) {
-    spending.month = 0;
-    spending.lastReset = Date.now();
-  }
-  logger.info('[CostTracker] Monthly spending reset');
+  logger.info('[CostTracker] Monthly spending reset handled by Firestore-backed usage windows');
 }
-
-// Schedule resets
-setInterval(resetDailySpending, 24 * 60 * 60 * 1000);

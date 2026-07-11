@@ -97,6 +97,7 @@ export async function generatePersonalizedRoadmap(
     });
 
     const output = PersonalizedRoadmapOutputSchema.parse(extractJsonObject<PersonalizedRoadmapOutput>(result.text));
+    const promptVersion = prompt.metadata.version;
 
     const durationMs = Date.now() - startTime;
     const outputTokens = estimateTokenCount(JSON.stringify(output));
@@ -110,6 +111,7 @@ export async function generatePersonalizedRoadmap(
       operation: 'roadmap',
       cached: false,
       durationMs,
+      promptVersion,
     });
 
     if (input.userId && isCacheableQuery(cacheKey)) {
@@ -118,6 +120,7 @@ export async function generatePersonalizedRoadmap(
         tokensUsed: outputTokens,
         timestamp: Date.now(),
         userId: input.userId,
+        promptVersion,
       });
     }
 

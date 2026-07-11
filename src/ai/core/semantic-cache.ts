@@ -1,11 +1,16 @@
 /**
  * Semantic Cache System
- * 
- * Provides intelligent caching of AI responses based on semantic similarity
- * rather than exact text matching. Reduces API costs and improves latency.
+ *
+ * Firestore-backed semantic cache for reusable AI responses.
  */
 
 import { logger } from '@/lib/logger';
+import {
+  deleteSemanticCacheEntries,
+  persistSemanticCacheEntry,
+  querySemanticCacheCandidates,
+  type AISemanticCacheRecord,
+} from '@/ai/telemetry/firestore';
 
 export interface CacheEntry {
   id: string;
@@ -18,6 +23,7 @@ export interface CacheEntry {
     timestamp: number;
     userId?: string;
     sessionId?: string;
+    promptVersion?: string;
   };
   accessStats: {
     hits: number;
@@ -26,310 +32,221 @@ export interface CacheEntry {
 }
 
 export interface SemanticCacheConfig {
-  maxSize: number;
   ttlMs: number;
   similarityThreshold: number;
   embeddingDimension: number;
-  enablePersistence: boolean;
+  candidateLimit: number;
 }
 
 const DEFAULT_CONFIG: SemanticCacheConfig = {
-  maxSize: 1000,
-  ttlMs: 24 * 60 * 60 * 1000, // 24 hours
-  similarityThreshold: 0.92, // High similarity required
-  embeddingDimension: 384, // Using lightweight embeddings
-  enablePersistence: false, // In-memory only by default
+  ttlMs: 24 * 60 * 60 * 1000,
+  similarityThreshold: 0.92,
+  embeddingDimension: 384,
+  candidateLimit: 60,
 };
 
-/**
- * Simple embedding using term frequency (fallback when no embedding model available)
- * Creates a normalized vector based on term frequencies
- */
 export function createSimpleEmbedding(text: string, dimension: number = 384): number[] {
   const normalized = text.toLowerCase().trim();
-  const words = normalized.split(/\s+/).filter(w => w.length > 2);
-  
-  // Create a simple hash-based embedding
+  const words = normalized.split(/\s+/).filter((word) => word.length > 2);
   const embedding = new Array(dimension).fill(0);
-  
-  for (let i = 0; i < words.length; i++) {
-    const word = words[i];
-    // Simple hash function
+
+  for (let index = 0; index < words.length; index += 1) {
+    const word = words[index];
     let hash = 0;
-    for (let j = 0; j < word.length; j++) {
-      hash = ((hash << 5) - hash) + word.charCodeAt(j);
-      hash = hash & hash;
+    for (let offset = 0; offset < word.length; offset += 1) {
+      hash = ((hash << 5) - hash) + word.charCodeAt(offset);
+      hash &= hash;
     }
-    
-    // Distribute word influence across embedding
-    const index = Math.abs(hash) % dimension;
-    embedding[index] += 1;
-    
-    // Add bigram features
-    if (i < words.length - 1) {
-      const bigram = word + ' ' + words[i + 1];
+
+    embedding[Math.abs(hash) % dimension] += 1;
+
+    if (index < words.length - 1) {
+      const bigram = `${word} ${words[index + 1]}`;
       let bigramHash = 0;
-      for (let j = 0; j < Math.min(bigram.length, 20); j++) {
-        bigramHash = ((bigramHash << 5) - bigramHash) + bigram.charCodeAt(j);
-        bigramHash = bigramHash & bigramHash;
+      for (let offset = 0; offset < Math.min(bigram.length, 20); offset += 1) {
+        bigramHash = ((bigramHash << 5) - bigramHash) + bigram.charCodeAt(offset);
+        bigramHash &= bigramHash;
       }
-      const bigramIndex = Math.abs(bigramHash) % dimension;
-      embedding[bigramIndex] += 0.5;
+      embedding[Math.abs(bigramHash) % dimension] += 0.5;
     }
   }
-  
-  // Normalize
-  const magnitude = Math.sqrt(embedding.reduce((sum, val) => sum + val * val, 0));
-  if (magnitude > 0) {
-    return embedding.map(val => val / magnitude);
-  }
-  
-  return embedding;
+
+  const magnitude = Math.sqrt(embedding.reduce((sum, value) => sum + value * value, 0));
+  return magnitude > 0 ? embedding.map((value) => value / magnitude) : embedding;
 }
 
-/**
- * Calculates cosine similarity between two vectors
- */
 export function cosineSimilarity(a: number[], b: number[]): number {
   if (a.length !== b.length) {
     throw new Error('Vectors must have same dimension');
   }
-  
+
   let dotProduct = 0;
   let normA = 0;
   let normB = 0;
-  
-  for (let i = 0; i < a.length; i++) {
-    dotProduct += a[i] * b[i];
-    normA += a[i] * a[i];
-    normB += b[i] * b[i];
+
+  for (let index = 0; index < a.length; index += 1) {
+    dotProduct += a[index] * b[index];
+    normA += a[index] * a[index];
+    normB += b[index] * b[index];
   }
-  
+
   if (normA === 0 || normB === 0) return 0;
-  
   return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
 }
 
-/**
- * Semantic Cache implementation with LRU eviction
- */
+function generateKey(query: string): string {
+  const normalized = query.toLowerCase().trim().replace(/\s+/g, ' ').slice(0, 200);
+  let hash = 0;
+  for (let index = 0; index < normalized.length; index += 1) {
+    hash = ((hash << 5) - hash) + normalized.charCodeAt(index);
+    hash &= hash;
+  }
+
+  return `query_${Math.abs(hash)}_${normalized.slice(0, 50).replace(/[^a-z0-9]/g, '_')}`;
+}
+
+function isExpired(entry: AISemanticCacheRecord, ttlMs: number): boolean {
+  return Date.now() - entry.metadata.timestamp > ttlMs;
+}
+
 export class SemanticCache {
-  private cache: Map<string, CacheEntry> = new Map();
   private config: SemanticCacheConfig;
-  private hits = 0;
-  private misses = 0;
 
   constructor(config: Partial<SemanticCacheConfig> = {}) {
     this.config = { ...DEFAULT_CONFIG, ...config };
-    
-    // Start cleanup interval
-    setInterval(() => this.cleanup(), 5 * 60 * 1000); // Every 5 minutes
   }
 
-  /**
-   * Generate a cache key from query
-   */
-  private generateKey(query: string): string {
-    // Normalize query for key generation
-    const normalized = query
-      .toLowerCase()
-      .trim()
-      .replace(/\s+/g, ' ')
-      .slice(0, 200); // Limit key length
-    
-    // Simple hash
-    let hash = 0;
-    for (let i = 0; i < normalized.length; i++) {
-      hash = ((hash << 5) - hash) + normalized.charCodeAt(i);
-      hash = hash & hash;
-    }
-    
-    return `query_${Math.abs(hash)}_${normalized.slice(0, 50).replace(/[^a-z0-9]/g, '_')}`;
-  }
-
-  /**
-   * Check if a semantically similar query exists in cache
-   */
   async get(query: string, userId?: string): Promise<CacheEntry | null> {
     const queryEmbedding = createSimpleEmbedding(query, this.config.embeddingDimension);
-    
-    let bestMatch: CacheEntry | null = null;
+    const candidates = await querySemanticCacheCandidates(userId, this.config.candidateLimit);
+
+    let bestMatch: AISemanticCacheRecord | null = null;
     let bestSimilarity = 0;
 
-    const now = Date.now();
-
-    for (const entry of this.cache.values()) {
-      // Skip expired entries
-      if (now - entry.metadata.timestamp > this.config.ttlMs) {
+    for (const candidate of candidates) {
+      if (isExpired(candidate, this.config.ttlMs)) {
         continue;
       }
 
-      // Skip entries from different users (privacy)
-      if (userId && entry.metadata.userId && entry.metadata.userId !== userId) {
+      if (userId && candidate.userId && candidate.userId !== userId) {
         continue;
       }
 
-      // Calculate similarity
-      const entryEmbedding = entry.queryEmbedding || 
-        createSimpleEmbedding(entry.query, this.config.embeddingDimension);
-      
+      const entryEmbedding = candidate.queryEmbedding || createSimpleEmbedding(candidate.query, this.config.embeddingDimension);
       const similarity = cosineSimilarity(queryEmbedding, entryEmbedding);
 
       if (similarity > bestSimilarity && similarity >= this.config.similarityThreshold) {
         bestSimilarity = similarity;
-        bestMatch = entry;
+        bestMatch = candidate;
       }
     }
 
-    if (bestMatch) {
-      this.hits++;
-      bestMatch.accessStats.hits++;
-      bestMatch.accessStats.lastAccessed = now;
-      
-      logger.debug('[SemanticCache] Cache hit', {
-        similarity: bestSimilarity,
-        query: query.slice(0, 50),
-      });
-      
-      return bestMatch;
+    if (!bestMatch) {
+      return null;
     }
 
-    this.misses++;
-    return null;
+    const nextHits = (bestMatch.accessStats?.hits || 0) + 1;
+    const updated: AISemanticCacheRecord = {
+      ...bestMatch,
+      accessStats: {
+        hits: nextHits,
+        lastAccessed: Date.now(),
+      },
+    };
+
+    void persistSemanticCacheEntry(updated).catch((error) => {
+      logger.warn('[SemanticCache] Failed to update cache hit metadata', {
+        cacheId: bestMatch?.cacheId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    });
+
+    logger.debug('[SemanticCache] Cache hit', {
+      similarity: bestSimilarity,
+      query: query.slice(0, 50),
+    });
+
+    return {
+      id: bestMatch.cacheId,
+      query: bestMatch.query,
+      queryEmbedding: bestMatch.queryEmbedding,
+      response: bestMatch.response,
+      metadata: bestMatch.metadata,
+      accessStats: updated.accessStats,
+    };
   }
 
-  /**
-   * Store a response in cache
-   */
   set(query: string, response: string, metadata: CacheEntry['metadata']): void {
-    // Don't cache very short queries or responses
     if (query.length < 10 || response.length < 20) {
       return;
     }
 
-    // Don't cache error responses
-    if (response.toLowerCase().includes('error') || 
-        response.toLowerCase().includes('sorry') && response.length < 100) {
+    if (response.toLowerCase().includes('error') ||
+        (response.toLowerCase().includes('sorry') && response.length < 100)) {
       return;
     }
 
-    // Evict if at capacity
-    if (this.cache.size >= this.config.maxSize) {
-      this.evictLRU();
-    }
-
-    const key = this.generateKey(query);
-    const embedding = createSimpleEmbedding(query, this.config.embeddingDimension);
-
-    const entry: CacheEntry = {
-      id: key,
-      query: query.slice(0, 500), // Limit stored query length
-      queryEmbedding: embedding,
-      response: response.slice(0, 10000), // Limit response length
+    const cacheId = generateKey(query);
+    const entry: AISemanticCacheRecord = {
+      cacheId,
+      scope: metadata.userId ? 'user' : 'global',
+      userId: metadata.userId,
+      query: query.slice(0, 500),
+      queryEmbedding: createSimpleEmbedding(query, this.config.embeddingDimension),
+      response: response.slice(0, 10000),
       metadata,
       accessStats: {
         hits: 0,
         lastAccessed: Date.now(),
       },
+      expiresAt: Date.now() + this.config.ttlMs,
     };
 
-    this.cache.set(key, entry);
-    
+    void persistSemanticCacheEntry(entry).catch((error) => {
+      logger.warn('[SemanticCache] Failed to persist cache entry', {
+        cacheId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    });
+
     logger.debug('[SemanticCache] Stored entry', {
-      key,
+      cacheId,
       query: query.slice(0, 50),
-      cacheSize: this.cache.size,
     });
   }
 
-  /**
-   * Evict least recently used entry
-   */
-  private evictLRU(): void {
-    let oldestKey: string | null = null;
-    let oldestTime = Infinity;
-
-    for (const [key, entry] of this.cache.entries()) {
-      if (entry.accessStats.lastAccessed < oldestTime) {
-        oldestTime = entry.accessStats.lastAccessed;
-        oldestKey = key;
-      }
-    }
-
-    if (oldestKey) {
-      this.cache.delete(oldestKey);
-      logger.debug('[SemanticCache] Evicted LRU entry', { key: oldestKey });
-    }
+  async clear(): Promise<void> {
+    const candidates = await querySemanticCacheCandidates(undefined, this.config.candidateLimit);
+    const cacheIds = candidates.map((candidate) => candidate.cacheId);
+    await deleteSemanticCacheEntries(cacheIds);
+    logger.info('[SemanticCache] Cache cleared');
   }
 
-  /**
-   * Remove expired entries
-   */
-  private cleanup(): void {
-    const now = Date.now();
-    let cleaned = 0;
-
-    for (const [key, entry] of this.cache.entries()) {
-      if (now - entry.metadata.timestamp > this.config.ttlMs) {
-        this.cache.delete(key);
-        cleaned++;
-      }
-    }
-
-    if (cleaned > 0) {
-      logger.info('[SemanticCache] Cleaned expired entries', { cleaned });
-    }
+  async invalidatePattern(pattern: RegExp): Promise<number> {
+    const candidates = await querySemanticCacheCandidates(undefined, this.config.candidateLimit);
+    const cacheIds = candidates
+      .filter((entry) => pattern.test(entry.query) || pattern.test(entry.cacheId))
+      .map((entry) => entry.cacheId);
+    return deleteSemanticCacheEntries(cacheIds);
   }
 
-  /**
-   * Get cache statistics
-   */
   getStats(): {
     size: number;
     hits: number;
     misses: number;
     hitRate: number;
   } {
-    const total = this.hits + this.misses;
     return {
-      size: this.cache.size,
-      hits: this.hits,
-      misses: this.misses,
-      hitRate: total > 0 ? (this.hits / total) * 100 : 0,
+      size: 0,
+      hits: 0,
+      misses: 0,
+      hitRate: 0,
     };
-  }
-
-  /**
-   * Clear all cached entries
-   */
-  clear(): void {
-    this.cache.clear();
-    this.hits = 0;
-    this.misses = 0;
-    logger.info('[SemanticCache] Cache cleared');
-  }
-
-  /**
-   * Invalidate entries matching a pattern
-   */
-  invalidatePattern(pattern: RegExp): number {
-    let removed = 0;
-    for (const [key, entry] of this.cache.entries()) {
-      if (pattern.test(entry.query) || pattern.test(key)) {
-        this.cache.delete(key);
-        removed++;
-      }
-    }
-    return removed;
   }
 }
 
-// Global cache instance
 export const globalSemanticCache = new SemanticCache();
 
-/**
- * Query normalizer for improving cache hit rates
- */
 export function normalizeQuery(query: string): string {
   return query
     .toLowerCase()
@@ -340,14 +257,9 @@ export function normalizeQuery(query: string): string {
     .trim();
 }
 
-/**
- * Check if a query is cacheable
- */
 export function isCacheableQuery(query: string): boolean {
-  // Don't cache if too short
   if (query.length < 10) return false;
-  
-  // Don't cache if contains sensitive patterns
+
   const sensitivePatterns = [
     /password/i,
     /secret/i,
@@ -355,8 +267,6 @@ export function isCacheableQuery(query: string): boolean {
     /api[_-]?key/i,
     /credit[_-]?card/i,
   ];
-  
-  if (sensitivePatterns.some(p => p.test(query))) return false;
-  
-  return true;
+
+  return !sensitivePatterns.some((pattern) => pattern.test(query));
 }

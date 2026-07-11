@@ -42,6 +42,22 @@ type DashboardResponse = {
     byOperation: Array<{ operation: string; cost: number; requests: number }>;
     chart: Array<{ date: string; requests: number; tokens: number; cost: number }>;
   };
+  routing: {
+    totalDecisions: number;
+    plannedCount: number;
+    succeededCount: number;
+    failedCount: number;
+    byokCount: number;
+    fallbackCount: number;
+    byProvider: Array<{ providerId: string; decisions: number; successes: number; failures: number; byokCount: number; fallbackCount: number }>;
+    byModel: Array<{ modelId: string; providerId: string; task: string; feature: string; decisions: number; successes: number; failures: number; byokCount: number; fallbackCount: number; avgDurationMs: number; avgEstimatedCost: number }>;
+    recentDecisions: Array<{ id: string; task: string; feature: string; providerId: string; modelId: string; status: string; reason: string; time: string | null; tone: string }>;
+  };
+  providerPerformance: {
+    totalRequests: number;
+    byProvider: Array<{ providerId: string; requestCount: number; successCount: number; failureCount: number; byokCount: number; fallbackCount: number; avgDurationMs: number; avgReservedCredits: number; avgChargedCredits: number }>;
+    byModel: Array<{ modelId: string; providerId: string; requestCount: number; successCount: number; failureCount: number; avgDurationMs: number; avgReservedCredits: number; avgChargedCredits: number }>;
+  };
   publishing: {
     totalAttempts: number;
     successCount: number;
@@ -146,6 +162,14 @@ function formatTime(value: string | null) {
     : new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }).format(date);
 }
 
+function formatMs(value: number) {
+  if (!Number.isFinite(value) || value <= 0) return "0 ms";
+  if (value >= 1000) {
+    return `${(value / 1000).toFixed(1)} s`;
+  }
+  return `${Math.round(value)} ms`;
+}
+
 export default function AdminAnalyticsPage() {
   const [data, setData] = useState<DashboardResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -185,6 +209,9 @@ export default function AdminAnalyticsPage() {
 
   const modelRows = useMemo(() => data?.ai.byModel || [], [data]);
   const opRows = useMemo(() => data?.ai.byOperation || [], [data]);
+  const routingRows = useMemo(() => data?.routing.byModel || [], [data]);
+  const providerRows = useMemo(() => data?.providerPerformance.byProvider || [], [data]);
+  const performanceModelRows = useMemo(() => data?.providerPerformance.byModel || [], [data]);
 
   if (loading) {
     return (
@@ -238,6 +265,33 @@ export default function AdminAnalyticsPage() {
         />
       </section>
 
+      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <StatCard
+          label="Routing Decisions"
+          value={(data?.routing.totalDecisions || 0).toLocaleString()}
+          note={`${data?.routing.succeededCount || 0} succeeded, ${data?.routing.failedCount || 0} failed`}
+          icon={Brain}
+        />
+        <StatCard
+          label="BYOK Usage"
+          value={(data?.routing.byokCount || 0).toLocaleString()}
+          note="Requests served through user-owned keys"
+          icon={Sparkles}
+        />
+        <StatCard
+          label="Fallbacks"
+          value={(data?.routing.fallbackCount || 0).toLocaleString()}
+          note={`${data?.routing.plannedCount || 0} planned routes in the window`}
+          icon={Activity}
+        />
+        <StatCard
+          label="Provider Requests"
+          value={(data?.providerPerformance.totalRequests || 0).toLocaleString()}
+          note="Aggregated by durable provider metrics"
+          icon={BarChart3}
+        />
+      </section>
+
       <section className="grid gap-4 xl:grid-cols-2">
         <ChartCard title="AI Usage Trend" icon={Brain}>
           <ResponsiveContainer width="100%" height="100%">
@@ -283,6 +337,107 @@ export default function AdminAnalyticsPage() {
             </LineChart>
           </ResponsiveContainer>
         </ChartCard>
+      </section>
+
+      <section className="grid gap-4 xl:grid-cols-2">
+        <section className="rounded-lg border border-white/10 bg-white/[0.035] p-4">
+          <SectionTitle
+            title="Routing Decisions"
+            description="How the orchestrator routed requests by provider and model."
+          />
+          <div className="mt-4 space-y-2">
+            {routingRows.length === 0 ? (
+              <p className="py-8 text-center text-sm text-white/45">No routing data recorded yet.</p>
+            ) : (
+              routingRows.map((row) => (
+                <div key={`${row.providerId}_${row.modelId}`} className="grid grid-cols-[1.4fr_1fr_0.6fr_0.6fr_0.8fr] gap-3 border-b border-white/8 py-2 text-xs last:border-0">
+                  <div className="truncate text-white/80">
+                    {row.providerId} / {row.modelId}
+                  </div>
+                  <div className="truncate text-white/55">{row.feature}</div>
+                  <div className="text-white/55">{row.decisions} req</div>
+                  <div className="text-white/55">{row.byokCount} byok</div>
+                  <div className="text-right text-cyan-200">{formatMs(row.avgDurationMs)}</div>
+                </div>
+              ))
+            )}
+          </div>
+        </section>
+
+        <section className="rounded-lg border border-white/10 bg-white/[0.035] p-4">
+          <SectionTitle
+            title="Provider Performance"
+            description="Success rate, duration, and credit behavior by provider."
+          />
+          <div className="mt-4 space-y-2">
+            {providerRows.length === 0 ? (
+              <p className="py-8 text-center text-sm text-white/45">No provider performance data recorded yet.</p>
+            ) : (
+              providerRows.map((row) => (
+                <div key={row.providerId} className="grid grid-cols-[1.2fr_0.6fr_0.6fr_0.7fr_0.7fr] gap-3 border-b border-white/8 py-2 text-xs last:border-0">
+                  <div className="truncate text-white/80">{row.providerId}</div>
+                  <div className="text-white/55">{row.requestCount} req</div>
+                  <div className="text-white/55">{row.successCount} ok</div>
+                  <div className="text-white/55">{formatMs(row.avgDurationMs)}</div>
+                  <div className="text-right text-cyan-200">{row.byokCount} byok</div>
+                </div>
+              ))
+            )}
+          </div>
+        </section>
+      </section>
+
+      <section className="grid gap-4 xl:grid-cols-2">
+        <section className="rounded-lg border border-white/10 bg-white/[0.035] p-4">
+          <SectionTitle
+            title="Model Performance"
+            description="Average duration and credit behavior by model."
+          />
+          <div className="mt-4 space-y-2">
+            {performanceModelRows.length === 0 ? (
+              <p className="py-8 text-center text-sm text-white/45">No model performance data recorded yet.</p>
+            ) : (
+              performanceModelRows.map((row) => (
+                <div key={`${row.providerId}_${row.modelId}`} className="grid grid-cols-[1.2fr_0.8fr_0.6fr_0.6fr_0.7fr] gap-3 border-b border-white/8 py-2 text-xs last:border-0">
+                  <div className="truncate text-white/80">{row.modelId}</div>
+                  <div className="truncate text-white/55">{row.providerId}</div>
+                  <div className="text-white/55">{row.requestCount} req</div>
+                  <div className="text-white/55">{formatMs(row.avgDurationMs)}</div>
+                  <div className="text-right text-cyan-200">{row.avgChargedCredits.toFixed(1)} cr</div>
+                </div>
+              ))
+            )}
+          </div>
+        </section>
+
+        <section className="rounded-lg border border-white/10 bg-white/[0.035] p-4">
+          <SectionTitle
+            title="Recent Routing"
+            description="Latest orchestration outcomes written by the platform."
+          />
+          <div className="mt-4 space-y-2">
+            {(data?.routing.recentDecisions || []).length === 0 ? (
+              <p className="py-8 text-center text-sm text-white/45">No routing decisions recorded yet.</p>
+            ) : (
+              (data?.routing.recentDecisions || []).slice(0, 8).map((item) => (
+                <div key={item.id} className="grid gap-2 border-b border-white/8 py-2 last:border-0">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className={cn("text-xs font-medium", item.tone === "emerald" ? "text-emerald-200" : item.tone === "red" ? "text-red-200" : "text-cyan-200")}>
+                      {item.status}
+                    </div>
+                    <div className="text-xs text-white/40">{formatTime(item.time)}</div>
+                  </div>
+                  <div className="truncate text-sm text-white/80">
+                    {item.task} / {item.feature}
+                  </div>
+                  <div className="truncate text-xs text-white/45">
+                    {item.providerId} / {item.modelId} - {item.reason}
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </section>
       </section>
 
       <section className="grid gap-4 xl:grid-cols-2">

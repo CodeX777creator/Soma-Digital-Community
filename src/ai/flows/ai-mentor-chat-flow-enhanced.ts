@@ -51,7 +51,7 @@ import {
   RoutingDecision,
 } from '@/ai/core/model-router';
 import { recordUsage, checkBudget } from '@/ai/analytics/cost-tracker';
-import { buildChatPrompt, UserContext } from '@/ai/core/prompt-builder';
+import { buildChatPrompt, PROMPT_TEMPLATES, UserContext } from '@/ai/core/prompt-builder';
 import { createTextClient, resolveAIExecutionPlan, type AIProviderId } from '@/ai/platform';
 import { logger } from '@/lib/logger';
 
@@ -87,6 +87,7 @@ export interface AIChatOutput {
     cost: number;
     cached: boolean;
     durationMs: number;
+    promptVersion: string;
     routing?: RoutingDecision;
     security?: {
       threatLevel: string;
@@ -99,6 +100,8 @@ interface CompletionAttempt {
   providerId: AIProviderId;
   modelId: string;
 }
+
+const MENTOR_CHAT_PROMPT_VERSION = PROMPT_TEMPLATES.chat.version;
 
 function mapMentorPreferences(input: AIChatInput): Record<string, unknown> {
   const preferences: Record<string, unknown> = {};
@@ -201,7 +204,7 @@ export async function aiMentorChatEnhanced(
   
   try {
     // 1. Check budget constraints
-    const budgetCheck = checkBudget(input.userId);
+    const budgetCheck = await checkBudget(input.userId);
     if (budgetCheck.exceeded) {
       throw new Error('Budget exceeded. Please try again later or upgrade your plan.');
     }
@@ -252,6 +255,7 @@ export async function aiMentorChatEnhanced(
           operation: 'chat',
           cached: true,
           durationMs: Date.now() - startTime,
+          promptVersion: MENTOR_CHAT_PROMPT_VERSION,
         });
 
         await captureMentorMemory(input, cached.response);
@@ -264,6 +268,7 @@ export async function aiMentorChatEnhanced(
             cost: 0,
             cached: true,
             durationMs: Date.now() - startTime,
+            promptVersion: MENTOR_CHAT_PROMPT_VERSION,
             security: {
               threatLevel: securityCheck.threatLevel,
               action: securityCheck.action,
@@ -394,6 +399,7 @@ export async function aiMentorChatEnhanced(
       operation: 'chat',
       cached: false,
       durationMs,
+      promptVersion: MENTOR_CHAT_PROMPT_VERSION,
     });
 
     // 12. Cache the response
@@ -403,6 +409,7 @@ export async function aiMentorChatEnhanced(
         tokensUsed: inputTokens + outputTokens,
         timestamp: Date.now(),
         userId: input.userId,
+        promptVersion: MENTOR_CHAT_PROMPT_VERSION,
       });
     }
 
@@ -437,6 +444,7 @@ export async function aiMentorChatEnhanced(
         cost: usageRecord.cost,
         cached: false,
         durationMs,
+        promptVersion: MENTOR_CHAT_PROMPT_VERSION,
         routing,
         security: {
           threatLevel: securityCheck.threatLevel,
@@ -487,6 +495,7 @@ export async function* aiMentorChatStream(
           operation: 'chat',
           cached: true,
           durationMs: Date.now() - startTime,
+          promptVersion: MENTOR_CHAT_PROMPT_VERSION,
         });
 
         await captureMentorMemory(input, cached.response);
@@ -611,6 +620,7 @@ export async function* aiMentorChatStream(
       operation: 'chat',
       cached: false,
       durationMs,
+      promptVersion: MENTOR_CHAT_PROMPT_VERSION,
     });
 
     if (isCacheableQuery(input.message)) {
@@ -619,6 +629,7 @@ export async function* aiMentorChatStream(
         tokensUsed: estimateTokenCount(fullContent),
         timestamp: Date.now(),
         userId: input.userId,
+        promptVersion: MENTOR_CHAT_PROMPT_VERSION,
       });
     }
 

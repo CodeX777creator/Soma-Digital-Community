@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import { Download, ImageIcon, Loader2, Sparkles, History, Wand2 } from "lucide-react";
+import { Copy, Download, Filter, History, ImageIcon, Loader2, RefreshCcw, Search, Sparkles, Wand2 } from "lucide-react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import { Button } from "@/components/ui/button";
@@ -54,7 +54,37 @@ type ImageStudioHistoryResponse = {
   assets: ImageAssetRecord[];
 };
 
+interface ImageStudioFormState {
+  prompt: string;
+  promptEdits: string;
+  negativePrompt: string;
+  stylePreset: ImageStylePreset;
+  aspectRatio: ImageAspectRatio;
+  title: string;
+  brandName: string;
+  brandTemplateName: string;
+  brandTemplateNotes: string;
+  brandLogoUrl: string;
+  brandColors: string;
+  brandFonts: string;
+  visibility: "private" | "team" | "public";
+}
+
+type GalleryFilters = {
+  search: string;
+  stylePreset: "all" | ImageStylePreset;
+  aspectRatio: "all" | ImageAspectRatio;
+  visibility: "all" | ImageStudioFormState["visibility"];
+};
+
 const DEFAULT_PROMPT = "A premium digital business studio scene with a polished laptop, strategy notes, and branded marketing assets on a clean workspace.";
+
+const DEFAULT_FILTERS: GalleryFilters = {
+  search: "",
+  stylePreset: "all",
+  aspectRatio: "all",
+  visibility: "all",
+};
 
 function buildBrandTemplate(form: ImageStudioFormState): BrandTemplate | null {
   const colors = form.brandColors
@@ -81,20 +111,40 @@ function buildBrandTemplate(form: ImageStudioFormState): BrandTemplate | null {
   };
 }
 
-interface ImageStudioFormState {
-  prompt: string;
-  promptEdits: string;
-  negativePrompt: string;
-  stylePreset: ImageStylePreset;
-  aspectRatio: ImageAspectRatio;
-  title: string;
-  brandName: string;
-  brandTemplateName: string;
-  brandTemplateNotes: string;
-  brandLogoUrl: string;
-  brandColors: string;
-  brandFonts: string;
-  visibility: "private" | "team" | "public";
+function createPromptReuseState(asset: ImageAssetRecord): ImageStudioFormState {
+  return {
+    prompt: asset.prompt,
+    promptEdits: asset.promptEdits || "",
+    negativePrompt: asset.negativePrompt || "",
+    stylePreset: asset.stylePreset,
+    aspectRatio: asset.aspectRatio,
+    title: asset.title || "",
+    brandName: asset.brandName || "",
+    brandTemplateName: asset.brandTemplate?.name || "",
+    brandTemplateNotes: asset.brandTemplate?.notes || asset.brandTemplate?.description || "",
+    brandLogoUrl: asset.brandTemplate?.logoUrl || "",
+    brandColors: asset.brandTemplate?.colors?.join(", ") || "",
+    brandFonts: asset.brandTemplate?.fonts?.join(", ") || "",
+    visibility: asset.visibility,
+  };
+}
+
+function createPromptReuseStateFromLatest(image: NonNullable<ImageStudioResponse["image"]>): ImageStudioFormState {
+  return {
+    prompt: image.prompt,
+    promptEdits: image.promptEdits || "",
+    negativePrompt: image.negativePrompt || "",
+    stylePreset: image.stylePreset,
+    aspectRatio: image.aspectRatio,
+    title: image.title || "",
+    brandName: image.brandName || "",
+    brandTemplateName: image.brandTemplate?.name || "",
+    brandTemplateNotes: image.brandTemplate?.notes || image.brandTemplate?.description || "",
+    brandLogoUrl: image.brandTemplate?.logoUrl || "",
+    brandColors: image.brandTemplate?.colors?.join(", ") || "",
+    brandFonts: image.brandTemplate?.fonts?.join(", ") || "",
+    visibility: image.visibility,
+  };
 }
 
 export default function ImageStudioPage() {
@@ -119,13 +169,47 @@ export default function ImageStudioPage() {
   const [latestImage, setLatestImage] = useState<ImageStudioResponse["image"] | null>(null);
   const [loading, setLoading] = useState(false);
   const [loadingHistory, setLoadingHistory] = useState(true);
+  const [filters, setFilters] = useState<GalleryFilters>(DEFAULT_FILTERS);
+  const [selectedAssetId, setSelectedAssetId] = useState<string | null>(null);
 
   const brandTemplate = useMemo(() => buildBrandTemplate(state), [state]);
+
+  const selectedAsset = useMemo(
+    () => history.find((asset) => asset.assetId === selectedAssetId) || history[0] || null,
+    [history, selectedAssetId]
+  );
+
+  const filteredHistory = useMemo(() => {
+    const query = filters.search.trim().toLowerCase();
+    return history.filter((asset) => {
+      const matchesStyle = filters.stylePreset === "all" || asset.stylePreset === filters.stylePreset;
+      const matchesAspect = filters.aspectRatio === "all" || asset.aspectRatio === filters.aspectRatio;
+      const matchesVisibility = filters.visibility === "all" || asset.visibility === filters.visibility;
+      if (!matchesStyle || !matchesAspect || !matchesVisibility) return false;
+      if (!query) return true;
+
+      const searchable = [
+        asset.title,
+        asset.prompt,
+        asset.promptEdits,
+        asset.negativePrompt,
+        asset.brandName,
+        asset.provider,
+        asset.model,
+        asset.tags.join(" "),
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+
+      return searchable.includes(query);
+    });
+  }, [filters, history]);
 
   const loadHistory = async () => {
     if (!user) return;
     const idToken = await user.getIdToken();
-    const response = await fetch("/api/ai/image-studio?limit=12", {
+    const response = await fetch("/api/ai/image-studio?limit=24", {
       headers: {
         Authorization: `Bearer ${idToken}`,
       },
@@ -137,6 +221,7 @@ export default function ImageStudioPage() {
 
     const data = (await response.json()) as ImageStudioHistoryResponse;
     setHistory(data.assets || []);
+    setSelectedAssetId((current) => current || data.assets?.[0]?.assetId || null);
   };
 
   useEffect(() => {
@@ -150,7 +235,7 @@ export default function ImageStudioPage() {
 
       try {
         const idToken = await user.getIdToken();
-        const response = await fetch("/api/ai/image-studio?limit=12", {
+        const response = await fetch("/api/ai/image-studio?limit=24", {
           headers: {
             Authorization: `Bearer ${idToken}`,
           },
@@ -163,6 +248,7 @@ export default function ImageStudioPage() {
         const data = (await response.json()) as ImageStudioHistoryResponse;
         if (mounted) {
           setHistory(data.assets || []);
+          setSelectedAssetId(data.assets?.[0]?.assetId || null);
         }
       } catch (error) {
         if (mounted) {
@@ -187,6 +273,68 @@ export default function ImageStudioPage() {
 
   const updateField = <K extends keyof ImageStudioFormState>(key: K, value: ImageStudioFormState[K]) => {
     setState((current) => ({ ...current, [key]: value }));
+  };
+
+  const handleReuseAsset = (asset: ImageAssetRecord) => {
+    setState(createPromptReuseState(asset));
+    setSelectedAssetId(asset.assetId);
+    toast({
+      title: "Image loaded",
+      description: "We filled the form with the saved image settings.",
+    });
+  };
+
+  const handleRegenerateAsset = async (asset: ImageAssetRecord) => {
+    if (!user || loading) return;
+
+    try {
+      setLoading(true);
+      setState(createPromptReuseState(asset));
+      setSelectedAssetId(asset.assetId);
+
+      const idToken = await user.getIdToken();
+      const response = await fetch("/api/ai/image-studio", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${idToken}`,
+        },
+        body: JSON.stringify({
+          prompt: asset.prompt,
+          promptEdits: asset.promptEdits || undefined,
+          negativePrompt: asset.negativePrompt || undefined,
+          stylePreset: asset.stylePreset,
+          aspectRatio: asset.aspectRatio,
+          title: asset.title || undefined,
+          brandName: asset.brandName || undefined,
+          brandTemplate: asset.brandTemplate || undefined,
+          visibility: asset.visibility,
+          tags: asset.tags,
+          conversationSummary: `Regenerated from saved asset ${asset.assetId}`,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: "Unknown error" }));
+        throw new Error(errorData.error || "Image regeneration failed.");
+      }
+
+      const data = (await response.json()) as ImageStudioResponse;
+      setLatestImage(data.image);
+      await loadHistory();
+      toast({
+        title: "Image regenerated",
+        description: "We created a fresh version from the saved history item.",
+      });
+    } catch (error) {
+      toast({
+        title: "Regeneration failed",
+        description: error instanceof Error ? error.message : "The image studio could not regenerate this asset.",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleGenerate = async (event: FormEvent<HTMLFormElement>) => {
@@ -223,6 +371,7 @@ export default function ImageStudioPage() {
 
       const data = (await response.json()) as ImageStudioResponse;
       setLatestImage(data.image);
+      setSelectedAssetId(data.image.assetId);
       await loadHistory();
       toast({
         title: "Image generated",
@@ -388,11 +537,7 @@ export default function ImageStudioPage() {
               {latestImage ? (
                 <div className="mt-4 space-y-4">
                   <div className="overflow-hidden rounded-md border border-border bg-black/10">
-                    <img
-                      src={latestImage.thumbnail}
-                      alt={latestImage.title}
-                      className="h-auto w-full object-cover"
-                    />
+                    <img src={latestImage.thumbnail} alt={latestImage.title} className="h-auto w-full object-cover" />
                   </div>
                   <div className="space-y-1">
                     <p className="font-medium">{latestImage.title}</p>
@@ -400,20 +545,177 @@ export default function ImageStudioPage() {
                       {latestImage.stylePreset.replace(/_/g, " ")} · {latestImage.aspectRatio} · {latestImage.provider}
                     </p>
                   </div>
-                  {latestImage.downloadUrl ? (
-                    <Button asChild variant="outline" className="w-full">
-                      <a href={latestImage.downloadUrl} target="_blank" rel="noreferrer">
-                        <Download className="h-4 w-4" />
-                        Download
-                      </a>
+                  <div className="flex flex-wrap gap-2">
+                    <Button type="button" variant="outline" onClick={() => {
+                      setState(createPromptReuseStateFromLatest(latestImage));
+                      toast({
+                        title: "Image loaded",
+                        description: "We filled the form with the latest generated image settings.",
+                      });
+                    }}>
+                      <Copy className="h-4 w-4" />
+                      Reuse
                     </Button>
-                  ) : null}
+                    {latestImage.downloadUrl ? (
+                      <Button asChild variant="outline">
+                        <a href={latestImage.downloadUrl} target="_blank" rel="noreferrer">
+                          <Download className="h-4 w-4" />
+                          Download
+                        </a>
+                      </Button>
+                    ) : null}
+                  </div>
                 </div>
               ) : (
                 <div className="mt-4 rounded-md border border-dashed border-border p-6 text-sm text-muted-foreground">
                   Generated images will appear here with a preview and signed download link.
                 </div>
               )}
+            </GlassCard>
+
+            <GlassCard className="p-5">
+              <div className="flex items-center gap-2">
+                <Filter className="h-4 w-4 text-primary" />
+                <h2 className="text-sm font-semibold uppercase tracking-wide">Gallery</h2>
+              </div>
+
+              <div className="mt-4 grid gap-3 md:grid-cols-2">
+                <div className="space-y-2 md:col-span-2">
+                  <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Search</label>
+                  <div className="relative">
+                    <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                    <Input
+                      value={filters.search}
+                      onChange={(event) => setFilters((current) => ({ ...current, search: event.target.value }))}
+                      placeholder="Search titles, prompts, tags, or providers"
+                      className="pl-9"
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Style</label>
+                  <select
+                    className={cn("h-10 w-full rounded-md border border-input bg-background px-3 text-sm")}
+                    value={filters.stylePreset}
+                    onChange={(event) => setFilters((current) => ({ ...current, stylePreset: event.target.value as GalleryFilters["stylePreset"] }))}
+                  >
+                    <option value="all">All styles</option>
+                    {IMAGE_STYLE_PRESETS.map((preset) => (
+                      <option key={preset} value={preset}>
+                        {preset.replace(/_/g, " ")}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Aspect</label>
+                  <select
+                    className={cn("h-10 w-full rounded-md border border-input bg-background px-3 text-sm")}
+                    value={filters.aspectRatio}
+                    onChange={(event) => setFilters((current) => ({ ...current, aspectRatio: event.target.value as GalleryFilters["aspectRatio"] }))}
+                  >
+                    <option value="all">All ratios</option>
+                    {IMAGE_ASPECT_RATIOS.map((ratio) => (
+                      <option key={ratio} value={ratio}>
+                        {ratio}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Visibility</label>
+                  <select
+                    className={cn("h-10 w-full rounded-md border border-input bg-background px-3 text-sm")}
+                    value={filters.visibility}
+                    onChange={(event) => setFilters((current) => ({ ...current, visibility: event.target.value as GalleryFilters["visibility"] }))}
+                  >
+                    <option value="all">All visibility</option>
+                    <option value="private">Private</option>
+                    <option value="team">Team</option>
+                    <option value="public">Public</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="mt-5 space-y-3">
+                {selectedAsset ? (
+                  <div className="rounded-md border border-border p-3">
+                    <div className="overflow-hidden rounded-sm border border-border bg-black/10">
+                      <img src={selectedAsset.thumbnail} alt={selectedAsset.title} className="h-auto w-full object-cover" />
+                    </div>
+                    <div className="mt-3 flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                      <div className="min-w-0">
+                        <p className="font-medium">{selectedAsset.title}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {selectedAsset.stylePreset.replace(/_/g, " ")} · {selectedAsset.aspectRatio} · {selectedAsset.provider}
+                        </p>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <Button type="button" size="sm" variant="outline" onClick={() => handleReuseAsset(selectedAsset)}>
+                          <Copy className="h-4 w-4" />
+                          Reuse
+                        </Button>
+                        <Button type="button" size="sm" variant="outline" onClick={() => handleRegenerateAsset(selectedAsset)}>
+                          <RefreshCcw className="h-4 w-4" />
+                          Regenerate
+                        </Button>
+                      </div>
+                    </div>
+                    <p className="mt-3 line-clamp-3 text-sm text-muted-foreground">{selectedAsset.prompt}</p>
+                  </div>
+                ) : null}
+
+                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                  {filteredHistory.length > 0 ? (
+                    filteredHistory.map((asset) => (
+                      <button
+                        key={asset.assetId}
+                        type="button"
+                        onClick={() => setSelectedAssetId(asset.assetId)}
+                        className={cn(
+                          "text-left rounded-md border p-3 transition-colors",
+                          selectedAsset?.assetId === asset.assetId ? "border-primary bg-primary/5" : "border-border hover:border-primary/60"
+                        )}
+                      >
+                        <div className="overflow-hidden rounded-sm border border-border bg-black/10">
+                          <img src={asset.thumbnail} alt={asset.title} className="h-36 w-full object-cover" />
+                        </div>
+                        <div className="mt-3 space-y-1">
+                          <p className="truncate text-sm font-medium">{asset.title}</p>
+                          <p className="truncate text-xs text-muted-foreground">
+                            {asset.stylePreset.replace(/_/g, " ")} · {asset.aspectRatio}
+                          </p>
+                          <p className="truncate text-xs text-muted-foreground">{asset.model}</p>
+                        </div>
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          <Button type="button" size="sm" variant="outline" onClick={(event) => { event.stopPropagation(); handleReuseAsset(asset); }}>
+                            <Copy className="h-4 w-4" />
+                            Reuse
+                          </Button>
+                          <Button type="button" size="sm" variant="outline" onClick={(event) => { event.stopPropagation(); handleRegenerateAsset(asset); }}>
+                            <RefreshCcw className="h-4 w-4" />
+                            Regenerate
+                          </Button>
+                          {asset.downloadUrl ? (
+                            <Button asChild size="sm" variant="outline">
+                              <a href={asset.downloadUrl} target="_blank" rel="noreferrer">
+                                <Download className="h-4 w-4" />
+                              </a>
+                            </Button>
+                          ) : null}
+                        </div>
+                      </button>
+                    ))
+                  ) : (
+                    <div className="rounded-md border border-dashed border-border p-6 text-sm text-muted-foreground">
+                      {loadingHistory ? "Loading your image gallery..." : "No generated images match the current filters."}
+                    </div>
+                  )}
+                </div>
+              </div>
             </GlassCard>
 
             <GlassCard className="p-5">
@@ -433,6 +735,14 @@ export default function ImageStudioPage() {
                         {asset.stylePreset} · {asset.aspectRatio} · {asset.model}
                       </p>
                       <div className="mt-2 flex items-center gap-2">
+                        <Button type="button" size="sm" variant="outline" onClick={() => handleReuseAsset(asset)}>
+                          <Copy className="h-4 w-4" />
+                          Reuse
+                        </Button>
+                        <Button type="button" size="sm" variant="outline" onClick={() => handleRegenerateAsset(asset)}>
+                          <RefreshCcw className="h-4 w-4" />
+                          Regenerate
+                        </Button>
                         {asset.downloadUrl ? (
                           <Button asChild size="sm" variant="outline">
                             <a href={asset.downloadUrl} target="_blank" rel="noreferrer">

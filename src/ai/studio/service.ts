@@ -3,6 +3,7 @@ import { detectInjection } from '@/ai/guardrails';
 import { estimateTokenCount } from '@/ai/core/tokenizer';
 import { globalSemanticCache, isCacheableQuery } from '@/ai/core/semantic-cache';
 import { extractJsonObject } from '@/ai/platform';
+import { persistStudioArtifact } from '@/ai/telemetry/firestore';
 import { executeMonetizedTextRequest, normalizeRoutingPlan } from '@/services/ai-platform';
 import { logger } from '@/lib/logger';
 import { sanitizeString } from '@/lib/security';
@@ -17,6 +18,21 @@ import type {
   StudioGenerationResult,
   StudioContentType,
 } from './types';
+
+const STUDIO_PROMPT_VERSION = '1.0.0';
+const STUDIO_SCHEMA_VARIANT = 'studio-text-v1';
+
+async function safePersistStudioArtifact(record: Parameters<typeof persistStudioArtifact>[0]): Promise<void> {
+  try {
+    await persistStudioArtifact(record);
+  } catch (error) {
+    logger.warn('[Studio] Failed to persist studio artifact', {
+      artifactId: record.artifactId,
+      ownerId: record.ownerId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
 
 function buildCacheKey(input: StudioGenerationInput, resolvedType: StudioContentType): string {
   return [
@@ -60,6 +76,7 @@ function normalizeParsedOutput(parsed: Partial<StudioGenerationOutput>, contentT
     : undefined;
 
   return {
+    schemaVariant: STUDIO_SCHEMA_VARIANT,
     contentType,
     title: typeof parsed.title === 'string' && parsed.title.trim().length > 0 ? parsed.title : `${contentType.replace('_', ' ')} draft`,
     summary: typeof parsed.summary === 'string' ? parsed.summary : '',
@@ -108,6 +125,7 @@ async function generateStudioContentInternal(
     if (cached) {
       const cachedOutput = normalizeParsedOutput(JSON.parse(cached.response) as Partial<StudioGenerationOutput>, resolvedContentType);
       const cachedModel = cached.metadata.model || 'cached-model';
+      const cachedPromptVersion = cached.metadata.promptVersion || STUDIO_PROMPT_VERSION;
       recordUsage({
         timestamp: startedAt,
         userId: input.userId,
@@ -117,6 +135,34 @@ async function generateStudioContentInternal(
         operation: 'content_gen',
         cached: true,
         durationMs: Date.now() - startedAt,
+        promptVersion: cachedPromptVersion,
+      });
+      await safePersistStudioArtifact({
+        artifactId: `studio_${startedAt}_${Math.random().toString(36).slice(2, 8)}`,
+        ownerId: input.userId,
+        schemaVariant: STUDIO_SCHEMA_VARIANT,
+        source: 'cached',
+        cacheKey,
+        contentType: resolvedContentType,
+        title: cachedOutput.title,
+        summary: cachedOutput.summary,
+        generatedContent: cachedOutput.generatedContent,
+        strategicTips: cachedOutput.strategicTips,
+        variants: cachedOutput.variants,
+        sections: cachedOutput.sections,
+        promptPack: cachedOutput.promptPack,
+        metadata: {
+          ...cachedOutput.metadata,
+          cacheHit: true,
+          promptVersion: cachedPromptVersion,
+          promptKey: resolvedContentType,
+        },
+        providerId: cachedModel.includes('moonshot') ? 'moonshot' : 'vercel-ai-gateway',
+        modelId: cachedModel,
+        promptKey: resolvedContentType,
+        promptVersion: cachedPromptVersion,
+        promptPreview: cached.response.slice(0, 180),
+        durationMs: Date.now() - startedAt,
       });
       return {
         ...cachedOutput,
@@ -124,6 +170,8 @@ async function generateStudioContentInternal(
         modelId: cachedModel,
         durationMs: Date.now() - startedAt,
         promptKey: resolvedContentType,
+        promptVersion: cachedPromptVersion,
+        schemaVariant: STUDIO_SCHEMA_VARIANT,
       };
     }
   }
@@ -163,6 +211,8 @@ async function generateStudioContentInternal(
   const parsed = extractJsonObject<Partial<StudioGenerationOutput>>(result.text);
   const normalized = normalizeParsedOutput(parsed, resolvedContentType);
   const outputTokens = estimateTokenCount(JSON.stringify(normalized));
+  const artifactId = `studio_${startedAt}_${Math.random().toString(36).slice(2, 8)}`;
+  const promptVersion = prompt.metadata.version || STUDIO_PROMPT_VERSION;
 
   recordUsage({
     timestamp: startedAt,
@@ -173,6 +223,7 @@ async function generateStudioContentInternal(
     operation: 'content_gen',
     cached: false,
     durationMs: result.durationMs,
+    promptVersion,
   });
 
   if (input.userId && isCacheableQuery(cacheKey)) {
@@ -181,6 +232,38 @@ async function generateStudioContentInternal(
       tokensUsed: outputTokens,
       timestamp: Date.now(),
       userId: input.userId,
+      promptVersion,
+    });
+  }
+
+  if (options.userId || input.userId) {
+    await safePersistStudioArtifact({
+      artifactId,
+      ownerId: options.userId || input.userId || 'anonymous',
+      schemaVariant: STUDIO_SCHEMA_VARIANT,
+      source: 'generated',
+      cacheKey,
+      contentType: resolvedContentType,
+      title: normalized.title,
+      summary: normalized.summary,
+      generatedContent: normalized.generatedContent,
+      strategicTips: normalized.strategicTips,
+      variants: normalized.variants,
+      sections: normalized.sections,
+      promptPack: normalized.promptPack,
+      metadata: {
+        ...normalized.metadata,
+        promptVersion,
+        promptKey: prompt.metadata.template,
+        qualityMode,
+        cached: false,
+      },
+      providerId: result.plan.providerId,
+      modelId: result.plan.modelId,
+      promptKey: prompt.metadata.template,
+      promptVersion,
+      promptPreview: prompt.fullPrompt.slice(0, 180),
+      durationMs: result.durationMs,
     });
   }
 
@@ -190,6 +273,8 @@ async function generateStudioContentInternal(
     modelId: result.plan.modelId,
     durationMs: result.durationMs,
     promptKey: prompt.metadata.template,
+    promptVersion,
+    schemaVariant: STUDIO_SCHEMA_VARIANT,
   };
 }
 
@@ -229,6 +314,7 @@ export async function generateMentorContent(
       providerId: result.providerId,
       modelId: result.modelId,
       promptKey: result.promptKey,
+      promptVersion: result.promptVersion,
       promptLibrary: getStudioPromptLibrary(),
     },
   };

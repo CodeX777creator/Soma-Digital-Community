@@ -1,9 +1,9 @@
 import 'server-only';
 
 import { recordUsage, getAnalytics, calculateCost, getRecommendations, checkBudget } from '@/ai/analytics';
-import { generateStudioContent, generateMentorContent, generateVideoStudioAsset, generateAudioStudioAsset, generateImageStudioAsset } from '@/ai/studio';
+import { generateStudioContent, generateMentorContent } from '@/ai/studio';
 import { aiMentorChatEnhanced, aiMentorChatStream } from '@/ai/flows/ai-mentor-chat-flow-enhanced';
-import { aiGatewayService } from '@/services/ai-platform';
+import { aiGatewayService, generateManagedImage, generateManagedVideo, generateManagedVoice } from '@/services/ai-platform';
 
 export function createAIModule() {
   return {
@@ -15,9 +15,9 @@ export function createAIModule() {
     studio: {
       generateContent: generateStudioContent,
       generateMentorContent,
-      generateImage: generateImageStudioAsset,
-      generateVideo: generateVideoStudioAsset,
-      generateAudio: generateAudioStudioAsset,
+      generateImage: generateManagedImage,
+      generateVideo: generateManagedVideo,
+      generateAudio: generateManagedVoice,
     },
     analytics: {
       recordUsage,

@@ -7,4 +7,6 @@ export * from "./byok";
 export * from "./credits";
 export * from "./orchestrator";
 export * from "./gateway";
-
+export * from "./image";
+export * from "./video";
+export * from "./voice";

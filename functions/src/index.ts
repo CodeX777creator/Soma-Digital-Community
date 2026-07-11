@@ -150,11 +150,9 @@ export { createPayPalSubscription, paypalWebhook, cancelPayPalSubscription, chec
 export { createPaystackSubscription, createPaystackAssetPurchase, paystackWebhook, cancelPaystackSubscription } from './paystack';
 // Subscription sync and cleanup jobs
 export { syncSubscriptions, runSubscriptionSync } from './subscriptionSync';
+export { cleanupStaleGeneratedAssets } from './storage-lifecycle';
 // XP event validation
 export { logXPEvent } from './xp';
-// AI mentor chat
-export { mentorChat } from './mentorChat';
-
 // Social publishing jobs
 export { publishScheduledSocialPosts } from './social-publishing';
 

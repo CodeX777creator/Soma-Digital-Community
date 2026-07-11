@@ -258,6 +258,7 @@ export async function reserveCredits(context: AIExecutionContext, credits: numbe
   });
 
   return {
+    traceId: requestId,
     leaseId,
     requestId,
     userId: context.userId,

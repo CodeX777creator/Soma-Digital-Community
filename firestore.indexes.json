@@ -239,6 +239,71 @@
       "fields": [
         { "fieldPath": "timestamp", "order": "DESCENDING" }
       ]
+    },
+    {
+      "__comment": "Semantic cache: supports global cache lookups ordered by freshness.",
+      "collectionGroup": "aiSemanticCache",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "scope", "order": "ASCENDING" },
+        { "fieldPath": "updatedAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "__comment": "Semantic cache: supports user-scoped cache lookups ordered by freshness.",
+      "collectionGroup": "aiSemanticCache",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "scope", "order": "ASCENDING" },
+        { "fieldPath": "userId", "order": "ASCENDING" },
+        { "fieldPath": "updatedAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "__comment": "Orchestration outcomes: supports trace lookups by user and creation time.",
+      "collectionGroup": "aiOrchestrationOutcomes",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "userId", "order": "ASCENDING" },
+        { "fieldPath": "startedAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "__comment": "Provider metrics: supports provider/day reporting with newest metrics first.",
+      "collectionGroup": "aiProviderMetrics",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "providerId", "order": "ASCENDING" },
+        { "fieldPath": "dateKey", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "__comment": "Studio artifacts: supports per-user prompt library history ordered by newest artifact first.",
+      "collectionGroup": "aiStudioArtifacts",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "ownerId", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "__comment": "Generated assets: supports per-user asset history ordered by newest first.",
+      "collectionGroup": "generatedAssets",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "ownerId", "order": "ASCENDING" },
+        { "fieldPath": "type", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "__comment": "Generated assets cleanup: supports stale asset sweeps by type and creation time.",
+      "collectionGroup": "generatedAssets",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "type", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "ASCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []

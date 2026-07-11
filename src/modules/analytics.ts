@@ -97,6 +97,22 @@ export type AdminAnalyticsDashboard = {
     byOperation: Array<{ operation: string; cost: number; requests: number }>;
     chart: Array<{ date: string; requests: number; tokens: number; cost: number }>;
   };
+  routing: {
+    totalDecisions: number;
+    plannedCount: number;
+    succeededCount: number;
+    failedCount: number;
+    byokCount: number;
+    fallbackCount: number;
+    byProvider: Array<{ providerId: string; decisions: number; successes: number; failures: number; byokCount: number; fallbackCount: number }>;
+    byModel: Array<{ modelId: string; decisions: number; successes: number; failures: number; avgDurationMs: number; avgEstimatedCost: number }>;
+    recentDecisions: Array<{ id: string; task: string; feature: string; providerId: string; modelId: string; status: string; reason: string; time: string | null; tone: string }>;
+  };
+  providerPerformance: {
+    totalRequests: number;
+    byProvider: Array<{ providerId: string; requestCount: number; successCount: number; failureCount: number; byokCount: number; fallbackCount: number; avgDurationMs: number; avgReservedCredits: number; avgChargedCredits: number }>;
+    byModel: Array<{ modelId: string; providerId: string; requestCount: number; successCount: number; failureCount: number; avgDurationMs: number; avgReservedCredits: number; avgChargedCredits: number }>;
+  };
   publishing: {
     totalAttempts: number;
     successCount: number;
@@ -135,6 +151,8 @@ export async function getAdminAnalyticsDashboard(req: Request): Promise<AdminAna
     subscriptionsSnap,
     resellerSalesSnap,
     aiUsageSnap,
+    aiOutcomesSnap,
+    aiProviderMetricsSnap,
     publishAttemptsSnap,
   ] = await Promise.all([
     adminDb.collection('users').orderBy('createdAt', 'desc').limit(1000).get(),
@@ -144,6 +162,16 @@ export async function getAdminAnalyticsDashboard(req: Request): Promise<AdminAna
       .where('timestamp', '>=', startMs)
       .orderBy('timestamp', 'desc')
       .limit(2000)
+      .get(),
+    adminDb.collection('aiOrchestrationOutcomes')
+      .where('startedAt', '>=', startMs)
+      .orderBy('startedAt', 'desc')
+      .limit(2000)
+      .get(),
+    adminDb.collection('aiProviderMetrics')
+      .where('dateKey', '>=', formatDay(startDate))
+      .orderBy('dateKey', 'desc')
+      .limit(1000)
       .get(),
     adminDb.collection('socialPublishAttempts')
       .where('triggeredAt', '>=', startTimestamp)
@@ -156,6 +184,8 @@ export async function getAdminAnalyticsDashboard(req: Request): Promise<AdminAna
   const subscriptions = subscriptionsSnap.docs.map((doc) => ({ id: doc.id, ...doc.data() })) as FirestoreRecord[];
   const resellerSales = resellerSalesSnap.docs.map((doc) => ({ id: doc.id, ...doc.data() })) as FirestoreRecord[];
   const aiUsage = aiUsageSnap.docs.map((doc) => ({ id: doc.id, ...doc.data() })) as FirestoreRecord[];
+  const aiOutcomes = aiOutcomesSnap.docs.map((doc) => ({ id: doc.id, ...doc.data() })) as FirestoreRecord[];
+  const aiProviderMetrics = aiProviderMetricsSnap.docs.map((doc) => ({ id: doc.id, ...doc.data() })) as FirestoreRecord[];
   const publishAttempts = publishAttemptsSnap.docs.map((doc) => ({ id: doc.id, ...doc.data() })) as FirestoreRecord[];
 
   const activeSubscriptions = subscriptions.filter(isActiveSubscription);
@@ -226,6 +256,199 @@ export async function getAdminAnalyticsDashboard(req: Request): Promise<AdminAna
   const aiOperationRows = Object.entries(byOperation)
     .map(([operation, metrics]) => ({ operation, ...metrics }))
     .sort((left, right) => right.cost - left.cost);
+
+  const routingSummary = aiOutcomes.reduce<Record<string, {
+    providerId: string;
+    modelId: string;
+    task: string;
+    feature: string;
+    decisions: number;
+    successes: number;
+    failures: number;
+    byokCount: number;
+    fallbackCount: number;
+    totalDurationMs: number;
+    totalEstimatedCost: number;
+  }>>((acc, record) => {
+    const providerId = String(record.providerId || 'unknown');
+    const modelId = String(record.modelId || 'unknown');
+    const key = `${providerId}__${modelId}`;
+    if (!acc[key]) {
+      acc[key] = {
+        providerId,
+        modelId,
+        task: String(record.task || 'unknown'),
+        feature: String(record.feature || 'unknown'),
+        decisions: 0,
+        successes: 0,
+        failures: 0,
+        byokCount: 0,
+        fallbackCount: 0,
+        totalDurationMs: 0,
+        totalEstimatedCost: 0,
+      };
+    }
+    const bucket = acc[key];
+    bucket.decisions += 1;
+    bucket.successes += record.status === 'succeeded' ? 1 : 0;
+    bucket.failures += record.status === 'failed' ? 1 : 0;
+    bucket.byokCount += record.billingSource === 'byok' ? 1 : 0;
+    bucket.fallbackCount += typeof record.fallbackCount === 'number' ? record.fallbackCount : 0;
+    bucket.totalDurationMs += typeof record.durationMs === 'number' ? record.durationMs : 0;
+    bucket.totalEstimatedCost += typeof record.estimatedCostUsd === 'number' ? record.estimatedCostUsd : 0;
+    return acc;
+  }, {});
+
+  const providerSummary = aiProviderMetrics.reduce<Record<string, {
+    providerId: string;
+    requestCount: number;
+    successCount: number;
+    failureCount: number;
+    byokCount: number;
+    fallbackCount: number;
+    totalDurationMs: number;
+    totalReservedCredits: number;
+    totalChargedCredits: number;
+  }>>((acc, record) => {
+    const providerId = String(record.providerId || 'unknown');
+    if (!acc[providerId]) {
+      acc[providerId] = {
+        providerId,
+        requestCount: 0,
+        successCount: 0,
+        failureCount: 0,
+        byokCount: 0,
+        fallbackCount: 0,
+        totalDurationMs: 0,
+        totalReservedCredits: 0,
+        totalChargedCredits: 0,
+      };
+    }
+    const bucket = acc[providerId];
+    bucket.requestCount += typeof record.requestCount === 'number' ? record.requestCount : 0;
+    bucket.successCount += typeof record.successCount === 'number' ? record.successCount : 0;
+    bucket.failureCount += typeof record.failureCount === 'number' ? record.failureCount : 0;
+    bucket.byokCount += typeof record.byokCount === 'number' ? record.byokCount : 0;
+    bucket.fallbackCount += typeof record.fallbackCount === 'number' ? record.fallbackCount : 0;
+    bucket.totalDurationMs += typeof record.totalDurationMs === 'number' ? record.totalDurationMs : 0;
+    bucket.totalReservedCredits += typeof record.creditsReserved === 'number' ? record.creditsReserved : 0;
+    bucket.totalChargedCredits += typeof record.creditsCharged === 'number' ? record.creditsCharged : 0;
+    return acc;
+  }, {});
+
+  const modelPerformanceSummary = aiProviderMetrics.reduce<Record<string, {
+    modelId: string;
+    providerId: string;
+    requestCount: number;
+    successCount: number;
+    failureCount: number;
+    totalDurationMs: number;
+    totalReservedCredits: number;
+    totalChargedCredits: number;
+  }>>((acc, record) => {
+    const modelId = String(record.lastModelId || 'unknown');
+    const providerId = String(record.providerId || 'unknown');
+    const key = `${providerId}__${modelId}`;
+    if (!acc[key]) {
+      acc[key] = {
+        modelId,
+        providerId,
+        requestCount: 0,
+        successCount: 0,
+        failureCount: 0,
+        totalDurationMs: 0,
+        totalReservedCredits: 0,
+        totalChargedCredits: 0,
+      };
+    }
+    const bucket = acc[key];
+    bucket.requestCount += typeof record.requestCount === 'number' ? record.requestCount : 0;
+    bucket.successCount += typeof record.successCount === 'number' ? record.successCount : 0;
+    bucket.failureCount += typeof record.failureCount === 'number' ? record.failureCount : 0;
+    bucket.totalDurationMs += typeof record.totalDurationMs === 'number' ? record.totalDurationMs : 0;
+    bucket.totalReservedCredits += typeof record.creditsReserved === 'number' ? record.creditsReserved : 0;
+    bucket.totalChargedCredits += typeof record.creditsCharged === 'number' ? record.creditsCharged : 0;
+    return acc;
+  }, {});
+
+  const routingByProvider = Object.values(routingSummary)
+    .reduce<Record<string, { providerId: string; decisions: number; successes: number; failures: number; byokCount: number; fallbackCount: number }>>((acc, row) => {
+      if (!acc[row.providerId]) {
+        acc[row.providerId] = { providerId: row.providerId, decisions: 0, successes: 0, failures: 0, byokCount: 0, fallbackCount: 0 };
+      }
+      acc[row.providerId].decisions += row.decisions;
+      acc[row.providerId].successes += row.successes;
+      acc[row.providerId].failures += row.failures;
+      acc[row.providerId].byokCount += row.byokCount;
+      acc[row.providerId].fallbackCount += row.fallbackCount;
+      return acc;
+    }, {});
+
+  const recentRoutingDecisions = aiOutcomes
+    .slice(0, 12)
+    .map((record) => ({
+      id: record.id,
+      task: String(record.task || 'unknown'),
+      feature: String(record.feature || 'unknown'),
+      providerId: String(record.providerId || 'unknown'),
+      modelId: String(record.modelId || 'unknown'),
+      status: String(record.status || 'planned'),
+      reason: String(record.reason || 'No reason recorded'),
+      time: toDate(record.startedAt)?.toISOString() || null,
+      tone: record.status === 'succeeded' ? 'emerald' : record.status === 'failed' ? 'red' : 'cyan',
+    }));
+
+  const routingRows = Object.values(routingSummary)
+    .map((row) => ({
+      providerId: row.providerId,
+      modelId: row.modelId,
+      task: row.task,
+      feature: row.feature,
+      decisions: row.decisions,
+      successes: row.successes,
+      failures: row.failures,
+      byokCount: row.byokCount,
+      fallbackCount: row.fallbackCount,
+      avgDurationMs: row.decisions > 0 ? row.totalDurationMs / row.decisions : 0,
+      avgEstimatedCost: row.decisions > 0 ? row.totalEstimatedCost / row.decisions : 0,
+    }))
+    .sort((left, right) => right.decisions - left.decisions)
+    .slice(0, 10);
+
+  const providerPerformanceRows = Object.values(providerSummary)
+    .map((row) => ({
+      providerId: row.providerId,
+      requestCount: row.requestCount,
+      successCount: row.successCount,
+      failureCount: row.failureCount,
+      byokCount: row.byokCount,
+      fallbackCount: row.fallbackCount,
+      avgDurationMs: row.requestCount > 0 ? row.totalDurationMs / row.requestCount : 0,
+      avgReservedCredits: row.requestCount > 0 ? row.totalReservedCredits / row.requestCount : 0,
+      avgChargedCredits: row.requestCount > 0 ? row.totalChargedCredits / row.requestCount : 0,
+    }))
+    .sort((left, right) => right.requestCount - left.requestCount);
+
+  const modelPerformanceRows = Object.values(modelPerformanceSummary)
+    .map((row) => ({
+      modelId: row.modelId,
+      providerId: row.providerId,
+      requestCount: row.requestCount,
+      successCount: row.successCount,
+      failureCount: row.failureCount,
+      avgDurationMs: row.requestCount > 0 ? row.totalDurationMs / row.requestCount : 0,
+      avgReservedCredits: row.requestCount > 0 ? row.totalReservedCredits / row.requestCount : 0,
+      avgChargedCredits: row.requestCount > 0 ? row.totalChargedCredits / row.requestCount : 0,
+    }))
+    .sort((left, right) => right.requestCount - left.requestCount)
+    .slice(0, 12);
+
+  const routingTotalDecisions = aiOutcomes.length;
+  const routingPlannedCount = aiOutcomes.filter((item) => item.status === 'planned').length;
+  const routingSucceededCount = aiOutcomes.filter((item) => item.status === 'succeeded').length;
+  const routingFailedCount = aiOutcomes.filter((item) => item.status === 'failed').length;
+  const routingByokCount = aiOutcomes.filter((item) => item.billingSource === 'byok').length;
+  const routingFallbackCount = aiOutcomes.reduce((sum, item) => sum + (typeof item.fallbackCount === 'number' ? item.fallbackCount : 0), 0);
 
   const publishPlatformRows = Object.entries(byPlatform)
     .map(([platform, metrics]) => ({ platform, ...metrics, successRate: metrics.total > 0 ? (metrics.success / metrics.total) * 100 : 0 }))
@@ -318,6 +541,22 @@ export async function getAdminAnalyticsDashboard(req: Request): Promise<AdminAna
       byOperation: aiOperationRows,
       chart: aiChart,
     },
+    routing: {
+      totalDecisions: routingTotalDecisions,
+      plannedCount: routingPlannedCount,
+      succeededCount: routingSucceededCount,
+      failedCount: routingFailedCount,
+      byokCount: routingByokCount,
+      fallbackCount: routingFallbackCount,
+      byProvider: Object.values(routingByProvider).sort((left, right) => right.decisions - left.decisions),
+      byModel: routingRows,
+      recentDecisions: recentRoutingDecisions,
+    },
+    providerPerformance: {
+      totalRequests: aiProviderMetrics.reduce((sum, record) => sum + (typeof record.requestCount === 'number' ? record.requestCount : 0), 0),
+      byProvider: providerPerformanceRows,
+      byModel: modelPerformanceRows,
+    },
     publishing: {
       totalAttempts: publishTotal,
       successCount: publishSuccessCount,
@@ -339,4 +578,3 @@ export async function getAdminAnalyticsDashboard(req: Request): Promise<AdminAna
     },
   };
 }
-

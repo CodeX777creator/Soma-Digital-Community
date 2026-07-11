@@ -43,10 +43,12 @@ export const Navbar = () => {
     { name: "My Roadmap", href: "/roadmap" },
     { name: "Community", href: "/community" },
     { name: "AI Mentor", href: "/mentor" },
+    { name: "AI Studio", href: "/ai/studio" },
     { name: "Marketplace", href: "/marketplace" },
     { name: "Social Hub", href: "/social" },
     { name: "Calendar", href: "/social/calendar" },
     { name: "My Courses", href: "/my-courses" },
+    { name: "Settings", href: "/settings" },
     { name: "Reseller", href: "/reseller" },
   ];
 

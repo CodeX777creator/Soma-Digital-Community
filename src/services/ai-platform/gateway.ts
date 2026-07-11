@@ -16,6 +16,7 @@ import { routeMonetizedAIRequest } from "./orchestrator";
 import { getProviderConnection, listProviderConnections, toggleProviderConnection, upsertProviderConnection, removeProviderConnection } from "./byok";
 import type { AIExecutionContext, AIExecutionLease, CreatorPlan, ProviderMode } from "./types";
 import { normalizeRoutingPlan } from "./types";
+import { persistOrchestrationOutcome, recordProviderMetric } from "@/ai/telemetry/firestore";
 
 function toPlan(tier: CreatorPlan | string | undefined): CreatorPlan {
   if (tier === "pro" || tier === "elite" || tier === "enterprise") return tier;
@@ -69,7 +70,79 @@ async function reserveForContext(context: AIExecutionContext, estimatedCostUsd: 
     providerId: route.providerId,
     modelId: route.modelId,
     providerMode: route.providerMode,
+    qualityMode: route.qualityMode,
+    traceId: route.traceId,
+    fallbackCount: route.fallbackCount,
+    reason: route.reason,
   };
+}
+
+async function recordOutcome(input: {
+  lease: AIExecutionLease;
+  status: "succeeded" | "failed";
+  durationMs: number;
+  requestType: "text" | "image" | "video" | "audio";
+  responsePlanProviderId: string;
+  responsePlanModelId: string;
+  actualCostUsd: number;
+  creditsCharged: number;
+  creditsRefunded: number;
+  errorMessage?: string;
+}): Promise<void> {
+  const { lease } = input;
+
+  await recordProviderMetric({
+    traceId: lease.traceId,
+    requestId: lease.requestId,
+    userId: lease.userId,
+    providerId: input.responsePlanProviderId,
+    modelId: input.responsePlanModelId,
+    task: lease.task,
+    modality: lease.modality,
+    providerMode: lease.providerMode,
+    qualityMode: lease.qualityMode || "balanced",
+    billingSource: lease.billingSource,
+    byokPreferred: lease.billingSource === "byok",
+    status: input.status,
+    fallbackCount: lease.fallbackCount || 0,
+    durationMs: input.durationMs,
+    creditsReserved: lease.creditsReserved,
+    creditsCharged: input.creditsCharged,
+    creditsRefunded: input.creditsRefunded,
+    actualCostUsd: input.actualCostUsd,
+    reason: lease.reason,
+    completedAt: Date.now(),
+  });
+
+  await persistOrchestrationOutcome({
+    traceId: lease.traceId,
+    requestId: lease.requestId,
+    userId: lease.userId,
+    task: lease.task,
+    feature: lease.feature,
+    modality: lease.modality,
+    providerId: input.responsePlanProviderId,
+    modelId: input.responsePlanModelId,
+    providerMode: lease.providerMode,
+    qualityMode: lease.qualityMode || "balanced",
+    billingSource: lease.billingSource,
+    byokPreferred: lease.billingSource === "byok",
+    reason: lease.reason || input.errorMessage || input.status,
+    fallbackCount: lease.fallbackCount || 0,
+    status: input.status,
+    startedAt: Date.now() - input.durationMs,
+    completedAt: Date.now(),
+    durationMs: input.durationMs,
+    estimatedCostUsd: lease.estimatedCostUsd,
+    actualCostUsd: input.actualCostUsd,
+    creditsReserved: lease.creditsReserved,
+    creditsCharged: input.creditsCharged,
+    creditsRefunded: input.creditsRefunded,
+    errorMessage: input.errorMessage,
+    metadata: {
+      requestType: input.requestType,
+    },
+  });
 }
 
 export async function executeMonetizedTextRequest(
@@ -98,6 +171,17 @@ export async function executeMonetizedTextRequest(
         requestType: "text",
       },
     });
+    await recordOutcome({
+      lease,
+      status: "succeeded",
+      durationMs: response.durationMs,
+      requestType: "text",
+      responsePlanProviderId: response.plan.providerId,
+      responsePlanModelId: response.plan.modelId,
+      actualCostUsd: response.durationMs / 1000,
+      creditsCharged: lease.billingSource === "byok" ? 0 : lease.creditsReserved,
+      creditsRefunded: 0,
+    });
 
     return {
       ...response,
@@ -111,6 +195,18 @@ export async function executeMonetizedTextRequest(
   } catch (error) {
     await refundCredits(lease, error instanceof Error ? error.message : String(error), {
       requestType: "text",
+    });
+    await recordOutcome({
+      lease,
+      status: "failed",
+      durationMs: 0,
+      requestType: "text",
+      responsePlanProviderId: lease.providerId,
+      responsePlanModelId: lease.modelId,
+      actualCostUsd: 0,
+      creditsCharged: 0,
+      creditsRefunded: lease.creditsReserved,
+      errorMessage: error instanceof Error ? error.message : String(error),
     });
     throw error;
   }
@@ -136,9 +232,32 @@ export async function executeMonetizedImageRequest(
       status: "charged",
       metadata: { requestType: "image" },
     });
+    await recordOutcome({
+      lease,
+      status: "succeeded",
+      durationMs: response.durationMs,
+      requestType: "image",
+      responsePlanProviderId: response.plan.providerId,
+      responsePlanModelId: response.plan.modelId,
+      actualCostUsd: response.durationMs / 1000,
+      creditsCharged: lease.billingSource === "byok" ? 0 : lease.creditsReserved,
+      creditsRefunded: 0,
+    });
     return response;
   } catch (error) {
     await refundCredits(lease, error instanceof Error ? error.message : String(error), { requestType: "image" });
+    await recordOutcome({
+      lease,
+      status: "failed",
+      durationMs: 0,
+      requestType: "image",
+      responsePlanProviderId: lease.providerId,
+      responsePlanModelId: lease.modelId,
+      actualCostUsd: 0,
+      creditsCharged: 0,
+      creditsRefunded: lease.creditsReserved,
+      errorMessage: error instanceof Error ? error.message : String(error),
+    });
     throw error;
   }
 }
@@ -163,9 +282,32 @@ export async function executeMonetizedVideoRequest(
       status: "charged",
       metadata: { requestType: "video" },
     });
+    await recordOutcome({
+      lease,
+      status: "succeeded",
+      durationMs: response.durationMs,
+      requestType: "video",
+      responsePlanProviderId: response.plan.providerId,
+      responsePlanModelId: response.plan.modelId,
+      actualCostUsd: response.durationMs / 1000,
+      creditsCharged: lease.billingSource === "byok" ? 0 : lease.creditsReserved,
+      creditsRefunded: 0,
+    });
     return response;
   } catch (error) {
     await refundCredits(lease, error instanceof Error ? error.message : String(error), { requestType: "video" });
+    await recordOutcome({
+      lease,
+      status: "failed",
+      durationMs: 0,
+      requestType: "video",
+      responsePlanProviderId: lease.providerId,
+      responsePlanModelId: lease.modelId,
+      actualCostUsd: 0,
+      creditsCharged: 0,
+      creditsRefunded: lease.creditsReserved,
+      errorMessage: error instanceof Error ? error.message : String(error),
+    });
     throw error;
   }
 }
@@ -190,9 +332,32 @@ export async function executeMonetizedAudioRequest(
       status: "charged",
       metadata: { requestType: "audio" },
     });
+    await recordOutcome({
+      lease,
+      status: "succeeded",
+      durationMs: response.durationMs,
+      requestType: "audio",
+      responsePlanProviderId: response.plan.providerId,
+      responsePlanModelId: response.plan.modelId,
+      actualCostUsd: response.durationMs / 1000,
+      creditsCharged: lease.billingSource === "byok" ? 0 : lease.creditsReserved,
+      creditsRefunded: 0,
+    });
     return response;
   } catch (error) {
     await refundCredits(lease, error instanceof Error ? error.message : String(error), { requestType: "audio" });
+    await recordOutcome({
+      lease,
+      status: "failed",
+      durationMs: 0,
+      requestType: "audio",
+      responsePlanProviderId: lease.providerId,
+      responsePlanModelId: lease.modelId,
+      actualCostUsd: 0,
+      creditsCharged: 0,
+      creditsRefunded: lease.creditsReserved,
+      errorMessage: error instanceof Error ? error.message : String(error),
+    });
     throw error;
   }
 }

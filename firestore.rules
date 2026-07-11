@@ -338,6 +338,26 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    match /aiUsageBudgets/{budgetId} {
+      allow read, write: if false;
+    }
+
+    match /aiSemanticCache/{cacheId} {
+      allow read, write: if false;
+    }
+
+    match /aiOrchestrationOutcomes/{traceId} {
+      allow read, write: if false;
+    }
+
+    match /aiProviderMetrics/{metricId} {
+      allow read, write: if false;
+    }
+
+    match /aiStudioArtifacts/{artifactId} {
+      allow read, write: if false;
+    }
+
     // ── Admin Audit Log ──────────────────────────────────────────────────────
     match /scheduledPosts/{postId} {
       allow read: if isAuthed() && resource.data.ownerId == request.auth.uid;
