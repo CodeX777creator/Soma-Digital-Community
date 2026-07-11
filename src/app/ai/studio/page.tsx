@@ -39,6 +39,8 @@ import {
   Volume2,
   Wand2,
   Workflow,
+  CalendarDays,
+  BarChart3,
 } from "lucide-react";
 
 type StudioOverviewResponse = {
@@ -140,6 +142,30 @@ const STUDIO_TOOLS = [
     href: "/social/calendar",
     icon: Workflow,
     label: "Execution",
+  },
+];
+
+const STUDIO_WORKFLOWS = [
+  {
+    title: "Launch a content campaign",
+    description: "Plan the message, generate copy, create visuals, and move it into the calendar.",
+    href: "/social/calendar",
+    icon: CalendarDays,
+    steps: ["Planner", "Copy", "Visuals", "Schedule"],
+  },
+  {
+    title: "Build a sales asset",
+    description: "Turn an offer into ad copy, emails, landing copy, and reusable prompt context.",
+    href: "/ai/studio",
+    icon: BarChart3,
+    steps: ["Offer", "Funnel", "Email", "CTA"],
+  },
+  {
+    title: "Create a multimedia post",
+    description: "Generate a caption, image, voiceover, and video package from the same idea.",
+    href: "/ai/video-studio",
+    icon: Workflow,
+    steps: ["Caption", "Image", "Voice", "Video"],
   },
 ];
 
@@ -386,6 +412,38 @@ export default function AIStudioPage() {
                   </div>
 
                   <form className="rounded-[18px] border border-white/[0.08] bg-[#090B13]/70 p-4 shadow-[0_18px_60px_rgba(0,0,0,0.28)]" onSubmit={handleGenerate}>
+                    <div className="mb-4 grid gap-3 md:grid-cols-[1fr_180px_160px]">
+                      <select
+                        aria-label="Studio content type"
+                        className="h-11 rounded-2xl border border-white/[0.08] bg-[#111827] px-3 text-sm text-white outline-none"
+                        value={composer.contentType}
+                        onChange={(event) => handleComposerChange("contentType", event.target.value as StudioContentType)}
+                      >
+                        {data.supportedContentTypes.map((type) => (
+                          <option key={type} value={type}>
+                            {formatContentType(type)}
+                          </option>
+                        ))}
+                      </select>
+                      <select
+                        aria-label="Studio tone"
+                        className="h-11 rounded-2xl border border-white/[0.08] bg-[#111827] px-3 text-sm text-white outline-none"
+                        value={composer.tone}
+                        onChange={(event) => handleComposerChange("tone", event.target.value as StudioTone)}
+                      >
+                        {TONE_OPTIONS.map((tone) => (
+                          <option key={tone} value={tone}>
+                            {tone}
+                          </option>
+                        ))}
+                      </select>
+                      <Input
+                        value={composer.platform}
+                        onChange={(event) => handleComposerChange("platform", event.target.value)}
+                        placeholder="Platform"
+                        className="h-11 rounded-2xl border-white/[0.08] bg-[#111827] text-white placeholder:text-[#7E8799]"
+                      />
+                    </div>
                     <Textarea
                       rows={3}
                       value={composer.businessContext}
@@ -402,16 +460,22 @@ export default function AIStudioPage() {
                         <Wand2 className="h-4 w-4" />
                         Improve writing
                       </Button>
-                      <Button asChild type="button" variant="outline" className="h-10 rounded-2xl border-white/[0.08] bg-white/[0.04]">
+                      <Button asChild variant="outline" className="h-10 rounded-2xl border-white/[0.08] bg-white/[0.04]">
                         <Link href="/ai/image-studio">
                           <ImageIcon className="h-4 w-4" />
                           Create image
                         </Link>
                       </Button>
-                      <Button asChild type="button" variant="outline" className="h-10 rounded-2xl border-white/[0.08] bg-white/[0.04]">
+                      <Button asChild variant="outline" className="h-10 rounded-2xl border-white/[0.08] bg-white/[0.04]">
                         <Link href="/ai/video-studio">
                           <Video className="h-4 w-4" />
                           Generate video
+                        </Link>
+                      </Button>
+                      <Button asChild variant="outline" className="h-10 rounded-2xl border-white/[0.08] bg-white/[0.04]">
+                        <Link href="/ai/audio-studio">
+                          <Volume2 className="h-4 w-4" />
+                          Create voice
                         </Link>
                       </Button>
                       <Button type="submit" disabled={generating || loading} className="ml-auto h-12 w-12 rounded-full bg-gradient-to-br from-[#5B5FFF] via-[#8B5CF6] to-[#4F9DFF] p-0 shadow-[0_18px_45px_rgba(91,95,255,0.35)]">
@@ -480,27 +544,59 @@ export default function AIStudioPage() {
             </div>
           </section>
 
+          <section className="space-y-4">
+            <div>
+              <h2 className="text-xl font-semibold tracking-tight text-white">Creation workflows</h2>
+              <p className="mt-1 text-sm text-[#BFC6D4]">Start with the outcome, then move through the right creation steps without guessing where to go.</p>
+            </div>
+
+            <div className="grid gap-4 lg:grid-cols-3">
+              {STUDIO_WORKFLOWS.map((workflow) => {
+                const Icon = workflow.icon;
+                return (
+                  <Link
+                    key={workflow.title}
+                    href={workflow.href}
+                    className="group rounded-[18px] border border-white/[0.08] bg-[#151A2E]/70 p-5 shadow-[0_18px_60px_rgba(0,0,0,0.24)] transition-all duration-200 hover:-translate-y-1 hover:border-[#4F9DFF]/35 hover:bg-[#1A2140]/80"
+                  >
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="flex h-12 w-12 items-center justify-center rounded-[16px] border border-white/[0.08] bg-[#090B13]/70">
+                        <Icon className="h-5 w-5 text-[#4F9DFF]" />
+                      </div>
+                      <ArrowRight className="h-4 w-4 text-[#7E8799] transition group-hover:translate-x-1 group-hover:text-white" />
+                    </div>
+                    <h3 className="mt-5 text-base font-medium text-white">{workflow.title}</h3>
+                    <p className="mt-2 text-sm leading-6 text-[#BFC6D4]">{workflow.description}</p>
+                    <div className="mt-5 flex flex-wrap gap-2">
+                      {workflow.steps.map((step) => (
+                        <span key={step} className="rounded-full border border-white/[0.08] bg-white/[0.04] px-3 py-1 text-xs text-[#BFC6D4]">
+                          {step}
+                        </span>
+                      ))}
+                    </div>
+                  </Link>
+                );
+              })}
+            </div>
+          </section>
+
           <div className="grid gap-4 md:grid-cols-4">
-            <GlassCard className="p-5">
-              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Prompt packs</p>
-              <p className="mt-2 text-2xl font-semibold">{data.promptLibrary.length}</p>
-              <p className="mt-1 text-sm text-muted-foreground">Reusable references for repeatable work.</p>
-            </GlassCard>
-            <GlassCard className="p-5">
-              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Saved artifacts</p>
-              <p className="mt-2 text-2xl font-semibold">{data.artifacts.length}</p>
-              <p className="mt-1 text-sm text-muted-foreground">Generated outputs persist for later reuse.</p>
-            </GlassCard>
-            <GlassCard className="p-5">
-              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Supported modes</p>
-              <p className="mt-2 text-2xl font-semibold">{data.supportedContentTypes.length}</p>
-              <p className="mt-1 text-sm text-muted-foreground">These content shapes are available today.</p>
-            </GlassCard>
-            <GlassCard className="p-5">
-              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Session output</p>
-              <p className="mt-2 truncate text-2xl font-semibold">{latestGeneration?.title || "None yet"}</p>
-              <p className="mt-1 text-sm text-muted-foreground">{latestGeneration ? formatContentType(latestGeneration.contentType) : "Generate something to preview it here."}</p>
-            </GlassCard>
+            {[
+              { label: "Prompt packs", value: data.promptLibrary.length, detail: "Reusable references for repeatable work." },
+              { label: "Saved artifacts", value: data.artifacts.length, detail: "Generated outputs persist for later reuse." },
+              { label: "Supported modes", value: data.supportedContentTypes.length, detail: "Content shapes available today." },
+              {
+                label: "Session output",
+                value: latestGeneration?.title || "None yet",
+                detail: latestGeneration ? formatContentType(latestGeneration.contentType) : "Generate something to preview it here.",
+              },
+            ].map((metric) => (
+              <div key={metric.label} className="rounded-[18px] border border-white/[0.08] bg-[#151A2E]/70 p-5 shadow-[0_18px_60px_rgba(0,0,0,0.2)]">
+                <p className="text-xs font-semibold uppercase tracking-wide text-[#7E8799]">{metric.label}</p>
+                <p className="mt-2 truncate text-2xl font-semibold text-white">{metric.value}</p>
+                <p className="mt-1 text-sm text-[#BFC6D4]">{metric.detail}</p>
+              </div>
+            ))}
           </div>
 
           <div className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
