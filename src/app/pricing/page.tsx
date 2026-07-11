@@ -20,10 +20,10 @@ const plans = [
     buttonVariant: "outline" as const,
     features: [
       { text: "Full community access", included: true, highlight: false },
-      { text: "3 AI mentor chats (taster)", included: true, highlight: false },
+      { text: "AI Studio access", included: true, highlight: false },
       { text: "Browse all resources", included: true, highlight: false },
       { text: "Join live calls (watch only)", included: true, highlight: false },
-      { text: "AI credits: $0.25 each", included: true, highlight: false },
+      { text: "Buy Creator Credits when needed", included: true, highlight: false },
       { text: "Download Pro/Elite resources", included: false, highlight: false },
       { text: "Live call participation", included: false, highlight: false },
       { text: "Founder access", included: false, highlight: false },
@@ -44,11 +44,11 @@ const plans = [
     badge: "MOST POPULAR",
     features: [
       { text: "Everything in Explorer", included: true, highlight: false },
-      { text: "50 AI mentor chats/month", included: true, highlight: true },
+      { text: "Monthly Creator Credits included", included: true, highlight: true },
       { text: "Unlimited Pro resource downloads", included: true, highlight: false },
       { text: "Weekly live call participation", included: true, highlight: false },
       { text: "Business templates & tools", included: true, highlight: false },
-      { text: "AI credits: $0.10 each", included: true, highlight: true },
+      { text: "Universal Creator Credit bundles", included: true, highlight: true },
       { text: "Private member community", included: true, highlight: false },
       { text: "1-on-1 founder mentorship", included: false, highlight: false },
     ],
@@ -67,7 +67,7 @@ const plans = [
     badge: "UNLIMITED",
     features: [
       { text: "Everything in Pro", included: true, highlight: false },
-      { text: "Unlimited AI mentor chats", included: true, highlight: true },
+      { text: "Highest included Creator Credit allocation", included: true, highlight: true },
       { text: "Unlimited Elite resources", included: true, highlight: true },
       { text: "Unlimited live call participation", included: true, highlight: false },
       { text: "Monthly 1-on-1 founder call", included: true, highlight: true },
@@ -205,14 +205,14 @@ export default function PricingPage() {
             <h2 className="text-3xl font-bold text-white mb-4">Need More AI Credits?</h2>
             <p className="text-muted-foreground">
               Run out of your monthly quota? Purchase additional credits anytime.
-              Credits never expire. <span className="text-cyan-400">Pro members save 60%!</span>
+              Credits never expire, and bundle prices are the same across every plan.
             </p>
           </div>
 
           <div className="grid sm:grid-cols-2 gap-6">
             <GlassCard className="p-6 rounded-2xl">
-              <h3 className="text-lg font-bold text-white mb-2">Explorer Credits</h3>
-              <p className="text-sm text-muted-foreground mb-4">$0.25 per credit</p>
+              <h3 className="text-lg font-bold text-white mb-2">Starter Bundles</h3>
+              <p className="text-sm text-muted-foreground mb-4">Same prices for every plan</p>
               <div className="space-y-3">
                 <div className="flex justify-between items-center p-3 bg-white/[0.03] rounded-lg">
                   <span className="text-sm">5 Credits</span>
@@ -228,16 +228,16 @@ export default function PricingPage() {
                 </div>
               </div>
               <p className="text-xs text-muted-foreground mt-4">
-                💡 Buying 50 credits costs $12.50. Pro is only $97 and includes 50 chats + way more.
+                Explorer can buy credits as needed or upgrade for monthly included credits.
               </p>
             </GlassCard>
 
             <GlassCard className="p-6 rounded-2xl border-cyan-500/30">
               <div className="flex items-center gap-2 mb-2">
                 <Zap className="w-5 h-5 text-cyan-400" />
-                <h3 className="text-lg font-bold text-white">Pro Credits</h3>
+                <h3 className="text-lg font-bold text-white">Growth Bundles</h3>
               </div>
-              <p className="text-sm text-cyan-400 mb-4">$0.10 per credit (60% savings)</p>
+              <p className="text-sm text-cyan-400 mb-4">Universal Creator Credit bundles</p>
               <div className="space-y-3">
                 <div className="flex justify-between items-center p-3 bg-white/[0.03] rounded-lg">
                   <span className="text-sm">50 Credits</span>
@@ -255,7 +255,7 @@ export default function PricingPage() {
                 </div>
               </div>
               <p className="text-xs text-cyan-400 mt-4">
-                ✓ Pro includes 50 chats/month. Credits are for power users who need more.
+                Pro and Elite include monthly Creator Credits and can top up anytime.
               </p>
             </GlassCard>
           </div>

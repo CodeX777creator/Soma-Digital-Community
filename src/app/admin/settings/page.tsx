@@ -21,6 +21,7 @@ import {
   Globe,
   KeyRound,
   Loader2,
+  Plus,
   RefreshCw,
   Save,
   ServerCog,
@@ -29,8 +30,15 @@ import {
   Tag,
   UserRound,
   XCircle,
+  Zap,
 } from "lucide-react";
 import { auth, db } from "@/lib/firebase";
+import {
+  CreatorCreditBundle,
+  CreatorCreditConfig,
+  DEFAULT_CREATOR_CREDIT_CONFIG,
+  normalizeCreatorCreditConfig,
+} from "@/lib/creator-credit-config";
 
 type EnvStatus = { name: string; public: boolean; required: boolean; configured: boolean };
 type SettingsStatus = {
@@ -44,6 +52,12 @@ type SiteConfig = { brandName: string; contactEmail: string; twitterUrl: string;
 
 const DEFAULT_PRICING: PricingConfig = { pro: 97, elite: 297 };
 const DEFAULT_SITE: SiteConfig = { brandName: "Soma Digital Community", contactEmail: "", twitterUrl: "", instagramUrl: "", youtubeUrl: "", linkedinUrl: "" };
+const tierLabels: Array<{ id: keyof CreatorCreditConfig["tierAllocations"]; label: string }> = [
+  { id: "explorer", label: "Explorer" },
+  { id: "pro", label: "Pro" },
+  { id: "elite", label: "Elite" },
+  { id: "enterprise", label: "Enterprise" },
+];
 
 function toDate(value: any): Date | null {
   if (!value) return null;
@@ -116,6 +130,12 @@ export default function AdminSettingsPage() {
   const [savingSite, setSavingSite] = useState(false);
   const [siteSaved, setSiteSaved] = useState(false);
 
+  // Creator Credits config
+  const [creatorCredits, setCreatorCredits] = useState<CreatorCreditConfig>(DEFAULT_CREATOR_CREDIT_CONFIG);
+  const [creatorCreditsDraft, setCreatorCreditsDraft] = useState<CreatorCreditConfig>(DEFAULT_CREATOR_CREDIT_CONFIG);
+  const [savingCreatorCredits, setSavingCreatorCredits] = useState(false);
+  const [creatorCreditsSaved, setCreatorCreditsSaved] = useState(false);
+
   // Grant/revoke admin
   const [adminTarget, setAdminTarget] = useState("");
   const [adminAction, setAdminAction] = useState<"grant" | "revoke">("grant");
@@ -165,7 +185,12 @@ export default function AdminSettingsPage() {
         setSiteDraft(loaded);
       }
     });
-    return () => { unsubPricing(); unsubSite(); };
+    const unsubCreatorCredits = onSnapshot(doc(firestore, "config", "creatorCredits"), (snap) => {
+      const loaded = snap.exists() ? normalizeCreatorCreditConfig(snap.data()) : DEFAULT_CREATOR_CREDIT_CONFIG;
+      setCreatorCredits(loaded);
+      setCreatorCreditsDraft(loaded);
+    });
+    return () => { unsubPricing(); unsubSite(); unsubCreatorCredits(); };
   }, []);
 
   const refresh = async () => {
@@ -208,6 +233,74 @@ export default function AdminSettingsPage() {
       setError("Unable to save site config.");
     } finally {
       setSavingSite(false);
+    }
+  };
+
+  const updateBundle = (id: string, patch: Partial<CreatorCreditBundle>) => {
+    setCreatorCreditsDraft((current) => ({
+      ...current,
+      bundles: current.bundles.map((bundle) => bundle.id === id ? { ...bundle, ...patch } : bundle),
+    }));
+  };
+
+  const addBundle = () => {
+    setCreatorCreditsDraft((current) => {
+      const nextOrder = Math.max(0, ...current.bundles.map((bundle) => bundle.sortOrder)) + 10;
+      const nextCredits = 10;
+      return {
+        ...current,
+        bundles: [
+          ...current.bundles,
+          {
+            id: `credits_${Date.now()}`,
+            label: `${nextCredits} Credits`,
+            credits: nextCredits,
+            priceCents: 1000,
+            currency: "USD",
+            sortOrder: nextOrder,
+            active: true,
+          },
+        ],
+      };
+    });
+  };
+
+  const removeBundle = (id: string) => {
+    setCreatorCreditsDraft((current) => ({
+      ...current,
+      bundles: current.bundles.filter((bundle) => bundle.id !== id),
+    }));
+  };
+
+  const saveCreatorCredits = async () => {
+    if (!db) return;
+    const ids = new Set<string>();
+    const duplicate = creatorCreditsDraft.bundles.some((bundle) => {
+      if (ids.has(bundle.id)) return true;
+      ids.add(bundle.id);
+      return false;
+    });
+    const invalidBundle = creatorCreditsDraft.bundles.some((bundle) => !bundle.id.trim() || bundle.credits <= 0 || bundle.priceCents < 0);
+    if (duplicate || invalidBundle) {
+      setError("Creator Credit bundles need unique IDs, positive credit amounts, and non-negative prices.");
+      return;
+    }
+
+    setSavingCreatorCredits(true);
+    setError(null);
+    try {
+      const normalized = normalizeCreatorCreditConfig(creatorCreditsDraft);
+      await setDoc(doc(db, "config", "creatorCredits"), {
+        ...normalized,
+        updatedAt: serverTimestamp(),
+        updatedBy: adminUser?.uid || null,
+      }, { merge: true });
+      setCreatorCreditsSaved(true);
+      setTimeout(() => setCreatorCreditsSaved(false), 3000);
+    } catch {
+      setError("Unable to save Creator Credits config.");
+    } finally {
+      setSavingCreatorCredits(false);
     }
   };
 
@@ -296,6 +389,134 @@ export default function AdminSettingsPage() {
           </button>
           {pricingSaved && <span className="flex items-center gap-1.5 text-sm text-emerald-300"><CheckCircle2 className="h-4 w-4" /> Saved</span>}
           <span className="text-xs text-white/35 sm:ml-auto">Currently: Pro ${pricing.pro}/mo · Elite ${pricing.elite}/mo</span>
+        </div>
+      </Panel>
+
+      {/* Creator Credits */}
+      <Panel title="Creator Credits" icon={Zap}>
+        <div className="rounded-lg border border-cyan-400/15 bg-cyan-400/10 px-3 py-3 text-sm text-cyan-100">
+          Bundle prices apply to every plan. Explorer receives no included monthly credits unless this allocation is changed here.
+        </div>
+
+        <div className="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          {tierLabels.map((tier) => (
+            <Field key={tier.id} label={`${tier.label} monthly credits`}>
+              <input
+                type="number"
+                min={0}
+                step={1}
+                className={inputCls}
+                aria-label={`${tier.label} monthly creator credits`}
+                value={creatorCreditsDraft.tierAllocations[tier.id]}
+                onChange={(e) => setCreatorCreditsDraft((current) => ({
+                  ...current,
+                  tierAllocations: {
+                    ...current.tierAllocations,
+                    [tier.id]: Math.max(0, Number(e.target.value) || 0),
+                  },
+                }))}
+              />
+            </Field>
+          ))}
+        </div>
+
+        <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="text-sm font-semibold text-white">Universal credit bundles</p>
+            <p className="text-xs text-white/45">Disable bundles instead of deleting them when you want to keep history clean.</p>
+          </div>
+          <button
+            type="button"
+            onClick={addBundle}
+            className="inline-flex h-9 items-center justify-center gap-2 rounded-md border border-white/10 px-3 text-sm text-white/75 hover:bg-white/10 hover:text-white"
+          >
+            <Plus className="h-4 w-4" />
+            Add Bundle
+          </button>
+        </div>
+
+        <div className="mt-4 space-y-3">
+          {creatorCreditsDraft.bundles
+            .slice()
+            .sort((a, b) => a.sortOrder - b.sortOrder || a.credits - b.credits)
+            .map((bundle) => (
+              <div key={bundle.id} className="grid gap-3 rounded-lg border border-white/10 bg-black/15 p-3 lg:grid-cols-[1.2fr_1fr_1fr_1fr_0.8fr_auto_auto] lg:items-end">
+                <Field label="Bundle ID">
+                  <input
+                    type="text"
+                    className={inputCls}
+                    value={bundle.id}
+                    onChange={(e) => updateBundle(bundle.id, { id: e.target.value.trim() })}
+                  />
+                </Field>
+                <Field label="Label">
+                  <input
+                    type="text"
+                    className={inputCls}
+                    value={bundle.label}
+                    onChange={(e) => updateBundle(bundle.id, { label: e.target.value })}
+                  />
+                </Field>
+                <Field label="Credits">
+                  <input
+                    type="number"
+                    min={1}
+                    step={1}
+                    className={inputCls}
+                    value={bundle.credits}
+                    onChange={(e) => updateBundle(bundle.id, { credits: Math.max(1, Number(e.target.value) || 1) })}
+                  />
+                </Field>
+                <Field label="Price (cents)">
+                  <input
+                    type="number"
+                    min={0}
+                    step={1}
+                    className={inputCls}
+                    value={bundle.priceCents}
+                    onChange={(e) => updateBundle(bundle.id, { priceCents: Math.max(0, Number(e.target.value) || 0) })}
+                  />
+                </Field>
+                <Field label="Order">
+                  <input
+                    type="number"
+                    min={0}
+                    step={1}
+                    className={inputCls}
+                    value={bundle.sortOrder}
+                    onChange={(e) => updateBundle(bundle.id, { sortOrder: Math.max(0, Number(e.target.value) || 0) })}
+                  />
+                </Field>
+                <label className="flex h-10 items-center gap-2 rounded-md border border-white/10 bg-black/20 px-3 text-sm text-white/75">
+                  <input
+                    type="checkbox"
+                    checked={bundle.active}
+                    onChange={(e) => updateBundle(bundle.id, { active: e.target.checked })}
+                    className="accent-cyan-400"
+                  />
+                  Active
+                </label>
+                <button
+                  type="button"
+                  onClick={() => removeBundle(bundle.id)}
+                  className="inline-flex h-10 items-center justify-center rounded-md border border-red-400/20 px-3 text-sm text-red-200 hover:bg-red-500/10"
+                >
+                  Remove
+                </button>
+              </div>
+            ))}
+        </div>
+
+        <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center">
+          <button type="button" onClick={saveCreatorCredits} disabled={savingCreatorCredits}
+            className="inline-flex h-9 items-center gap-2 rounded-md bg-cyan-400 px-4 text-sm font-semibold text-black hover:bg-cyan-300 disabled:opacity-50">
+            {savingCreatorCredits ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+            Save Creator Credits
+          </button>
+          {creatorCreditsSaved && <span className="flex items-center gap-1.5 text-sm text-emerald-300"><CheckCircle2 className="h-4 w-4" /> Saved</span>}
+          <span className="text-xs text-white/35 sm:ml-auto">
+            Active bundles: {creatorCredits.bundles.filter((bundle) => bundle.active).length}
+          </span>
         </div>
       </Panel>
 

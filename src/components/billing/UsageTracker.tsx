@@ -6,7 +6,7 @@ import { MessageSquare, Download, Phone, Zap, Plus, CheckCircle2 } from "lucide-
 import { Button } from "@/components/ui/button";
 import { GlassCard } from "@/components/ui/glass-card";
 import { useAuth } from "@/providers/AuthProvider";
-import { getUserCredits, UserCredits, FREE_QUOTAS } from "@/lib/credits";
+import { getUserCredits, UserCredits } from "@/lib/credits";
 import { cn } from "@/lib/utils";
 import { CreditPurchase } from "./CreditPurchase";
 import Link from "next/link";
@@ -52,11 +52,11 @@ export function UsageTracker() {
   if (!credits) return null;
 
   const tier = credits.tier;
-  const isElite = tier === 'elite';
   const upgradeTarget = getUpgradeTarget(tier);
-  const aiProgress = isElite ? 100 : (credits.usedThisMonth / credits.monthlyQuota) * 100;
-  const isLowCredits = !isElite && credits.remainingFree < 3;
-  const canBuyCredits = tier !== "elite";
+  const hasIncludedCredits = credits.monthlyQuota > 0;
+  const aiProgress = hasIncludedCredits ? Math.min(100, (credits.usedThisMonth / credits.monthlyQuota) * 100) : 0;
+  const isLowCredits = credits.remainingFree < 3 && credits.purchasedCredits < 1;
+  const canBuyCredits = true;
 
   return (
     <>
@@ -105,22 +105,22 @@ export function UsageTracker() {
           </p>
         </div>
 
-        {/* AI Chats */}
+        {/* AI Credits */}
         <div className="space-y-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <MessageSquare className="w-3.5 h-3.5 text-muted-foreground" />
-              <span className="text-xs text-white">AI Mentor Chats</span>
+              <span className="text-xs text-white">Included Credits</span>
             </div>
             <span className={cn(
               "text-xs font-bold",
               isLowCredits ? "text-red-400" : "text-white"
             )}>
-              {isElite ? "∞" : `${credits.remainingFree}/${credits.monthlyQuota}`}
+              {hasIncludedCredits ? `${credits.remainingFree}/${credits.monthlyQuota}` : "0 included"}
             </span>
           </div>
           
-          {!isElite && (
+          {hasIncludedCredits && (
             <div className="h-1.5 bg-white/10 rounded-full overflow-hidden">
               <motion.div
                 className={cn(
@@ -130,6 +130,12 @@ export function UsageTracker() {
                 initial={{ width: 0 }}
                 animate={{ width: `${aiProgress}%` }}
               />
+            </div>
+          )}
+
+          {!hasIncludedCredits && (
+            <div className="rounded-lg border border-cyan-400/20 bg-cyan-400/10 px-3 py-2 text-[10px] text-cyan-100">
+              Explorer can use AI Studio by purchasing Creator Credits or upgrading for monthly included credits.
             </div>
           )}
 
@@ -144,7 +150,7 @@ export function UsageTracker() {
           {/* Low Credit Warning */}
           {isLowCredits && (
             <div className="mt-3 rounded-lg border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-[10px] text-amber-100">
-              You are close to your free limit. Buy credits or upgrade to keep creating without interruption.
+              Buy credits or upgrade to keep creating without interruption.
             </div>
           )}
         </div>
@@ -191,16 +197,16 @@ export function UsageMini() {
     getUserCredits(user.uid).then(setCredits);
   }, [user?.uid]);
 
-  if (!credits || credits.tier === 'elite') return null;
+  if (!credits) return null;
 
-  const percentage = (credits.remainingFree / credits.monthlyQuota) * 100;
+  const percentage = credits.monthlyQuota > 0 ? (credits.remainingFree / credits.monthlyQuota) * 100 : 0;
   const isLow = percentage < 20;
 
   return (
     <div className="px-3 py-2">
       <div className="flex items-center justify-between text-[10px] mb-1">
         <span className={isLow ? "text-red-400" : "text-muted-foreground"}>
-          AI Chats: {credits.remainingFree}/{credits.monthlyQuota}
+          Credits: {credits.monthlyQuota > 0 ? `${credits.remainingFree}/${credits.monthlyQuota}` : `${credits.purchasedCredits} purchased`}
         </span>
         {isLow && <span className="text-red-400 font-bold">Low!</span>}
       </div>

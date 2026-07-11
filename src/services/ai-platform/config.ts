@@ -1,4 +1,5 @@
 import type { CreatorCreditPolicy, PlanCreditProfile, MonetizedFeature, ProviderMode } from "./types";
+import { DEFAULT_CREATOR_CREDIT_ALLOCATIONS } from "@/lib/creator-credit-config";
 
 function readNumber(name: string, fallback: number): number {
   const raw = process.env[name];
@@ -33,7 +34,7 @@ export const creatorCreditPolicies: Record<MonetizedFeature, CreatorCreditPolicy
 
 export const planCreditProfiles: Record<"explorer" | "pro" | "elite" | "enterprise", PlanCreditProfile> = {
   explorer: {
-    monthlyCreatorCredits: readNumber("AI_EXPLORER_MONTHLY_CREDITS", 15),
+    monthlyCreatorCredits: readNumber("AI_EXPLORER_MONTHLY_CREDITS", DEFAULT_CREATOR_CREDIT_ALLOCATIONS.explorer),
     priorityRouting: false,
     concurrentJobLimit: 1,
     dailySpendingLimit: readNumber("AI_EXPLORER_DAILY_LIMIT", 15),
@@ -48,7 +49,7 @@ export const planCreditProfiles: Record<"explorer" | "pro" | "elite" | "enterpri
     },
   },
   pro: {
-    monthlyCreatorCredits: readNumber("AI_PRO_MONTHLY_CREDITS", 220),
+    monthlyCreatorCredits: readNumber("AI_PRO_MONTHLY_CREDITS", DEFAULT_CREATOR_CREDIT_ALLOCATIONS.pro),
     priorityRouting: false,
     concurrentJobLimit: 3,
     dailySpendingLimit: readNumber("AI_PRO_DAILY_LIMIT", 60),
@@ -63,7 +64,7 @@ export const planCreditProfiles: Record<"explorer" | "pro" | "elite" | "enterpri
     },
   },
   elite: {
-    monthlyCreatorCredits: readNumber("AI_ELITE_MONTHLY_CREDITS", 700),
+    monthlyCreatorCredits: readNumber("AI_ELITE_MONTHLY_CREDITS", DEFAULT_CREATOR_CREDIT_ALLOCATIONS.elite),
     priorityRouting: true,
     concurrentJobLimit: 6,
     dailySpendingLimit: readNumber("AI_ELITE_DAILY_LIMIT", 180),
@@ -78,7 +79,7 @@ export const planCreditProfiles: Record<"explorer" | "pro" | "elite" | "enterpri
     },
   },
   enterprise: {
-    monthlyCreatorCredits: readNumber("AI_ENTERPRISE_MONTHLY_CREDITS", 2000),
+    monthlyCreatorCredits: readNumber("AI_ENTERPRISE_MONTHLY_CREDITS", DEFAULT_CREATOR_CREDIT_ALLOCATIONS.enterprise),
     priorityRouting: true,
     concurrentJobLimit: 12,
     dailySpendingLimit: readNumber("AI_ENTERPRISE_DAILY_LIMIT", 500),
@@ -102,4 +103,3 @@ export const monetizationConfig = {
   reserveTimeoutMs: readNumber("AI_CREDIT_RESERVATION_TIMEOUT_MS", 10 * 60 * 1000),
   retryAttempts: readNumber("AI_GATEWAY_RETRY_ATTEMPTS", 3),
 };
-

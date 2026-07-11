@@ -5,6 +5,7 @@ import { logger } from "@/lib/logger";
 import { sanitizeString } from "@/lib/security";
 import { hashRequestSignature } from "./crypto";
 import { creatorCreditPolicies, planCreditProfiles } from "./config";
+import { normalizeCreatorCreditConfig } from "@/lib/creator-credit-config";
 import type {
   AIExecutionContext,
   AIExecutionLease,
@@ -13,6 +14,7 @@ import type {
   CreatorCreditSnapshot,
   CreatorPlan,
   MonetizedFeature,
+  PlanCreditProfile,
   ProviderMode,
 } from "./types";
 
@@ -59,8 +61,26 @@ function safeCount(value: unknown): number {
   return typeof value === "number" && Number.isFinite(value) ? value : 0;
 }
 
-function getCreditsForPlan(plan: CreatorPlan): number {
-  return planCreditProfiles[plan].monthlyCreatorCredits;
+async function getCreditsForPlan(plan: CreatorPlan): Promise<number> {
+  try {
+    const snap = await adminDb.collection("config").doc("creatorCredits").get();
+    if (!snap.exists) return planCreditProfiles[plan].monthlyCreatorCredits;
+    const config = normalizeCreatorCreditConfig(snap.data());
+    return config.tierAllocations[plan] ?? planCreditProfiles[plan].monthlyCreatorCredits;
+  } catch (error) {
+    logger.warn("[AI Credits] Falling back to default plan credits", {
+      plan,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return planCreditProfiles[plan].monthlyCreatorCredits;
+  }
+}
+
+async function getPlanProfile(plan: CreatorPlan): Promise<PlanCreditProfile> {
+  return {
+    ...planCreditProfiles[plan],
+    monthlyCreatorCredits: await getCreditsForPlan(plan),
+  };
 }
 
 export function resolveFeatureCredits(plan: CreatorPlan, feature: MonetizedFeature): number {
@@ -112,16 +132,17 @@ async function getOrCreateAccount(userId: string, plan: CreatorPlan, providerMod
   const snap = await ref.get();
   const periodId = currentPeriod();
   const nextResetAt = admin.firestore.Timestamp.fromDate(firstDayOfNextMonth());
+  const monthlyCredits = await getCreditsForPlan(plan);
 
   if (!snap.exists) {
     const doc: CreditAccountDoc = {
       userId,
       plan,
       periodId,
-      monthlyCreditsGranted: getCreditsForPlan(plan),
+      monthlyCreditsGranted: monthlyCredits,
       monthlyCreditsUsed: 0,
       monthlyCreditsReserved: 0,
-      remainingCredits: getCreditsForPlan(plan),
+      remainingCredits: monthlyCredits,
       byokEnabled: false,
       providerMode,
       resetAt: admin.firestore.Timestamp.now(),
@@ -138,13 +159,26 @@ async function getOrCreateAccount(userId: string, plan: CreatorPlan, providerMod
   const accountPeriod = data.periodId || periodId;
   if (accountPeriod !== periodId) {
     next.periodId = periodId;
-    next.monthlyCreditsGranted = getCreditsForPlan(plan);
+    next.monthlyCreditsGranted = monthlyCredits;
     next.monthlyCreditsUsed = 0;
     next.monthlyCreditsReserved = 0;
-    next.remainingCredits = getCreditsForPlan(plan);
+    next.remainingCredits = monthlyCredits;
     next.plan = plan;
     next.resetAt = admin.firestore.Timestamp.now();
     next.nextResetAt = nextResetAt;
+    next.lastUpdatedAt = admin.firestore.FieldValue.serverTimestamp();
+    await ref.set(next, { merge: true });
+    return next;
+  }
+
+  if (safeCount(data.monthlyCreditsGranted) !== monthlyCredits || data.plan !== plan || data.providerMode !== providerMode) {
+    next.monthlyCreditsGranted = monthlyCredits;
+    next.remainingCredits = Math.max(
+      0,
+      monthlyCredits - safeCount(data.monthlyCreditsUsed) - safeCount(data.monthlyCreditsReserved)
+    );
+    next.plan = plan;
+    next.providerMode = providerMode;
     next.lastUpdatedAt = admin.firestore.FieldValue.serverTimestamp();
     await ref.set(next, { merge: true });
     return next;
@@ -364,20 +398,21 @@ export async function refundCredits(lease: AIExecutionLease, reason: string, met
 export async function getCreatorCreditDashboard(userId: string, plan: CreatorPlan, providerMode: ProviderMode) {
   const snapshot = await getCreatorCreditSnapshot(userId, plan, providerMode);
   const ledger = await listCreditLedger(userId, 25);
+  const planProfile = await getPlanProfile(plan);
 
   return {
     snapshot,
     creditPolicies: creatorCreditPolicies,
-    planProfile: planCreditProfiles[plan],
+    planProfile,
     recentActivity: ledger,
     providerMode,
     byokEnabled: snapshot.byokEnabled,
     nextResetAt: snapshot.nextResetAt,
     resetAt: snapshot.resetAt,
     budgetSummary: {
-      monthlyCap: planCreditProfiles[plan].monthlyEstimatedAIExpenseCap,
-      dailyCap: planCreditProfiles[plan].dailySpendingLimit,
-      concurrentJobs: planCreditProfiles[plan].concurrentJobLimit,
+      monthlyCap: planProfile.monthlyEstimatedAIExpenseCap,
+      dailyCap: planProfile.dailySpendingLimit,
+      concurrentJobs: planProfile.concurrentJobLimit,
     },
   };
 }

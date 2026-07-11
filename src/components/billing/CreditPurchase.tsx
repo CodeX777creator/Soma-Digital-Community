@@ -1,15 +1,23 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Zap, X, Loader2, CheckCircle2, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { GlassCard } from "@/components/ui/glass-card";
 import { useAuth } from "@/providers/AuthProvider";
-import { CREDIT_PACKAGES, CREDIT_PRICING, UserTier } from "@/lib/credits";
+import { UserTier } from "@/lib/credits";
 import { getPlanLabel } from "@/lib/plan-ui";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
+import { db } from "@/lib/firebase";
+import { doc, onSnapshot } from "firebase/firestore";
+import {
+  activeCreditBundles,
+  CreatorCreditBundle,
+  DEFAULT_CREATOR_CREDIT_CONFIG,
+  normalizeCreatorCreditConfig,
+} from "@/lib/creator-credit-config";
 
 interface CreditPurchaseProps {
   isOpen: boolean;
@@ -20,20 +28,30 @@ interface CreditPurchaseProps {
 export function CreditPurchase({ isOpen, onClose, onPurchase }: CreditPurchaseProps) {
   const { userData } = useAuth();
   const { toast } = useToast();
-  const [selectedPackage, setSelectedPackage] = useState<number | null>(null);
+  const [bundles, setBundles] = useState<CreatorCreditBundle[]>(activeCreditBundles(DEFAULT_CREATOR_CREDIT_CONFIG));
+  const [selectedPackage, setSelectedPackage] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
 
   const tier = (userData?.tier || 'explorer') as UserTier;
-  const pricePerCredit = CREDIT_PRICING[tier] / 100;
+
+  useEffect(() => {
+    if (!db) return;
+    return onSnapshot(doc(db, "config", "creatorCredits"), (snap) => {
+      const config = snap.exists() ? normalizeCreatorCreditConfig(snap.data()) : DEFAULT_CREATOR_CREDIT_CONFIG;
+      setBundles(activeCreditBundles(config));
+      setSelectedPackage((current) => current && activeCreditBundles(config).some((bundle) => bundle.id === current) ? current : null);
+    });
+  }, []);
 
   const handlePurchase = async () => {
     if (selectedPackage === null) return;
     
-    const pkg = CREDIT_PACKAGES[selectedPackage];
+    const pkg = bundles.find((bundle) => bundle.id === selectedPackage);
+    if (!pkg) return;
     setIsProcessing(true);
     
     try {
-      await onPurchase(pkg.credits, pkg.price);
+      await onPurchase(pkg.credits, pkg.priceCents);
       toast({
         title: "Credits Added!",
         description: `${pkg.credits} credits have been added to your account.`,
@@ -78,7 +96,7 @@ export function CreditPurchase({ isOpen, onClose, onPurchase }: CreditPurchasePr
                 <div>
                   <h2 className="text-lg font-bold text-white">Buy AI Credits</h2>
                   <p className="text-[10px] text-muted-foreground">
-                    ${pricePerCredit.toFixed(2)} per credit
+                    Universal bundles for every plan
                   </p>
                 </div>
               </div>
@@ -100,33 +118,32 @@ export function CreditPurchase({ isOpen, onClose, onPurchase }: CreditPurchasePr
                 </span>
               </div>
               <div className="flex items-center justify-between mt-2">
-                <span className="text-sm text-muted-foreground">Price per Credit</span>
-                <span className="text-sm font-bold">${pricePerCredit.toFixed(2)}</span>
+                <span className="text-sm text-muted-foreground">Bundle Pricing</span>
+                <span className="text-sm font-bold">Same for all plans</span>
               </div>
               {tier === 'explorer' && (
                 <p className="text-[10px] text-cyan-400 mt-3">
-                  Pro members receive lower creator credit pricing.
+                  Buy credits or upgrade when you want monthly included credits.
                 </p>
               )}
               {tier === 'pro' && (
                 <p className="text-[10px] text-violet-300 mt-3">
-                  Elite includes the best creator credit pricing and higher monthly limits.
+                  Top up anytime with the same universal Creator Credit bundles.
                 </p>
               )}
             </div>
 
             {/* Credit Packages */}
             <div className="space-y-3 mb-6">
-              {CREDIT_PACKAGES
-                .filter(pkg => pkg.tier === tier || (tier === 'pro' && pkg.tier === 'explorer'))
-                .map((pkg, index) => {
-                  const isSelected = selectedPackage === index;
+              {bundles
+                .map((pkg) => {
+                  const isSelected = selectedPackage === pkg.id;
                   const savings = calculateSavings(pkg);
                   
                   return (
                     <motion.button
-                      key={index}
-                      onClick={() => setSelectedPackage(index)}
+                      key={pkg.id}
+                      onClick={() => setSelectedPackage(pkg.id)}
                       className={cn(
                         "w-full flex items-center justify-between p-4 rounded-xl border transition-all",
                         isSelected 
@@ -146,7 +163,7 @@ export function CreditPurchase({ isOpen, onClose, onPurchase }: CreditPurchasePr
                         <div className="text-left">
                           <p className="font-bold text-sm">{pkg.label}</p>
                           <p className="text-[10px] text-muted-foreground">
-                            ${(pkg.price / 100).toFixed(2)}
+                            ${(pkg.priceCents / 100).toFixed(2)}
                           </p>
                         </div>
                       </div>
@@ -178,7 +195,7 @@ export function CreditPurchase({ isOpen, onClose, onPurchase }: CreditPurchasePr
                 <Zap className="w-5 h-5 mr-2" />
               )}
               {selectedPackage !== null 
-                ? `Buy for $${(CREDIT_PACKAGES[selectedPackage].price / 100).toFixed(2)}`
+                ? `Buy for $${((bundles.find((bundle) => bundle.id === selectedPackage)?.priceCents || 0) / 100).toFixed(2)}`
                 : "Select a package"
               }
             </Button>
@@ -193,8 +210,8 @@ export function CreditPurchase({ isOpen, onClose, onPurchase }: CreditPurchasePr
   );
 }
 
-function calculateSavings(pkg: typeof CREDIT_PACKAGES[0]): number {
+function calculateSavings(pkg: CreatorCreditBundle): number {
   const basePrice = pkg.credits * 10; // $0.10 per credit base
-  const savings = ((basePrice - pkg.price) / basePrice) * 100;
+  const savings = ((basePrice - pkg.priceCents) / basePrice) * 100;
   return Math.round(savings);
 }

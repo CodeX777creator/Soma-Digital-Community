@@ -4,6 +4,11 @@
 
 import { doc, getDoc, updateDoc, increment, serverTimestamp, runTransaction } from "firebase/firestore";
 import { db } from "./firebase";
+import {
+  DEFAULT_CREATOR_CREDIT_ALLOCATIONS,
+  DEFAULT_CREATOR_CREDIT_BUNDLES,
+  normalizeCreatorCreditConfig,
+} from "./creator-credit-config";
 
 export type UserTier = 'explorer' | 'pro' | 'elite';
 
@@ -19,40 +24,31 @@ export type UserTier = 'explorer' | 'pro' | 'elite';
 // - Live call participation (Pro/Elite only)
 // - Founder 1-on-1 (Elite only)
 
-// Monthly AI chat quotas by tier
-// Explorer gets 3 free chats (taster) - enough to see value, not enough to rely on
+// Monthly AI chat quotas by tier. Admin-managed Creator Credit config is the
+// platform source of truth; these values are emergency client fallbacks.
 export const FREE_QUOTAS: Record<UserTier, number> = {
-  explorer: 3,   // 3 free AI chats (then $0.25/credit - EXPENSIVE)
-  pro: 50,       // 50 AI chats included in $97/mo subscription
-  elite: Infinity, // Unlimited AI included in $297/mo
+  explorer: DEFAULT_CREATOR_CREDIT_ALLOCATIONS.explorer,
+  pro: DEFAULT_CREATOR_CREDIT_ALLOCATIONS.pro,
+  elite: DEFAULT_CREATOR_CREDIT_ALLOCATIONS.elite,
 };
 
-// Credit pricing - EXPLORER PAYS MORE to incentivize upgrading
-// API cost ~$0.01-0.02 per chat
+// Universal fallback rate used only where older UI needs a per-credit estimate.
 export const CREDIT_PRICING: Record<UserTier, number> = {
-  explorer: 25,  // $0.25 per credit - EXPENSIVE (12-25x markup)
-  pro: 10,       // $0.10 per credit - Reasonable (5-10x markup)
-  elite: 0,      // Free (unlimited)
+  explorer: 10,
+  pro: 10,
+  elite: 10,
 };
 
-// Bulk credit packages
-// Explorer packages are priced high enough that Pro looks attractive
-export const CREDIT_PACKAGES = [
-  // Explorer - Expensive, small packages (don't want them buying too many)
-  { credits: 5, price: 125, tier: 'explorer' as const, label: '5 Credits' },        // $1.25
-  { credits: 10, price: 225, tier: 'explorer' as const, label: '10 Credits' },      // $2.25 (10% "discount")
-  { credits: 25, price: 500, tier: 'explorer' as const, label: '25 Credits' },      // $5.00 (20% "discount")
-  
-  // Pro - Cheaper, bigger packages for power users
-  { credits: 50, price: 450, tier: 'pro' as const, label: '50 Credits' },           // $4.50
-  { credits: 100, price: 800, tier: 'pro' as const, label: '100 Credits' },         // $8.00 (20% off)
-  { credits: 250, price: 1750, tier: 'pro' as const, label: '250 Credits' },        // $17.50 (30% off)
-];
-
-// Cost comparison for messaging:
-// Explorer: 50 AI chats = 3 free + 47 credits = ~$11.75 (and no other features)
-// Pro: $97/mo = 50 chats + resources + calls + community = way better value
-// This makes Pro the obvious choice for anyone serious about using AI
+// Universal fallback bundles. Admin-managed config can change these for all tiers.
+export const CREDIT_PACKAGES = DEFAULT_CREATOR_CREDIT_BUNDLES.map((bundle) => ({
+  id: bundle.id,
+  credits: bundle.credits,
+  price: bundle.priceCents,
+  label: bundle.label,
+  currency: bundle.currency,
+  active: bundle.active,
+  sortOrder: bundle.sortOrder,
+}));
 
 export interface UserCredits {
   tier: UserTier;
@@ -71,6 +67,18 @@ export interface UsageMetrics {
   lastResetDate: any;
 }
 
+async function getMonthlyQuotaForTier(tier: UserTier): Promise<number> {
+  if (!db) return FREE_QUOTAS[tier];
+  try {
+    const snap = await getDoc(doc(db, "config", "creatorCredits"));
+    if (!snap.exists()) return FREE_QUOTAS[tier];
+    const config = normalizeCreatorCreditConfig(snap.data());
+    return config.tierAllocations[tier] ?? FREE_QUOTAS[tier];
+  } catch {
+    return FREE_QUOTAS[tier];
+  }
+}
+
 /**
  * Get user's current credit status
  */
@@ -84,7 +92,7 @@ export async function getUserCredits(userId: string): Promise<UserCredits | null
   
   const data = snap.data();
   const tier: UserTier = data.tier || 'explorer';
-  const monthlyQuota = FREE_QUOTAS[tier];
+  const monthlyQuota = await getMonthlyQuotaForTier(tier);
   const usedThisMonth = data.usage?.aiChatsThisMonth || 0;
   
   // Check if we need to reset monthly quota
@@ -127,12 +135,7 @@ export async function canUseAIChat(userId: string): Promise<{ allowed: boolean; 
     return { allowed: false, reason: "User not found", remaining: 0 };
   }
   
-  // Elite users always have unlimited
-  if (credits.tier === 'elite') {
-    return { allowed: true, remaining: Infinity };
-  }
-  
-  // Check free quota
+  // Check included monthly credits
   if (credits.remainingFree > 0) {
     return { allowed: true, remaining: credits.remainingFree };
   }
@@ -144,7 +147,7 @@ export async function canUseAIChat(userId: string): Promise<{ allowed: boolean; 
   
   return { 
     allowed: false, 
-    reason: "Monthly quota exhausted. Purchase credits to continue.",
+    reason: "Creator credits exhausted. Purchase credits or upgrade to continue.",
     remaining: 0 
   };
 }
@@ -156,24 +159,20 @@ export async function consumeAIChat(userId: string): Promise<{ success: boolean;
   if (!db) throw new Error("Database not initialized");
   
   const userRef = doc(db, "users", userId);
+  const preflightSnap = await getDoc(userRef);
+  if (!preflightSnap.exists()) throw new Error("User not found");
+  const preflightTier: UserTier = preflightSnap.data().tier || "explorer";
+  const monthlyQuota = await getMonthlyQuotaForTier(preflightTier);
   
   return runTransaction(db, async (transaction) => {
     const snap = await transaction.get(userRef);
     if (!snap.exists()) throw new Error("User not found");
     
     const data = snap.data();
-    const tier: UserTier = data.tier || 'explorer';
-    
-    // Elite users don't consume credits
-    if (tier === 'elite') {
-      return { success: true, remaining: Infinity };
-    }
-    
-    const monthlyQuota = FREE_QUOTAS[tier];
     const usedThisMonth = data.usage?.aiChatsThisMonth || 0;
     const purchased = data.credits?.purchased || 0;
     
-    // Use free quota first
+    // Use included monthly credits first
     if (usedThisMonth < monthlyQuota) {
       transaction.update(userRef, {
         'usage.aiChatsThisMonth': increment(1),
