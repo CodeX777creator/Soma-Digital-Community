@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import { Button } from "@/components/ui/button";
@@ -21,15 +22,23 @@ import {
 } from "@/ai/studio/types";
 import {
   ArrowRight,
+  Bot,
   ClipboardCopy,
+  ImageIcon,
   History,
+  Mail,
   Layers3,
   LibraryBig,
+  Megaphone,
   Loader2,
   RefreshCcw,
   Search,
   Sparkles,
   FileText,
+  Video,
+  Volume2,
+  Wand2,
+  Workflow,
 } from "lucide-react";
 
 type StudioOverviewResponse = {
@@ -74,6 +83,65 @@ const DEFAULT_COMPOSER_STATE: StudioComposerState = {
   notes: "",
   language: "English",
 };
+
+const STUDIO_TOOLS = [
+  {
+    title: "AI Chat",
+    description: "Ask, refine, and shape ideas with a fast creative assistant.",
+    href: "/mentor",
+    icon: Bot,
+    label: "Guidance",
+  },
+  {
+    title: "AI Writer",
+    description: "Create scripts, captions, blogs, emails, ads, and funnels.",
+    href: "/ai/studio",
+    icon: Wand2,
+    label: "Content",
+  },
+  {
+    title: "Image Generator",
+    description: "Create branded images with styles, ratios, and saved history.",
+    href: "/ai/image-studio",
+    icon: ImageIcon,
+    label: "Visuals",
+  },
+  {
+    title: "Video Generator",
+    description: "Build scene-based videos with scripts, captions, and timelines.",
+    href: "/ai/video-studio",
+    icon: Video,
+    label: "Video",
+  },
+  {
+    title: "Voice Studio",
+    description: "Generate narration, brand voices, multilingual audio, and history.",
+    href: "/ai/audio-studio",
+    icon: Volume2,
+    label: "Audio",
+  },
+  {
+    title: "Social Media",
+    description: "Create reusable content for posts, campaigns, and scheduling.",
+    href: "/social",
+    icon: Megaphone,
+    label: "Marketing",
+  },
+  {
+    title: "Email Generator",
+    description: "Write campaigns, sequences, subject lines, and offers.",
+    href: "/ai/studio",
+    icon: Mail,
+    label: "Email",
+  },
+  {
+    title: "Automations",
+    description: "Connect creation to publishing, calendars, and execution.",
+    href: "/social/calendar",
+    icon: Workflow,
+    label: "Execution",
+  },
+];
 
 export default function AIStudioPage() {
   const { user } = useAuth();
@@ -298,23 +366,119 @@ export default function AIStudioPage() {
   return (
     <ProtectedRoute>
       <AppLayout>
-        <div className="space-y-6">
-          <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
-            <div className="space-y-2">
-              <div className="flex items-center gap-2">
-                <Sparkles className="h-5 w-5 text-primary" />
-                <h1 className="text-2xl font-semibold tracking-tight">AI Studio</h1>
+        <div className="space-y-8">
+          <section className="overflow-hidden rounded-[18px] border border-white/[0.08] bg-[#151A2E]/70 shadow-[0_30px_90px_rgba(0,0,0,0.36)] backdrop-blur-2xl">
+            <div className="relative p-6 sm:p-8 lg:p-10">
+              <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_72%_12%,rgba(139,92,246,0.38),transparent_34%),radial-gradient(circle_at_12%_10%,rgba(79,157,255,0.24),transparent_36%)]" />
+              <div className="relative grid gap-8 xl:grid-cols-[1fr_340px]">
+                <div className="space-y-6">
+                  <div className="space-y-3">
+                    <div className="inline-flex items-center gap-2 rounded-full border border-white/[0.08] bg-white/[0.05] px-3 py-1 text-xs text-[#BFC6D4]">
+                      <Sparkles className="h-3.5 w-3.5 text-[#8B5CF6]" />
+                      Creative command center
+                    </div>
+                    <div>
+                      <h1 className="text-4xl font-semibold tracking-tight text-white sm:text-5xl">AI Studio</h1>
+                      <p className="mt-3 max-w-2xl text-base leading-7 text-[#BFC6D4]">
+                        Create content, images, videos, voice, campaigns, and business assets from one intelligent workspace.
+                      </p>
+                    </div>
+                  </div>
+
+                  <form className="rounded-[18px] border border-white/[0.08] bg-[#090B13]/70 p-4 shadow-[0_18px_60px_rgba(0,0,0,0.28)]" onSubmit={handleGenerate}>
+                    <Textarea
+                      rows={3}
+                      value={composer.businessContext}
+                      onChange={(event) => handleComposerChange("businessContext", event.target.value)}
+                      placeholder="What would you like to create today?"
+                      className="min-h-28 resize-none border-0 bg-transparent px-1 text-base text-white shadow-none outline-none placeholder:text-[#7E8799] focus-visible:ring-0"
+                    />
+                    <div className="mt-4 flex flex-wrap items-center gap-3">
+                      <Button type="button" variant="outline" className="h-10 rounded-2xl border-white/[0.08] bg-white/[0.04]" onClick={() => handleComposerChange("campaignGoal", "Suggest high-potential content ideas")}>
+                        <Sparkles className="h-4 w-4" />
+                        Suggest ideas
+                      </Button>
+                      <Button type="button" variant="outline" className="h-10 rounded-2xl border-white/[0.08] bg-white/[0.04]" onClick={() => handleComposerChange("contentType", "caption")}>
+                        <Wand2 className="h-4 w-4" />
+                        Improve writing
+                      </Button>
+                      <Button asChild type="button" variant="outline" className="h-10 rounded-2xl border-white/[0.08] bg-white/[0.04]">
+                        <Link href="/ai/image-studio">
+                          <ImageIcon className="h-4 w-4" />
+                          Create image
+                        </Link>
+                      </Button>
+                      <Button asChild type="button" variant="outline" className="h-10 rounded-2xl border-white/[0.08] bg-white/[0.04]">
+                        <Link href="/ai/video-studio">
+                          <Video className="h-4 w-4" />
+                          Generate video
+                        </Link>
+                      </Button>
+                      <Button type="submit" disabled={generating || loading} className="ml-auto h-12 w-12 rounded-full bg-gradient-to-br from-[#5B5FFF] via-[#8B5CF6] to-[#4F9DFF] p-0 shadow-[0_18px_45px_rgba(91,95,255,0.35)]">
+                        {generating ? <Loader2 className="h-5 w-5 animate-spin" /> : <ArrowRight className="h-5 w-5" />}
+                      </Button>
+                    </div>
+                  </form>
+                </div>
+
+                <div className="rounded-[18px] border border-white/[0.08] bg-[#090B13]/70 p-5">
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm font-medium text-white">Your Usage</p>
+                    <p className="text-xs text-[#7E8799]">Resets in 18 days</p>
+                  </div>
+                  <div className="mt-6 flex items-center gap-5">
+                    <div className="flex h-28 w-28 shrink-0 items-center justify-center rounded-full bg-[conic-gradient(from_180deg,#5B5FFF_0_68%,rgba(255,255,255,0.08)_68%_100%)] p-3">
+                      <div className="flex h-full w-full flex-col items-center justify-center rounded-full bg-[#111827]">
+                        <span className="text-2xl font-semibold">68%</span>
+                        <span className="text-xs text-[#BFC6D4]">used</span>
+                      </div>
+                    </div>
+                    <div className="grid flex-1 gap-3 text-sm">
+                      <div className="flex justify-between gap-3 text-[#BFC6D4]"><span>AI Chat</span><span className="text-white">680 / 1,000</span></div>
+                      <div className="flex justify-between gap-3 text-[#BFC6D4]"><span>Images</span><span className="text-white">24 / 60</span></div>
+                      <div className="flex justify-between gap-3 text-[#BFC6D4]"><span>Videos</span><span className="text-white">8 / 20</span></div>
+                      <div className="flex justify-between gap-3 text-[#BFC6D4]"><span>Documents</span><span className="text-white">15 / 50</span></div>
+                    </div>
+                  </div>
+                </div>
               </div>
-              <p className="max-w-2xl text-sm text-muted-foreground">
-                Create content, reuse proven prompt packs, and review generated assets in one workspace. The packs are reference-only helpers now, not the main surface.
-              </p>
+            </div>
+          </section>
+
+          <section className="space-y-4">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+              <div>
+                <h2 className="text-xl font-semibold tracking-tight text-white">Explore AI tools</h2>
+                <p className="mt-1 text-sm text-[#BFC6D4]">Move from idea to asset, campaign, and execution without leaving the operating system.</p>
+              </div>
+              <Button type="button" variant="outline" onClick={handleRefresh} disabled={loading || refreshing || !user} className="rounded-2xl border-white/[0.08] bg-white/[0.04]">
+                {refreshing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCcw className="h-4 w-4" />}
+                Refresh
+              </Button>
             </div>
 
-            <Button type="button" variant="outline" onClick={handleRefresh} disabled={loading || refreshing || !user}>
-              {refreshing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCcw className="h-4 w-4" />}
-              Refresh
-            </Button>
-          </div>
+            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+              {STUDIO_TOOLS.map((tool) => {
+                const Icon = tool.icon;
+                return (
+                  <Link
+                    key={tool.title}
+                    href={tool.href}
+                    className="group rounded-[18px] border border-white/[0.08] bg-[#151A2E]/70 p-5 shadow-[0_18px_60px_rgba(0,0,0,0.24)] transition-all duration-200 hover:-translate-y-1 hover:border-[#8B5CF6]/35 hover:bg-[#1A2140]/80 hover:shadow-[0_24px_80px_rgba(91,95,255,0.16)]"
+                  >
+                    <div className="flex h-12 w-12 items-center justify-center rounded-[16px] bg-gradient-to-br from-[#4F9DFF] via-[#5B5FFF] to-[#8B5CF6] shadow-[0_14px_35px_rgba(91,95,255,0.25)]">
+                      <Icon className="h-5 w-5 text-white" />
+                    </div>
+                    <h3 className="mt-5 text-base font-medium text-white">{tool.title}</h3>
+                    <p className="mt-2 min-h-12 text-sm leading-6 text-[#BFC6D4]">{tool.description}</p>
+                    <Badge variant="outline" className="mt-4 rounded-full border-white/[0.08] bg-white/[0.04] text-[#BFC6D4]">
+                      {tool.label}
+                    </Badge>
+                  </Link>
+                );
+              })}
+            </div>
+          </section>
 
           <div className="grid gap-4 md:grid-cols-4">
             <GlassCard className="p-5">
