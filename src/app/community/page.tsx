@@ -17,6 +17,10 @@ import { CreatePostBox } from "@/components/community/CreatePostBox";
 import { EditPostModal } from "@/components/community/EditPostModal";
 import { Post, postService } from "@/lib/db";
 import { COMMUNITY_CHANNELS, CommunityChannel } from "@/lib/communityChannels";
+import { useAuth } from "@/providers/AuthProvider";
+import { db } from "@/lib/firebase";
+import { createNotification } from "@/lib/notifications";
+import { collection, doc, onSnapshot, serverTimestamp, writeBatch } from "firebase/firestore";
 
 // ─── Static AI Intel Sections ─────────────────────────────────────────────────
 
@@ -87,12 +91,15 @@ function EmptyFeed({ message = "Be the first entrepreneur to spark this discussi
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function CommunityPage() {
+  const { user, userData } = useAuth();
   const [posts, setPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeChannel, setActiveChannel] = useState<CommunityChannel>("all");
   const [editModalPost, setEditModalPost] = useState<Post | null>(null);
     const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
     const [deletedPost, setDeletedPost] = useState<Post | null>(null);
+  const [followingIds, setFollowingIds] = useState<Set<string>>(new Set());
+  const [followLoadingId, setFollowLoadingId] = useState<string | null>(null);
 
     useEffect(() => {
     const unsub = postService.subscribeToPosts((fetched) => {
@@ -101,6 +108,13 @@ export default function CommunityPage() {
     });
     return unsub;
   }, []);
+
+  useEffect(() => {
+    if (!user?.uid || !db) return;
+    return onSnapshot(collection(db, "users", user.uid, "following"), (snapshot) => {
+      setFollowingIds(new Set(snapshot.docs.map((item) => item.id)));
+    });
+  }, [user?.uid]);
 
   // Optimistic UI handlers
   const handleEditPost = (post: Post) => {
@@ -187,9 +201,10 @@ export default function CommunityPage() {
   }, {} as Record<CommunityChannel, number>);
   const spotlight = posts.find(post => !!post.authorName);
   const topContributors = Object.values(
-    activePosts.reduce<Record<string, { name: string; avatar?: string; role?: string; points: number }>>((acc, post) => {
+    activePosts.reduce<Record<string, { id?: string; name: string; avatar?: string; role?: string; points: number }>>((acc, post) => {
       const key = post.authorId || post.authorName || post.id;
       const existing = acc[key] || {
+        id: post.authorId,
         name: post.authorName || "Community member",
         avatar: post.authorAvatar,
         role: post.authorRole,
@@ -200,6 +215,46 @@ export default function CommunityPage() {
       return acc;
     }, {})
   ).sort((a, b) => b.points - a.points).slice(0, 5);
+
+  const toggleFollow = async (person: { id?: string; name: string }) => {
+    if (!db || !user?.uid || !person.id || person.id === user.uid) return;
+    setFollowLoadingId(person.id);
+    const isFollowing = followingIds.has(person.id);
+    try {
+      const batch = writeBatch(db);
+      const followingRef = doc(db, "users", user.uid, "following", person.id);
+      const followerRef = doc(db, "users", person.id, "followers", user.uid);
+      if (isFollowing) {
+        batch.delete(followingRef);
+        batch.delete(followerRef);
+      } else {
+        const viewerName = userData?.name || user.displayName || user.email || "Community member";
+        batch.set(followingRef, {
+          userId: person.id,
+          name: person.name,
+          followedAt: serverTimestamp(),
+        }, { merge: true });
+        batch.set(followerRef, {
+          userId: user.uid,
+          name: viewerName,
+          followedAt: serverTimestamp(),
+        }, { merge: true });
+      }
+      await batch.commit();
+      if (!isFollowing) {
+        await createNotification(
+          person.id,
+          "info",
+          "New follower",
+          `${userData?.name || user.displayName || "Someone"} followed you.`,
+          "/community",
+          user.uid
+        ).catch(() => undefined);
+      }
+    } finally {
+      setFollowLoadingId(null);
+    }
+  };
 
   return (
     <ProtectedRoute>
@@ -409,7 +464,26 @@ export default function CommunityPage() {
                     <p className="truncate text-sm font-medium text-white">{person.name}</p>
                     <p className="truncate text-xs text-[#7E8799]">{person.role || "Community member"}</p>
                   </div>
-                  <Button size="sm" variant="outline" className="rounded-xl border-white/[0.08] bg-white/[0.04] text-[#BFC6D4]">Follow</Button>
+                  {person.id && person.id !== user?.uid ? (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={followLoadingId === person.id}
+                      onClick={() => toggleFollow(person)}
+                      className={cn(
+                        "rounded-xl border-white/[0.08] bg-white/[0.04] text-[#BFC6D4]",
+                        followingIds.has(person.id) && "border-emerald-400/30 bg-emerald-400/10 text-emerald-200"
+                      )}
+                    >
+                      {followLoadingId === person.id ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : followingIds.has(person.id) ? (
+                        "Following"
+                      ) : (
+                        "Follow"
+                      )}
+                    </Button>
+                  ) : null}
                 </div>
               )) : (
                 <p className="rounded-[14px] border border-dashed border-white/[0.08] p-4 text-sm leading-6 text-[#BFC6D4]">

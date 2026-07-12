@@ -147,9 +147,9 @@ export const AppLayout = ({ children }: React.PropsWithChildren) => {
   const navWithMessages = React.useMemo<NavItem[]>(
     () => [
       ...primaryNav,
-              { name: "Messages", href: "/notifications", icon: MessageSquare, badge: unreadCount > 0 ? unreadCount : undefined },
+      { name: "Messages", href: "/notifications", icon: MessageSquare },
     ],
-    [unreadCount]
+    []
   );
 
   React.useEffect(() => {

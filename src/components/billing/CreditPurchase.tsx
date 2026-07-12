@@ -22,7 +22,7 @@ import {
 interface CreditPurchaseProps {
   isOpen: boolean;
   onClose: () => void;
-  onPurchase: (credits: number, price: number) => Promise<void>;
+  onPurchase: (bundle: CreatorCreditBundle) => Promise<void>;
 }
 
 export function CreditPurchase({ isOpen, onClose, onPurchase }: CreditPurchaseProps) {
@@ -51,7 +51,7 @@ export function CreditPurchase({ isOpen, onClose, onPurchase }: CreditPurchasePr
     setIsProcessing(true);
     
     try {
-      await onPurchase(pkg.credits, pkg.priceCents);
+      await onPurchase(pkg);
       toast({
         title: "Credits Added!",
         description: `${pkg.credits} credits have been added to your account.`,

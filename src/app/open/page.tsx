@@ -93,6 +93,18 @@ function OnboardingController() {
   const [googleRedirectError, setGoogleRedirectError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (!auth) return;
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      if (!user) return;
+      const profile = await dbService.getUserProfile(user.uid);
+      if (profile?.onboardingComplete === true) {
+        router.replace("/dashboard");
+      }
+    });
+    return unsubscribe;
+  }, [router]);
+
+  useEffect(() => {
     if (handledGoogleRedirect.current) return;
     handledGoogleRedirect.current = true;
 

@@ -75,6 +75,35 @@ interface CreateAssetPurchaseResponse {
   message?: string;
 }
 
+interface CreatorCreditBundle {
+  id: string;
+  label: string;
+  credits: number;
+  priceCents: number;
+  currency: string;
+  sortOrder: number;
+  active: boolean;
+}
+
+interface CreatorCreditConfig {
+  tierAllocations?: Record<string, number>;
+  bundles?: CreatorCreditBundle[];
+  version?: number;
+}
+
+interface CreateCreditPurchaseRequest {
+  bundleId: string;
+  userId: string;
+  idempotencyKey?: string;
+}
+
+interface CreateCreditPurchaseResponse {
+  purchaseId: string;
+  authorizationUrl: string | null;
+  status: string;
+  message?: string;
+}
+
 interface CanonicalSubscriptionState {
   provider: 'paypal' | 'paystack' | string;
   subscriptionPlan: SubscriptionPlan;
@@ -208,6 +237,120 @@ async function cacheSubscriptionClaim(userId: string, tier: SubscriptionPlan) {
   } catch (error) {
     console.error(`Failed to cache subscription claim for ${userId}:`, error);
   }
+}
+
+const defaultCreditBundles: CreatorCreditBundle[] = [
+  { id: 'credits_5', label: '5 Credits', credits: 5, priceCents: 125, currency: 'USD', sortOrder: 10, active: true },
+  { id: 'credits_10', label: '10 Credits', credits: 10, priceCents: 225, currency: 'USD', sortOrder: 20, active: true },
+  { id: 'credits_25', label: '25 Credits', credits: 25, priceCents: 500, currency: 'USD', sortOrder: 30, active: true },
+  { id: 'credits_50', label: '50 Credits', credits: 50, priceCents: 450, currency: 'USD', sortOrder: 40, active: true },
+  { id: 'credits_100', label: '100 Credits', credits: 100, priceCents: 800, currency: 'USD', sortOrder: 50, active: true },
+  { id: 'credits_250', label: '250 Credits', credits: 250, priceCents: 1750, currency: 'USD', sortOrder: 60, active: true },
+];
+
+function normalizeCreditBundles(config: CreatorCreditConfig | undefined): CreatorCreditBundle[] {
+  const rawBundles = Array.isArray(config?.bundles) ? config.bundles : defaultCreditBundles;
+  const seen = new Set<string>();
+  const bundles = rawBundles
+    .map((bundle, index) => {
+      if (!bundle || typeof bundle !== 'object') return null;
+      const id = typeof bundle.id === 'string' ? bundle.id.trim() : '';
+      const credits = typeof bundle.credits === 'number' && Number.isFinite(bundle.credits) ? bundle.credits : 0;
+      const priceCents = typeof bundle.priceCents === 'number' && Number.isFinite(bundle.priceCents) ? bundle.priceCents : -1;
+      if (!id || seen.has(id) || credits <= 0 || priceCents < 0) return null;
+      seen.add(id);
+      return {
+        id,
+        label: typeof bundle.label === 'string' && bundle.label.trim() ? bundle.label.trim() : `${credits} Credits`,
+        credits,
+        priceCents,
+        currency: typeof bundle.currency === 'string' && bundle.currency.trim() ? bundle.currency.trim().toUpperCase() : 'USD',
+        sortOrder: typeof bundle.sortOrder === 'number' && Number.isFinite(bundle.sortOrder) ? bundle.sortOrder : (index + 1) * 10,
+        active: bundle.active !== false,
+      };
+    })
+    .filter((bundle): bundle is CreatorCreditBundle => Boolean(bundle))
+    .sort((a, b) => a.sortOrder - b.sortOrder || a.credits - b.credits);
+
+  return bundles.length ? bundles : defaultCreditBundles;
+}
+
+async function getActiveCreditBundle(bundleId: string): Promise<CreatorCreditBundle | null> {
+  const snap = await db.collection('config').doc('creatorCredits').get();
+  const config = snap.exists ? snap.data() as CreatorCreditConfig : undefined;
+  return normalizeCreditBundles(config).find((bundle) => bundle.id === bundleId && bundle.active) || null;
+}
+
+async function processCreditPurchaseWebhook(eventId: string, eventType: string, data: any) {
+  if (data?.metadata?.kind !== 'creator_credit_purchase') {
+    return { handled: false };
+  }
+
+  const purchaseId = typeof data.metadata.purchaseId === 'string' ? data.metadata.purchaseId : '';
+  const userId = typeof data.metadata.userId === 'string' ? data.metadata.userId : '';
+  if (!purchaseId || !userId) {
+    return { handled: true, response: { success: true, ignored: true, reason: 'missing_credit_purchase_metadata' } };
+  }
+
+  const purchaseRef = db.collection('creatorCreditPurchases').doc(purchaseId);
+  const purchaseSnap = await purchaseRef.get();
+  if (!purchaseSnap.exists) {
+    return { handled: true, response: { success: true, ignored: true, reason: 'credit_purchase_not_found' } };
+  }
+
+  const purchase = purchaseSnap.data() || {};
+  if (purchase.status === 'paid') {
+    return { handled: true, response: { success: true, duplicate: true } };
+  }
+
+  if (eventType !== 'charge.success') {
+    await purchaseRef.set({
+      status: eventType === 'charge.failed' ? 'failed' : 'ignored',
+      eventType,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    }, { merge: true });
+    return { handled: true, response: { success: true, ignored: true, reason: 'non_success_credit_event' } };
+  }
+
+  const credits = typeof purchase.credits === 'number' && Number.isFinite(purchase.credits) ? purchase.credits : Number(data.metadata.credits || 0);
+  if (credits <= 0) {
+    await purchaseRef.set({
+      status: 'failed',
+      failureReason: 'invalid_credit_amount',
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    }, { merge: true });
+    return { handled: true, response: { success: true, ignored: true, reason: 'invalid_credit_amount' } };
+  }
+
+  await db.runTransaction(async (transaction) => {
+    const freshPurchase = await transaction.get(purchaseRef);
+    if (freshPurchase.data()?.status === 'paid') return;
+
+    transaction.set(purchaseRef, {
+      status: 'paid',
+      paidAt: admin.firestore.FieldValue.serverTimestamp(),
+      eventId,
+      paystackReference: data.reference || purchase.paystackReference || null,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    }, { merge: true });
+
+    transaction.set(db.collection('users').doc(userId), {
+      credits: {
+        purchased: admin.firestore.FieldValue.increment(credits),
+      },
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    }, { merge: true });
+  });
+
+  await createNotification(
+    userId,
+    'success',
+    'Creator Credits added',
+    `${credits} Creator Credits have been added to your account.`,
+    '/settings/credits'
+  );
+
+  return { handled: true, response: { success: true, flow: 'creator_credit_purchase' } };
 }
 
 async function processAssetPurchaseWebhook(
@@ -792,6 +935,124 @@ export const createPaystackAssetPurchase = onCall(
   }
 );
 
+export const createPaystackCreditPurchase = onCall(
+  {
+    secrets: [paystackSecretKey],
+  },
+  async (request): Promise<CreateCreditPurchaseResponse> => {
+    const data = request.data as Partial<CreateCreditPurchaseRequest>;
+    const context = request.auth;
+    const secretKey = paystackSecretKey.value();
+
+    if (!context?.uid) {
+      throw new HttpsError('unauthenticated', 'User not authenticated');
+    }
+
+    if (!secretKey) {
+      throw new HttpsError('failed-precondition', 'Paystack secret key is not configured');
+    }
+
+    const bundleId = typeof data.bundleId === 'string' ? data.bundleId : '';
+    const userId = typeof data.userId === 'string' ? data.userId : '';
+    if (!bundleId || !userId) {
+      throw new HttpsError('invalid-argument', 'bundleId and userId are required');
+    }
+
+    if (userId !== context.uid) {
+      throw new HttpsError('permission-denied', 'Cannot create credit purchase for another user');
+    }
+
+    const bundle = await getActiveCreditBundle(bundleId);
+    if (!bundle) {
+      throw new HttpsError('not-found', 'Creator Credit bundle is not available');
+    }
+
+    const purchaseId = `${userId}_${bundle.id}_${Date.now()}`;
+    const idempotencyKey = data.idempotencyKey || `paystack-credits:${userId}:${bundle.id}`;
+    const idempotencyReserved = await checkIdempotencyKey(userId, idempotencyKey);
+    if (!idempotencyReserved) {
+      const existingKey = await db.collection('idempotency_keys').doc(`${userId}_${idempotencyKey}`).get();
+      const existingKeyData = existingKey.data();
+      if (typeof existingKeyData?.authorizationUrl === 'string' && existingKeyData.authorizationUrl) {
+        return {
+          purchaseId: String(existingKeyData.purchaseId || purchaseId),
+          authorizationUrl: existingKeyData.authorizationUrl,
+          status: typeof existingKeyData.status === 'string' ? existingKeyData.status : 'approval_pending',
+        };
+      }
+      throw new HttpsError('aborted', 'Your checkout is still being prepared. Please try again in a moment.');
+    }
+
+    const userRecord = await auth.getUser(context.uid);
+    if (!userRecord.email) {
+      throw new HttpsError('failed-precondition', 'User email is required for Paystack checkout');
+    }
+
+    const callbackUrl = `${frontendUrl.value()}/settings/credits?purchase=success`;
+    const purchaseRef = db.collection('creatorCreditPurchases').doc(purchaseId);
+
+    try {
+      const response = await axios.post(
+        `${PAYSTACK_API_BASE_URL}/transaction/initialize`,
+        {
+          email: userRecord.email,
+          amount: bundle.priceCents,
+          currency: bundle.currency || paystackCurrency.value(),
+          callback_url: callbackUrl,
+          metadata: {
+            kind: 'creator_credit_purchase',
+            purchaseId,
+            bundleId: bundle.id,
+            credits: bundle.credits,
+            userId,
+          },
+        },
+        { headers: getPaystackHeaders(secretKey) }
+      );
+
+      const transaction = response.data.data;
+      const authorizationUrl = transaction.authorization_url;
+      const paystackReference = transaction.reference;
+
+      if (!authorizationUrl || !paystackReference) {
+        throw new Error('Paystack did not return a checkout URL');
+      }
+
+      await purchaseRef.set({
+        userId,
+        bundleId: bundle.id,
+        bundleLabel: bundle.label,
+        credits: bundle.credits,
+        priceCents: bundle.priceCents,
+        currency: bundle.currency || paystackCurrency.value(),
+        provider: 'paystack',
+        paystackReference,
+        authorizationUrl,
+        status: 'approval_pending',
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      }, { merge: true });
+
+      await db.collection('idempotency_keys').doc(`${userId}_${idempotencyKey}`).set({
+        userId,
+        key: idempotencyKey,
+        provider: 'paystack',
+        purchaseId,
+        bundleId: bundle.id,
+        authorizationUrl,
+        status: 'approval_pending',
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+      }, { merge: true });
+
+      return { purchaseId, authorizationUrl, status: 'created' };
+    } catch (error) {
+      console.error('Failed to create Creator Credit purchase:', error);
+      throw new HttpsError('internal', 'Failed to create Creator Credit purchase');
+    }
+  }
+);
+
 /**
  * Paystack webhook handler
  * Handles: charge.success, subscription.disable, subscription.not_funded, invoice.create, invoice.update
@@ -863,6 +1124,13 @@ export const paystackWebhook = onRequest(
         if (assetPurchaseResult.handled) {
           await eventRef.update({ status: 'success', flow: 'asset_purchase' });
           res.status(200).json(assetPurchaseResult.response || { success: true });
+          return;
+        }
+
+        const creditPurchaseResult = await processCreditPurchaseWebhook(eventId, eventType, data);
+        if (creditPurchaseResult.handled) {
+          await eventRef.update({ status: 'success', flow: 'creator_credit_purchase' });
+          res.status(200).json(creditPurchaseResult.response || { success: true });
           return;
         }
 

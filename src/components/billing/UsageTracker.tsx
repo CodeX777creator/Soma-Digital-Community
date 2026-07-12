@@ -11,6 +11,9 @@ import { cn } from "@/lib/utils";
 import { CreditPurchase } from "./CreditPurchase";
 import Link from "next/link";
 import { getUpgradeLabel, getUpgradeTarget } from "@/lib/plan-ui";
+import { app } from "@/lib/firebase";
+import { getFunctions, httpsCallable } from "firebase/functions";
+import type { CreatorCreditBundle } from "@/lib/creator-credit-config";
 
 export function UsageTracker() {
   const { user } = useAuth();
@@ -177,10 +180,21 @@ export function UsageTracker() {
       <CreditPurchase
         isOpen={showCreditPurchase}
         onClose={() => setShowCreditPurchase(false)}
-        onPurchase={async (credits, price) => {
-          // TODO: Implement actual purchase flow with payment provider
-          console.log(`Purchasing ${credits} credits for $${price / 100}`);
-          await loadCredits();
+        onPurchase={async (bundle: CreatorCreditBundle) => {
+          if (!user?.uid) throw new Error("Please sign in to buy credits.");
+          const createCreditPurchase = httpsCallable<
+            { bundleId: string; userId: string; idempotencyKey: string },
+            { authorizationUrl: string | null; status: string; message?: string }
+          >(getFunctions(app), "createPaystackCreditPurchase");
+          const result = await createCreditPurchase({
+            bundleId: bundle.id,
+            userId: user.uid,
+            idempotencyKey: `paystack-credits:${user.uid}:${bundle.id}`,
+          });
+          if (!result.data.authorizationUrl) {
+            throw new Error(result.data.message || "Paystack did not return a checkout link.");
+          }
+          window.location.href = result.data.authorizationUrl;
         }}
       />
     </>

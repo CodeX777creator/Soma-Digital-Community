@@ -147,7 +147,7 @@ export const runDailyMissionsManually = onRequest(async (req, res) => {
 // PayPal subscription functions
 export { createPayPalSubscription, paypalWebhook, cancelPayPalSubscription, checkSubscriptionStatus } from './paypal';
 // Paystack subscription functions
-export { createPaystackSubscription, createPaystackAssetPurchase, paystackWebhook, cancelPaystackSubscription } from './paystack';
+export { createPaystackSubscription, createPaystackAssetPurchase, createPaystackCreditPurchase, paystackWebhook, cancelPaystackSubscription } from './paystack';
 // Subscription sync and cleanup jobs
 export { syncSubscriptions, runSubscriptionSync } from './subscriptionSync';
 export { cleanupStaleGeneratedAssets } from './storage-lifecycle';
