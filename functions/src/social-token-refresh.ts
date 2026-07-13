@@ -45,17 +45,32 @@ export const queueSocialTokenRefreshJobs = onSchedule(
         return;
       }
 
-      const jobRef = db.collection('socialTokenRefreshJobs').doc();
+      const accountId = data.socialAccountId || doc.id;
+      const jobRef = db.collection('socialTokenRefreshJobs').doc(`${accountId}_current`);
       batch.set(jobRef, {
         socialTokenRefreshJobId: jobRef.id,
-        socialAccountId: data.socialAccountId || doc.id,
+        socialAccountId: accountId,
         ownerId: data.ownerId,
         providerId: data.providerId,
         status: 'queued',
         reason: data.expiresAt ? 'credential expiring soon' : 'oauth account needs refresh review',
+        expiresAt: data.expiresAt || null,
+        refreshWindowDays: windowDays,
+        leaseId: null,
+        leaseExpiresAt: null,
+        attempts: 0,
+        lastError: null,
         createdAt: admin.firestore.Timestamp.now(),
         updatedAt: admin.firestore.Timestamp.now(),
-      });
+      }, { merge: true });
+      batch.set(doc.ref, {
+        metadata: {
+          ...(data.metadata || {}),
+          tokenRefreshQueuedAt: admin.firestore.Timestamp.now(),
+          tokenRefreshJobId: jobRef.id,
+        },
+        updatedAt: admin.firestore.Timestamp.now(),
+      }, { merge: true });
       queued += 1;
     });
 

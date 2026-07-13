@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { ChangeEvent, FormEvent, useEffect, useMemo, useState } from "react";
+import { ChangeEvent, FormEvent, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useSearchParams } from "next/navigation";
 import {
   addMonths,
@@ -179,6 +179,45 @@ const STATUS_LABELS: Record<ScheduledPostStatus, string> = {
   cancelled: "Cancelled",
 };
 
+function ComposerSection({
+  title,
+  description,
+  badge,
+  defaultOpen = false,
+  children,
+}: {
+  title: string;
+  description?: string;
+  badge?: string;
+  defaultOpen?: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <details
+      open={defaultOpen}
+      className="group rounded-[18px] border border-white/10 bg-white/[0.025] shadow-[0_12px_36px_rgba(0,0,0,0.16)]"
+    >
+      <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 marker:hidden">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-medium text-white">{title}</span>
+            {badge ? (
+              <span className="rounded-full border border-white/10 bg-white/[0.05] px-2 py-0.5 text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
+                {badge}
+              </span>
+            ) : null}
+          </div>
+          {description ? <p className="mt-0.5 truncate text-xs text-muted-foreground">{description}</p> : null}
+        </div>
+        <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-180" />
+      </summary>
+      <div className="space-y-4 border-t border-white/10 px-4 py-4">
+        {children}
+      </div>
+    </details>
+  );
+}
+
 function getTodayDateString(): string {
   return format(new Date(), "yyyy-MM-dd");
 }
@@ -204,6 +243,35 @@ function combineDateAndTime(date: string, time: string): string {
   const next = new Date(parsedDate);
   next.setHours(Number.isFinite(hours) ? hours : 9, Number.isFinite(minutes) ? minutes : 0, 0, 0);
   return next.toISOString();
+}
+
+function buildAiStudioActionHref(
+  action: string,
+  form: CalendarFormState,
+  options: { platform?: SocialPlatform; contentType?: ScheduledPostContentType } = {}
+): string {
+  const params = new URLSearchParams({
+    source: "scheduler",
+    action,
+    platform: options.platform || form.platform,
+    contentType: options.contentType || form.contentType,
+    returnTo: "/social/calendar?mode=scheduler",
+  });
+
+  if (form.caption.trim()) {
+    params.set("caption", form.caption.trim().slice(0, 280));
+  }
+  if (form.cta.trim()) {
+    params.set("cta", form.cta.trim().slice(0, 160));
+  }
+  if (form.assetIds.trim()) {
+    params.set("assetIds", form.assetIds.trim().slice(0, 500));
+  }
+  if (form.scheduledDate) {
+    params.set("scheduledDate", form.scheduledDate);
+  }
+
+  return `/ai/studio?${params.toString()}`;
 }
 
 function buildFormFromPost(post: ScheduledPostRecord): CalendarFormState {
@@ -497,7 +565,6 @@ export default function SocialCalendarPage() {
   const [selectedCampaignId, setSelectedCampaignId] = useState<string | null>(null);
   const [dragOverDay, setDragOverDay] = useState<string | null>(null);
   const [connectedAccounts, setConnectedAccounts] = useState<SocialAccountRecord[]>([]);
-  const [showAdvancedDetails, setShowAdvancedDetails] = useState(false);
   const [form, setForm] = useState<CalendarFormState>(() => buildEmptyForm(getTodayDateString()));
   const [campaignForm, setCampaignForm] = useState<CampaignFormState>(() => buildEmptyCampaignForm());
 
@@ -1593,13 +1660,13 @@ export default function SocialCalendarPage() {
                     <div className="text-sm font-medium text-white">Soma AI actions</div>
                     <div className="mt-3 grid gap-2">
                       <Button asChild size="sm" variant="outline" className="justify-start rounded-[14px]">
-                        <Link href="/ai-studio">Write caption</Link>
+                        <Link href={buildAiStudioActionHref("write_caption", form)}>Write caption</Link>
                       </Button>
                       <Button asChild size="sm" variant="outline" className="justify-start rounded-[14px]">
-                        <Link href="/ai-studio">Repurpose recent asset</Link>
+                        <Link href={buildAiStudioActionHref("repurpose_asset", form)}>Repurpose recent asset</Link>
                       </Button>
                       <Button asChild size="sm" variant="ghost" className="justify-start rounded-[14px]">
-                        <Link href="/ai-studio">Fill content gap</Link>
+                        <Link href={buildAiStudioActionHref("fill_content_gap", form)}>Fill content gap</Link>
                       </Button>
                     </div>
                   </div>
@@ -1923,10 +1990,9 @@ export default function SocialCalendarPage() {
                   </div>
                 ) : null}
 
-                <form className="space-y-5 p-5" onSubmit={handleSubmit}>
+                <form className="space-y-3 p-5" onSubmit={handleSubmit}>
                   {isEventsMode ? (
-                    <div className="space-y-3">
-                      <label className="text-sm font-medium">Choose platform</label>
+                    <ComposerSection title="Platform" description="Choose where this live event belongs." defaultOpen>
                       <div className="grid grid-cols-2 gap-2">
                         {SOCIAL_PROVIDER_REGISTRY.map((provider) => {
                           const connected = connectedPlatforms.has(provider.id);
@@ -1949,12 +2015,35 @@ export default function SocialCalendarPage() {
                           );
                         })}
                       </div>
-                    </div>
+                    </ComposerSection>
                   ) : (
                     <>
-                      <section className="space-y-3">
+                      <ComposerSection title="Campaign" description="Optional grouping for this post.">
+                        <div className="space-y-2">
+                          <label className="text-xs font-medium text-muted-foreground">Campaign</label>
+                          <select
+                            className={cn("h-11 w-full rounded-[16px] border border-white/10 bg-background px-3 text-sm")}
+                            value={form.campaignId}
+                            onChange={(event) => updateField("campaignId", event.target.value)}
+                            aria-label="Choose campaign for scheduled post"
+                          >
+                            <option value="">No campaign</option>
+                            {campaigns.map((campaign) => (
+                              <option key={campaign.socialCampaignId} value={campaign.socialCampaignId}>
+                                {campaign.campaignName}
+                              </option>
+                            ))}
+                          </select>
+                          <p className="text-xs text-muted-foreground">
+                            {campaigns.length === 0 ? campaignOptionalLabel : "Campaigns keep related posts organized without changing how they publish."}
+                          </p>
+                        </div>
+                      </ComposerSection>
+
+                      <ComposerSection title="Platform" description="Choose accounts and the post format." defaultOpen>
+                        <div className="space-y-3">
                         <div className="flex items-center justify-between gap-3">
-                          <label className="text-sm font-medium">1. Destination</label>
+                          <label className="text-sm font-medium">Destination</label>
                           {selectedPost ? <span className="text-xs text-muted-foreground">Editing one destination</span> : null}
                         </div>
                         <div className="grid gap-2 sm:grid-cols-2">
@@ -2013,10 +2102,10 @@ export default function SocialCalendarPage() {
                             );
                           })}
                         </div>
-                      </section>
+                        </div>
 
-                      <section className="space-y-3">
-                        <label className="text-sm font-medium">2. Format</label>
+                        <div className="space-y-3">
+                        <label className="text-sm font-medium">Format</label>
                         <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
                           {selectedCapability.supportedContentTypes.map((contentType) => {
                             const FormatIcon = getContentTypeIcon(contentType);
@@ -2040,12 +2129,13 @@ export default function SocialCalendarPage() {
                         {!allTargetsSupportFormat ? (
                           <p className="text-xs leading-5 text-amber-300">One selected destination does not support this format. Choose a compatible format or destination.</p>
                         ) : null}
-                      </section>
+                        </div>
+                      </ComposerSection>
 
-                      <section className="space-y-3 rounded-[18px] border border-white/10 bg-white/[0.025] p-4">
+                      <ComposerSection title="Media" description="Attach, upload, or generate visuals." badge={anyTargetRequiresMedia ? "Required" : "Optional"} defaultOpen={anyTargetRequiresMedia}>
                         <div className="flex items-center justify-between gap-3">
-                          <label className="text-sm font-medium">3. Media</label>
-                          {anyTargetRequiresMedia ? <span className="text-xs text-amber-300">Required</span> : <span className="text-xs text-muted-foreground">Optional</span>}
+                          <label className="text-sm font-medium">Selected media</label>
+                          {selectedAssets.length > 0 ? <span className="text-xs text-muted-foreground">{selectedAssets.length} attached</span> : null}
                         </div>
                         <div className="rounded-[18px] border border-dashed border-white/10 bg-black/20 p-4">
                           {selectedAssets.length > 0 ? (
@@ -2101,16 +2191,16 @@ export default function SocialCalendarPage() {
                               <p>{anyTargetRequiresMedia ? "Attach a completed AI Studio asset before scheduling this format." : "Attach media from AI Studio when this post needs visuals or video."}</p>
                               <div className="flex flex-wrap gap-2">
                                 <Button asChild size="sm" variant="outline" className="rounded-[14px]">
-                                  <Link href="/ai/image-studio">Generate image</Link>
+                                  <Link href={`/ai/image-studio?${new URLSearchParams({ source: "scheduler", action: "generate_image", platform: form.platform, returnTo: "/social/calendar?mode=scheduler" }).toString()}`}>Generate image</Link>
                                 </Button>
                                 <Button asChild size="sm" variant="outline" className="rounded-[14px]">
-                                  <Link href="/ai/video-studio">Generate video</Link>
+                                  <Link href={`/ai/video-studio?${new URLSearchParams({ source: "scheduler", action: "generate_video", platform: form.platform, returnTo: "/social/calendar?mode=scheduler" }).toString()}`}>Generate video</Link>
                                 </Button>
                                 <Button type="button" size="sm" variant="ghost" onClick={() => loadStudioAssets()} className="rounded-[14px]">
                                   Find recent asset
                                 </Button>
                                 <Button asChild size="sm" variant="ghost" className="rounded-[14px]">
-                                  <Link href="/ai-studio">Repurpose existing content</Link>
+                                  <Link href={buildAiStudioActionHref("repurpose_existing_content", form)}>Repurpose existing content</Link>
                                 </Button>
                               </div>
                             </div>
@@ -2195,12 +2285,12 @@ export default function SocialCalendarPage() {
                             </p>
                           )}
                         </div>
-                      </section>
+                      </ComposerSection>
                     </>
                   )}
 
-                  <section className="space-y-3">
-                    <label className="text-sm font-medium">{isEventsMode ? postHeadingLabel : "4. Caption"}</label>
+                  <ComposerSection title={isEventsMode ? "Content" : "Content"} description={isEventsMode ? "Describe the event clearly." : "Caption, hashtags, CTA, and destination variants."} defaultOpen>
+                    <label className="text-sm font-medium">{isEventsMode ? postHeadingLabel : "Caption"}</label>
                     <Textarea
                       value={form.caption}
                       onChange={(event) => updateField("caption", event.target.value)}
@@ -2222,22 +2312,22 @@ export default function SocialCalendarPage() {
                         </div>
                         <div className="flex flex-wrap gap-2">
                           <Button asChild type="button" size="sm" variant="outline" className="rounded-[14px]">
-                            <Link href="/ai-studio">Write caption</Link>
+                            <Link href={buildAiStudioActionHref("write_caption", form)}>Write caption</Link>
                           </Button>
                           <Button asChild type="button" size="sm" variant="ghost" className="rounded-[14px]">
-                            <Link href="/ai-studio">Shorten</Link>
+                            <Link href={buildAiStudioActionHref("shorten_caption", form)}>Shorten</Link>
                           </Button>
                           <Button asChild type="button" size="sm" variant="ghost" className="rounded-[14px]">
-                            <Link href="/ai-studio">Add hook</Link>
+                            <Link href={buildAiStudioActionHref("add_hook", form)}>Add hook</Link>
                           </Button>
                           <Button asChild type="button" size="sm" variant="ghost" className="rounded-[14px]">
-                            <Link href="/ai-studio">Add CTA</Link>
+                            <Link href={buildAiStudioActionHref("add_cta", form)}>Add CTA</Link>
                           </Button>
                           <Button asChild type="button" size="sm" variant="ghost" className="rounded-[14px]">
-                            <Link href="/ai-studio">Generate hashtags</Link>
+                            <Link href={buildAiStudioActionHref("generate_hashtags", form)}>Generate hashtags</Link>
                           </Button>
                           <Button asChild type="button" size="sm" variant="ghost" className="rounded-[14px]">
-                            <Link href="/ai-studio">Adapt for platform</Link>
+                            <Link href={buildAiStudioActionHref("adapt_for_platform", form)}>Adapt for platform</Link>
                           </Button>
                         </div>
                         {publishTargetAccounts.length > 1 ? (
@@ -2264,10 +2354,10 @@ export default function SocialCalendarPage() {
                         ) : null}
                       </>
                     ) : null}
-                  </section>
+                  </ComposerSection>
 
                   {!isEventsMode && targetPlatforms.length > 0 ? (
-                    <section className="space-y-3 rounded-[18px] border border-white/10 bg-white/[0.025] p-4">
+                    <ComposerSection title="Advanced" description="Provider rules, internal notes, and timezone.">
                       <div>
                         <label className="text-sm font-medium">Platform settings</label>
                         <p className="mt-1 text-xs text-muted-foreground">These prepare the post for native publishing rules later.</p>
@@ -2337,11 +2427,23 @@ export default function SocialCalendarPage() {
                           </select>
                         </div>
                       ) : null}
-                    </section>
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium">Post title</label>
+                        <Input value={form.title} onChange={(event) => updateField("title", event.target.value)} placeholder="Optional title for your calendar" />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium">Internal notes</label>
+                        <Textarea value={form.notes} onChange={(event) => updateField("notes", event.target.value)} rows={3} placeholder="Private reminders or approval notes." />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium">Timezone</label>
+                        <Input value={form.timezone} onChange={(event) => updateField("timezone", event.target.value)} placeholder={Intl.DateTimeFormat().resolvedOptions().timeZone || "Africa/Nairobi"} />
+                      </div>
+                    </ComposerSection>
                   ) : null}
 
-                  <section className="space-y-3">
-                    <label className="text-sm font-medium">{isEventsMode ? "Schedule" : "5. Schedule"}</label>
+                  <ComposerSection title="Schedule" description={isEventsMode ? "Choose the event date and series." : "Choose date and time."}>
+                    <label className="text-sm font-medium">Date and time</label>
                     <div className="grid gap-3 md:grid-cols-2">
                       <div className="space-y-2">
                         <label className="text-xs font-medium text-muted-foreground">Date</label>
@@ -2352,27 +2454,29 @@ export default function SocialCalendarPage() {
                         <Input type="time" value={form.scheduledTime} onChange={(event) => updateField("scheduledTime", event.target.value)} className="rounded-[16px] border-white/10 bg-white/[0.03]" />
                       </div>
                     </div>
-                    <div className="space-y-2">
-                      <label className="text-xs font-medium text-muted-foreground">{isEventsMode ? "Series" : "Campaign"}</label>
-                      <select
-                        className={cn("h-11 w-full rounded-[16px] border border-white/10 bg-background px-3 text-sm")}
-                        value={form.campaignId}
-                        onChange={(event) => updateField("campaignId", event.target.value)}
-                        aria-label={isEventsMode ? "Choose series for scheduled event" : "Choose campaign for scheduled post"}
-                      >
-                        <option value="">No campaign</option>
-                        {campaigns.map((campaign) => (
-                          <option key={campaign.socialCampaignId} value={campaign.socialCampaignId}>
-                            {campaign.campaignName}
-                          </option>
-                        ))}
-                      </select>
-                      {campaigns.length === 0 ? <p className="text-xs text-muted-foreground">{campaignOptionalLabel}</p> : null}
-                    </div>
+                    {isEventsMode ? (
+                      <div className="space-y-2">
+                        <label className="text-xs font-medium text-muted-foreground">Series</label>
+                        <select
+                          className={cn("h-11 w-full rounded-[16px] border border-white/10 bg-background px-3 text-sm")}
+                          value={form.campaignId}
+                          onChange={(event) => updateField("campaignId", event.target.value)}
+                          aria-label="Choose series for scheduled event"
+                        >
+                          <option value="">No series</option>
+                          {campaigns.map((campaign) => (
+                            <option key={campaign.socialCampaignId} value={campaign.socialCampaignId}>
+                              {campaign.campaignName}
+                            </option>
+                          ))}
+                        </select>
+                        {campaigns.length === 0 ? <p className="text-xs text-muted-foreground">{campaignOptionalLabel}</p> : null}
+                      </div>
+                    ) : null}
                     {!isEventsMode ? (
                       <div className="flex flex-wrap gap-2">
                         <Button asChild type="button" size="sm" variant="outline" className="rounded-[14px]">
-                          <Link href="/ai-studio">Suggest best time</Link>
+                          <Link href={buildAiStudioActionHref("suggest_best_time", form)}>Suggest best time</Link>
                         </Button>
                         <Button
                           type="button"
@@ -2391,21 +2495,12 @@ export default function SocialCalendarPage() {
                         </Button>
                       </div>
                     ) : null}
-                  </section>
+                  </ComposerSection>
 
-                  <button
-                    type="button"
-                    onClick={() => setShowAdvancedDetails((current) => !current)}
-                    className="flex w-full items-center justify-between rounded-[16px] border border-white/10 bg-white/[0.03] px-4 py-3 text-left text-sm text-muted-foreground transition hover:bg-white/[0.06] hover:text-white"
-                  >
-                    {isEventsMode ? "Advanced details" : "6. Advanced"}
-                    <ChevronDown className={cn("h-4 w-4 transition-transform", showAdvancedDetails && "rotate-180")} />
-                  </button>
-
-                  {showAdvancedDetails ? (
-                    <div className="space-y-4 rounded-[18px] border border-white/10 bg-white/[0.025] p-4">
+                  {isEventsMode ? (
+                    <ComposerSection title="Advanced" description="Private event details and timezone.">
                       <div className="space-y-2">
-                        <label className="text-sm font-medium">{isEventsMode ? "Event title" : "Post title"}</label>
+                        <label className="text-sm font-medium">Event title</label>
                         <Input value={form.title} onChange={(event) => updateField("title", event.target.value)} placeholder="Optional title for your calendar" />
                       </div>
                       <div className="space-y-2">
@@ -2416,7 +2511,7 @@ export default function SocialCalendarPage() {
                         <label className="text-sm font-medium">Timezone</label>
                         <Input value={form.timezone} onChange={(event) => updateField("timezone", event.target.value)} placeholder={Intl.DateTimeFormat().resolvedOptions().timeZone || "Africa/Nairobi"} />
                       </div>
-                    </div>
+                    </ComposerSection>
                   ) : null}
 
                   <div className="grid gap-2 sm:grid-cols-2">
@@ -2484,7 +2579,12 @@ export default function SocialCalendarPage() {
                   </div>
 
                   <div className="mt-4 space-y-2">
-                    <div className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">Recent attempts</div>
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">Recent attempts</div>
+                      <Button asChild size="sm" variant="ghost" className="h-8 rounded-[12px]">
+                        <Link href="/social/publish-attempts">View all attempts</Link>
+                      </Button>
+                    </div>
                     {publishAttempts.length > 0 ? publishAttempts.map((attempt) => (
                       <div key={attempt.publishAttemptId} className="rounded-[14px] border border-white/10 bg-white/[0.025] p-3">
                         <div className="flex flex-wrap items-center justify-between gap-2">

@@ -2,6 +2,7 @@
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import { Button } from "@/components/ui/button";
@@ -99,6 +100,50 @@ const DEFAULT_COMPOSER_STATE: StudioComposerState = {
   language: "English",
 };
 
+function isStudioContentType(value: string | null): value is StudioContentType {
+  return Boolean(value && (STUDIO_CONTENT_TYPES as readonly string[]).includes(value));
+}
+
+function getSchedulerActionPrefill(searchParams: URLSearchParams): Partial<StudioComposerState> | null {
+  if (searchParams.get("source") !== "scheduler") return null;
+
+  const action = searchParams.get("action") || "write_caption";
+  const platform = searchParams.get("platform") || "";
+  const caption = searchParams.get("caption") || "";
+  const cta = searchParams.get("cta") || "";
+  const scheduledDate = searchParams.get("scheduledDate") || "";
+  const requestedContentType = searchParams.get("contentType");
+  const contentType = isStudioContentType(requestedContentType) ? requestedContentType : "caption";
+
+  const actionPrompts: Record<string, string> = {
+    write_caption: "Write a polished social caption for this scheduled post.",
+    shorten_caption: "Shorten this caption while keeping the main message clear and persuasive.",
+    add_hook: "Create three strong opening hooks for this social post.",
+    add_cta: "Add a clear call to action that fits the platform and offer.",
+    generate_hashtags: "Generate relevant hashtags for this post without overloading the caption.",
+    adapt_for_platform: "Adapt this post for the selected social platform using its best practices.",
+    repurpose_asset: "Repurpose a recent content asset into a fresh social post.",
+    repurpose_existing_content: "Repurpose existing content into a platform-ready social post.",
+    fill_content_gap: "Create a content idea and caption to fill an empty calendar slot.",
+    suggest_best_time: "Recommend the best publishing time and explain the reasoning.",
+  };
+
+  return {
+    contentType: action === "fill_content_gap" || action === "suggest_best_time" ? "marketing_planner" : contentType,
+    platform,
+    campaignGoal: actionPrompts[action] || actionPrompts.write_caption,
+    callToAction: cta,
+    businessContext: [
+      actionPrompts[action] || actionPrompts.write_caption,
+      platform ? `Platform: ${platform}` : "",
+      requestedContentType ? `Post format: ${requestedContentType}` : "",
+      scheduledDate ? `Scheduled date: ${scheduledDate}` : "",
+      caption ? `Existing draft: ${caption}` : "",
+    ].filter(Boolean).join("\n"),
+    notes: "Imported from Scheduler. Return to the calendar after generating if you want to attach this to a scheduled post.",
+  };
+}
+
 const STUDIO_TOOLS = [
   {
     title: "AI Chat",
@@ -185,6 +230,7 @@ const STUDIO_WORKFLOWS = [
 export default function AIStudioPage() {
   const { user } = useAuth();
   const { toast } = useToast();
+  const searchParams = useSearchParams();
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState<StudioContentType | "all">("all");
   const [loading, setLoading] = useState(true);
@@ -199,6 +245,21 @@ export default function AIStudioPage() {
     promptLibrary: [],
     artifacts: [],
   });
+
+  useEffect(() => {
+    const prefill = getSchedulerActionPrefill(searchParams);
+    if (!prefill) return;
+
+    setComposer((current) => ({
+      ...current,
+      ...prefill,
+      brandVoice: current.brandVoice,
+      brandName: current.brandName,
+      targetAudience: current.targetAudience,
+      tone: current.tone,
+      language: current.language,
+    }));
+  }, [searchParams]);
 
   const loadStudioOverview = async () => {
     if (!user) return;

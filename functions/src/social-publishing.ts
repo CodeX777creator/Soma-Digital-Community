@@ -140,6 +140,7 @@ interface PublishOutcome {
   providerResponse?: string;
   errorMessage?: string;
   retryable?: boolean;
+  failureCode?: string;
 }
 
 function decodeMasterKey(rawKey: string): Buffer {
@@ -328,23 +329,61 @@ function resolvePublishEndpoint(platform: SocialPlatform, account: SocialAccount
   return fallback || null;
 }
 
-function buildPublishPayload(post: ScheduledPostDoc, account: SocialAccountDoc, credentials: DecryptedCredentials | null) {
+async function buildPublishPayload(post: ScheduledPostDoc, account: SocialAccountDoc, credentials: DecryptedCredentials | null) {
+  const hashtags = sanitizeStringArray(post.hashtags);
+  const contentType = post.contentType || getDefaultContentType(post.platform);
+  const caption = post.caption || '';
+  const mediaItems = await Promise.all((post.assetIds || []).map(async (assetId, index) => {
+    const asset = await resolveGeneratedAsset(assetId, post.ownerId);
+    return {
+      assetId,
+      order: index,
+      type: inferMediaItemType(asset),
+      mimeType: asset?.mimeType,
+      downloadUrl: asset?.downloadUrl,
+      thumbnail: asset?.thumbnail,
+      storagePath: asset?.storagePath,
+    };
+  }));
+
   return {
+    payloadVersion: 'social-publish-v1',
     scheduledPostId: post.scheduledPostId,
     ownerId: post.ownerId,
+    publicationGroupId: post.publicationGroupId,
     platform: post.platform,
-    socialAccountId: account.socialAccountId,
-    accountName: account.accountName,
-    providerAccountId: account.providerAccountId,
-    handle: account.handle,
+    connectedAccountId: post.connectedAccountId || post.socialAccountId || account.socialAccountId,
+    destination: {
+      socialAccountId: account.socialAccountId,
+      providerAccountId: account.providerAccountId,
+      accountName: account.accountName,
+      handle: account.handle,
+      status: account.status,
+    },
     title: post.title,
-    caption: post.caption,
-    assetIds: post.assetIds || [],
+    caption,
     campaignId: post.campaignId,
     notes: post.notes,
-    timezone: post.timezone,
-    metadata: jsonClone(post.metadata || {}),
-    scheduledTime: post.scheduledTime.toDate().toISOString(),
+    content: {
+      contentType,
+      caption,
+      hashtags,
+      cta: post.cta,
+      finalText: buildFinalSocialText(caption, hashtags, post.cta),
+      mediaItems,
+    },
+    scheduling: {
+      scheduledTime: post.scheduledTime.toDate().toISOString(),
+      timezone: post.timezone || account.timezone,
+      status: post.status,
+    },
+    platformSettings: jsonClone(post.platformSettings || {}),
+    metadata: jsonClone({
+      ...(post.metadata || {}),
+      providerPostId: post.providerPostId || post.externalPostId || null,
+      failureCode: post.failureCode || null,
+      failureMessage: post.failureMessage || post.lastError || null,
+    }),
     credentials: credentials?.externalAccountId ? {
       externalAccountId: credentials.externalAccountId,
     } : undefined,
@@ -354,8 +393,8 @@ function buildPublishPayload(post: ScheduledPostDoc, account: SocialAccountDoc, 
 function isEligibleForProcessing(post: ScheduledPostDoc, now: Date): boolean {
   const dueAt = post.scheduledTime.toDate().getTime();
   if (dueAt > now.getTime()) return false;
-  if (post.status === 'published') return false;
-  if (post.status !== 'scheduled' && post.status !== 'editing' && post.status !== 'failed') return false;
+  if (post.status === 'published' || post.status === 'publishing' || post.status === 'cancelled') return false;
+  if (post.status !== 'scheduled' && post.status !== 'failed') return false;
 
   if (post.nextRetryAt && post.nextRetryAt.toDate().getTime() > now.getTime()) {
     return false;
@@ -430,6 +469,7 @@ async function claimScheduledPost(postRef: admin.firestore.DocumentReference<adm
 
     transaction.set(postRef, {
       attemptCount: nextAttemptCount,
+      status: 'publishing',
       lastAttemptAt: now,
       publishLeaseId: leaseId,
       publishLeaseExpiresAt: leaseExpiresAt,
@@ -459,6 +499,9 @@ async function markPublishFailure(postRef: admin.firestore.DocumentReference<adm
     failedAt: admin.firestore.FieldValue.serverTimestamp(),
     lastError: errorMessage.slice(0, 1000),
     externalPostId: externalPostId || post.externalPostId || null,
+    providerPostId: externalPostId || post.providerPostId || post.externalPostId || null,
+    failureCode: retryable ? 'PROVIDER_RETRYABLE_FAILURE' : 'PROVIDER_PUBLISH_FAILED',
+    failureMessage: errorMessage.slice(0, 1000),
     publishProviderResponse: providerResponse ? providerResponse.slice(0, 2000) : post.publishProviderResponse || null,
     nextRetryAt,
     publishLeaseId: null,
@@ -485,8 +528,11 @@ async function markPublishSuccess(
     publishedAt: admin.firestore.FieldValue.serverTimestamp(),
     publishedBy: account.socialAccountId,
     lastError: null,
+    failureCode: null,
+    failureMessage: null,
     nextRetryAt: null,
     externalPostId: externalPostId || post.externalPostId || null,
+    providerPostId: externalPostId || post.providerPostId || post.externalPostId || null,
     publishProviderResponse: providerResponse ? providerResponse.slice(0, 2000) : post.publishProviderResponse || null,
     publishLeaseId: null,
     publishLeaseExpiresAt: null,
@@ -536,7 +582,7 @@ async function attemptPublish(post: ScheduledPostDoc, account: SocialAccountDoc)
     };
   }
 
-  const payload = buildPublishPayload(post, account, credentials);
+  const payload = await buildPublishPayload(post, account, credentials);
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     'X-Social-Platform': post.platform,
@@ -562,6 +608,7 @@ async function attemptPublish(post: ScheduledPostDoc, account: SocialAccountDoc)
     return {
       success: false,
       errorMessage: `Publish endpoint rejected the request (${response.status})`,
+      failureCode: response.status === 429 ? 'PROVIDER_RATE_LIMITED' : 'PROVIDER_ENDPOINT_REJECTED',
       providerResponse,
       retryable: response.status >= 500 || response.status === 429,
     };
@@ -623,21 +670,29 @@ async function processScheduledPosts(): Promise<{
     processed += 1;
     const attemptNumber = claimed.attemptCount || 1;
     const publishAttemptId = `pub_${claimed.scheduledPostId}_${attemptNumber}_${Date.now()}`;
-    const account = await pickSocialAccount(claimed.ownerId, claimed.platform, claimed.socialAccountId);
+    const connectedAccountId = claimed.connectedAccountId || claimed.socialAccountId;
+    const account = await pickSocialAccount(claimed.ownerId, claimed.platform, connectedAccountId);
+    const startedAtDate = new Date();
 
     await recordPublishAttempt({
       publishAttemptId,
       scheduledPostId: claimed.scheduledPostId,
       ownerId: claimed.ownerId,
       platform: claimed.platform,
-      socialAccountId: claimed.socialAccountId,
+      socialAccountId: connectedAccountId,
+      publicationGroupId: claimed.publicationGroupId,
+      provider: claimed.platform,
+      contentType: claimed.contentType || getDefaultContentType(claimed.platform),
       attemptNumber,
       status: 'processing',
       triggeredAt: admin.firestore.Timestamp.now(),
-      startedAt: admin.firestore.Timestamp.now(),
+      startedAt: admin.firestore.Timestamp.fromDate(startedAtDate),
+      payloadVersion: 'social-publish-v1',
       metadata: {
         scheduledTime: toIso(claimed.scheduledTime),
         title: claimed.title || null,
+        contentType: claimed.contentType || getDefaultContentType(claimed.platform),
+        assetCount: (claimed.assetIds || []).length,
       },
     });
 
@@ -654,7 +709,9 @@ async function processScheduledPosts(): Promise<{
         await updatePublishAttempt(publishAttemptId, {
           status: 'success',
           finishedAt: admin.firestore.Timestamp.now(),
+          durationMs: Date.now() - startedAtDate.getTime(),
           externalPostId: outcome.externalPostId || null,
+          providerPostId: outcome.externalPostId || null,
           providerResponse: outcome.providerResponse || null,
           retryable: false,
         });
@@ -664,8 +721,11 @@ async function processScheduledPosts(): Promise<{
         await updatePublishAttempt(publishAttemptId, {
           status: 'failed',
           finishedAt: admin.firestore.Timestamp.now(),
+          durationMs: Date.now() - startedAtDate.getTime(),
+          failureCode: outcome.failureCode || (outcome.retryable ? 'PROVIDER_RETRYABLE_FAILURE' : 'PROVIDER_PUBLISH_FAILED'),
           errorMessage: outcome.errorMessage || 'Publish failed',
           externalPostId: outcome.externalPostId || null,
+          providerPostId: outcome.externalPostId || null,
           providerResponse: outcome.providerResponse || null,
           retryable: outcome.retryable ?? true,
         });
@@ -677,6 +737,8 @@ async function processScheduledPosts(): Promise<{
       await updatePublishAttempt(publishAttemptId, {
         status: 'failed',
         finishedAt: admin.firestore.Timestamp.now(),
+        durationMs: Date.now() - startedAtDate.getTime(),
+        failureCode: 'WORKER_EXCEPTION',
         errorMessage: message,
         retryable: true,
       });
