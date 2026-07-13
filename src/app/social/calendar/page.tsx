@@ -47,6 +47,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/providers/AuthProvider";
+import { authFetch } from "@/lib/clientApi";
 import { cn } from "@/lib/utils";
 import { SOCIAL_PROVIDER_REGISTRY } from "@/lib/social-data";
 import {
@@ -128,6 +129,18 @@ type PublishPayloadResponse = {
   payload: NormalizedSocialPublishPayload;
 };
 
+type CreditDashboard = {
+  snapshot: {
+    remainingCredits: number;
+    monthlyCreditsGranted: number;
+    monthlyCreditsUsed: number;
+    monthlyCreditsReserved: number;
+    byokEnabled: boolean;
+    providerMode: string;
+    nextResetAt: string;
+  };
+};
+
 const IMAGE_UPLOAD_MAX_BYTES = 10 * 1024 * 1024;
 const VIDEO_UPLOAD_MAX_BYTES = 100 * 1024 * 1024;
 
@@ -168,6 +181,20 @@ interface CampaignFormState {
 }
 
 type CalendarViewMode = "month" | "week" | "agenda";
+type ComposerWorkflowStep = "platform" | "ai" | "edit" | "preview" | "schedule" | "publish";
+
+const COMPOSER_WORKFLOW_STEPS: Array<{
+  id: ComposerWorkflowStep;
+  title: string;
+  description: string;
+}> = [
+  { id: "platform", title: "Platform", description: "Choose destinations and format." },
+  { id: "ai", title: "AI", description: "Generate or improve assets." },
+  { id: "edit", title: "Edit", description: "Attach media and write copy." },
+  { id: "preview", title: "Preview", description: "Review the final post." },
+  { id: "schedule", title: "Schedule", description: "Pick the publishing time." },
+  { id: "publish", title: "Publish", description: "Confirm and queue it." },
+];
 
 const STATUS_LABELS: Record<ScheduledPostStatus, string> = {
   draft: "Draft",
@@ -184,18 +211,22 @@ function ComposerSection({
   description,
   badge,
   defaultOpen = false,
+  visible = true,
   children,
 }: {
   title: string;
   description?: string;
   badge?: string;
   defaultOpen?: boolean;
+  visible?: boolean;
   children: ReactNode;
 }) {
+  if (!visible) return null;
+
   return (
     <details
       open={defaultOpen}
-      className="group rounded-[18px] border border-white/10 bg-white/[0.025] shadow-[0_12px_36px_rgba(0,0,0,0.16)]"
+      className="group depth-panel depth-card-hover rounded-[18px]"
     >
       <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 marker:hidden">
         <div className="min-w-0">
@@ -431,15 +462,57 @@ function getPostBadgeClass(status: ScheduledPostStatus): string {
   switch (status) {
     case "published":
       return "bg-emerald-500/15 text-emerald-300 border-emerald-500/25";
+    case "publishing":
+      return "bg-blue-500/15 text-blue-300 border-blue-500/25";
     case "scheduled":
       return "bg-sky-500/15 text-sky-300 border-sky-500/25";
     case "failed":
       return "bg-red-500/15 text-red-300 border-red-500/25";
     case "editing":
       return "bg-violet-500/15 text-violet-300 border-violet-500/25";
+    case "cancelled":
+      return "bg-white/5 text-white/45 border-white/10";
     case "draft":
     default:
       return "bg-white/5 text-white/70 border-white/10";
+  }
+}
+
+function getPlatformMark(platform: SocialPlatform): string {
+  switch (platform) {
+    case "tiktok":
+      return "TT";
+    case "instagram":
+      return "IG";
+    case "facebook":
+      return "FB";
+    case "linkedin":
+      return "in";
+    case "youtube":
+      return "YT";
+    case "x":
+      return "X";
+    default:
+      return String(platform).slice(0, 2).toUpperCase();
+  }
+}
+
+function getPlatformBadgeClass(platform: SocialPlatform): string {
+  switch (platform) {
+    case "tiktok":
+      return "border-cyan-300/30 bg-cyan-400/15 text-cyan-100";
+    case "instagram":
+      return "border-fuchsia-300/30 bg-fuchsia-400/15 text-fuchsia-100";
+    case "facebook":
+      return "border-blue-300/30 bg-blue-500/15 text-blue-100";
+    case "linkedin":
+      return "border-sky-300/30 bg-sky-500/15 text-sky-100";
+    case "youtube":
+      return "border-red-300/30 bg-red-500/15 text-red-100";
+    case "x":
+      return "border-white/20 bg-white/10 text-white";
+    default:
+      return "border-white/10 bg-white/5 text-white";
   }
 }
 
@@ -479,8 +552,137 @@ function getContentTypeIcon(contentType?: ScheduledPostContentType) {
   }
 }
 
+function getTimeGreeting(): string {
+  const hour = new Date().getHours();
+  if (hour < 12) return "Good morning";
+  if (hour < 17) return "Good afternoon";
+  return "Good evening";
+}
+
+function getFirstName(name?: string | null): string {
+  const trimmed = name?.trim();
+  if (!trimmed) return "Creator";
+  return trimmed.split(/\s+/)[0] || "Creator";
+}
+
+function formatFriendlyTime(value: string): string {
+  const parsed = parseISO(value);
+  if (Number.isNaN(parsed.getTime())) return "7:30 PM";
+  return format(parsed, "h:mm a");
+}
+
+function getSuggestedPostingTime(posts: ScheduledPostRecord[]): { label: string; source: string } {
+  const scheduledHours = posts
+    .filter((post) => post.status === "scheduled" || post.status === "published")
+    .map((post) => parseISO(post.scheduledTime))
+    .filter((date) => !Number.isNaN(date.getTime()))
+    .map((date) => date.getHours());
+
+  if (scheduledHours.length > 0) {
+    const counts = scheduledHours.reduce<Record<number, number>>((acc, hour) => {
+      acc[hour] = (acc[hour] || 0) + 1;
+      return acc;
+    }, {});
+    const bestHour = Number(Object.entries(counts).sort((a, b) => b[1] - a[1])[0]?.[0] || 19);
+    const suggested = new Date();
+    suggested.setHours(bestHour, bestHour >= 18 ? 30 : 0, 0, 0);
+    return { label: format(suggested, "h:mm a"), source: "Based on your scheduled pattern" };
+  }
+
+  return { label: "7:30 PM", source: "Suggested starting point until analytics sync" };
+}
+
+function getPlatformInactivityInsight(posts: ScheduledPostRecord[], accounts: SocialAccountRecord[]): string {
+  const connectedPlatforms = SOCIAL_PROVIDER_REGISTRY
+    .filter((provider) => accounts.some((account) => account.providerId === provider.id && account.status === "connected"));
+
+  if (connectedPlatforms.length === 0) {
+    return "Connect a platform to unlock channel-specific recommendations.";
+  }
+
+  const now = Date.now();
+  const oldest = connectedPlatforms
+    .map((provider) => {
+      const lastPost = posts
+        .filter((post) => post.platform === provider.id && post.status !== "draft" && post.status !== "cancelled")
+        .map((post) => parseISO(post.scheduledTime))
+        .filter((date) => !Number.isNaN(date.getTime()) && date.getTime() <= now)
+        .sort((a, b) => b.getTime() - a.getTime())[0];
+
+      return {
+        label: provider.label,
+        days: lastPost ? Math.floor((now - lastPost.getTime()) / 86_400_000) : Number.POSITIVE_INFINITY,
+      };
+    })
+    .sort((a, b) => b.days - a.days)[0];
+
+  if (!oldest) return "Your connected platforms are ready for scheduling.";
+  if (!Number.isFinite(oldest.days)) return `${oldest.label} has not been posted to yet.`;
+  if (oldest.days === 0) return `${oldest.label} has activity today.`;
+  return `${oldest.label} has not been posted to in ${oldest.days} day${oldest.days === 1 ? "" : "s"}.`;
+}
+
+function getEngagementInsight(accounts: SocialAccountRecord[]): string {
+  for (const account of accounts) {
+    const metadata = account.metadata || {};
+    const rawDelta = metadata.engagementDeltaPercent ?? metadata.engagementChangePercent ?? metadata.monthlyEngagementDeltaPercent;
+    const delta = typeof rawDelta === "number" ? rawDelta : typeof rawDelta === "string" ? Number(rawDelta) : Number.NaN;
+    if (Number.isFinite(delta)) {
+      const provider = SOCIAL_PROVIDER_REGISTRY.find((item) => item.id === account.providerId);
+      const direction = delta >= 0 ? "up" : "down";
+      return `${provider?.label || account.providerLabel} engagement is ${direction} ${Math.abs(delta).toFixed(0)}%.`;
+    }
+  }
+
+  return "Engagement insights will appear after platform analytics sync.";
+}
+
+function readMetadataNumber(metadata: Record<string, unknown>, keys: string[]): number | null {
+  for (const key of keys) {
+    const raw = metadata[key];
+    const value = typeof raw === "number" ? raw : typeof raw === "string" ? Number(raw.replace(/,/g, "")) : Number.NaN;
+    if (Number.isFinite(value)) return value;
+  }
+  return null;
+}
+
+function sumAccountMetric(accounts: SocialAccountRecord[], keys: string[]): { value: number; synced: boolean } {
+  let total = 0;
+  let synced = false;
+
+  accounts.forEach((account) => {
+    const value = readMetadataNumber(account.metadata || {}, keys);
+    if (value !== null) {
+      total += value;
+      synced = true;
+    }
+  });
+
+  return { value: total, synced };
+}
+
+function formatCompactMetric(value: number): string {
+  return new Intl.NumberFormat("en", {
+    notation: "compact",
+    maximumFractionDigits: value >= 10_000 ? 1 : 0,
+  }).format(value);
+}
+
+function getConsistencyScore(posts: ScheduledPostRecord[], month: Date): number {
+  const activePosts = posts.filter((post) => post.status === "scheduled" || post.status === "published");
+  const activeDays = new Set(
+    activePosts
+      .map((post) => parseISO(post.scheduledTime))
+      .filter((date) => !Number.isNaN(date.getTime()) && isSameMonth(date, month))
+      .map((date) => format(date, "yyyy-MM-dd"))
+  );
+  const daysInMonth = endOfMonth(month).getDate();
+  const targetPublishingDays = Math.min(20, Math.max(8, Math.ceil(daysInMonth * 0.45)));
+  return Math.min(100, Math.round((activeDays.size / targetPublishingDays) * 100));
+}
+
 export default function SocialCalendarPage() {
-  const { user } = useAuth();
+  const { user, userData } = useAuth();
   const searchParams = useSearchParams();
   const { toast } = useToast();
   const calendarMode = searchParams.get("mode") === "events" ? "events" : "scheduler";
@@ -567,6 +769,9 @@ export default function SocialCalendarPage() {
   const [connectedAccounts, setConnectedAccounts] = useState<SocialAccountRecord[]>([]);
   const [form, setForm] = useState<CalendarFormState>(() => buildEmptyForm(getTodayDateString()));
   const [campaignForm, setCampaignForm] = useState<CampaignFormState>(() => buildEmptyCampaignForm());
+  const [workflowStep, setWorkflowStep] = useState<ComposerWorkflowStep>("platform");
+  const [creditDashboard, setCreditDashboard] = useState<CreditDashboard | null>(null);
+  const [creditLoading, setCreditLoading] = useState(true);
 
   const selectedPost = useMemo(
     () => posts.find((post) => post.scheduledPostId === selectedPostId) || null,
@@ -661,6 +866,62 @@ export default function SocialCalendarPage() {
   }, [agendaPosts]);
 
   const nextScheduledPost = upcomingAgendaPosts[0] || null;
+  const creatorName = getFirstName(userData?.name || user?.displayName || user?.email);
+  const suggestedPostingTime = useMemo(() => getSuggestedPostingTime(posts), [posts]);
+  const inactivityInsight = useMemo(() => getPlatformInactivityInsight(posts, connectedAccounts), [connectedAccounts, posts]);
+  const engagementInsight = useMemo(() => getEngagementInsight(connectedAccounts), [connectedAccounts]);
+  const reachMetric = useMemo(
+    () => sumAccountMetric(connectedAccounts, ["monthlyReach", "reach", "totalReach", "impressions", "monthlyImpressions", "totalImpressions"]),
+    [connectedAccounts]
+  );
+  const clicksMetric = useMemo(
+    () => sumAccountMetric(connectedAccounts, ["monthlyClicks", "clicks", "linkClicks", "websiteClicks", "totalClicks"]),
+    [connectedAccounts]
+  );
+  const consistencyScore = useMemo(() => getConsistencyScore(filteredPosts, currentMonth), [currentMonth, filteredPosts]);
+  const schedulerAnalyticsCards = useMemo(() => {
+    const scheduledCount = visibleSummary.byStatus.scheduled + visibleSummary.byStatus.publishing;
+    return [
+      {
+        label: "Posts",
+        value: formatCompactMetric(visibleSummary.totalPosts),
+        helper: "This month",
+        tone: "text-white",
+      },
+      {
+        label: "Reach",
+        value: reachMetric.synced ? formatCompactMetric(reachMetric.value) : "0",
+        helper: reachMetric.synced ? "Synced from platforms" : "Analytics not synced",
+        tone: reachMetric.synced ? "text-white" : "text-muted-foreground",
+      },
+      {
+        label: "Clicks",
+        value: clicksMetric.synced ? formatCompactMetric(clicksMetric.value) : "0",
+        helper: clicksMetric.synced ? "Tracked from accounts" : "Analytics not synced",
+        tone: clicksMetric.synced ? "text-white" : "text-muted-foreground",
+      },
+      {
+        label: "Scheduled",
+        value: formatCompactMetric(scheduledCount),
+        helper: "Queued to publish",
+        tone: "text-white",
+      },
+      {
+        label: "Consistency Score",
+        value: `${consistencyScore}%`,
+        helper: consistencyScore >= 70 ? "Strong rhythm" : consistencyScore > 0 ? "Build momentum" : "Start scheduling",
+        tone: consistencyScore >= 70 ? "text-emerald-300" : consistencyScore > 0 ? "text-amber-300" : "text-muted-foreground",
+      },
+      {
+        label: "AI Credits",
+        value: creditLoading ? "--" : String(creditDashboard?.snapshot.remainingCredits ?? 0),
+        helper: creditDashboard?.snapshot.monthlyCreditsGranted
+          ? `${creditDashboard.snapshot.monthlyCreditsUsed} used this cycle`
+          : "Buy or upgrade to create",
+        tone: creditDashboard?.snapshot.remainingCredits ? "text-white" : "text-muted-foreground",
+      },
+    ];
+  }, [clicksMetric, consistencyScore, creditDashboard, creditLoading, reachMetric, visibleSummary]);
 
   const connectedPlatforms = useMemo(() => {
     return new Set(connectedAccounts.filter((account) => account.status === "connected").map((account) => account.providerId));
@@ -747,11 +1008,50 @@ export default function SocialCalendarPage() {
     : form.contentType === "text"
       ? `Write the ${selectedProvider?.label || "social"} post here...`
       : "Write the caption, hook, and supporting context here...";
+  const workflowStepIndex = Math.max(0, COMPOSER_WORKFLOW_STEPS.findIndex((step) => step.id === workflowStep));
+  const activeWorkflowStep = COMPOSER_WORKFLOW_STEPS[workflowStepIndex] || COMPOSER_WORKFLOW_STEPS[0];
+  const goToPreviousWorkflowStep = () => {
+    setWorkflowStep(COMPOSER_WORKFLOW_STEPS[Math.max(0, workflowStepIndex - 1)].id);
+  };
+  const goToNextWorkflowStep = () => {
+    setWorkflowStep(COMPOSER_WORKFLOW_STEPS[Math.min(COMPOSER_WORKFLOW_STEPS.length - 1, workflowStepIndex + 1)].id);
+  };
 
   useEffect(() => {
     setSelectedPostId(null);
     setForm(buildEmptyForm(format(currentMonth, "yyyy-MM-dd")));
+    setWorkflowStep("platform");
   }, [currentMonth]);
+
+  useEffect(() => {
+    let mounted = true;
+
+    async function loadCredits() {
+      if (!user) {
+        setCreditDashboard(null);
+        setCreditLoading(false);
+        return;
+      }
+
+      setCreditLoading(true);
+      try {
+        const response = await authFetch("/api/creator-credits");
+        if (!response.ok) throw new Error("Unable to load Creator Credits.");
+        const data = (await response.json()) as CreditDashboard;
+        if (mounted) setCreditDashboard(data);
+      } catch (error) {
+        console.error("Unable to load scheduler credit summary", error);
+        if (mounted) setCreditDashboard(null);
+      } finally {
+        if (mounted) setCreditLoading(false);
+      }
+    }
+
+    loadCredits();
+    return () => {
+      mounted = false;
+    };
+  }, [user]);
 
   const loadMonth = async () => {
     if (!user) return;
@@ -899,6 +1199,7 @@ export default function SocialCalendarPage() {
   useEffect(() => {
     if (!selectedPost) return;
     setForm(buildFormFromPost(selectedPost));
+    setWorkflowStep(isEventsMode ? "platform" : "edit");
   }, [selectedPost]);
 
   useEffect(() => {
@@ -1016,6 +1317,7 @@ export default function SocialCalendarPage() {
   const clearForm = () => {
     setSelectedPostId(null);
     setForm(buildEmptyForm(format(currentMonth, "yyyy-MM-dd")));
+    setWorkflowStep("platform");
   };
 
   const clearCampaignForm = () => {
@@ -1206,6 +1508,7 @@ export default function SocialCalendarPage() {
       const data = (await responses[0].json()) as CalendarPostResponse;
       setSelectedPostId(data.post.scheduledPostId);
       setForm((current) => ({ ...current, status: data.post.status, publicationGroupId: groupId }));
+      setWorkflowStep(nextStatus === "scheduled" ? "publish" : "edit");
       await loadMonth();
       toast({
         title: nextStatus === "scheduled" ? "Post scheduled" : "Draft saved",
@@ -1411,6 +1714,8 @@ export default function SocialCalendarPage() {
     const canDrag = canDragScheduledPost(post);
     const previewAsset = getPostPreviewAsset(post, studioAssetMap);
     const previewUrl = previewAsset?.thumbnail || previewAsset?.downloadUrl;
+    const provider = SOCIAL_PROVIDER_REGISTRY.find((item) => item.id === post.platform);
+    const platformLabel = provider?.label || post.platform;
 
     return (
       <div
@@ -1426,19 +1731,20 @@ export default function SocialCalendarPage() {
           setSelectedPostId(post.scheduledPostId);
         }}
         className={cn(
-          "group overflow-hidden rounded-[14px] border text-xs shadow-sm transition-transform hover:-translate-y-0.5",
+          "group depth-card-hover relative overflow-hidden rounded-[14px] border text-xs",
           post.status === "published"
             ? "border-emerald-500/20 bg-emerald-500/10"
             : post.status === "failed"
               ? "border-red-500/20 bg-red-500/10"
               : "border-white/10 bg-black/25",
-          compact ? "p-3" : "p-2"
+          compact ? "p-3" : "p-2.5"
         )}
+        title={`${platformLabel} ${STATUS_LABELS[post.status]} at ${format(parseISO(post.scheduledTime), "HH:mm")}`}
       >
-        <div className="flex items-start gap-2">
+        <div className={cn("flex items-start", compact ? "gap-3" : "gap-2")}>
           <div className={cn(
-            "flex shrink-0 items-center justify-center overflow-hidden rounded-[12px] border border-white/10 bg-white/[0.05] text-primary",
-            compact ? "h-16 w-20" : "h-10 w-12"
+            "relative flex shrink-0 items-center justify-center overflow-hidden rounded-[12px] border border-white/10 bg-white/[0.05] text-primary",
+            compact ? "h-16 w-20" : "h-14 w-16"
           )}>
             {previewUrl ? (
               // eslint-disable-next-line @next/next/no-img-element
@@ -1446,36 +1752,52 @@ export default function SocialCalendarPage() {
             ) : (
               <ContentIcon className="h-4 w-4" />
             )}
+            <span className={cn(
+              "absolute bottom-1 left-1 inline-flex h-5 min-w-5 items-center justify-center rounded-full border px-1 text-[9px] font-semibold leading-none shadow-sm",
+              getPlatformBadgeClass(post.platform)
+            )}>
+              {getPlatformMark(post.platform)}
+            </span>
           </div>
           <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
-              <span>{format(parseISO(post.scheduledTime), "HH:mm")}</span>
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex min-w-0 items-center gap-1.5 text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
+                <Clock3 className="h-3 w-3 shrink-0" />
+                <span>{format(parseISO(post.scheduledTime), "HH:mm")}</span>
               <span>·</span>
-              <span>{post.platform}</span>
+                <span className="truncate normal-case tracking-normal">{platformLabel}</span>
               <span>·</span>
-              <span>{post.contentType || "text"}</span>
+              </div>
+              <Badge variant="outline" className={cn("shrink-0 border px-1.5 py-0 text-[9px] uppercase tracking-[0.12em]", getPostBadgeClass(post.status))}>
+                {STATUS_LABELS[post.status]}
+              </Badge>
             </div>
-            <div className="mt-1 truncate font-medium text-white">{captionSnippet}</div>
-            <div className="mt-1 truncate text-[10px] text-muted-foreground">
-              {getCampaignLabel(campaignMap, post.campaignId)}
+            <div className="mt-1 line-clamp-2 font-medium leading-4 text-white">{captionSnippet}</div>
+            <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[10px] text-muted-foreground">
+              <span className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-white/[0.04] px-1.5 py-0.5 capitalize">
+                <ContentIcon className="h-3 w-3" />
+                {post.contentType || "text"}
+              </span>
+              {post.assetIds.length > 0 ? (
+                <span className="rounded-full border border-white/10 bg-white/[0.04] px-1.5 py-0.5">
+                  {post.assetIds.length} asset{post.assetIds.length === 1 ? "" : "s"}
+                </span>
+              ) : null}
             </div>
             {compact && post.caption ? (
               <div className="mt-1 line-clamp-2 text-xs leading-5 text-white/70">{post.caption}</div>
             ) : null}
+            <div className="mt-1 truncate text-[10px] text-muted-foreground">
+              {getCampaignLabel(campaignMap, post.campaignId)}
+            </div>
             {compact ? (
-              <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                <Badge variant="outline" className={cn("border px-1.5 py-0 text-[10px]", getPostBadgeClass(post.status))}>
-                  {STATUS_LABELS[post.status]}
-                </Badge>
-                {post.assetIds.length > 0 ? (
-                  <span className="rounded-full border border-white/10 px-2 py-0.5 text-[10px] text-muted-foreground">
-                    {post.assetIds.length} asset{post.assetIds.length === 1 ? "" : "s"}
-                  </span>
-                ) : null}
+              <div className="mt-2 flex items-center gap-1.5 text-[10px] text-muted-foreground">
+                <GripVertical className={cn("h-3.5 w-3.5", canDrag ? "text-white/60" : "text-white/20")} />
+                <span>{canDrag ? "Drag to reschedule" : "Locked"}</span>
               </div>
             ) : null}
           </div>
-          {canDrag ? <GripVertical className="h-3 w-3 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" /> : null}
+          <GripVertical className={cn("h-4 w-4 shrink-0 transition-colors", canDrag ? "text-white/45 group-hover:text-white/80" : "text-white/15")} />
         </div>
       </div>
     );
@@ -1541,23 +1863,14 @@ export default function SocialCalendarPage() {
             </div>
           </div>
 
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-            <GlassCard className="p-4">
-              <div className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Posts</div>
-              <div className="mt-2 text-2xl font-semibold">{visibleSummary.totalPosts}</div>
-            </GlassCard>
-            <GlassCard className="p-4">
-              <div className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Upcoming</div>
-              <div className="mt-2 text-2xl font-semibold">{visibleSummary.upcomingPosts}</div>
-            </GlassCard>
-            <GlassCard className="p-4">
-              <div className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Scheduled</div>
-              <div className="mt-2 text-2xl font-semibold">{visibleSummary.byStatus.scheduled}</div>
-            </GlassCard>
-            <GlassCard className="p-4">
-              <div className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Needs review</div>
-              <div className="mt-2 text-2xl font-semibold">{visibleSummary.byStatus.failed + visibleSummary.byStatus.editing}</div>
-            </GlassCard>
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
+            {schedulerAnalyticsCards.map((card) => (
+              <GlassCard key={card.label} className="depth-card-hover p-4">
+                <div className="text-xs uppercase tracking-[0.2em] text-muted-foreground">{card.label}</div>
+                <div className={cn("mt-2 text-2xl font-semibold", card.tone)}>{card.value}</div>
+                <div className="mt-2 min-h-8 text-xs leading-4 text-muted-foreground">{card.helper}</div>
+              </GlassCard>
+            ))}
           </div>
 
           {!loadingMonth && connectedAccounts.length > 0 && posts.length === 0 ? (
@@ -1586,6 +1899,65 @@ export default function SocialCalendarPage() {
           ) : null}
 
           {!isEventsMode ? (
+            <GlassCard className="accent-glow overflow-hidden p-0">
+              <div className="depth-shell relative p-6">
+                <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_82%_12%,rgba(139,92,246,0.28),transparent_32%),radial-gradient(circle_at_10%_10%,rgba(79,157,255,0.18),transparent_34%)]" />
+                <div className="relative flex flex-col gap-6 xl:flex-row xl:items-start xl:justify-between">
+                  <div className="max-w-3xl">
+                    <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.05] px-3 py-1 text-xs font-medium text-[#BFC6D4]">
+                      <Sparkles className="h-3.5 w-3.5 text-primary" />
+                      Soma AI briefing
+                    </div>
+                    <h2 className="mt-4 text-2xl font-semibold tracking-tight text-white">
+                      {getTimeGreeting()}, {creatorName}
+                    </h2>
+                    <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
+                      You have {visibleSummary.totalPosts} post{visibleSummary.totalPosts === 1 ? "" : "s"} scheduled this month. Best posting time today: {suggestedPostingTime.label}.
+                    </p>
+
+                    <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                      <div className="depth-card rounded-[16px] p-3">
+                        <span className="block text-xs uppercase tracking-[0.16em] text-muted-foreground">Today</span>
+                        <span className="mt-1 block text-sm font-medium text-white">
+                          {todaysPosts.length} scheduled item{todaysPosts.length === 1 ? "" : "s"}
+                        </span>
+                      </div>
+                      <div className="depth-card rounded-[16px] p-3">
+                        <span className="block text-xs uppercase tracking-[0.16em] text-muted-foreground">Timing</span>
+                        <span className="mt-1 block text-sm font-medium text-white">{suggestedPostingTime.source}</span>
+                      </div>
+                      <div className="depth-card rounded-[16px] p-3">
+                        <span className="block text-xs uppercase tracking-[0.16em] text-muted-foreground">Channel gap</span>
+                        <span className="mt-1 block text-sm font-medium text-white">{inactivityInsight}</span>
+                      </div>
+                      <div className="depth-card rounded-[16px] p-3">
+                        <span className="block text-xs uppercase tracking-[0.16em] text-muted-foreground">Performance</span>
+                        <span className="mt-1 block text-sm font-medium text-white">{engagementInsight}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="depth-panel w-full rounded-[18px] p-4 xl:max-w-[300px]">
+                    <div className="text-sm font-medium text-white">Want me to generate today&apos;s content?</div>
+                    <p className="mt-2 text-xs leading-5 text-muted-foreground">
+                      Soma AI can create a platform-ready post from today&apos;s gaps, suggested timing, and connected channels.
+                    </p>
+                    <Button asChild className="floating-action mt-4 h-11 w-full rounded-[16px] bg-gradient-to-r from-[#5B5FFF] via-[#8B5CF6] to-[#4F9DFF]">
+                      <Link href={buildAiStudioActionHref("generate_todays_content", form)}>
+                        <Sparkles className="h-4 w-4" />
+                        Generate
+                      </Link>
+                    </Button>
+                    <div className="mt-3 text-[11px] leading-5 text-muted-foreground">
+                      Next post: {nextScheduledPost ? `${formatFriendlyTime(nextScheduledPost.scheduledTime)} · ${nextScheduledPost.platform}` : "Nothing scheduled yet"}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </GlassCard>
+          ) : null}
+
+          {!isEventsMode ? (
             <div className="grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
               <GlassCard className="p-5">
                 <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
@@ -1597,11 +1969,11 @@ export default function SocialCalendarPage() {
                     </p>
                   </div>
                   <div className="grid min-w-[220px] grid-cols-2 gap-2 text-center">
-                    <div className="rounded-[16px] border border-white/10 bg-white/[0.03] p-3">
+                    <div className="depth-card rounded-[16px] p-3">
                       <div className="text-xl font-semibold text-white">{todaysPosts.length}</div>
                       <div className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground">Today</div>
                     </div>
-                    <div className="rounded-[16px] border border-white/10 bg-white/[0.03] p-3">
+                    <div className="depth-card rounded-[16px] p-3">
                       <div className="text-xl font-semibold text-white">{contentGapDays.length}</div>
                       <div className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground">Open days</div>
                     </div>
@@ -1609,13 +1981,13 @@ export default function SocialCalendarPage() {
                 </div>
 
                 <div className="mt-5 grid gap-3 lg:grid-cols-3">
-                  <div className="rounded-[18px] border border-white/10 bg-white/[0.025] p-4">
+                  <div className="depth-panel rounded-[18px] p-4">
                     <div className="text-sm font-medium text-white">Next scheduled post</div>
                     {nextScheduledPost ? (
                       <button
                         type="button"
                         onClick={() => setSelectedPostId(nextScheduledPost.scheduledPostId)}
-                        className="mt-3 w-full rounded-[14px] border border-white/10 bg-black/20 p-3 text-left transition hover:border-primary/40"
+                        className="depth-card depth-card-hover mt-3 w-full rounded-[14px] p-3 text-left"
                       >
                         <div className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
                           {format(parseISO(nextScheduledPost.scheduledTime), "EEE, MMM d · HH:mm")}
@@ -1632,7 +2004,7 @@ export default function SocialCalendarPage() {
                     )}
                   </div>
 
-                  <div className="rounded-[18px] border border-white/10 bg-white/[0.025] p-4">
+                  <div className="depth-panel rounded-[18px] p-4">
                     <div className="text-sm font-medium text-white">Content gaps</div>
                     <div className="mt-3 flex flex-wrap gap-2">
                       {contentGapDays.length > 0 ? contentGapDays.map((day) => {
@@ -1656,7 +2028,7 @@ export default function SocialCalendarPage() {
                     </div>
                   </div>
 
-                  <div className="rounded-[18px] border border-white/10 bg-white/[0.025] p-4">
+                  <div className="depth-panel rounded-[18px] p-4">
                     <div className="text-sm font-medium text-white">Soma AI actions</div>
                     <div className="mt-3 grid gap-2">
                       <Button asChild size="sm" variant="outline" className="justify-start rounded-[14px]">
@@ -1673,7 +2045,7 @@ export default function SocialCalendarPage() {
                 </div>
               </GlassCard>
 
-              <GlassCard className="p-5">
+              <GlassCard className="p-5 accent-glow">
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <h2 className="text-lg font-semibold text-white">Workspace signals</h2>
@@ -1719,7 +2091,7 @@ export default function SocialCalendarPage() {
                     <div className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">Account warnings</div>
                     <div className="mt-3 space-y-2">
                       {accountWarnings.length > 0 ? accountWarnings.map((account) => (
-                        <div key={account.socialAccountId} className="rounded-[14px] border border-amber-500/20 bg-amber-500/10 p-3">
+                        <div key={account.socialAccountId} className="rounded-[14px] border border-amber-500/25 bg-amber-500/12 p-3 shadow-[0_12px_34px_rgba(245,158,11,0.08)]">
                           <div className="text-sm font-medium text-amber-100">{account.providerLabel} · {getAccountDisplayLabel(account)}</div>
                           <div className="mt-1 text-xs text-amber-200/80">
                             {account.lastError || `Status: ${account.status}`}
@@ -1802,8 +2174,8 @@ export default function SocialCalendarPage() {
                               }
                             }}
                             className={cn(
-                              "min-h-[190px] rounded-[16px] border p-2 text-left transition-colors",
-                              inMonth ? "border-white/10 bg-white/5" : "border-white/5 bg-white/2 text-white/35",
+                              "min-h-[230px] rounded-[16px] border p-2 text-left transition-all hover:-translate-y-0.5 hover:border-primary/30",
+                              inMonth ? "depth-panel" : "border-white/5 bg-white/[0.018] text-white/35",
                               selected && "ring-1 ring-primary/40",
                               dragOverDay === key && "border-primary/40 bg-primary/10"
                             )}
@@ -1820,10 +2192,10 @@ export default function SocialCalendarPage() {
                             </div>
 
                             <div className="mt-2 space-y-1">
-                              {items.slice(0, 2).map((post) => renderPostCard(post))}
-                              {items.length > 2 ? (
+                              {items.slice(0, 3).map((post) => renderPostCard(post))}
+                              {items.length > 3 ? (
                                 <div className="px-1 text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
-                                  +{items.length - 2} more
+                                  +{items.length - 3} more
                                 </div>
                               ) : null}
                             </div>
@@ -1857,7 +2229,7 @@ export default function SocialCalendarPage() {
                             }
                           }}
                           className={cn(
-                            "min-h-[320px] rounded-[18px] border border-white/10 bg-white/5 p-3 text-left transition-colors",
+                            "depth-panel min-h-[320px] rounded-[18px] p-3 text-left transition-colors",
                             dragOverDay === key && "border-primary/40 bg-primary/10"
                           )}
                         >
@@ -1900,7 +2272,7 @@ export default function SocialCalendarPage() {
                             event.dataTransfer.setData("text/plain", post.scheduledPostId);
                           }}
                           className={cn(
-                            "grid w-full gap-4 rounded-[18px] border border-white/10 bg-white/5 p-4 text-left transition-colors hover:border-primary/30 md:grid-cols-[140px_1fr]",
+                            "depth-panel depth-card-hover grid w-full gap-4 rounded-[18px] p-4 text-left md:grid-cols-[140px_1fr]",
                             post.status === "published" && "bg-emerald-500/5",
                             post.status === "failed" && "bg-red-500/5"
                           )}
@@ -1979,7 +2351,7 @@ export default function SocialCalendarPage() {
                 </div>
 
                 {connectedAccounts.length === 0 ? (
-                  <div className="m-5 rounded-[18px] border border-dashed border-white/10 bg-white/[0.03] p-5">
+                  <div className="m-5 rounded-[18px] border border-dashed border-white/15 bg-white/[0.045] p-5 shadow-[0_16px_45px_rgba(0,0,0,0.22)]">
                     <h3 className="text-sm font-semibold text-white">Connect an account first</h3>
                     <p className="mt-2 text-sm leading-6 text-muted-foreground">
                       Connect Instagram, TikTok, YouTube, Facebook, LinkedIn, or X before scheduling live posts.
@@ -1991,6 +2363,44 @@ export default function SocialCalendarPage() {
                 ) : null}
 
                 <form className="space-y-3 p-5" onSubmit={handleSubmit}>
+                  {!isEventsMode ? (
+                    <div className="depth-shell rounded-[18px] p-3">
+                      <div className="mb-3 flex items-center justify-between gap-3">
+                        <div>
+                          <div className="text-xs font-semibold uppercase tracking-[0.18em] text-primary">Workflow</div>
+                          <div className="mt-1 text-sm font-medium text-white">{activeWorkflowStep.title}</div>
+                        </div>
+                        <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-xs text-muted-foreground">
+                          {workflowStepIndex + 1} of {COMPOSER_WORKFLOW_STEPS.length}
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        {COMPOSER_WORKFLOW_STEPS.map((step, index) => {
+                          const active = workflowStep === step.id;
+                          const complete = index < workflowStepIndex;
+                          return (
+                            <button
+                              key={step.id}
+                              type="button"
+                              onClick={() => setWorkflowStep(step.id)}
+                              className={cn(
+                                "rounded-[16px] border px-3 py-3 text-left transition",
+                                active
+                                  ? "border-primary/60 bg-primary/15 text-white shadow-[0_16px_42px_rgba(91,95,255,0.18)]"
+                                  : complete
+                                    ? "border-emerald-400/20 bg-emerald-400/10 text-emerald-100 hover:bg-emerald-400/15"
+                                    : "border-white/10 bg-white/[0.03] text-muted-foreground hover:bg-white/[0.06]"
+                              )}
+                            >
+                              <span className="block text-[10px] font-semibold uppercase tracking-[0.16em]">{index + 1}. {step.title}</span>
+                              <span className="mt-1 block text-xs leading-4">{step.description}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ) : null}
+
                   {isEventsMode ? (
                     <ComposerSection title="Platform" description="Choose where this live event belongs." defaultOpen>
                       <div className="grid grid-cols-2 gap-2">
@@ -2005,7 +2415,7 @@ export default function SocialCalendarPage() {
                               disabled={!connected}
                               className={cn(
                                 "rounded-[16px] border p-3 text-left text-sm transition",
-                                active ? "border-primary/60 bg-primary/15 text-white" : "border-white/10 bg-white/[0.03] text-muted-foreground hover:bg-white/[0.06]",
+                                active ? "border-primary/60 bg-primary/15 text-white shadow-[0_14px_36px_rgba(91,95,255,0.16)]" : "depth-card text-muted-foreground hover:bg-white/[0.06]",
                                 !connected && "cursor-not-allowed opacity-45"
                               )}
                             >
@@ -2018,7 +2428,7 @@ export default function SocialCalendarPage() {
                     </ComposerSection>
                   ) : (
                     <>
-                      <ComposerSection title="Campaign" description="Optional grouping for this post.">
+                      <ComposerSection title="Campaign" description="Optional grouping for this post." visible={workflowStep === "platform"}>
                         <div className="space-y-2">
                           <label className="text-xs font-medium text-muted-foreground">Campaign</label>
                           <select
@@ -2040,7 +2450,7 @@ export default function SocialCalendarPage() {
                         </div>
                       </ComposerSection>
 
-                      <ComposerSection title="Platform" description="Choose accounts and the post format." defaultOpen>
+                      <ComposerSection title="Platform" description="Choose accounts and the post format." defaultOpen visible={workflowStep === "platform"}>
                         <div className="space-y-3">
                         <div className="flex items-center justify-between gap-3">
                           <label className="text-sm font-medium">Destination</label>
@@ -2091,7 +2501,7 @@ export default function SocialCalendarPage() {
                                 }}
                                 className={cn(
                                   "rounded-[16px] border p-3 text-left transition",
-                                  active ? "border-primary/60 bg-primary/15 text-white" : "border-white/10 bg-white/[0.03] text-muted-foreground hover:bg-white/[0.06]"
+                                  active ? "border-primary/60 bg-primary/15 text-white shadow-[0_14px_36px_rgba(91,95,255,0.16)]" : "depth-card text-muted-foreground hover:bg-white/[0.06]"
                                 )}
                               >
                                 <span className="block text-sm font-medium">{provider?.label || account.providerLabel}</span>
@@ -2117,7 +2527,7 @@ export default function SocialCalendarPage() {
                                 onClick={() => updateField("contentType", contentType)}
                                 className={cn(
                                   "flex items-center gap-2 rounded-[16px] border px-3 py-3 text-left text-sm capitalize transition",
-                                  active ? "border-primary/60 bg-primary/15 text-white" : "border-white/10 bg-white/[0.03] text-muted-foreground hover:bg-white/[0.06]"
+                                  active ? "border-primary/60 bg-primary/15 text-white shadow-[0_14px_36px_rgba(91,95,255,0.16)]" : "depth-card text-muted-foreground hover:bg-white/[0.06]"
                                 )}
                               >
                                 <FormatIcon className="h-4 w-4" />
@@ -2132,19 +2542,99 @@ export default function SocialCalendarPage() {
                         </div>
                       </ComposerSection>
 
-                      <ComposerSection title="Media" description="Attach, upload, or generate visuals." badge={anyTargetRequiresMedia ? "Required" : "Optional"} defaultOpen={anyTargetRequiresMedia}>
+                      {workflowStep === "ai" ? (
+                        <div className="depth-panel rounded-[18px] p-4">
+                          <div className="flex items-start justify-between gap-3">
+                            <div>
+                              <div className="text-sm font-medium text-white">Generate with Soma AI</div>
+                              <p className="mt-1 text-sm leading-6 text-muted-foreground">
+                                Create the missing piece for this post before editing and previewing it.
+                              </p>
+                            </div>
+                            <Sparkles className="h-5 w-5 text-primary" />
+                          </div>
+                          <div className="mt-4 grid gap-3">
+                            <div className="depth-card rounded-[16px] p-3">
+                              <div className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">Media</div>
+                              <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                                <Button asChild type="button" variant="outline" className="justify-start rounded-[14px]">
+                                  <Link href={`/ai/image-studio?${new URLSearchParams({ source: "scheduler", action: "generate_image", platform: form.platform, returnTo: "/social/calendar?mode=scheduler" }).toString()}`}>
+                                    <ImageIcon className="h-4 w-4" />
+                                    Generate image
+                                  </Link>
+                                </Button>
+                                <Button asChild type="button" variant="outline" className="justify-start rounded-[14px]">
+                                  <Link href={`/ai/video-studio?${new URLSearchParams({ source: "scheduler", action: "generate_video", platform: form.platform, returnTo: "/social/calendar?mode=scheduler" }).toString()}`}>
+                                    <Video className="h-4 w-4" />
+                                    Generate video
+                                  </Link>
+                                </Button>
+                                <Button type="button" variant="ghost" onClick={() => loadStudioAssets()} className="justify-start rounded-[14px]">
+                                  <RefreshCw className="h-4 w-4" />
+                                  Find recent asset
+                                </Button>
+                                <Button asChild type="button" variant="ghost" className="justify-start rounded-[14px]">
+                                  <Link href={buildAiStudioActionHref("repurpose_content", form)}>
+                                    <SquareArrowOutUpRight className="h-4 w-4" />
+                                    Repurpose content
+                                  </Link>
+                                </Button>
+                              </div>
+                            </div>
+                            <div className="depth-card rounded-[16px] p-3">
+                              <div className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">Copy</div>
+                              <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                                <Button asChild type="button" variant="outline" className="justify-start rounded-[14px]">
+                                  <Link href={buildAiStudioActionHref("write_caption", form)}>Write caption</Link>
+                                </Button>
+                                <Button asChild type="button" variant="ghost" className="justify-start rounded-[14px]">
+                                  <Link href={buildAiStudioActionHref("add_hook", form)}>Add hook</Link>
+                                </Button>
+                                <Button asChild type="button" variant="ghost" className="justify-start rounded-[14px]">
+                                  <Link href={buildAiStudioActionHref("generate_hashtags", form)}>Generate hashtags</Link>
+                                </Button>
+                                <Button asChild type="button" variant="ghost" className="justify-start rounded-[14px]">
+                                  <Link href={buildAiStudioActionHref("adapt_for_platform", form)}>Adapt for platform</Link>
+                                </Button>
+                              </div>
+                            </div>
+                            <div className="depth-card rounded-[16px] p-3">
+                              <div className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">Timing</div>
+                              <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                                <Button asChild type="button" variant="outline" className="justify-start rounded-[14px]">
+                                  <Link href={buildAiStudioActionHref("suggest_best_time", form)}>Suggest best time</Link>
+                                </Button>
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  onClick={() => {
+                                    const firstGap = contentGapDays[0];
+                                    if (firstGap) updateField("scheduledDate", format(firstGap, "yyyy-MM-dd"));
+                                  }}
+                                  disabled={contentGapDays.length === 0}
+                                  className="justify-start rounded-[14px]"
+                                >
+                                  Fill content gap
+                                </Button>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      ) : null}
+
+                      <ComposerSection title="Media" description="Attach, upload, or generate visuals." badge={anyTargetRequiresMedia ? "Required" : "Optional"} defaultOpen={anyTargetRequiresMedia} visible={workflowStep === "edit"}>
                         <div className="flex items-center justify-between gap-3">
                           <label className="text-sm font-medium">Selected media</label>
                           {selectedAssets.length > 0 ? <span className="text-xs text-muted-foreground">{selectedAssets.length} attached</span> : null}
                         </div>
-                        <div className="rounded-[18px] border border-dashed border-white/10 bg-black/20 p-4">
+                        <div className="depth-shell rounded-[18px] border-dashed p-4">
                           {selectedAssets.length > 0 ? (
                             <div className="space-y-3">
                               {selectedAssets.map(({ assetId, asset }, index) => {
                                 const isVideoAsset = asset?.type === "video" || asset?.mimeType?.startsWith("video/");
                                 const previewUrl = asset?.thumbnail || asset?.downloadUrl;
                                 return (
-                                  <div key={`${assetId}-${index}`} className="grid gap-3 rounded-[16px] border border-white/10 bg-white/[0.03] p-3 sm:grid-cols-[120px_1fr]">
+                                  <div key={`${assetId}-${index}`} className="depth-card grid gap-3 rounded-[16px] p-3 sm:grid-cols-[120px_1fr]">
                                     <div className="flex aspect-video items-center justify-center overflow-hidden rounded-[14px] border border-white/10 bg-black/30">
                                       {isVideoAsset && asset?.downloadUrl ? (
                                         <video src={asset.downloadUrl} className="h-full w-full object-cover" muted controls preload="metadata" />
@@ -2206,7 +2696,7 @@ export default function SocialCalendarPage() {
                             </div>
                           )}
                         </div>
-                        <div className="rounded-[18px] border border-white/10 bg-white/[0.025] p-4">
+                        <div className="depth-panel rounded-[18px] p-4">
                           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                             <div>
                               <div className="text-sm font-medium text-white">Upload media</div>
@@ -2257,7 +2747,7 @@ export default function SocialCalendarPage() {
                                     }}
                                     className={cn(
                                       "flex items-center gap-3 rounded-[14px] border p-2 text-left transition",
-                                      active ? "border-primary/60 bg-primary/15" : "border-white/10 bg-white/[0.03] hover:bg-white/[0.06]"
+                                      active ? "border-primary/60 bg-primary/15 shadow-[0_14px_36px_rgba(91,95,255,0.14)]" : "depth-card hover:bg-white/[0.06]"
                                     )}
                                   >
                                     <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-[12px] border border-white/10 bg-white/[0.04]">
@@ -2289,7 +2779,7 @@ export default function SocialCalendarPage() {
                     </>
                   )}
 
-                  <ComposerSection title={isEventsMode ? "Content" : "Content"} description={isEventsMode ? "Describe the event clearly." : "Caption, hashtags, CTA, and destination variants."} defaultOpen>
+                  <ComposerSection title={isEventsMode ? "Content" : "Content"} description={isEventsMode ? "Describe the event clearly." : "Caption, hashtags, CTA, and destination variants."} defaultOpen visible={isEventsMode || workflowStep === "edit"}>
                     <label className="text-sm font-medium">{isEventsMode ? postHeadingLabel : "Caption"}</label>
                     <Textarea
                       value={form.caption}
@@ -2331,7 +2821,7 @@ export default function SocialCalendarPage() {
                           </Button>
                         </div>
                         {publishTargetAccounts.length > 1 ? (
-                          <div className="space-y-3 rounded-[18px] border border-white/10 bg-white/[0.025] p-4">
+                          <div className="depth-panel space-y-3 rounded-[18px] p-4">
                             <div>
                               <div className="text-sm font-medium text-white">Destination captions</div>
                               <p className="mt-1 text-xs text-muted-foreground">Leave a field empty to use the main caption for that account.</p>
@@ -2357,7 +2847,7 @@ export default function SocialCalendarPage() {
                   </ComposerSection>
 
                   {!isEventsMode && targetPlatforms.length > 0 ? (
-                    <ComposerSection title="Advanced" description="Provider rules, internal notes, and timezone.">
+                    <ComposerSection title="Advanced" description="Provider rules, internal notes, and timezone." visible={workflowStep === "edit"}>
                       <div>
                         <label className="text-sm font-medium">Platform settings</label>
                         <p className="mt-1 text-xs text-muted-foreground">These prepare the post for native publishing rules later.</p>
@@ -2442,7 +2932,82 @@ export default function SocialCalendarPage() {
                     </ComposerSection>
                   ) : null}
 
-                  <ComposerSection title="Schedule" description={isEventsMode ? "Choose the event date and series." : "Choose date and time."}>
+                  {!isEventsMode && workflowStep === "preview" ? (
+                    <div className="depth-panel rounded-[18px] p-4">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <div className="text-sm font-medium text-white">Preview</div>
+                          <p className="mt-1 text-sm leading-6 text-muted-foreground">
+                            Review what will be created for each destination before choosing the final schedule.
+                          </p>
+                        </div>
+                        <Badge variant="outline" className={cn("border px-2 py-0.5 text-[10px] uppercase tracking-[0.16em]", canSchedulePost ? "border-emerald-400/25 text-emerald-300" : "border-amber-400/25 text-amber-300")}>
+                          {canSchedulePost ? "Ready" : "Needs input"}
+                        </Badge>
+                      </div>
+                      <div className="mt-4 space-y-3">
+                        <div className="depth-card rounded-[16px] p-3">
+                          <div className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">Destinations</div>
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            {publishTargetAccounts.length > 0 ? publishTargetAccounts.map((account) => (
+                              <span key={account.socialAccountId} className={cn("inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs", getPlatformBadgeClass(account.providerId))}>
+                                {account.providerLabel}
+                                <span className="text-white/75">{getAccountDisplayLabel(account)}</span>
+                              </span>
+                            )) : (
+                              <span className="text-sm text-muted-foreground">Choose at least one connected account.</span>
+                            )}
+                          </div>
+                        </div>
+                        <div className="depth-card overflow-hidden rounded-[16px]">
+                          <div className="flex aspect-video items-center justify-center bg-black/35">
+                            {selectedAssets[0]?.asset?.thumbnail || selectedAssets[0]?.asset?.downloadUrl ? (
+                              selectedAssets[0]?.asset?.type === "video" || selectedAssets[0]?.asset?.mimeType?.startsWith("video/") ? (
+                                <video src={selectedAssets[0]?.asset?.downloadUrl} className="h-full w-full object-cover" muted controls preload="metadata" />
+                              ) : (
+                                // eslint-disable-next-line @next/next/no-img-element
+                                <img src={selectedAssets[0]?.asset?.thumbnail || selectedAssets[0]?.asset?.downloadUrl} alt="" className="h-full w-full object-cover" />
+                              )
+                            ) : (
+                              <div className="flex flex-col items-center gap-2 text-muted-foreground">
+                                {form.contentType === "video" ? <Video className="h-6 w-6" /> : <ImageIcon className="h-6 w-6" />}
+                                <span className="text-sm">{anyTargetRequiresMedia ? "Media required before scheduling" : "No media attached"}</span>
+                              </div>
+                            )}
+                          </div>
+                          <div className="space-y-3 p-4">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <Badge variant="outline" className="border-white/10 capitalize text-muted-foreground">{form.contentType}</Badge>
+                              {selectedAssets.length > 0 ? (
+                                <Badge variant="outline" className="border-white/10 text-muted-foreground">{selectedAssets.length} asset{selectedAssets.length === 1 ? "" : "s"}</Badge>
+                              ) : null}
+                              {form.campaignId ? (
+                                <Badge variant="outline" className="border-white/10 text-muted-foreground">{getCampaignLabel(campaignMap, form.campaignId)}</Badge>
+                              ) : null}
+                            </div>
+                            <div>
+                              <div className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">Caption</div>
+                              <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-white/85">{form.caption || "No caption yet."}</p>
+                            </div>
+                            {(form.hashtags || form.cta) ? (
+                              <div className="grid gap-3 sm:grid-cols-2">
+                                <div>
+                                  <div className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">Hashtags</div>
+                                  <p className="mt-1 text-sm text-white/80">{form.hashtags || "None"}</p>
+                                </div>
+                                <div>
+                                  <div className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">CTA</div>
+                                  <p className="mt-1 text-sm text-white/80">{form.cta || "None"}</p>
+                                </div>
+                              </div>
+                            ) : null}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ) : null}
+
+                  <ComposerSection title="Schedule" description={isEventsMode ? "Choose the event date and series." : "Choose date and time."} visible={isEventsMode || workflowStep === "schedule"}>
                     <label className="text-sm font-medium">Date and time</label>
                     <div className="grid gap-3 md:grid-cols-2">
                       <div className="space-y-2">
@@ -2514,16 +3079,72 @@ export default function SocialCalendarPage() {
                     </ComposerSection>
                   ) : null}
 
-                  <div className="grid gap-2 sm:grid-cols-2">
-                    <Button type="button" variant="outline" disabled={loading || !canSaveDraft} onClick={() => savePost("draft")} className="h-11 rounded-[16px]">
-                      {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <PencilLine className="h-4 w-4" />}
-                      {saveDraftLabel}
-                    </Button>
-                    <Button type="button" disabled={loading || !canSchedulePost} onClick={() => savePost("scheduled")} className="h-11 rounded-[16px]">
-                      {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
-                      {scheduleLabel}
-                    </Button>
-                  </div>
+                  {!isEventsMode ? (
+                    <div className="flex items-center justify-between gap-3 rounded-[18px] border border-white/10 bg-white/[0.03] p-3">
+                      <Button type="button" variant="ghost" onClick={goToPreviousWorkflowStep} disabled={workflowStepIndex === 0} className="rounded-[14px]">
+                        Back
+                      </Button>
+                      <div className="text-center text-xs text-muted-foreground">
+                        {activeWorkflowStep.title}
+                        <span className="mx-2 text-white/25">/</span>
+                        {workflowStepIndex + 1} of {COMPOSER_WORKFLOW_STEPS.length}
+                      </div>
+                      {workflowStep === "publish" ? (
+                        <Button type="button" variant="outline" onClick={() => setWorkflowStep("preview")} className="rounded-[14px]">
+                          Review
+                        </Button>
+                      ) : (
+                        <Button type="button" onClick={goToNextWorkflowStep} className="rounded-[14px]">
+                          Continue
+                        </Button>
+                      )}
+                    </div>
+                  ) : null}
+
+                  {!isEventsMode && workflowStep === "publish" ? (
+                    <div className="depth-panel rounded-[18px] p-4">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <div className="text-sm font-medium text-white">Ready to queue</div>
+                          <p className="mt-1 text-sm leading-6 text-muted-foreground">
+                            This creates one publishable record per selected account and lets the scheduled worker publish it later.
+                          </p>
+                        </div>
+                        <Badge variant="outline" className={cn("border px-2 py-0.5 text-[10px] uppercase tracking-[0.16em]", canSchedulePost ? "border-emerald-400/25 text-emerald-300" : "border-amber-400/25 text-amber-300")}>
+                          {canSchedulePost ? "Schedule ready" : "Draft only"}
+                        </Badge>
+                      </div>
+                      <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                        <div className="depth-card rounded-[16px] p-3">
+                          <div className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Destinations</div>
+                          <div className="mt-2 text-lg font-semibold text-white">{publishTargetAccounts.length}</div>
+                        </div>
+                        <div className="depth-card rounded-[16px] p-3">
+                          <div className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Format</div>
+                          <div className="mt-2 text-lg font-semibold capitalize text-white">{form.contentType}</div>
+                        </div>
+                        <div className="depth-card rounded-[16px] p-3">
+                          <div className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Time</div>
+                          <div className="mt-2 text-sm font-semibold text-white">
+                            {form.scheduledDate && form.scheduledTime ? `${form.scheduledDate} · ${form.scheduledTime}` : "Not scheduled"}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {(isEventsMode || workflowStep === "publish") ? (
+                    <div className="grid gap-2 sm:grid-cols-2">
+                      <Button type="button" variant="outline" disabled={loading || !canSaveDraft} onClick={() => savePost("draft")} className="h-11 rounded-[16px]">
+                        {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <PencilLine className="h-4 w-4" />}
+                        {saveDraftLabel}
+                      </Button>
+                      <Button type="button" disabled={loading || !canSchedulePost} onClick={() => savePost("scheduled")} className="h-11 rounded-[16px]">
+                        {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+                        {isEventsMode ? scheduleLabel : "Schedule for publishing"}
+                      </Button>
+                    </div>
+                  ) : null}
                   {!canPublishToSelectedPlatform ? (
                     <p className="text-xs leading-5 text-muted-foreground">
                       Connect a destination account before {isEventsMode ? "saving events" : "scheduling posts"}.
@@ -2561,17 +3182,17 @@ export default function SocialCalendarPage() {
                   </div>
 
                   <div className="mt-4 grid gap-3 md:grid-cols-3">
-                    <div className="rounded-[16px] border border-white/10 bg-white/[0.03] p-3">
+                    <div className="depth-card rounded-[16px] p-3">
                       <div className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Payload</div>
                       <div className="mt-2 text-sm font-medium text-white">{publishPayload?.payloadVersion || "Not loaded"}</div>
                       <div className="mt-1 text-xs text-muted-foreground">{publishPayload?.content.mediaItems.length || 0} media item(s)</div>
                     </div>
-                    <div className="rounded-[16px] border border-white/10 bg-white/[0.03] p-3">
+                    <div className="depth-card rounded-[16px] p-3">
                       <div className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Destination</div>
                       <div className="mt-2 truncate text-sm font-medium text-white">{publishPayload?.destination.handle || publishPayload?.destination.accountName || "No account"}</div>
                       <div className="mt-1 text-xs text-muted-foreground">{publishPayload?.platform || selectedPost.platform}</div>
                     </div>
-                    <div className="rounded-[16px] border border-white/10 bg-white/[0.03] p-3">
+                    <div className="depth-card rounded-[16px] p-3">
                       <div className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Attempts</div>
                       <div className="mt-2 text-sm font-medium text-white">{publishAttempts.length}</div>
                       <div className="mt-1 text-xs text-muted-foreground">Recorded publish attempts</div>
@@ -2586,7 +3207,7 @@ export default function SocialCalendarPage() {
                       </Button>
                     </div>
                     {publishAttempts.length > 0 ? publishAttempts.map((attempt) => (
-                      <div key={attempt.publishAttemptId} className="rounded-[14px] border border-white/10 bg-white/[0.025] p-3">
+                      <div key={attempt.publishAttemptId} className="depth-card rounded-[14px] p-3">
                         <div className="flex flex-wrap items-center justify-between gap-2">
                           <div className="text-sm font-medium text-white">Attempt #{attempt.attemptNumber}</div>
                           <Badge variant="outline" className={cn("border px-2 py-0 text-[10px] uppercase tracking-[0.16em]", attempt.status === "success" ? "border-emerald-500/25 text-emerald-300" : attempt.status === "failed" ? "border-red-500/25 text-red-300" : "border-white/10 text-muted-foreground")}>
@@ -2608,7 +3229,7 @@ export default function SocialCalendarPage() {
                 </GlassCard>
               ) : null}
 
-              <GlassCard className="p-5">
+              <GlassCard className="p-5 accent-glow">
                 <div className="flex items-center justify-between gap-3">
                   <div>
                       <h2 className="text-lg font-semibold">{selectedCampaign ? (isEventsMode ? "Edit series" : "Edit campaign") : campaignEditorLabel}</h2>
@@ -2724,8 +3345,8 @@ export default function SocialCalendarPage() {
                       key={post.scheduledPostId}
                       onClick={() => setSelectedPostId(post.scheduledPostId)}
                       className={cn(
-                        "flex w-full items-start justify-between gap-3 rounded-md border border-white/10 bg-white/5 p-3 text-left",
-                        selectedPostId === post.scheduledPostId && "border-primary/30 bg-primary/10"
+                        "depth-card depth-card-hover flex w-full items-start justify-between gap-3 rounded-[14px] p-3 text-left",
+                        selectedPostId === post.scheduledPostId && "border-primary/40 bg-primary/10 shadow-[0_14px_36px_rgba(91,95,255,0.14)]"
                       )}
                     >
                       <div className="min-w-0">
@@ -2748,7 +3369,7 @@ export default function SocialCalendarPage() {
                 </div>
               </GlassCard>
 
-              <GlassCard className="p-5">
+              <GlassCard className="p-5 accent-glow">
                 <div className="flex items-center justify-between gap-3">
                   <div>
                     <h2 className="text-lg font-semibold">{campaignSectionLabel}</h2>
@@ -2766,8 +3387,8 @@ export default function SocialCalendarPage() {
                       key={campaign.socialCampaignId}
                       onClick={() => setSelectedCampaignId(campaign.socialCampaignId)}
                       className={cn(
-                        "flex w-full items-start justify-between gap-3 rounded-md border border-white/10 bg-white/5 p-3 text-left",
-                        selectedCampaignId === campaign.socialCampaignId && "border-primary/30 bg-primary/10"
+                        "depth-card depth-card-hover flex w-full items-start justify-between gap-3 rounded-[14px] p-3 text-left",
+                        selectedCampaignId === campaign.socialCampaignId && "border-primary/40 bg-primary/10 shadow-[0_14px_36px_rgba(91,95,255,0.14)]"
                       )}
                     >
                       <div className="min-w-0">

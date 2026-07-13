@@ -156,6 +156,15 @@ export { logXPEvent } from './xp';
 // Social publishing jobs
 export { publishScheduledSocialPosts } from './social-publishing';
 export { queueSocialTokenRefreshJobs } from './social-token-refresh';
+export { syncSocialAccountAnalytics } from './social-analytics';
+export {
+  socialAnalyticsTikTok,
+  socialAnalyticsInstagram,
+  socialAnalyticsFacebook,
+  socialAnalyticsLinkedIn,
+  socialAnalyticsX,
+  socialAnalyticsYouTube,
+} from './social-analytics-adapters';
 
 // Push notification functions
 export { 

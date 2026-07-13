@@ -122,10 +122,12 @@ function getSchedulerActionPrefill(searchParams: URLSearchParams): Partial<Studi
     add_cta: "Add a clear call to action that fits the platform and offer.",
     generate_hashtags: "Generate relevant hashtags for this post without overloading the caption.",
     adapt_for_platform: "Adapt this post for the selected social platform using its best practices.",
+    repurpose_content: "Repurpose an existing asset or idea into a platform-ready social post.",
     repurpose_asset: "Repurpose a recent content asset into a fresh social post.",
     repurpose_existing_content: "Repurpose existing content into a platform-ready social post.",
     fill_content_gap: "Create a content idea and caption to fill an empty calendar slot.",
     suggest_best_time: "Recommend the best publishing time and explain the reasoning.",
+    generate_todays_content: "Generate today's most useful social content based on my scheduler briefing.",
   };
 
   return {
