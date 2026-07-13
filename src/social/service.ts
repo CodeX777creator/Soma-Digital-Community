@@ -3,6 +3,7 @@ import { sanitizeString } from '@/lib/security';
 import { logger } from '@/lib/logger';
 import { getSocialProvider, SOCIAL_PROVIDER_REGISTRY } from './providers';
 import { sealSocialPayload } from './credentials';
+import { getDefaultContentType, getPlatformCapability, isScheduledPostContentType } from './capabilities';
 import type {
   ContentCalendarSummary,
   EncryptedPayload,
@@ -21,6 +22,7 @@ import type {
   SocialCredentialPayload,
   SocialHubSummary,
   SocialPlatform,
+  ScheduledPostContentType,
 } from './types';
 
 type SocialAccountDoc = {
@@ -467,14 +469,20 @@ type ScheduledPostDoc = {
   ownerId: string;
   platform: SocialPlatform;
   socialAccountId?: string;
+  connectedAccountId?: string;
+  publicationGroupId?: string;
+  contentType?: ScheduledPostContentType;
   status: ScheduledPostStatus;
   scheduledTime: admin.firestore.Timestamp;
   title?: string;
   caption: string;
+  hashtags?: string[];
+  cta?: string;
   assetIds: string[];
   campaignId?: string;
   notes?: string;
   timezone?: string;
+  platformSettings?: Record<string, unknown>;
   metadata: Record<string, unknown>;
   createdAt?: admin.firestore.Timestamp | admin.firestore.FieldValue;
   updatedAt?: admin.firestore.Timestamp | admin.firestore.FieldValue;
@@ -488,6 +496,9 @@ type ScheduledPostDoc = {
   failedAt?: admin.firestore.Timestamp | null;
   lastError?: string | null;
   externalPostId?: string | null;
+  providerPostId?: string | null;
+  failureCode?: string | null;
+  failureMessage?: string | null;
   publishProviderResponse?: string | null;
 };
 
@@ -507,6 +518,26 @@ type SocialCampaignDoc = {
   updatedAt?: admin.firestore.Timestamp | admin.firestore.FieldValue;
 };
 
+type GeneratedAssetDoc = {
+  assetId?: string;
+  ownerId?: string;
+  createdBy?: string;
+  type?: string;
+  mimeType?: string;
+  status?: string;
+  renderState?: string;
+  downloadUrl?: string;
+  thumbnail?: string;
+  storagePath?: string;
+};
+
+function createValidationError(message: string, code = 'INVALID_SCHEDULED_POST'): Error {
+  const error = new Error(message) as Error & { status?: number; code?: string };
+  error.status = 400;
+  error.code = code;
+  return error;
+}
+
 function normalizeScheduledStatus(status?: ScheduledPostStatus): ScheduledPostStatus {
   return status || 'draft';
 }
@@ -523,20 +554,198 @@ function normalizeAssetIds(assetIds?: string[]): string[] {
   return Array.from(new Set((assetIds || []).map((item) => sanitizeString(item, 160)).filter(Boolean)));
 }
 
+function normalizeHashtags(hashtags?: string[]): string[] {
+  return Array.from(
+    new Set(
+      (hashtags || [])
+        .map((item) => sanitizeString(item.replace(/^#/, ''), 80).trim())
+        .filter(Boolean)
+    )
+  ).slice(0, 30);
+}
+
+function normalizePublicationGroupId(value?: string): string | undefined {
+  return value ? sanitizeString(value, 160) || undefined : undefined;
+}
+
+function normalizeContentType(platform: SocialPlatform, value?: ScheduledPostContentType): ScheduledPostContentType {
+  return value && isScheduledPostContentType(value) ? value : getDefaultContentType(platform);
+}
+
+function inferAssetKind(asset: GeneratedAssetDoc): ScheduledPostContentType | 'audio' | 'unknown' {
+  if (asset.type === 'image' || asset.type === 'video' || asset.type === 'document') {
+    return asset.type;
+  }
+
+  if (typeof asset.mimeType === 'string') {
+    if (asset.mimeType.startsWith('image/')) return 'image';
+    if (asset.mimeType.startsWith('video/')) return 'video';
+    if (asset.mimeType.startsWith('audio/')) return 'audio';
+    if (asset.mimeType.includes('pdf') || asset.mimeType.includes('document')) return 'document';
+  }
+
+  if (asset.thumbnail && !asset.downloadUrl && asset.type === 'audio') return 'audio';
+  return 'unknown';
+}
+
+async function validateConnectedAccount(input: {
+  ownerId: string;
+  platform: SocialPlatform;
+  connectedAccountId?: string;
+  requireConnected: boolean;
+}): Promise<void> {
+  if (!input.connectedAccountId) {
+    if (input.requireConnected) {
+      throw createValidationError('Choose a connected destination account before scheduling this post.', 'DESTINATION_REQUIRED');
+    }
+    return;
+  }
+
+  if (!input.requireConnected) {
+    return;
+  }
+
+  const snapshot = await adminDb.collection('socialAccounts').doc(input.connectedAccountId).get();
+  if (!snapshot.exists) {
+    throw createValidationError('The selected social account could not be found.', 'DESTINATION_NOT_FOUND');
+  }
+
+  const account = snapshot.data() as SocialAccountDoc;
+  if (account.ownerId !== input.ownerId || account.providerId !== input.platform) {
+    throw createValidationError('The selected social account does not match this post destination.', 'DESTINATION_MISMATCH');
+  }
+
+  if (input.requireConnected && account.status !== 'connected') {
+    throw createValidationError('The selected social account is not connected.', 'DESTINATION_DISCONNECTED');
+  }
+}
+
+async function validateAssetIds(input: {
+  ownerId: string;
+  platform: SocialPlatform;
+  contentType: ScheduledPostContentType;
+  status: ScheduledPostStatus;
+  assetIds: string[];
+}): Promise<void> {
+  const capability = getPlatformCapability(input.platform);
+  const publishable = input.status !== 'draft' && input.status !== 'editing';
+
+  if (!capability.supportedContentTypes.includes(input.contentType)) {
+    throw createValidationError(`${input.platform} does not support ${input.contentType} scheduled posts.`, 'UNSUPPORTED_CONTENT_TYPE');
+  }
+
+  if (capability.maxAssets && input.assetIds.length > capability.maxAssets) {
+    throw createValidationError(`${input.platform} supports a maximum of ${capability.maxAssets} media asset(s).`, 'TOO_MANY_ASSETS');
+  }
+
+  if (publishable && input.contentType === 'carousel' && input.assetIds.length < 2) {
+    throw createValidationError('Carousel posts need at least two ordered assets.', 'CAROUSEL_ASSETS_REQUIRED');
+  }
+
+  if (publishable && (capability.mediaRequired || input.contentType !== 'text') && input.assetIds.length === 0) {
+    throw createValidationError(`${input.platform} ${input.contentType} posts need a completed media asset.`, 'MEDIA_REQUIRED');
+  }
+
+  if (input.assetIds.length === 0) return;
+
+  const snapshots = await Promise.all(input.assetIds.map((assetId) => adminDb.collection('generatedAssets').doc(assetId).get()));
+  snapshots.forEach((snapshot, index) => {
+    const assetId = input.assetIds[index];
+    if (!snapshot.exists) {
+      throw createValidationError(`Media asset ${assetId} could not be found.`, 'ASSET_NOT_FOUND');
+    }
+
+    const asset = snapshot.data() as GeneratedAssetDoc;
+    const assetOwner = asset.ownerId || asset.createdBy;
+    if (assetOwner !== input.ownerId) {
+      throw createValidationError('You can only schedule media assets that belong to your account.', 'ASSET_OWNER_MISMATCH');
+    }
+
+    if (asset.status && asset.status !== 'completed') {
+      throw createValidationError('Only completed generated assets can be scheduled.', 'ASSET_NOT_READY');
+    }
+
+    if (asset.renderState && asset.renderState !== 'completed') {
+      throw createValidationError('Only completed video renders can be scheduled.', 'ASSET_NOT_READY');
+    }
+
+    const assetKind = inferAssetKind(asset);
+    if (publishable && !capability.supportedAssetKinds.includes(assetKind as ScheduledPostContentType)) {
+      throw createValidationError(`${input.platform} does not support the selected ${assetKind} asset.`, 'ASSET_TYPE_UNSUPPORTED');
+    }
+
+    if (publishable && input.contentType === 'video' && assetKind !== 'video') {
+      throw createValidationError('Video posts require a completed video asset.', 'VIDEO_ASSET_REQUIRED');
+    }
+
+    if (publishable && input.contentType === 'image' && assetKind !== 'image') {
+      throw createValidationError('Image posts require a completed image asset.', 'IMAGE_ASSET_REQUIRED');
+    }
+
+    if (publishable && input.contentType === 'document' && assetKind !== 'document') {
+      throw createValidationError('Document posts require a completed document asset.', 'DOCUMENT_ASSET_REQUIRED');
+    }
+  });
+}
+
+async function validateScheduledPostDocument(doc: ScheduledPostDoc): Promise<void> {
+  if (doc.metadata?.calendarMode === 'events') {
+    return;
+  }
+
+  const capability = getPlatformCapability(doc.platform);
+  const publishable = doc.status !== 'draft' && doc.status !== 'editing';
+  const caption = (doc.caption || '').trim();
+  const scheduledAt = doc.scheduledTime.toDate().getTime();
+
+  if (publishable && scheduledAt < Date.now() - 60_000) {
+    throw createValidationError('Scheduled posts cannot be placed in the past. Save it as a draft instead.', 'SCHEDULED_TIME_IN_PAST');
+  }
+
+  if (capability.maxCaptionLength && caption.length > capability.maxCaptionLength) {
+    throw createValidationError(`${doc.platform} captions must be ${capability.maxCaptionLength} characters or fewer.`, 'CAPTION_TOO_LONG');
+  }
+
+  if (publishable && doc.contentType === 'text' && !caption) {
+    throw createValidationError('Text posts need a caption before scheduling.', 'CAPTION_REQUIRED');
+  }
+
+  await validateConnectedAccount({
+    ownerId: doc.ownerId,
+    platform: doc.platform,
+    connectedAccountId: doc.connectedAccountId || doc.socialAccountId,
+    requireConnected: publishable,
+  });
+
+  await validateAssetIds({
+    ownerId: doc.ownerId,
+    platform: doc.platform,
+    contentType: doc.contentType || getDefaultContentType(doc.platform),
+    status: doc.status,
+    assetIds: doc.assetIds || [],
+  });
+}
+
 function serializeScheduledPost(doc: ScheduledPostDoc): ScheduledPostRecord {
   return {
     scheduledPostId: doc.scheduledPostId,
     ownerId: doc.ownerId,
     platform: doc.platform,
     socialAccountId: doc.socialAccountId,
+    connectedAccountId: doc.connectedAccountId || doc.socialAccountId,
+    publicationGroupId: doc.publicationGroupId,
+    contentType: doc.contentType || getDefaultContentType(doc.platform),
     status: doc.status,
     scheduledTime: doc.scheduledTime.toDate().toISOString(),
     title: doc.title,
     caption: doc.caption,
+    hashtags: doc.hashtags || [],
+    cta: doc.cta,
     assetIds: doc.assetIds || [],
     campaignId: doc.campaignId,
     notes: doc.notes,
     timezone: doc.timezone,
+    platformSettings: doc.platformSettings || {},
     metadata: doc.metadata || {},
     createdAt: toIso(doc.createdAt),
     updatedAt: toIso(doc.updatedAt),
@@ -550,6 +759,9 @@ function serializeScheduledPost(doc: ScheduledPostDoc): ScheduledPostRecord {
     failedAt: toIso(doc.failedAt),
     lastError: doc.lastError || null,
     externalPostId: doc.externalPostId || null,
+    providerPostId: doc.providerPostId || doc.externalPostId || null,
+    failureCode: doc.failureCode || null,
+    failureMessage: doc.failureMessage || doc.lastError || null,
     publishProviderResponse: doc.publishProviderResponse || null,
   };
 }
@@ -614,22 +826,29 @@ export async function createScheduledPost(input: ScheduledPostInput): Promise<Sc
   const ownerId = input.userId || 'anonymous';
   const scheduledTime = normalizeScheduledTime(input.scheduledTime);
   const status = normalizeScheduledStatus(input.status);
+  const connectedAccountId = input.connectedAccountId || input.socialAccountId;
   const docRef = adminDb.collection('scheduledPosts').doc();
   const now = admin.firestore.FieldValue.serverTimestamp();
 
-  const doc: ScheduledPostDoc = {
+  const doc = stripUndefined<ScheduledPostDoc>({
     scheduledPostId: docRef.id,
     ownerId,
     platform: input.platform,
-    socialAccountId: input.socialAccountId ? sanitizeString(input.socialAccountId, 160) : undefined,
+    socialAccountId: connectedAccountId ? sanitizeString(connectedAccountId, 160) : undefined,
+    connectedAccountId: connectedAccountId ? sanitizeString(connectedAccountId, 160) : undefined,
+    publicationGroupId: normalizePublicationGroupId(input.publicationGroupId),
+    contentType: normalizeContentType(input.platform, input.contentType),
     status,
     scheduledTime,
     title: input.title ? sanitizeString(input.title, 160) : undefined,
     caption: sanitizeString(input.caption, 5000),
+    hashtags: normalizeHashtags(input.hashtags),
+    cta: input.cta ? sanitizeString(input.cta, 500) : undefined,
     assetIds: normalizeAssetIds(input.assetIds),
     campaignId: input.campaignId ? sanitizeString(input.campaignId, 120) : undefined,
     notes: input.notes ? sanitizeString(input.notes, 1000) : undefined,
     timezone: input.timezone ? sanitizeString(input.timezone, 80) : undefined,
+    platformSettings: input.platformSettings ? normalizeMetadata(input.platformSettings) : undefined,
     metadata: normalizeMetadata(input.metadata),
     attemptCount: 0,
     lastAttemptAt: null,
@@ -643,9 +862,13 @@ export async function createScheduledPost(input: ScheduledPostInput): Promise<Sc
     failedAt: null,
     lastError: null,
     externalPostId: null,
+    providerPostId: null,
+    failureCode: null,
+    failureMessage: null,
     publishProviderResponse: null,
-  };
+  });
 
+  await validateScheduledPostDocument(doc);
   await docRef.set(doc);
   logger.info('[Social] Created scheduled post', {
     scheduledPostId: doc.scheduledPostId,
@@ -665,19 +888,29 @@ export async function updateScheduledPost(
   const current = await readScheduledPostOrThrow(ownerId, postId);
   const scheduledTime = patch.scheduledTime ? normalizeScheduledTime(patch.scheduledTime) : current.scheduledTime;
   const status = patch.status || current.status;
+  const platform = patch.platform || current.platform;
+  const connectedAccountId = patch.connectedAccountId !== undefined || patch.socialAccountId !== undefined
+    ? sanitizeString((patch.connectedAccountId || patch.socialAccountId || ''), 160) || undefined
+    : current.connectedAccountId || current.socialAccountId;
 
-  const updated: ScheduledPostDoc = {
+  const updated = stripUndefined<ScheduledPostDoc>({
     ...current,
-    platform: patch.platform || current.platform,
-    socialAccountId: patch.socialAccountId !== undefined ? sanitizeString(patch.socialAccountId || '', 160) || undefined : current.socialAccountId,
+    platform,
+    socialAccountId: connectedAccountId,
+    connectedAccountId,
+    publicationGroupId: patch.publicationGroupId !== undefined ? normalizePublicationGroupId(patch.publicationGroupId) : current.publicationGroupId,
+    contentType: patch.contentType !== undefined ? normalizeContentType(platform, patch.contentType) : current.contentType || getDefaultContentType(platform),
     status,
     scheduledTime,
     title: patch.title !== undefined ? sanitizeString(patch.title || '', 160) || undefined : current.title,
     caption: patch.caption !== undefined ? sanitizeString(patch.caption || '', 5000) : current.caption,
+    hashtags: patch.hashtags !== undefined ? normalizeHashtags(patch.hashtags) : current.hashtags || [],
+    cta: patch.cta !== undefined ? sanitizeString(patch.cta || '', 500) || undefined : current.cta,
     assetIds: patch.assetIds ? normalizeAssetIds(patch.assetIds) : current.assetIds,
     campaignId: patch.campaignId !== undefined ? sanitizeString(patch.campaignId || '', 120) || undefined : current.campaignId,
     notes: patch.notes !== undefined ? sanitizeString(patch.notes || '', 1000) || undefined : current.notes,
     timezone: patch.timezone !== undefined ? sanitizeString(patch.timezone || '', 80) || undefined : current.timezone,
+    platformSettings: patch.platformSettings !== undefined ? normalizeMetadata(patch.platformSettings) : current.platformSettings || {},
     metadata: patch.metadata ? normalizeMetadata(patch.metadata) : current.metadata,
     updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     attemptCount: current.attemptCount ?? 0,
@@ -690,9 +923,13 @@ export async function updateScheduledPost(
     failedAt: status === 'failed' ? current.failedAt || admin.firestore.Timestamp.now() : current.failedAt || null,
     lastError: status === 'failed' ? current.lastError || 'Scheduled post failed' : current.lastError || null,
     externalPostId: current.externalPostId || null,
+    providerPostId: current.providerPostId || current.externalPostId || null,
+    failureCode: current.failureCode || null,
+    failureMessage: status === 'failed' ? current.failureMessage || current.lastError || 'Scheduled post failed' : current.failureMessage || null,
     publishProviderResponse: current.publishProviderResponse || null,
-  };
+  });
 
+  await validateScheduledPostDocument(updated);
   await adminDb.collection('scheduledPosts').doc(postId).set(updated, { merge: true });
   logger.info('[Social] Updated scheduled post', {
     scheduledPostId: postId,
@@ -767,9 +1004,11 @@ export async function getContentCalendarSummary(
     byStatus: {
       draft: 0,
       scheduled: 0,
+      publishing: 0,
       published: 0,
       failed: 0,
       editing: 0,
+      cancelled: 0,
     },
     byPlatform: {
       tiktok: 0,

@@ -161,24 +161,33 @@ export interface SocialCampaignRecord {
 export const SCHEDULED_POST_STATUSES = [
   'draft',
   'scheduled',
+  'publishing',
   'published',
   'failed',
   'editing',
+  'cancelled',
 ] as const;
 
 export type ScheduledPostStatus = (typeof SCHEDULED_POST_STATUSES)[number];
+export type { ScheduledPostContentType } from './capabilities';
 
 export interface ScheduledPostInput {
   platform: SocialPlatform;
   socialAccountId?: string;
+  connectedAccountId?: string;
+  publicationGroupId?: string;
+  contentType?: import('./capabilities').ScheduledPostContentType;
   scheduledTime: string;
   caption: string;
+  hashtags?: string[];
+  cta?: string;
   title?: string;
   assetIds?: string[];
   campaignId?: string;
   notes?: string;
   timezone?: string;
   status?: ScheduledPostStatus;
+  platformSettings?: Record<string, unknown>;
   userId?: string;
   metadata?: Record<string, unknown>;
 }
@@ -186,14 +195,20 @@ export interface ScheduledPostInput {
 export interface ScheduledPostUpdateInput {
   platform?: SocialPlatform;
   socialAccountId?: string;
+  connectedAccountId?: string;
+  publicationGroupId?: string;
+  contentType?: import('./capabilities').ScheduledPostContentType;
   scheduledTime?: string;
   caption?: string;
+  hashtags?: string[];
+  cta?: string;
   title?: string;
   assetIds?: string[];
   campaignId?: string;
   notes?: string;
   timezone?: string;
   status?: ScheduledPostStatus;
+  platformSettings?: Record<string, unknown>;
   metadata?: Record<string, unknown>;
 }
 
@@ -202,14 +217,20 @@ export interface ScheduledPostRecord {
   ownerId: string;
   platform: SocialPlatform;
   socialAccountId?: string;
+  connectedAccountId?: string;
+  publicationGroupId?: string;
+  contentType?: import('./capabilities').ScheduledPostContentType;
   status: ScheduledPostStatus;
   scheduledTime: string;
   title?: string;
   caption: string;
+  hashtags?: string[];
+  cta?: string;
   assetIds: string[];
   campaignId?: string;
   notes?: string;
   timezone?: string;
+  platformSettings?: Record<string, unknown>;
   metadata: Record<string, unknown>;
   createdAt?: string | null;
   updatedAt?: string | null;
@@ -223,6 +244,9 @@ export interface ScheduledPostRecord {
   failedAt?: string | null;
   lastError?: string | null;
   externalPostId?: string | null;
+  providerPostId?: string | null;
+  failureCode?: string | null;
+  failureMessage?: string | null;
   publishProviderResponse?: string | null;
 }
 

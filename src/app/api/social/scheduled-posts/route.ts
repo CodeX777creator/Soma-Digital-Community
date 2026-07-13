@@ -9,6 +9,7 @@ import {
 } from '@/social';
 import { sanitizeString } from '@/lib/security';
 import { SOCIAL_PLATFORMS, type SocialPlatform, SCHEDULED_POST_STATUSES, type ScheduledPostStatus } from '@/social/types';
+import { isScheduledPostContentType } from '@/social/capabilities';
 
 function isAllowedPlatform(value: unknown): value is SocialPlatform {
   return typeof value === 'string' && (SOCIAL_PLATFORMS as readonly string[]).includes(value);
@@ -35,6 +36,11 @@ function parseLimit(req: NextRequest): number {
 function parseAssetIds(value: unknown): string[] | undefined {
   if (!Array.isArray(value)) return undefined;
   return Array.from(new Set(value.filter((item): item is string => typeof item === 'string').map((item) => sanitizeString(item, 160)).filter(Boolean)));
+}
+
+function parseHashtags(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  return Array.from(new Set(value.filter((item): item is string => typeof item === 'string').map((item) => sanitizeString(item.replace(/^#/, ''), 80)).filter(Boolean)));
 }
 
 const handler = createAPIHandler(
@@ -80,21 +86,27 @@ const handler = createAPIHandler(
       return apiError('scheduledTime is required', { status: 400, code: 'INVALID_INPUT' });
     }
 
-    if (typeof body.caption !== 'string' || !body.caption.trim()) {
+    if (typeof body.caption !== 'string') {
       return apiError('caption is required', { status: 400, code: 'INVALID_INPUT' });
     }
 
     const post = await createScheduledPost({
       platform: body.platform,
       socialAccountId: typeof body.socialAccountId === 'string' ? sanitizeString(body.socialAccountId, 160) : undefined,
+      connectedAccountId: typeof body.connectedAccountId === 'string' ? sanitizeString(body.connectedAccountId, 160) : undefined,
+      publicationGroupId: typeof body.publicationGroupId === 'string' ? sanitizeString(body.publicationGroupId, 160) : undefined,
+      contentType: isScheduledPostContentType(body.contentType) ? body.contentType : undefined,
       scheduledTime: body.scheduledTime,
       caption: sanitizeString(body.caption, 5000),
+      hashtags: parseHashtags(body.hashtags),
+      cta: typeof body.cta === 'string' ? sanitizeString(body.cta, 500) : undefined,
       title: typeof body.title === 'string' ? sanitizeString(body.title, 160) : undefined,
       assetIds: parseAssetIds(body.assetIds),
       campaignId: typeof body.campaignId === 'string' ? sanitizeString(body.campaignId, 120) : undefined,
       notes: typeof body.notes === 'string' ? sanitizeString(body.notes, 1000) : undefined,
       timezone: typeof body.timezone === 'string' ? sanitizeString(body.timezone, 80) : undefined,
       status: isAllowedStatus(body.status) ? body.status : 'draft',
+      platformSettings: body.platformSettings && typeof body.platformSettings === 'object' ? body.platformSettings as Record<string, unknown> : undefined,
       userId: entitlements.uid,
       metadata: body.metadata && typeof body.metadata === 'object' ? body.metadata as Record<string, unknown> : undefined,
     });

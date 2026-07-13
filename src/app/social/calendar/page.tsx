@@ -30,6 +30,11 @@ import {
   Trash2,
   GripVertical,
   SquareArrowOutUpRight,
+  ImageIcon,
+  Video,
+  FileText,
+  Hash,
+  Megaphone,
 } from "lucide-react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
@@ -52,6 +57,13 @@ import {
   type SocialCampaignStatus,
   type SocialAccountRecord,
 } from "@/social/types";
+import {
+  PLATFORM_CAPABILITIES,
+  getDefaultContentType,
+  getPlatformCapability,
+  requiresMedia,
+  type ScheduledPostContentType,
+} from "@/social/capabilities";
 
 type CalendarResponse = {
   month: string;
@@ -86,14 +98,34 @@ type SocialAccountsResponse = {
   accounts: SocialAccountRecord[];
 };
 
+type StudioAssetSummary = {
+  assetId: string;
+  title: string;
+  type: string;
+  status: string;
+  thumbnail?: string;
+  downloadUrl?: string;
+  mimeType?: string;
+};
+
+type StudioAssetsResponse = {
+  assets: StudioAssetSummary[];
+};
+
 interface CalendarFormState {
   title: string;
   caption: string;
   platform: SocialPlatform;
+  connectedAccountId: string;
+  destinationAccountIds: string[];
+  publicationGroupId: string;
+  contentType: ScheduledPostContentType;
   status: ScheduledPostStatus;
   scheduledDate: string;
   scheduledTime: string;
   assetIds: string;
+  hashtags: string;
+  cta: string;
   campaignId: string;
   notes: string;
   timezone: string;
@@ -115,9 +147,11 @@ type CalendarViewMode = "month" | "week" | "agenda";
 const STATUS_LABELS: Record<ScheduledPostStatus, string> = {
   draft: "Draft",
   scheduled: "Scheduled",
+  publishing: "Publishing",
   published: "Published",
   failed: "Failed",
   editing: "Editing",
+  cancelled: "Cancelled",
 };
 
 function getTodayDateString(): string {
@@ -153,10 +187,16 @@ function buildFormFromPost(post: ScheduledPostRecord): CalendarFormState {
     title: post.title || "",
     caption: post.caption || "",
     platform: post.platform,
+    connectedAccountId: post.connectedAccountId || post.socialAccountId || "",
+    destinationAccountIds: [post.connectedAccountId || post.socialAccountId || ""].filter(Boolean),
+    publicationGroupId: post.publicationGroupId || "",
+    contentType: post.contentType || getDefaultContentType(post.platform),
     status: post.status,
     scheduledDate: scheduled.scheduledDate,
     scheduledTime: scheduled.scheduledTime,
     assetIds: (post.assetIds || []).join(", "),
+    hashtags: (post.hashtags || []).map((tag) => `#${tag}`).join(" "),
+    cta: post.cta || "",
     campaignId: post.campaignId || "",
     notes: post.notes || "",
     timezone: post.timezone || "",
@@ -168,14 +208,50 @@ function buildEmptyForm(date: string): CalendarFormState {
     title: "",
     caption: "",
     platform: "instagram",
+    connectedAccountId: "",
+    destinationAccountIds: [],
+    publicationGroupId: "",
+    contentType: "image",
     status: "draft",
     scheduledDate: date,
     scheduledTime: "09:00",
     assetIds: "",
+    hashtags: "",
+    cta: "",
     campaignId: "",
     notes: "",
     timezone: "",
   };
+}
+
+function splitAssetIds(value: string): string[] {
+  return value
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+}
+
+function splitHashtags(value: string): string[] {
+  return Array.from(
+    new Set(
+      value
+        .split(/[\s,]+/)
+        .map((entry) => entry.replace(/^#/, "").trim())
+        .filter(Boolean)
+    )
+  );
+}
+
+function createPublicationGroupId(): string {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+    return crypto.randomUUID();
+  }
+  return `pub_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function getAccountDisplayLabel(account?: SocialAccountRecord): string {
+  if (!account) return "No destination selected";
+  return account.handle || account.accountName || account.providerAccountId || account.providerLabel;
 }
 
 function buildCampaignFormFromCampaign(campaign: SocialCampaignRecord): CampaignFormState {
@@ -241,6 +317,21 @@ function getCampaignLabel(campaignMap: Record<string, SocialCampaignRecord>, cam
   return campaignMap[campaignId]?.campaignName || campaignId;
 }
 
+function getContentTypeIcon(contentType?: ScheduledPostContentType) {
+  switch (contentType) {
+    case "video":
+      return Video;
+    case "image":
+    case "carousel":
+      return ImageIcon;
+    case "document":
+      return FileText;
+    case "text":
+    default:
+      return FileText;
+  }
+}
+
 export default function SocialCalendarPage() {
   const { user } = useAuth();
   const searchParams = useSearchParams();
@@ -285,9 +376,11 @@ export default function SocialCalendarPage() {
     byStatus: {
       draft: 0,
       scheduled: 0,
+      publishing: 0,
       published: 0,
       failed: 0,
       editing: 0,
+      cancelled: 0,
     },
     byPlatform: {
       tiktok: 0,
@@ -315,6 +408,8 @@ export default function SocialCalendarPage() {
   const [loadingMonth, setLoadingMonth] = useState(true);
   const [campaignLoading, setCampaignLoading] = useState(false);
   const [campaignLoadingState, setCampaignLoadingState] = useState(true);
+  const [studioAssets, setStudioAssets] = useState<StudioAssetSummary[]>([]);
+  const [studioAssetsLoading, setStudioAssetsLoading] = useState(false);
   const [selectedPostId, setSelectedPostId] = useState<string | null>(null);
   const [selectedCampaignId, setSelectedCampaignId] = useState<string | null>(null);
   const [dragOverDay, setDragOverDay] = useState<string | null>(null);
@@ -361,9 +456,11 @@ export default function SocialCalendarPage() {
     const summaryByStatus: Record<ScheduledPostStatus, number> = {
       draft: 0,
       scheduled: 0,
+      publishing: 0,
       published: 0,
       failed: 0,
       editing: 0,
+      cancelled: 0,
     };
     const summaryByPlatform: Record<SocialPlatform, number> = {
       tiktok: 0,
@@ -410,10 +507,53 @@ export default function SocialCalendarPage() {
   const selectedProvider = useMemo(() => {
     return SOCIAL_PROVIDER_REGISTRY.find((provider) => provider.id === form.platform);
   }, [form.platform]);
+  const selectedCapability = useMemo(() => getPlatformCapability(form.platform), [form.platform]);
+  const selectedAccount = useMemo(() => {
+    return connectedAccounts.find((account) => account.socialAccountId === form.connectedAccountId) || null;
+  }, [connectedAccounts, form.connectedAccountId]);
+  const connectedDestinations = useMemo(() => {
+    return connectedAccounts.filter((account) => account.status === "connected");
+  }, [connectedAccounts]);
+  const selectedDestinationAccounts = useMemo(() => {
+    const ids = new Set(form.destinationAccountIds.length > 0 ? form.destinationAccountIds : [form.connectedAccountId].filter(Boolean));
+    return connectedDestinations.filter((account) => ids.has(account.socialAccountId));
+  }, [connectedDestinations, form.connectedAccountId, form.destinationAccountIds]);
+  const publishTargetAccounts = selectedPostId
+    ? (selectedAccount ? [selectedAccount] : [])
+    : selectedDestinationAccounts;
+  const selectedAssetIds = useMemo(() => splitAssetIds(form.assetIds), [form.assetIds]);
+  const selectedAssetIdSet = useMemo(() => new Set(selectedAssetIds), [selectedAssetIds]);
+  const compatibleStudioAssets = useMemo(() => {
+    return studioAssets.filter((asset) => {
+      if (asset.status !== "completed") return false;
+      if (form.contentType === "text") return true;
+      if (form.contentType === "carousel") return asset.type === "image" || asset.type === "video";
+      return asset.type === form.contentType;
+    });
+  }, [form.contentType, studioAssets]);
+  const mediaIsRequired = !isEventsMode && requiresMedia(form.platform, form.contentType);
+  const allTargetsSupportFormat = publishTargetAccounts.length > 0
+    ? publishTargetAccounts.every((account) => PLATFORM_CAPABILITIES[account.providerId].supportedContentTypes.includes(form.contentType))
+    : selectedCapability.supportedContentTypes.includes(form.contentType);
+  const anyTargetRequiresMedia = publishTargetAccounts.length > 0
+    ? publishTargetAccounts.some((account) => requiresMedia(account.providerId, form.contentType))
+    : mediaIsRequired;
+  const canPublishToSelectedPlatform = isEventsMode
+    ? connectedPlatforms.has(form.platform)
+    : publishTargetAccounts.length > 0;
+  const canSaveDraft = isEventsMode ? canPublishToSelectedPlatform && Boolean(form.caption.trim()) : publishTargetAccounts.length > 0;
+  const canSchedulePost = isEventsMode
+    ? canPublishToSelectedPlatform && Boolean(form.caption.trim())
+    : canPublishToSelectedPlatform
+      && allTargetsSupportFormat
+      && (!anyTargetRequiresMedia || selectedAssetIds.length > 0)
+      && (form.contentType !== "text" || Boolean(form.caption.trim()))
+      && Boolean(form.scheduledDate && form.scheduledTime);
   const postPlaceholderLabel = isEventsMode
     ? `Describe the ${selectedProvider?.label || "event"} here...`
-    : `Write the ${selectedProvider?.label || "social"} post here...`;
-  const canPublishToSelectedPlatform = connectedPlatforms.has(form.platform);
+    : form.contentType === "text"
+      ? `Write the ${selectedProvider?.label || "social"} post here...`
+      : "Write the caption, hook, and supporting context here...";
 
   useEffect(() => {
     setSelectedPostId(null);
@@ -468,6 +608,24 @@ export default function SocialCalendarPage() {
     setConnectedAccounts(data.accounts || []);
   };
 
+  const loadStudioAssets = async () => {
+    if (!user) return;
+
+    setStudioAssetsLoading(true);
+    try {
+      const idToken = await user.getIdToken();
+      const response = await fetch("/api/ai/studio/assets?limit=48", {
+        headers: { Authorization: `Bearer ${idToken}` },
+      });
+
+      if (!response.ok) return;
+      const data = (await response.json()) as StudioAssetsResponse;
+      setStudioAssets(data.assets || []);
+    } finally {
+      setStudioAssetsLoading(false);
+    }
+  };
+
   useEffect(() => {
     let mounted = true;
 
@@ -513,6 +671,15 @@ export default function SocialCalendarPage() {
             setConnectedAccounts(accountsData.accounts || []);
           }
         }
+        const assetsResponse = await fetch("/api/ai/studio/assets?limit=48", {
+          headers: { Authorization: `Bearer ${idToken}` },
+        });
+        if (assetsResponse.ok) {
+          const assetsData = (await assetsResponse.json()) as StudioAssetsResponse;
+          if (mounted) {
+            setStudioAssets(assetsData.assets || []);
+          }
+        }
       } catch (error) {
         if (mounted) {
           toast({
@@ -525,6 +692,7 @@ export default function SocialCalendarPage() {
         if (mounted) {
           setLoadingMonth(false);
           setCampaignLoadingState(false);
+          setStudioAssetsLoading(false);
         }
       }
     };
@@ -547,15 +715,35 @@ export default function SocialCalendarPage() {
 
   useEffect(() => {
     if (connectedAccounts.length === 0) return;
-    if (connectedPlatforms.has(form.platform)) return;
+    if (isEventsMode && connectedPlatforms.has(form.platform)) return;
+    if (!isEventsMode && form.connectedAccountId && selectedAccount?.status === "connected") return;
     const firstConnected = connectedAccounts.find((account) => account.status === "connected");
     if (firstConnected) {
-      updateField("platform", firstConnected.providerId);
+      setForm((current) => ({
+        ...current,
+        platform: firstConnected.providerId,
+        connectedAccountId: firstConnected.socialAccountId,
+        destinationAccountIds: [firstConnected.socialAccountId],
+        contentType: getDefaultContentType(firstConnected.providerId),
+      }));
     }
-  }, [connectedAccounts, connectedPlatforms, form.platform]);
+  }, [connectedAccounts, connectedPlatforms, form.connectedAccountId, form.platform, isEventsMode, selectedAccount?.status]);
 
   const updateField = <K extends keyof CalendarFormState>(key: K, value: CalendarFormState[K]) => {
-    setForm((current) => ({ ...current, [key]: value }));
+    setForm((current) => {
+      if (key === "platform") {
+        const nextPlatform = value as SocialPlatform;
+        const nextAccount = connectedAccounts.find((account) => account.status === "connected" && account.providerId === nextPlatform);
+        return {
+          ...current,
+          platform: nextPlatform,
+          connectedAccountId: nextAccount?.socialAccountId || "",
+          destinationAccountIds: nextAccount ? [nextAccount.socialAccountId] : [],
+          contentType: getDefaultContentType(nextPlatform),
+        };
+      }
+      return { ...current, [key]: value };
+    });
   };
 
   const updateCampaignField = <K extends keyof CampaignFormState>(key: K, value: CampaignFormState[K]) => {
@@ -575,7 +763,7 @@ export default function SocialCalendarPage() {
   const refreshCalendar = async () => {
     try {
       setLoading(true);
-      await Promise.all([loadMonth(), loadConnectedAccounts()]);
+      await Promise.all([loadMonth(), loadConnectedAccounts(), loadStudioAssets()]);
       toast({
         title: "Calendar refreshed",
         description: "The latest scheduled content is loaded.",
@@ -616,42 +804,70 @@ export default function SocialCalendarPage() {
     try {
       setLoading(true);
       const idToken = await user.getIdToken();
-      const payload = {
+      const groupId = form.publicationGroupId || createPublicationGroupId();
+      const targetAccounts = selectedPostId
+        ? (selectedAccount ? [selectedAccount] : [])
+        : publishTargetAccounts;
+
+      if (!isEventsMode && targetAccounts.length === 0) {
+        throw new Error("Choose at least one connected destination account.");
+      }
+
+      const basePayload = {
         title: form.title || undefined,
         caption: form.caption,
-        platform: form.platform,
         status: nextStatus,
         scheduledTime: combineDateAndTime(form.scheduledDate, form.scheduledTime),
-        assetIds: form.assetIds
-          .split(",")
-          .map((value) => value.trim())
-          .filter(Boolean),
+        assetIds: selectedAssetIds,
+        hashtags: splitHashtags(form.hashtags),
+        cta: form.cta || undefined,
+        publicationGroupId: groupId,
+        contentType: form.contentType,
         campaignId: form.campaignId || undefined,
         notes: form.notes || undefined,
-        timezone: form.timezone || undefined,
+        timezone: form.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone || undefined,
+        metadata: { calendarMode },
       };
 
-      const response = await fetch(selectedPostId ? `/api/social/scheduled-posts/${selectedPostId}` : "/api/social/scheduled-posts", {
-        method: selectedPostId ? "PATCH" : "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${idToken}`,
-        },
-        body: JSON.stringify(payload),
+      const requests = (isEventsMode ? [{ providerId: form.platform, socialAccountId: form.connectedAccountId || undefined }] : targetAccounts).map((account) => {
+        const platform = account.providerId as SocialPlatform;
+        const contentType = PLATFORM_CAPABILITIES[platform].supportedContentTypes.includes(form.contentType)
+          ? form.contentType
+          : getDefaultContentType(platform);
+        const payload = {
+          ...basePayload,
+          platform,
+          socialAccountId: account.socialAccountId,
+          connectedAccountId: account.socialAccountId,
+          contentType,
+        };
+
+        return fetch(selectedPostId ? `/api/social/scheduled-posts/${selectedPostId}` : "/api/social/scheduled-posts", {
+          method: selectedPostId ? "PATCH" : "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${idToken}`,
+          },
+          body: JSON.stringify(payload),
+        });
       });
 
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ error: "Unknown error" }));
+      const responses = await Promise.all(requests);
+      const failedResponse = responses.find((response) => !response.ok);
+      if (failedResponse) {
+        const errorData = await failedResponse.json().catch(() => ({ error: "Unknown error" }));
         throw new Error(errorData.error || "Could not save scheduled post.");
       }
 
-      const data = (await response.json()) as CalendarPostResponse;
+      const data = (await responses[0].json()) as CalendarPostResponse;
       setSelectedPostId(data.post.scheduledPostId);
-      setForm((current) => ({ ...current, status: data.post.status }));
+      setForm((current) => ({ ...current, status: data.post.status, publicationGroupId: groupId }));
       await loadMonth();
       toast({
         title: nextStatus === "scheduled" ? "Post scheduled" : "Draft saved",
-        description: nextStatus === "scheduled" ? "Your content has been added to the calendar." : "Your draft is saved in the calendar.",
+        description: nextStatus === "scheduled"
+          ? `${responses.length} destination${responses.length === 1 ? "" : "s"} added to the calendar.`
+          : "Your draft is saved in the calendar.",
       });
     } catch (error) {
       toast({
@@ -836,45 +1052,68 @@ export default function SocialCalendarPage() {
     return postsByDay[key] || [];
   };
 
-  const renderPostCard = (post: ScheduledPostRecord, compact = false) => (
-    <div
-      key={post.scheduledPostId}
-      draggable={post.status !== "published"}
-      onDragStart={(event) => {
-        event.stopPropagation();
-        event.dataTransfer.setData("text/plain", post.scheduledPostId);
-      }}
-      onClick={(event) => {
-        event.stopPropagation();
-        setSelectedPostId(post.scheduledPostId);
-      }}
-      className={cn(
-        "group rounded-md border px-2 py-1 text-xs shadow-sm transition-transform hover:-translate-y-0.5",
-        post.status === "published"
-          ? "border-emerald-500/20 bg-emerald-500/10"
-          : post.status === "failed"
-            ? "border-red-500/20 bg-red-500/10"
-            : "border-white/10 bg-black/20",
-        compact && "px-3 py-2"
-      )}
-    >
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0">
-          <div className="truncate font-medium">{post.title || post.caption.slice(0, 26) || "Untitled post"}</div>
-          <div className="mt-0.5 flex items-center gap-1 text-[10px] text-muted-foreground">
-            <Clock3 className="h-3 w-3" />
-            {format(parseISO(post.scheduledTime), "HH:mm")}
+  const renderPostCard = (post: ScheduledPostRecord, compact = false) => {
+    const ContentIcon = getContentTypeIcon(post.contentType);
+    const captionSnippet = post.title || post.caption || `${post.contentType || "Content"} post`;
+    const canDrag = post.status !== "published" && post.status !== "cancelled";
+
+    return (
+      <div
+        key={post.scheduledPostId}
+        draggable={canDrag}
+        onDragStart={(event) => {
+          if (!canDrag) return;
+          event.stopPropagation();
+          event.dataTransfer.setData("text/plain", post.scheduledPostId);
+        }}
+        onClick={(event) => {
+          event.stopPropagation();
+          setSelectedPostId(post.scheduledPostId);
+        }}
+        className={cn(
+          "group overflow-hidden rounded-[14px] border text-xs shadow-sm transition-transform hover:-translate-y-0.5",
+          post.status === "published"
+            ? "border-emerald-500/20 bg-emerald-500/10"
+            : post.status === "failed"
+              ? "border-red-500/20 bg-red-500/10"
+              : "border-white/10 bg-black/25",
+          compact ? "p-3" : "p-2"
+        )}
+      >
+        <div className="flex items-start gap-2">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[12px] border border-white/10 bg-white/[0.05] text-primary">
+            <ContentIcon className="h-4 w-4" />
           </div>
-          <div className="mt-1 truncate text-[10px] text-muted-foreground">
-            {getCampaignLabel(campaignMap, post.campaignId)}
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
+              <span>{format(parseISO(post.scheduledTime), "HH:mm")}</span>
+              <span>·</span>
+              <span>{post.platform}</span>
+              <span>·</span>
+              <span>{post.contentType || "text"}</span>
+            </div>
+            <div className="mt-1 truncate font-medium text-white">{captionSnippet}</div>
+            <div className="mt-1 truncate text-[10px] text-muted-foreground">
+              {getCampaignLabel(campaignMap, post.campaignId)}
+            </div>
+            {compact ? (
+              <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                <Badge variant="outline" className={cn("border px-1.5 py-0 text-[10px]", getPostBadgeClass(post.status))}>
+                  {STATUS_LABELS[post.status]}
+                </Badge>
+                {post.assetIds.length > 0 ? (
+                  <span className="rounded-full border border-white/10 px-2 py-0.5 text-[10px] text-muted-foreground">
+                    {post.assetIds.length} asset{post.assetIds.length === 1 ? "" : "s"}
+                  </span>
+                ) : null}
+              </div>
+            ) : null}
           </div>
+          {canDrag ? <GripVertical className="h-3 w-3 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" /> : null}
         </div>
-        <Badge variant="outline" className={cn("border px-1.5 py-0 text-[10px] uppercase tracking-[0.16em]", getPostBadgeClass(post.status))}>
-          {post.status}
-        </Badge>
       </div>
-    </div>
-  );
+    );
+  };
 
   return (
     <ProtectedRoute>
@@ -1220,119 +1459,325 @@ export default function SocialCalendarPage() {
                 ) : null}
 
                 <form className="space-y-5 p-5" onSubmit={handleSubmit}>
-                  <div className="space-y-3">
-                    <label className="text-sm font-medium">Choose platform</label>
-                    <div className="grid grid-cols-2 gap-2">
-                      {SOCIAL_PROVIDER_REGISTRY.map((provider) => {
-                        const connected = connectedPlatforms.has(provider.id);
-                        const active = form.platform === provider.id;
-                        return (
-                          <button
-                            key={provider.id}
-                            type="button"
-                            onClick={() => updateField("platform", provider.id)}
-                            disabled={!connected}
-                            className={cn(
-                              "rounded-[16px] border p-3 text-left text-sm transition",
-                              active ? "border-primary/60 bg-primary/15 text-white" : "border-white/10 bg-white/[0.03] text-muted-foreground hover:bg-white/[0.06]",
-                              !connected && "cursor-not-allowed opacity-45"
-                            )}
-                          >
-                            <span className="block font-medium">{provider.label}</span>
-                            <span className="mt-1 block text-[11px]">{connected ? "Connected" : "Not connected"}</span>
-                          </button>
-                        );
-                      })}
+                  {isEventsMode ? (
+                    <div className="space-y-3">
+                      <label className="text-sm font-medium">Choose platform</label>
+                      <div className="grid grid-cols-2 gap-2">
+                        {SOCIAL_PROVIDER_REGISTRY.map((provider) => {
+                          const connected = connectedPlatforms.has(provider.id);
+                          const active = form.platform === provider.id;
+                          return (
+                            <button
+                              key={provider.id}
+                              type="button"
+                              onClick={() => updateField("platform", provider.id)}
+                              disabled={!connected}
+                              className={cn(
+                                "rounded-[16px] border p-3 text-left text-sm transition",
+                                active ? "border-primary/60 bg-primary/15 text-white" : "border-white/10 bg-white/[0.03] text-muted-foreground hover:bg-white/[0.06]",
+                                !connected && "cursor-not-allowed opacity-45"
+                              )}
+                            >
+                              <span className="block font-medium">{provider.label}</span>
+                              <span className="mt-1 block text-[11px]">{connected ? "Connected" : "Not connected"}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
                     </div>
-                  </div>
+                  ) : (
+                    <>
+                      <section className="space-y-3">
+                        <div className="flex items-center justify-between gap-3">
+                          <label className="text-sm font-medium">1. Destination</label>
+                          {selectedPost ? <span className="text-xs text-muted-foreground">Editing one destination</span> : null}
+                        </div>
+                        <div className="grid gap-2 sm:grid-cols-2">
+                          {connectedDestinations.map((account) => {
+                            const provider = SOCIAL_PROVIDER_REGISTRY.find((item) => item.id === account.providerId);
+                            const active = selectedPost
+                              ? form.connectedAccountId === account.socialAccountId
+                              : form.destinationAccountIds.includes(account.socialAccountId);
+                            return (
+                              <button
+                                key={account.socialAccountId}
+                                type="button"
+                                onClick={() => {
+                                  if (selectedPost) {
+                                    setForm((current) => ({
+                                      ...current,
+                                      platform: account.providerId,
+                                      connectedAccountId: account.socialAccountId,
+                                      destinationAccountIds: [account.socialAccountId],
+                                      contentType: PLATFORM_CAPABILITIES[account.providerId].supportedContentTypes.includes(current.contentType)
+                                        ? current.contentType
+                                        : getDefaultContentType(account.providerId),
+                                    }));
+                                    return;
+                                  }
 
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">{postHeadingLabel}</label>
+                                  setForm((current) => {
+                                    const exists = current.destinationAccountIds.includes(account.socialAccountId);
+                                    const nextIds = exists
+                                      ? current.destinationAccountIds.filter((id) => id !== account.socialAccountId)
+                                      : [...current.destinationAccountIds, account.socialAccountId];
+                                    const primaryAccount = nextIds.length > 0
+                                      ? connectedDestinations.find((item) => item.socialAccountId === nextIds[0])
+                                      : account;
+                                    return {
+                                      ...current,
+                                      destinationAccountIds: nextIds,
+                                      connectedAccountId: primaryAccount?.socialAccountId || "",
+                                      platform: primaryAccount?.providerId || account.providerId,
+                                      contentType: primaryAccount && PLATFORM_CAPABILITIES[primaryAccount.providerId].supportedContentTypes.includes(current.contentType)
+                                        ? current.contentType
+                                        : getDefaultContentType(primaryAccount?.providerId || account.providerId),
+                                    };
+                                  });
+                                }}
+                                className={cn(
+                                  "rounded-[16px] border p-3 text-left transition",
+                                  active ? "border-primary/60 bg-primary/15 text-white" : "border-white/10 bg-white/[0.03] text-muted-foreground hover:bg-white/[0.06]"
+                                )}
+                              >
+                                <span className="block text-sm font-medium">{provider?.label || account.providerLabel}</span>
+                                <span className="mt-1 block truncate text-xs">{getAccountDisplayLabel(account)}</span>
+                                <span className="mt-2 inline-flex rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] text-emerald-300">Connected</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </section>
+
+                      <section className="space-y-3">
+                        <label className="text-sm font-medium">2. Format</label>
+                        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                          {selectedCapability.supportedContentTypes.map((contentType) => {
+                            const FormatIcon = getContentTypeIcon(contentType);
+                            const active = form.contentType === contentType;
+                            return (
+                              <button
+                                key={contentType}
+                                type="button"
+                                onClick={() => updateField("contentType", contentType)}
+                                className={cn(
+                                  "flex items-center gap-2 rounded-[16px] border px-3 py-3 text-left text-sm capitalize transition",
+                                  active ? "border-primary/60 bg-primary/15 text-white" : "border-white/10 bg-white/[0.03] text-muted-foreground hover:bg-white/[0.06]"
+                                )}
+                              >
+                                <FormatIcon className="h-4 w-4" />
+                                {contentType}
+                              </button>
+                            );
+                          })}
+                        </div>
+                        {!allTargetsSupportFormat ? (
+                          <p className="text-xs leading-5 text-amber-300">One selected destination does not support this format. Choose a compatible format or destination.</p>
+                        ) : null}
+                      </section>
+
+                      <section className="space-y-3 rounded-[18px] border border-white/10 bg-white/[0.025] p-4">
+                        <div className="flex items-center justify-between gap-3">
+                          <label className="text-sm font-medium">3. Media</label>
+                          {anyTargetRequiresMedia ? <span className="text-xs text-amber-300">Required</span> : <span className="text-xs text-muted-foreground">Optional</span>}
+                        </div>
+                        <div className="rounded-[18px] border border-dashed border-white/10 bg-black/20 p-4">
+                          {selectedAssetIds.length > 0 ? (
+                            <div className="space-y-2">
+                              {selectedAssetIds.map((assetId, index) => (
+                                <div key={`${assetId}-${index}`} className="flex items-center justify-between gap-3 rounded-[14px] border border-white/10 bg-white/[0.03] px-3 py-2">
+                                  <div className="min-w-0">
+                                    <div className="text-xs font-medium text-white">Asset {index + 1}</div>
+                                    <div className="truncate text-[11px] text-muted-foreground">{assetId}</div>
+                                  </div>
+                                  <span className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground">Order {index + 1}</span>
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <div className="space-y-2 text-sm text-muted-foreground">
+                              <p>{anyTargetRequiresMedia ? "Attach a completed AI Studio asset before scheduling this format." : "Attach media from AI Studio when this post needs visuals or video."}</p>
+                              <div className="flex flex-wrap gap-2">
+                                <Button asChild size="sm" variant="outline" className="rounded-[14px]">
+                                  <Link href="/ai-studio">Open AI Studio</Link>
+                                </Button>
+                                <Button asChild size="sm" variant="ghost" className="rounded-[14px]">
+                                  <Link href="/ai/image-studio">Image assets</Link>
+                                </Button>
+                                <Button asChild size="sm" variant="ghost" className="rounded-[14px]">
+                                  <Link href="/ai/video-studio">Video assets</Link>
+                                </Button>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                        <Input
+                          value={form.assetIds}
+                          onChange={(event) => updateField("assetIds", event.target.value)}
+                          placeholder="Paste generated asset IDs, comma-separated. Order is used for carousels."
+                          className="rounded-[16px] border-white/10 bg-white/[0.03]"
+                        />
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between gap-3">
+                            <span className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">Recent AI Studio assets</span>
+                            {studioAssetsLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" /> : null}
+                          </div>
+                          {compatibleStudioAssets.length > 0 ? (
+                            <div className="grid gap-2">
+                              {compatibleStudioAssets.slice(0, 6).map((asset) => {
+                                const active = selectedAssetIdSet.has(asset.assetId);
+                                return (
+                                  <button
+                                    key={asset.assetId}
+                                    type="button"
+                                    onClick={() => {
+                                      const nextIds = active
+                                        ? selectedAssetIds.filter((assetId) => assetId !== asset.assetId)
+                                        : [...selectedAssetIds, asset.assetId];
+                                      updateField("assetIds", nextIds.join(", "));
+                                    }}
+                                    className={cn(
+                                      "flex items-center gap-3 rounded-[14px] border p-2 text-left transition",
+                                      active ? "border-primary/60 bg-primary/15" : "border-white/10 bg-white/[0.03] hover:bg-white/[0.06]"
+                                    )}
+                                  >
+                                    <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-[12px] border border-white/10 bg-white/[0.04]">
+                                      {asset.thumbnail ? (
+                                        // eslint-disable-next-line @next/next/no-img-element
+                                        <img src={asset.thumbnail} alt="" className="h-full w-full object-cover" />
+                                      ) : (
+                                        <ImageIcon className="h-4 w-4 text-muted-foreground" />
+                                      )}
+                                    </div>
+                                    <div className="min-w-0 flex-1">
+                                      <div className="truncate text-sm font-medium text-white">{asset.title}</div>
+                                      <div className="truncate text-xs text-muted-foreground">{asset.type} · {asset.assetId}</div>
+                                    </div>
+                                    <span className={cn("rounded-full px-2 py-0.5 text-[10px]", active ? "bg-primary/20 text-primary" : "bg-white/5 text-muted-foreground")}>
+                                      {active ? "Selected" : "Add"}
+                                    </span>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          ) : (
+                            <p className="text-xs leading-5 text-muted-foreground">
+                              No completed {form.contentType === "carousel" ? "image or video" : form.contentType} assets found yet.
+                            </p>
+                          )}
+                        </div>
+                      </section>
+                    </>
+                  )}
+
+                  <section className="space-y-3">
+                    <label className="text-sm font-medium">{isEventsMode ? postHeadingLabel : "4. Caption"}</label>
                     <Textarea
                       value={form.caption}
                       onChange={(event) => updateField("caption", event.target.value)}
-                      rows={8}
-                      placeholder={`Write the ${selectedProvider?.label || "social"} post here...`}
+                      rows={isEventsMode ? 7 : 6}
+                      placeholder={postPlaceholderLabel}
                       className="rounded-[16px] border-white/10 bg-white/[0.03]"
                     />
-                  </div>
-
-                  <div className="grid gap-3 md:grid-cols-2">
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium">Date</label>
-                      <Input type="date" value={form.scheduledDate} onChange={(event) => updateField("scheduledDate", event.target.value)} className="rounded-[16px] border-white/10 bg-white/[0.03]" />
-                    </div>
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium">Time</label>
-                      <Input type="time" value={form.scheduledTime} onChange={(event) => updateField("scheduledTime", event.target.value)} className="rounded-[16px] border-white/10 bg-white/[0.03]" />
-                    </div>
-                  </div>
-
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">{isEventsMode ? "Series" : "Campaign"}</label>
-                    <select
-                      className={cn("h-11 w-full rounded-[16px] border border-white/10 bg-background px-3 text-sm")}
-                      value={form.campaignId}
-                      onChange={(event) => updateField("campaignId", event.target.value)}
-                      aria-label={isEventsMode ? "Choose series for scheduled event" : "Choose campaign for scheduled post"}
-                    >
-                      <option value="">No campaign</option>
-                      {campaigns.map((campaign) => (
-                        <option key={campaign.socialCampaignId} value={campaign.socialCampaignId}>
-                          {campaign.campaignName}
-                        </option>
-                      ))}
-                    </select>
-                    {campaigns.length === 0 ? (
-                      <p className="text-xs text-muted-foreground">{campaignOptionalLabel}</p>
+                    {!isEventsMode ? (
+                      <>
+                        <div className="grid gap-3 md:grid-cols-2">
+                          <div className="space-y-2">
+                            <label className="flex items-center gap-2 text-xs font-medium text-muted-foreground"><Hash className="h-3.5 w-3.5" /> Hashtags</label>
+                            <Input value={form.hashtags} onChange={(event) => updateField("hashtags", event.target.value)} placeholder="#marketing #launch" className="rounded-[16px] border-white/10 bg-white/[0.03]" />
+                          </div>
+                          <div className="space-y-2">
+                            <label className="flex items-center gap-2 text-xs font-medium text-muted-foreground"><Megaphone className="h-3.5 w-3.5" /> Call to action</label>
+                            <Input value={form.cta} onChange={(event) => updateField("cta", event.target.value)} placeholder="Follow for more, book a call, join the waitlist..." className="rounded-[16px] border-white/10 bg-white/[0.03]" />
+                          </div>
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          <Button asChild type="button" size="sm" variant="outline" className="rounded-[14px]">
+                            <Link href="/ai-studio">Write with Soma AI</Link>
+                          </Button>
+                          <Button asChild type="button" size="sm" variant="ghost" className="rounded-[14px]">
+                            <Link href="/ai-studio">Adapt for platform</Link>
+                          </Button>
+                        </div>
+                      </>
                     ) : null}
-                  </div>
+                  </section>
+
+                  <section className="space-y-3">
+                    <label className="text-sm font-medium">{isEventsMode ? "Schedule" : "5. Schedule"}</label>
+                    <div className="grid gap-3 md:grid-cols-2">
+                      <div className="space-y-2">
+                        <label className="text-xs font-medium text-muted-foreground">Date</label>
+                        <Input type="date" value={form.scheduledDate} onChange={(event) => updateField("scheduledDate", event.target.value)} className="rounded-[16px] border-white/10 bg-white/[0.03]" />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-xs font-medium text-muted-foreground">Time</label>
+                        <Input type="time" value={form.scheduledTime} onChange={(event) => updateField("scheduledTime", event.target.value)} className="rounded-[16px] border-white/10 bg-white/[0.03]" />
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-xs font-medium text-muted-foreground">{isEventsMode ? "Series" : "Campaign"}</label>
+                      <select
+                        className={cn("h-11 w-full rounded-[16px] border border-white/10 bg-background px-3 text-sm")}
+                        value={form.campaignId}
+                        onChange={(event) => updateField("campaignId", event.target.value)}
+                        aria-label={isEventsMode ? "Choose series for scheduled event" : "Choose campaign for scheduled post"}
+                      >
+                        <option value="">No campaign</option>
+                        {campaigns.map((campaign) => (
+                          <option key={campaign.socialCampaignId} value={campaign.socialCampaignId}>
+                            {campaign.campaignName}
+                          </option>
+                        ))}
+                      </select>
+                      {campaigns.length === 0 ? <p className="text-xs text-muted-foreground">{campaignOptionalLabel}</p> : null}
+                    </div>
+                  </section>
 
                   <button
                     type="button"
                     onClick={() => setShowAdvancedDetails((current) => !current)}
                     className="flex w-full items-center justify-between rounded-[16px] border border-white/10 bg-white/[0.03] px-4 py-3 text-left text-sm text-muted-foreground transition hover:bg-white/[0.06] hover:text-white"
                   >
-                    Advanced details
+                    {isEventsMode ? "Advanced details" : "6. Advanced"}
                     <ChevronDown className={cn("h-4 w-4 transition-transform", showAdvancedDetails && "rotate-180")} />
                   </button>
 
                   {showAdvancedDetails ? (
                     <div className="space-y-4 rounded-[18px] border border-white/10 bg-white/[0.025] p-4">
                       <div className="space-y-2">
-                        <label className="text-sm font-medium">Post title</label>
+                        <label className="text-sm font-medium">{isEventsMode ? "Event title" : "Post title"}</label>
                         <Input value={form.title} onChange={(event) => updateField("title", event.target.value)} placeholder="Optional title for your calendar" />
                       </div>
                       <div className="space-y-2">
                         <label className="text-sm font-medium">Internal notes</label>
                         <Textarea value={form.notes} onChange={(event) => updateField("notes", event.target.value)} rows={3} placeholder="Private reminders or approval notes." />
                       </div>
-                      <div className="grid gap-3 md:grid-cols-2">
-                        <div className="space-y-2">
-                          <label className="text-sm font-medium">Timezone</label>
-                          <Input value={form.timezone} onChange={(event) => updateField("timezone", event.target.value)} placeholder="Optional" />
-                        </div>
-                        <div className="space-y-2">
-                          <label className="text-sm font-medium">Attached media references</label>
-                          <Input value={form.assetIds} onChange={(event) => updateField("assetIds", event.target.value)} placeholder="Optional media references" />
-                        </div>
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium">Timezone</label>
+                        <Input value={form.timezone} onChange={(event) => updateField("timezone", event.target.value)} placeholder={Intl.DateTimeFormat().resolvedOptions().timeZone || "Africa/Nairobi"} />
                       </div>
                     </div>
                   ) : null}
 
                   <div className="grid gap-2 sm:grid-cols-2">
-                    <Button type="button" variant="outline" disabled={loading || !form.caption.trim() || !canPublishToSelectedPlatform} onClick={() => savePost("draft")} className="h-11 rounded-[16px]">
+                    <Button type="button" variant="outline" disabled={loading || !canSaveDraft} onClick={() => savePost("draft")} className="h-11 rounded-[16px]">
                       {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <PencilLine className="h-4 w-4" />}
                       {saveDraftLabel}
                     </Button>
-                    <Button type="button" disabled={loading || !form.caption.trim() || !canPublishToSelectedPlatform} onClick={() => savePost("scheduled")} className="h-11 rounded-[16px]">
+                    <Button type="button" disabled={loading || !canSchedulePost} onClick={() => savePost("scheduled")} className="h-11 rounded-[16px]">
                       {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
                       {scheduleLabel}
                     </Button>
                   </div>
                   {!canPublishToSelectedPlatform ? (
                     <p className="text-xs leading-5 text-muted-foreground">
-                      Connect {selectedProvider?.label || "this platform"} before {isEventsMode ? "saving events" : "saving posts"} for it.
+                      Connect a destination account before {isEventsMode ? "saving events" : "scheduling posts"}.
+                    </p>
+                  ) : null}
+                  {canPublishToSelectedPlatform && anyTargetRequiresMedia && selectedAssetIds.length === 0 && !isEventsMode ? (
+                    <p className="text-xs leading-5 text-amber-300">
+                      {form.contentType} posts for the selected destination need a completed media asset.
                     </p>
                   ) : null}
                   <div className="flex flex-wrap items-center gap-2">
