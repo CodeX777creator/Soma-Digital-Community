@@ -279,6 +279,9 @@ export function buildOAuthAuthorizationUrl(input: {
 
   const url = new URL(rule.authorizationUrl);
   url.searchParams.set('response_type', 'code');
+  if (rule.clientId) {
+    url.searchParams.set(rule.providerId === 'tiktok' ? 'client_key' : 'client_id', rule.clientId);
+  }
   url.searchParams.set('state', input.state);
   url.searchParams.set('redirect_uri', input.callbackUrl);
   url.searchParams.set('scope', normalizeScopes(input.scopes || rule.defaultScopes).join(' '));

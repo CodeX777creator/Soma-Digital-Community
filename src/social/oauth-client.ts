@@ -76,7 +76,7 @@ async function postTokenRequest(input: {
     }
   } else {
     if (rule.clientId) {
-      input.body.set('client_id', rule.clientId);
+      input.body.set(rule.providerId === 'tiktok' ? 'client_key' : 'client_id', rule.clientId);
     }
     if (rule.clientSecret) {
       input.body.set('client_secret', rule.clientSecret);
