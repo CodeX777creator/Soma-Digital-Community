@@ -13,6 +13,10 @@ export {
   listScheduledPosts,
   updateScheduledPost,
   moveScheduledPost,
+  applySocialPublishOutcome,
+  buildNormalizedPublishPayload,
+  listSocialPublishAttempts,
+  recordSocialPublishAttempt,
 } from './service';
 
 export {
@@ -40,6 +44,8 @@ export type {
   SocialPublishAttemptInput,
   SocialPublishAttemptRecord,
   SocialPublishAttemptStatus,
+  NormalizedSocialMediaItem,
+  NormalizedSocialPublishPayload,
   SocialHubSummary,
   SocialPlatform,
   SocialProviderDefinition,

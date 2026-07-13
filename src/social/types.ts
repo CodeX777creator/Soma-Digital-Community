@@ -271,18 +271,66 @@ export interface SocialPublishAttemptInput {
   ownerId: string;
   platform: SocialPlatform;
   socialAccountId?: string;
+  publicationGroupId?: string;
+  provider?: string;
+  contentType?: import('./capabilities').ScheduledPostContentType;
   attemptNumber: number;
   status: SocialPublishAttemptStatus;
   triggeredAt: string;
   startedAt?: string | null;
   finishedAt?: string | null;
+  durationMs?: number | null;
   externalPostId?: string | null;
+  providerPostId?: string | null;
+  failureCode?: string | null;
   errorMessage?: string | null;
   providerResponse?: string | null;
   retryable?: boolean;
+  payloadVersion?: string;
   metadata?: Record<string, unknown>;
 }
 
 export interface SocialPublishAttemptRecord extends SocialPublishAttemptInput {
   publishAttemptId: string;
+}
+
+export interface NormalizedSocialMediaItem {
+  assetId: string;
+  order: number;
+  type: 'image' | 'video' | 'document' | 'audio' | 'unknown';
+  mimeType?: string;
+  downloadUrl?: string;
+  thumbnail?: string;
+  storagePath?: string;
+}
+
+export interface NormalizedSocialPublishPayload {
+  payloadVersion: 'social-publish-v1';
+  scheduledPostId: string;
+  ownerId: string;
+  publicationGroupId?: string;
+  platform: SocialPlatform;
+  connectedAccountId?: string;
+  destination: {
+    socialAccountId?: string;
+    providerAccountId?: string;
+    accountName?: string;
+    handle?: string;
+    status?: SocialAccountStatus;
+  };
+  content: {
+    contentType: import('./capabilities').ScheduledPostContentType;
+    caption: string;
+    hashtags: string[];
+    cta?: string;
+    finalText: string;
+    mediaItems: NormalizedSocialMediaItem[];
+  };
+  scheduling: {
+    scheduledTime: string;
+    timezone?: string;
+    status: ScheduledPostStatus;
+  };
+  platformSettings: Record<string, unknown>;
+  metadata: Record<string, unknown>;
 }

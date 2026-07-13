@@ -23,6 +23,11 @@ import type {
   SocialHubSummary,
   SocialPlatform,
   ScheduledPostContentType,
+  SocialPublishAttemptInput,
+  SocialPublishAttemptRecord,
+  SocialPublishAttemptStatus,
+  NormalizedSocialMediaItem,
+  NormalizedSocialPublishPayload,
 } from './types';
 
 type SocialAccountDoc = {
@@ -531,6 +536,33 @@ type GeneratedAssetDoc = {
   storagePath?: string;
 };
 
+type SocialPublishAttemptDoc = {
+  publishAttemptId: string;
+  scheduledPostId: string;
+  ownerId: string;
+  platform: SocialPlatform;
+  socialAccountId?: string;
+  publicationGroupId?: string;
+  provider?: string;
+  contentType?: ScheduledPostContentType;
+  attemptNumber: number;
+  status: SocialPublishAttemptStatus;
+  triggeredAt: admin.firestore.Timestamp;
+  startedAt?: admin.firestore.Timestamp | null;
+  finishedAt?: admin.firestore.Timestamp | null;
+  durationMs?: number | null;
+  externalPostId?: string | null;
+  providerPostId?: string | null;
+  failureCode?: string | null;
+  errorMessage?: string | null;
+  providerResponse?: string | null;
+  retryable?: boolean;
+  payloadVersion?: string;
+  metadata: Record<string, unknown>;
+  createdAt?: admin.firestore.Timestamp | admin.firestore.FieldValue;
+  updatedAt?: admin.firestore.Timestamp | admin.firestore.FieldValue;
+};
+
 function createValidationError(message: string, code = 'INVALID_SCHEDULED_POST'): Error {
   const error = new Error(message) as Error & { status?: number; code?: string };
   error.status = 400;
@@ -586,6 +618,65 @@ function inferAssetKind(asset: GeneratedAssetDoc): ScheduledPostContentType | 'a
 
   if (asset.thumbnail && !asset.downloadUrl && asset.type === 'audio') return 'audio';
   return 'unknown';
+}
+
+function normalizeMediaItemType(kind: ScheduledPostContentType | 'audio' | 'unknown'): NormalizedSocialMediaItem['type'] {
+  if (kind === 'image' || kind === 'video' || kind === 'document' || kind === 'audio') {
+    return kind;
+  }
+  return 'unknown';
+}
+
+function buildFinalSocialText(caption: string, hashtags?: string[], cta?: string): string {
+  const parts = [caption.trim()];
+  const normalizedTags = normalizeHashtags(hashtags);
+  if (normalizedTags.length > 0) {
+    parts.push(normalizedTags.map((tag) => `#${tag}`).join(' '));
+  }
+  if (cta?.trim()) {
+    parts.push(cta.trim());
+  }
+  return parts.filter(Boolean).join('\n\n');
+}
+
+function normalizeAttemptTime(value?: string | null): admin.firestore.Timestamp | null {
+  if (!value) return null;
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return admin.firestore.Timestamp.fromDate(parsed);
+}
+
+function serializePublishAttempt(doc: SocialPublishAttemptDoc): SocialPublishAttemptRecord {
+  return {
+    publishAttemptId: doc.publishAttemptId,
+    scheduledPostId: doc.scheduledPostId,
+    ownerId: doc.ownerId,
+    platform: doc.platform,
+    socialAccountId: doc.socialAccountId,
+    publicationGroupId: doc.publicationGroupId,
+    provider: doc.provider,
+    contentType: doc.contentType,
+    attemptNumber: doc.attemptNumber,
+    status: doc.status,
+    triggeredAt: toIso(doc.triggeredAt) || new Date().toISOString(),
+    startedAt: toIso(doc.startedAt),
+    finishedAt: toIso(doc.finishedAt),
+    durationMs: doc.durationMs ?? null,
+    externalPostId: doc.externalPostId || null,
+    providerPostId: doc.providerPostId || doc.externalPostId || null,
+    failureCode: doc.failureCode || null,
+    errorMessage: doc.errorMessage || null,
+    providerResponse: doc.providerResponse || null,
+    retryable: Boolean(doc.retryable),
+    payloadVersion: doc.payloadVersion || 'social-publish-v1',
+    metadata: doc.metadata || {},
+  };
+}
+
+async function resolveGeneratedAsset(assetId: string): Promise<GeneratedAssetDoc | null> {
+  const snapshot = await adminDb.collection('generatedAssets').doc(assetId).get();
+  if (!snapshot.exists) return null;
+  return snapshot.data() as GeneratedAssetDoc;
 }
 
 async function validateConnectedAccount(input: {
@@ -710,6 +801,8 @@ async function validateScheduledPostDocument(doc: ScheduledPostDoc): Promise<voi
     throw createValidationError('Text posts need a caption before scheduling.', 'CAPTION_REQUIRED');
   }
 
+  validatePlatformSettings(doc.platform, doc.platformSettings || {});
+
   await validateConnectedAccount({
     ownerId: doc.ownerId,
     platform: doc.platform,
@@ -724,6 +817,43 @@ async function validateScheduledPostDocument(doc: ScheduledPostDoc): Promise<voi
     status: doc.status,
     assetIds: doc.assetIds || [],
   });
+}
+
+function validatePlatformSettings(platform: SocialPlatform, settings: Record<string, unknown>): void {
+  if (platform === 'tiktok') {
+    const privacyLevel = settings.privacyLevel;
+    if (privacyLevel !== undefined && !['public', 'friends', 'private'].includes(String(privacyLevel))) {
+      throw createValidationError('TikTok privacy must be public, friends, or private.', 'INVALID_PLATFORM_SETTINGS');
+    }
+    return;
+  }
+
+  if (platform === 'youtube') {
+    const visibility = settings.visibility;
+    if (visibility !== undefined && !['public', 'unlisted', 'private'].includes(String(visibility))) {
+      throw createValidationError('YouTube visibility must be public, unlisted, or private.', 'INVALID_PLATFORM_SETTINGS');
+    }
+    const title = settings.title;
+    if (typeof title === 'string' && title.length > 100) {
+      throw createValidationError('YouTube titles must be 100 characters or fewer.', 'INVALID_PLATFORM_SETTINGS');
+    }
+    return;
+  }
+
+  if (platform === 'instagram') {
+    const publishAs = settings.publishAs;
+    if (publishAs !== undefined && !['feed', 'reel', 'story'].includes(String(publishAs))) {
+      throw createValidationError('Instagram format must be feed, reel, or story.', 'INVALID_PLATFORM_SETTINGS');
+    }
+    return;
+  }
+
+  if (platform === 'linkedin') {
+    const destinationType = settings.destinationType;
+    if (destinationType !== undefined && !['profile', 'organization'].includes(String(destinationType))) {
+      throw createValidationError('LinkedIn destination must be profile or organization.', 'INVALID_PLATFORM_SETTINGS');
+    }
+  }
 }
 
 function serializeScheduledPost(doc: ScheduledPostDoc): ScheduledPostRecord {
@@ -947,9 +1077,15 @@ export async function moveScheduledPost(
   scheduledTime: string
 ): Promise<ScheduledPostRecord> {
   const current = await readScheduledPostOrThrow(ownerId, postId);
+  if (['published', 'publishing', 'cancelled'].includes(current.status)) {
+    const error = new Error('This post can no longer be moved.') as Error & { status?: number; code?: string };
+    error.status = 400;
+    error.code = 'POST_MOVE_LOCKED';
+    throw error;
+  }
   return updateScheduledPost(ownerId, postId, {
     scheduledTime,
-    status: current.status === 'published' ? 'published' : 'scheduled',
+    status: 'scheduled',
   });
 }
 
@@ -957,6 +1093,182 @@ export async function deleteScheduledPost(ownerId: string, postId: string): Prom
   await readScheduledPostOrThrow(ownerId, postId);
   await adminDb.collection('scheduledPosts').doc(postId).delete();
   logger.info('[Social] Deleted scheduled post', { scheduledPostId: postId, ownerId });
+}
+
+export async function buildNormalizedPublishPayload(
+  ownerId: string,
+  postId: string
+): Promise<NormalizedSocialPublishPayload> {
+  const post = await readScheduledPostOrThrow(ownerId, postId);
+  const connectedAccountId = post.connectedAccountId || post.socialAccountId;
+  const account = connectedAccountId
+    ? await adminDb.collection('socialAccounts').doc(connectedAccountId).get().then((snapshot) => snapshot.exists ? snapshot.data() as SocialAccountDoc : null)
+    : null;
+
+  if (account && account.ownerId !== ownerId) {
+    throw createValidationError('The selected social account does not belong to this user.', 'DESTINATION_OWNER_MISMATCH');
+  }
+
+  const mediaItems = await Promise.all((post.assetIds || []).map(async (assetId, index): Promise<NormalizedSocialMediaItem> => {
+    const asset = await resolveGeneratedAsset(assetId);
+    const assetKind = asset ? inferAssetKind(asset) : 'unknown';
+    return {
+      assetId,
+      order: index,
+      type: normalizeMediaItemType(assetKind),
+      mimeType: asset?.mimeType,
+      downloadUrl: asset?.downloadUrl,
+      thumbnail: asset?.thumbnail,
+      storagePath: asset?.storagePath,
+    };
+  }));
+
+  const contentType = post.contentType || getDefaultContentType(post.platform);
+  const hashtags = normalizeHashtags(post.hashtags);
+  const caption = post.caption || '';
+  const finalText = buildFinalSocialText(caption, hashtags, post.cta);
+
+  return {
+    payloadVersion: 'social-publish-v1',
+    scheduledPostId: post.scheduledPostId,
+    ownerId: post.ownerId,
+    publicationGroupId: post.publicationGroupId,
+    platform: post.platform,
+    connectedAccountId,
+    destination: {
+      socialAccountId: connectedAccountId,
+      providerAccountId: account?.providerAccountId,
+      accountName: account?.accountName,
+      handle: account?.handle,
+      status: account?.status,
+    },
+    content: {
+      contentType,
+      caption,
+      hashtags,
+      cta: post.cta,
+      finalText,
+      mediaItems,
+    },
+    scheduling: {
+      scheduledTime: post.scheduledTime.toDate().toISOString(),
+      timezone: post.timezone,
+      status: post.status,
+    },
+    platformSettings: post.platformSettings || {},
+    metadata: {
+      ...post.metadata,
+      providerPostId: post.providerPostId || post.externalPostId || null,
+      failureCode: post.failureCode || null,
+      failureMessage: post.failureMessage || post.lastError || null,
+    },
+  };
+}
+
+export async function listSocialPublishAttempts(
+  ownerId: string,
+  options: { scheduledPostId?: string; limit?: number } = {}
+): Promise<SocialPublishAttemptRecord[]> {
+  let query: FirebaseFirestore.Query = adminDb
+    .collection('socialPublishAttempts')
+    .where('ownerId', '==', ownerId);
+
+  if (options.scheduledPostId) {
+    query = query.where('scheduledPostId', '==', sanitizeString(options.scheduledPostId, 160));
+  }
+
+  const snapshot = await query
+    .orderBy('triggeredAt', 'desc')
+    .limit(Math.min(Math.max(options.limit || 20, 1), 100))
+    .get();
+
+  return snapshot.docs.map((doc) => serializePublishAttempt({
+    ...(doc.data() as SocialPublishAttemptDoc),
+    publishAttemptId: typeof doc.data().publishAttemptId === 'string' ? doc.data().publishAttemptId : doc.id,
+  }));
+}
+
+export async function recordSocialPublishAttempt(input: SocialPublishAttemptInput): Promise<SocialPublishAttemptRecord> {
+  const ref = adminDb.collection('socialPublishAttempts').doc();
+  const now = admin.firestore.FieldValue.serverTimestamp();
+  const doc = stripUndefined<SocialPublishAttemptDoc>({
+    publishAttemptId: ref.id,
+    scheduledPostId: sanitizeString(input.scheduledPostId, 160),
+    ownerId: sanitizeString(input.ownerId, 160),
+    platform: input.platform,
+    socialAccountId: input.socialAccountId ? sanitizeString(input.socialAccountId, 160) : undefined,
+    publicationGroupId: input.publicationGroupId ? sanitizeString(input.publicationGroupId, 160) : undefined,
+    provider: input.provider ? sanitizeString(input.provider, 80) : undefined,
+    contentType: input.contentType,
+    attemptNumber: Math.max(1, Math.floor(input.attemptNumber || 1)),
+    status: input.status,
+    triggeredAt: normalizeAttemptTime(input.triggeredAt) || admin.firestore.Timestamp.now(),
+    startedAt: normalizeAttemptTime(input.startedAt),
+    finishedAt: normalizeAttemptTime(input.finishedAt),
+    durationMs: typeof input.durationMs === 'number' ? Math.max(0, Math.floor(input.durationMs)) : null,
+    externalPostId: input.externalPostId ? sanitizeString(input.externalPostId, 240) : null,
+    providerPostId: input.providerPostId ? sanitizeString(input.providerPostId, 240) : input.externalPostId ? sanitizeString(input.externalPostId, 240) : null,
+    failureCode: input.failureCode ? sanitizeString(input.failureCode, 120) : null,
+    errorMessage: input.errorMessage ? sanitizeString(input.errorMessage, 1000) : null,
+    providerResponse: input.providerResponse ? sanitizeString(input.providerResponse, 4000) : null,
+    retryable: Boolean(input.retryable),
+    payloadVersion: input.payloadVersion || 'social-publish-v1',
+    metadata: normalizeMetadata(input.metadata),
+    createdAt: now,
+    updatedAt: now,
+  });
+
+  await ref.set(doc);
+  return serializePublishAttempt(doc);
+}
+
+export async function applySocialPublishOutcome(input: {
+  ownerId: string;
+  scheduledPostId: string;
+  status: Extract<SocialPublishAttemptStatus, 'success' | 'failed' | 'skipped'>;
+  providerPostId?: string | null;
+  externalPostId?: string | null;
+  failureCode?: string | null;
+  errorMessage?: string | null;
+  providerResponse?: string | null;
+  retryable?: boolean;
+}): Promise<ScheduledPostRecord> {
+  const current = await readScheduledPostOrThrow(input.ownerId, input.scheduledPostId);
+  const nextStatus: ScheduledPostStatus = input.status === 'success' ? 'published' : input.status === 'failed' ? 'failed' : current.status;
+  const providerPostId = input.providerPostId || input.externalPostId || null;
+
+  return updateScheduledPost(input.ownerId, input.scheduledPostId, {
+    status: nextStatus,
+    metadata: {
+      ...current.metadata,
+      lastPublishOutcome: input.status,
+      lastProviderResponse: input.providerResponse || null,
+      retryable: Boolean(input.retryable),
+    },
+    platformSettings: current.platformSettings || {},
+    // These are persisted below through direct merge because they are operational fields,
+    // not public patch input in the regular scheduler UI.
+  }).then(async (updated) => {
+    await adminDb.collection('scheduledPosts').doc(input.scheduledPostId).set(stripUndefined({
+      providerPostId,
+      externalPostId: input.externalPostId || providerPostId,
+      failureCode: input.failureCode || null,
+      failureMessage: input.errorMessage || null,
+      lastError: input.status === 'failed' ? input.errorMessage || 'Publish failed' : null,
+      publishProviderResponse: input.providerResponse || null,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    }), { merge: true });
+
+    return {
+      ...updated,
+      providerPostId,
+      externalPostId: input.externalPostId || providerPostId,
+      failureCode: input.failureCode || null,
+      failureMessage: input.errorMessage || null,
+      lastError: input.status === 'failed' ? input.errorMessage || 'Publish failed' : null,
+      publishProviderResponse: input.providerResponse || null,
+    };
+  });
 }
 
 function getMonthBounds(month: string): { start: Date; end: Date } {

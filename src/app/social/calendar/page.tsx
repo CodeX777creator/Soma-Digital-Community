@@ -21,6 +21,8 @@ import {
   ChevronLeft,
   ChevronRight,
   ChevronDown,
+  ArrowDown,
+  ArrowUp,
   Clock3,
   Loader2,
   PencilLine,
@@ -56,6 +58,8 @@ import {
   type SocialCampaignRecord,
   type SocialCampaignStatus,
   type SocialAccountRecord,
+  type SocialPublishAttemptRecord,
+  type NormalizedSocialPublishPayload,
 } from "@/social/types";
 import {
   PLATFORM_CAPABILITIES,
@@ -116,6 +120,14 @@ type StudioAssetUploadResponse = {
   asset: StudioAssetSummary;
 };
 
+type PublishAttemptsResponse = {
+  attempts: SocialPublishAttemptRecord[];
+};
+
+type PublishPayloadResponse = {
+  payload: NormalizedSocialPublishPayload;
+};
+
 const IMAGE_UPLOAD_MAX_BYTES = 10 * 1024 * 1024;
 const VIDEO_UPLOAD_MAX_BYTES = 100 * 1024 * 1024;
 
@@ -133,6 +145,12 @@ interface CalendarFormState {
   assetIds: string;
   hashtags: string;
   cta: string;
+  destinationCaptions: Record<string, string>;
+  tiktokPrivacy: "public" | "friends" | "private";
+  instagramPublishAs: "feed" | "reel" | "story";
+  youtubeTitle: string;
+  youtubeVisibility: "public" | "unlisted" | "private";
+  linkedinDestinationType: "profile" | "organization";
   campaignId: string;
   notes: string;
   timezone: string;
@@ -204,6 +222,12 @@ function buildFormFromPost(post: ScheduledPostRecord): CalendarFormState {
     assetIds: (post.assetIds || []).join(", "),
     hashtags: (post.hashtags || []).map((tag) => `#${tag}`).join(" "),
     cta: post.cta || "",
+    destinationCaptions: {},
+    tiktokPrivacy: (post.platformSettings?.privacyLevel as CalendarFormState["tiktokPrivacy"]) || "public",
+    instagramPublishAs: (post.platformSettings?.publishAs as CalendarFormState["instagramPublishAs"]) || "feed",
+    youtubeTitle: (post.platformSettings?.title as string) || post.title || "",
+    youtubeVisibility: (post.platformSettings?.visibility as CalendarFormState["youtubeVisibility"]) || "private",
+    linkedinDestinationType: (post.platformSettings?.destinationType as CalendarFormState["linkedinDestinationType"]) || "profile",
     campaignId: post.campaignId || "",
     notes: post.notes || "",
     timezone: post.timezone || "",
@@ -225,6 +249,12 @@ function buildEmptyForm(date: string): CalendarFormState {
     assetIds: "",
     hashtags: "",
     cta: "",
+    destinationCaptions: {},
+    tiktokPrivacy: "public",
+    instagramPublishAs: "feed",
+    youtubeTitle: "",
+    youtubeVisibility: "private",
+    linkedinDestinationType: "profile",
     campaignId: "",
     notes: "",
     timezone: "",
@@ -259,6 +289,48 @@ function createPublicationGroupId(): string {
 function getAccountDisplayLabel(account?: SocialAccountRecord): string {
   if (!account) return "No destination selected";
   return account.handle || account.accountName || account.providerAccountId || account.providerLabel;
+}
+
+function getAssetPreviewLabel(asset?: StudioAssetSummary, assetId?: string): string {
+  if (asset?.title) return asset.title;
+  return assetId || "Selected asset";
+}
+
+function canDragScheduledPost(post: ScheduledPostRecord): boolean {
+  return !["published", "cancelled", "publishing"].includes(post.status);
+}
+
+function getPostPreviewAsset(post: ScheduledPostRecord, assetMap: Record<string, StudioAssetSummary>): StudioAssetSummary | undefined {
+  const firstAssetId = post.assetIds?.[0];
+  return firstAssetId ? assetMap[firstAssetId] : undefined;
+}
+
+function buildPlatformSettings(platform: SocialPlatform, form: CalendarFormState): Record<string, unknown> {
+  switch (platform) {
+    case "tiktok":
+      return {
+        privacyLevel: form.tiktokPrivacy,
+        allowComments: true,
+        allowDuet: true,
+        allowStitch: true,
+      };
+    case "instagram":
+      return {
+        publishAs: form.instagramPublishAs,
+        shareToFeed: form.instagramPublishAs !== "story",
+      };
+    case "youtube":
+      return {
+        title: form.youtubeTitle || form.title || form.caption.slice(0, 90),
+        visibility: form.youtubeVisibility,
+      };
+    case "linkedin":
+      return {
+        destinationType: form.linkedinDestinationType,
+      };
+    default:
+      return {};
+  }
 }
 
 function buildCampaignFormFromCampaign(campaign: SocialCampaignRecord): CampaignFormState {
@@ -418,6 +490,9 @@ export default function SocialCalendarPage() {
   const [studioAssets, setStudioAssets] = useState<StudioAssetSummary[]>([]);
   const [studioAssetsLoading, setStudioAssetsLoading] = useState(false);
   const [mediaUploading, setMediaUploading] = useState(false);
+  const [publishAttempts, setPublishAttempts] = useState<SocialPublishAttemptRecord[]>([]);
+  const [publishPayload, setPublishPayload] = useState<NormalizedSocialPublishPayload | null>(null);
+  const [publishReadinessLoading, setPublishReadinessLoading] = useState(false);
   const [selectedPostId, setSelectedPostId] = useState<string | null>(null);
   const [selectedCampaignId, setSelectedCampaignId] = useState<string | null>(null);
   const [dragOverDay, setDragOverDay] = useState<string | null>(null);
@@ -508,9 +583,37 @@ export default function SocialCalendarPage() {
     return [...filteredPosts].sort((a, b) => new Date(a.scheduledTime).getTime() - new Date(b.scheduledTime).getTime());
   }, [filteredPosts]);
 
+  const upcomingAgendaPosts = useMemo(() => {
+    const now = Date.now();
+    return agendaPosts.filter((post) => new Date(post.scheduledTime).getTime() >= now && post.status !== "published" && post.status !== "cancelled");
+  }, [agendaPosts]);
+
+  const todaysPosts = useMemo(() => {
+    const todayKey = format(new Date(), "yyyy-MM-dd");
+    return agendaPosts.filter((post) => format(parseISO(post.scheduledTime), "yyyy-MM-dd") === todayKey);
+  }, [agendaPosts]);
+
+  const nextScheduledPost = upcomingAgendaPosts[0] || null;
+
   const connectedPlatforms = useMemo(() => {
     return new Set(connectedAccounts.filter((account) => account.status === "connected").map((account) => account.providerId));
   }, [connectedAccounts]);
+
+  const accountWarnings = useMemo(() => {
+    return connectedAccounts
+      .filter((account) => account.status !== "connected" || Boolean(account.lastError))
+      .slice(0, 4);
+  }, [connectedAccounts]);
+
+  const contentGapDays = useMemo(() => {
+    return calendarDays
+      .filter((day) => isSameMonth(day, currentMonth))
+      .filter((day) => {
+        const key = format(day, "yyyy-MM-dd");
+        return (postsByDay[key] || []).length === 0;
+      })
+      .slice(0, 5);
+  }, [calendarDays, currentMonth, postsByDay]);
 
   const selectedProvider = useMemo(() => {
     return SOCIAL_PROVIDER_REGISTRY.find((provider) => provider.id === form.platform);
@@ -529,8 +632,23 @@ export default function SocialCalendarPage() {
   const publishTargetAccounts = selectedPostId
     ? (selectedAccount ? [selectedAccount] : [])
     : selectedDestinationAccounts;
+  const targetPlatforms = useMemo(() => {
+    return Array.from(new Set(publishTargetAccounts.map((account) => account.providerId)));
+  }, [publishTargetAccounts]);
   const selectedAssetIds = useMemo(() => splitAssetIds(form.assetIds), [form.assetIds]);
   const selectedAssetIdSet = useMemo(() => new Set(selectedAssetIds), [selectedAssetIds]);
+  const studioAssetMap = useMemo(() => {
+    return studioAssets.reduce<Record<string, StudioAssetSummary>>((acc, asset) => {
+      acc[asset.assetId] = asset;
+      return acc;
+    }, {});
+  }, [studioAssets]);
+  const selectedAssets = useMemo(() => {
+    return selectedAssetIds.map((assetId) => ({
+      assetId,
+      asset: studioAssetMap[assetId],
+    }));
+  }, [selectedAssetIds, studioAssetMap]);
   const compatibleStudioAssets = useMemo(() => {
     return studioAssets.filter((asset) => {
       if (asset.status !== "completed") return false;
@@ -722,6 +840,49 @@ export default function SocialCalendarPage() {
   }, [selectedCampaign]);
 
   useEffect(() => {
+    let mounted = true;
+
+    const run = async () => {
+      if (!user || !selectedPostId) {
+        setPublishAttempts([]);
+        setPublishPayload(null);
+        return;
+      }
+
+      try {
+        setPublishReadinessLoading(true);
+        const idToken = await user.getIdToken();
+        const [attemptsResponse, payloadResponse] = await Promise.all([
+          fetch(`/api/social/publish-attempts?scheduledPostId=${encodeURIComponent(selectedPostId)}&limit=8`, {
+            headers: { Authorization: `Bearer ${idToken}` },
+          }),
+          fetch(`/api/social/scheduled-posts/${selectedPostId}/publish-payload`, {
+            headers: { Authorization: `Bearer ${idToken}` },
+          }),
+        ]);
+
+        if (attemptsResponse.ok) {
+          const data = (await attemptsResponse.json()) as PublishAttemptsResponse;
+          if (mounted) setPublishAttempts(data.attempts || []);
+        }
+        if (payloadResponse.ok) {
+          const data = (await payloadResponse.json()) as PublishPayloadResponse;
+          if (mounted) setPublishPayload(data.payload);
+        } else if (mounted) {
+          setPublishPayload(null);
+        }
+      } finally {
+        if (mounted) setPublishReadinessLoading(false);
+      }
+    };
+
+    run();
+    return () => {
+      mounted = false;
+    };
+  }, [selectedPostId, user]);
+
+  useEffect(() => {
     if (connectedAccounts.length === 0) return;
     if (isEventsMode && connectedPlatforms.has(form.platform)) return;
     if (!isEventsMode && form.connectedAccountId && selectedAccount?.status === "connected") return;
@@ -756,6 +917,33 @@ export default function SocialCalendarPage() {
 
   const updateCampaignField = <K extends keyof CampaignFormState>(key: K, value: CampaignFormState[K]) => {
     setCampaignForm((current) => ({ ...current, [key]: value }));
+  };
+
+  const updateSelectedAssetIds = (assetIds: string[]) => {
+    updateField("assetIds", assetIds.join(", "));
+  };
+
+  const moveSelectedAsset = (index: number, direction: -1 | 1) => {
+    const nextIndex = index + direction;
+    if (nextIndex < 0 || nextIndex >= selectedAssetIds.length) return;
+    const nextIds = [...selectedAssetIds];
+    const [moved] = nextIds.splice(index, 1);
+    nextIds.splice(nextIndex, 0, moved);
+    updateSelectedAssetIds(nextIds);
+  };
+
+  const removeSelectedAsset = (assetId: string) => {
+    updateSelectedAssetIds(selectedAssetIds.filter((currentAssetId) => currentAssetId !== assetId));
+  };
+
+  const updateDestinationCaption = (accountId: string, value: string) => {
+    setForm((current) => ({
+      ...current,
+      destinationCaptions: {
+        ...current.destinationCaptions,
+        [accountId]: value,
+      },
+    }));
   };
 
   const clearForm = () => {
@@ -902,7 +1090,6 @@ export default function SocialCalendarPage() {
 
       const basePayload = {
         title: form.title || undefined,
-        caption: form.caption,
         status: nextStatus,
         scheduledTime: combineDateAndTime(form.scheduledDate, form.scheduledTime),
         assetIds: selectedAssetIds,
@@ -918,15 +1105,18 @@ export default function SocialCalendarPage() {
 
       const requests = (isEventsMode ? [{ providerId: form.platform, socialAccountId: form.connectedAccountId || undefined }] : targetAccounts).map((account) => {
         const platform = account.providerId as SocialPlatform;
+        const accountId = account.socialAccountId || "";
         const contentType = PLATFORM_CAPABILITIES[platform].supportedContentTypes.includes(form.contentType)
           ? form.contentType
           : getDefaultContentType(platform);
         const payload = {
           ...basePayload,
           platform,
-          socialAccountId: account.socialAccountId,
-          connectedAccountId: account.socialAccountId,
+          socialAccountId: accountId || undefined,
+          connectedAccountId: accountId || undefined,
+          caption: (accountId && form.destinationCaptions[accountId]) || form.caption,
           contentType,
+          platformSettings: buildPlatformSettings(platform, form),
         };
 
         return fetch(selectedPostId ? `/api/social/scheduled-posts/${selectedPostId}` : "/api/social/scheduled-posts", {
@@ -1091,10 +1281,17 @@ export default function SocialCalendarPage() {
   const movePostToDay = async (postId: string, day: string) => {
     if (!user || loading) return;
     const post = posts.find((item) => item.scheduledPostId === postId);
-    if (!post || post.status === "published") return;
+    if (!post || !canDragScheduledPost(post)) return;
+    const previousPosts = posts;
+    const nextScheduledTime = combineDateAndTime(day, format(parseISO(post.scheduledTime), "HH:mm"));
 
     try {
       setLoading(true);
+      setPosts((current) => current.map((item) => (
+        item.scheduledPostId === postId
+          ? { ...item, scheduledTime: nextScheduledTime }
+          : item
+      )));
       const idToken = await user.getIdToken();
       const response = await fetch(`/api/social/scheduled-posts/${postId}`, {
         method: "PATCH",
@@ -1104,11 +1301,12 @@ export default function SocialCalendarPage() {
         },
         body: JSON.stringify({
           moveOnly: true,
-          scheduledTime: combineDateAndTime(day, format(parseISO(post.scheduledTime), "HH:mm")),
+          scheduledTime: nextScheduledTime,
         }),
       });
 
       if (!response.ok) {
+        setPosts(previousPosts);
         const errorData = await response.json().catch(() => ({ error: "Unknown error" }));
         throw new Error(errorData.error || "Could not move scheduled post.");
       }
@@ -1119,6 +1317,7 @@ export default function SocialCalendarPage() {
         description: "The scheduled time has been updated.",
       });
     } catch (error) {
+      setPosts(previousPosts);
       toast({
         title: "Move failed",
         description: error instanceof Error ? error.message : "Could not move the post.",
@@ -1142,7 +1341,9 @@ export default function SocialCalendarPage() {
   const renderPostCard = (post: ScheduledPostRecord, compact = false) => {
     const ContentIcon = getContentTypeIcon(post.contentType);
     const captionSnippet = post.title || post.caption || `${post.contentType || "Content"} post`;
-    const canDrag = post.status !== "published" && post.status !== "cancelled";
+    const canDrag = canDragScheduledPost(post);
+    const previewAsset = getPostPreviewAsset(post, studioAssetMap);
+    const previewUrl = previewAsset?.thumbnail || previewAsset?.downloadUrl;
 
     return (
       <div
@@ -1168,8 +1369,16 @@ export default function SocialCalendarPage() {
         )}
       >
         <div className="flex items-start gap-2">
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[12px] border border-white/10 bg-white/[0.05] text-primary">
-            <ContentIcon className="h-4 w-4" />
+          <div className={cn(
+            "flex shrink-0 items-center justify-center overflow-hidden rounded-[12px] border border-white/10 bg-white/[0.05] text-primary",
+            compact ? "h-16 w-20" : "h-10 w-12"
+          )}>
+            {previewUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={previewUrl} alt="" className="h-full w-full object-cover" />
+            ) : (
+              <ContentIcon className="h-4 w-4" />
+            )}
           </div>
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
@@ -1183,6 +1392,9 @@ export default function SocialCalendarPage() {
             <div className="mt-1 truncate text-[10px] text-muted-foreground">
               {getCampaignLabel(campaignMap, post.campaignId)}
             </div>
+            {compact && post.caption ? (
+              <div className="mt-1 line-clamp-2 text-xs leading-5 text-white/70">{post.caption}</div>
+            ) : null}
             {compact ? (
               <div className="mt-2 flex flex-wrap items-center gap-1.5">
                 <Badge variant="outline" className={cn("border px-1.5 py-0 text-[10px]", getPostBadgeClass(post.status))}>
@@ -1306,6 +1518,156 @@ export default function SocialCalendarPage() {
             </GlassCard>
           ) : null}
 
+          {!isEventsMode ? (
+            <div className="grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
+              <GlassCard className="p-5">
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                  <div>
+                    <div className="text-xs font-semibold uppercase tracking-[0.22em] text-primary">Publishing plan</div>
+                    <h2 className="mt-2 text-lg font-semibold text-white">Today&apos;s content workspace</h2>
+                    <p className="mt-1 text-sm leading-6 text-muted-foreground">
+                      Review what is due today, spot empty days, and jump into AI-assisted creation without leaving the scheduler.
+                    </p>
+                  </div>
+                  <div className="grid min-w-[220px] grid-cols-2 gap-2 text-center">
+                    <div className="rounded-[16px] border border-white/10 bg-white/[0.03] p-3">
+                      <div className="text-xl font-semibold text-white">{todaysPosts.length}</div>
+                      <div className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground">Today</div>
+                    </div>
+                    <div className="rounded-[16px] border border-white/10 bg-white/[0.03] p-3">
+                      <div className="text-xl font-semibold text-white">{contentGapDays.length}</div>
+                      <div className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground">Open days</div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mt-5 grid gap-3 lg:grid-cols-3">
+                  <div className="rounded-[18px] border border-white/10 bg-white/[0.025] p-4">
+                    <div className="text-sm font-medium text-white">Next scheduled post</div>
+                    {nextScheduledPost ? (
+                      <button
+                        type="button"
+                        onClick={() => setSelectedPostId(nextScheduledPost.scheduledPostId)}
+                        className="mt-3 w-full rounded-[14px] border border-white/10 bg-black/20 p-3 text-left transition hover:border-primary/40"
+                      >
+                        <div className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
+                          {format(parseISO(nextScheduledPost.scheduledTime), "EEE, MMM d · HH:mm")}
+                        </div>
+                        <div className="mt-1 line-clamp-2 text-sm font-medium text-white">
+                          {nextScheduledPost.title || nextScheduledPost.caption || "Scheduled content"}
+                        </div>
+                        <div className="mt-2 text-xs text-muted-foreground">
+                          {nextScheduledPost.platform} · {nextScheduledPost.contentType || "text"}
+                        </div>
+                      </button>
+                    ) : (
+                      <p className="mt-3 text-sm leading-6 text-muted-foreground">No upcoming scheduled posts yet.</p>
+                    )}
+                  </div>
+
+                  <div className="rounded-[18px] border border-white/10 bg-white/[0.025] p-4">
+                    <div className="text-sm font-medium text-white">Content gaps</div>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {contentGapDays.length > 0 ? contentGapDays.map((day) => {
+                        const key = format(day, "yyyy-MM-dd");
+                        return (
+                          <button
+                            key={key}
+                            type="button"
+                            onClick={() => {
+                              setSelectedPostId(null);
+                              setForm(buildEmptyForm(key));
+                            }}
+                            className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs text-muted-foreground transition hover:border-primary/40 hover:text-white"
+                          >
+                            {format(day, "MMM d")}
+                          </button>
+                        );
+                      }) : (
+                        <p className="text-sm leading-6 text-muted-foreground">This month has coverage on every day in view.</p>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="rounded-[18px] border border-white/10 bg-white/[0.025] p-4">
+                    <div className="text-sm font-medium text-white">Soma AI actions</div>
+                    <div className="mt-3 grid gap-2">
+                      <Button asChild size="sm" variant="outline" className="justify-start rounded-[14px]">
+                        <Link href="/ai-studio">Generate post ideas</Link>
+                      </Button>
+                      <Button asChild size="sm" variant="outline" className="justify-start rounded-[14px]">
+                        <Link href="/ai-studio">Repurpose recent asset</Link>
+                      </Button>
+                      <Button asChild size="sm" variant="ghost" className="justify-start rounded-[14px]">
+                        <Link href="/ai/mentor">Ask AI Mentor for a campaign angle</Link>
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              </GlassCard>
+
+              <GlassCard className="p-5">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <h2 className="text-lg font-semibold text-white">Workspace signals</h2>
+                    <p className="mt-1 text-sm text-muted-foreground">Assets and account issues that may affect scheduling.</p>
+                  </div>
+                  <Sparkles className="h-5 w-5 text-primary" />
+                </div>
+
+                <div className="mt-4 space-y-4">
+                  <div>
+                    <div className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">Recent assets</div>
+                    <div className="mt-3 grid grid-cols-3 gap-2">
+                      {studioAssets.slice(0, 6).map((asset) => (
+                        <button
+                          key={asset.assetId}
+                          type="button"
+                          onClick={() => {
+                            const assetIds = splitAssetIds(form.assetIds);
+                            if (!assetIds.includes(asset.assetId)) {
+                              updateSelectedAssetIds([...assetIds, asset.assetId]);
+                            }
+                          }}
+                          className="group aspect-video overflow-hidden rounded-[14px] border border-white/10 bg-white/[0.04] transition hover:border-primary/40"
+                          title={asset.title}
+                        >
+                          {asset.thumbnail || asset.downloadUrl ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img src={asset.thumbnail || asset.downloadUrl} alt="" className="h-full w-full object-cover opacity-85 transition group-hover:opacity-100" />
+                          ) : (
+                            <div className="flex h-full w-full items-center justify-center">
+                              <ImageIcon className="h-5 w-5 text-muted-foreground" />
+                            </div>
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                    {studioAssets.length === 0 ? (
+                      <p className="mt-3 text-sm leading-6 text-muted-foreground">No generated or uploaded assets yet.</p>
+                    ) : null}
+                  </div>
+
+                  <div>
+                    <div className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">Account warnings</div>
+                    <div className="mt-3 space-y-2">
+                      {accountWarnings.length > 0 ? accountWarnings.map((account) => (
+                        <div key={account.socialAccountId} className="rounded-[14px] border border-amber-500/20 bg-amber-500/10 p-3">
+                          <div className="text-sm font-medium text-amber-100">{account.providerLabel} · {getAccountDisplayLabel(account)}</div>
+                          <div className="mt-1 text-xs text-amber-200/80">
+                            {account.lastError || `Status: ${account.status}`}
+                          </div>
+                        </div>
+                      )) : (
+                        <p className="text-sm leading-6 text-muted-foreground">Connected accounts look healthy.</p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </GlassCard>
+            </div>
+          ) : null}
+
           <div className="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
             <section className="space-y-4">
               <GlassCard className="p-4">
@@ -1373,7 +1735,7 @@ export default function SocialCalendarPage() {
                               }
                             }}
                             className={cn(
-                              "min-h-[170px] rounded-md border p-2 text-left transition-colors",
+                              "min-h-[190px] rounded-[16px] border p-2 text-left transition-colors",
                               inMonth ? "border-white/10 bg-white/5" : "border-white/5 bg-white/2 text-white/35",
                               selected && "ring-1 ring-primary/40",
                               dragOverDay === key && "border-primary/40 bg-primary/10"
@@ -1391,10 +1753,10 @@ export default function SocialCalendarPage() {
                             </div>
 
                             <div className="mt-2 space-y-1">
-                              {items.slice(0, 3).map((post) => renderPostCard(post))}
-                              {items.length > 3 ? (
+                              {items.slice(0, 2).map((post) => renderPostCard(post))}
+                              {items.length > 2 ? (
                                 <div className="px-1 text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
-                                  +{items.length - 3} more
+                                  +{items.length - 2} more
                                 </div>
                               ) : null}
                             </div>
@@ -1428,7 +1790,7 @@ export default function SocialCalendarPage() {
                             }
                           }}
                           className={cn(
-                            "min-h-[240px] rounded-md border border-white/10 bg-white/5 p-3 text-left transition-colors",
+                            "min-h-[320px] rounded-[18px] border border-white/10 bg-white/5 p-3 text-left transition-colors",
                             dragOverDay === key && "border-primary/40 bg-primary/10"
                           )}
                         >
@@ -1443,7 +1805,7 @@ export default function SocialCalendarPage() {
                           </div>
                           <div className="mt-3 space-y-2">
                             {items.length > 0 ? items.map((post) => renderPostCard(post, true)) : (
-                              <div className="rounded-md border border-dashed border-white/10 px-3 py-6 text-center text-xs text-muted-foreground">
+                              <div className="rounded-[14px] border border-dashed border-white/10 px-3 py-8 text-center text-xs text-muted-foreground">
                                 Drop a post here
                               </div>
                             )}
@@ -1456,35 +1818,51 @@ export default function SocialCalendarPage() {
                   <div className="space-y-3">
                     {agendaPosts.length > 0 ? agendaPosts.map((post) => {
                       const dateLabel = format(parseISO(post.scheduledTime), "EEE, MMM d");
+                      const previewAsset = getPostPreviewAsset(post, studioAssetMap);
+                      const previewUrl = previewAsset?.thumbnail || previewAsset?.downloadUrl;
+                      const ContentIcon = getContentTypeIcon(post.contentType);
+                      const canDrag = canDragScheduledPost(post);
                       return (
                         <button
                           key={post.scheduledPostId}
                           type="button"
                           onClick={() => setSelectedPostId(post.scheduledPostId)}
-                          draggable={post.status !== "published"}
+                          draggable={canDrag}
                           onDragStart={(event) => {
+                            if (!canDrag) return;
                             event.dataTransfer.setData("text/plain", post.scheduledPostId);
                           }}
                           className={cn(
-                            "flex w-full items-start justify-between gap-4 rounded-md border border-white/10 bg-white/5 p-4 text-left transition-colors hover:border-primary/30",
+                            "grid w-full gap-4 rounded-[18px] border border-white/10 bg-white/5 p-4 text-left transition-colors hover:border-primary/30 md:grid-cols-[140px_1fr]",
                             post.status === "published" && "bg-emerald-500/5",
                             post.status === "failed" && "bg-red-500/5"
                           )}
                         >
+                          <div className="flex aspect-video items-center justify-center overflow-hidden rounded-[16px] border border-white/10 bg-black/30">
+                            {previewUrl ? (
+                              // eslint-disable-next-line @next/next/no-img-element
+                              <img src={previewUrl} alt="" className="h-full w-full object-cover" />
+                            ) : (
+                              <ContentIcon className="h-6 w-6 text-muted-foreground" />
+                            )}
+                          </div>
                           <div className="min-w-0 space-y-1">
-                            <div className="flex items-center gap-2">
-                              <span className="text-sm font-medium">{post.title || post.caption.slice(0, 42) || "Untitled post"}</span>
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="text-sm font-medium">{post.title || post.caption.slice(0, 72) || "Untitled post"}</span>
                               <Badge variant="outline" className={cn("border px-1.5 py-0 text-[10px] uppercase tracking-[0.16em]", getPostBadgeClass(post.status))}>
-                                {post.status}
+                                {STATUS_LABELS[post.status]}
                               </Badge>
                             </div>
                             <div className="text-xs text-muted-foreground">
-                              {dateLabel} · {format(parseISO(post.scheduledTime), "HH:mm")} · {post.platform}
+                              {dateLabel} · {format(parseISO(post.scheduledTime), "HH:mm")} · {post.platform} · {post.contentType || "text"}
                             </div>
                             <div className="text-xs text-muted-foreground">
                               {getCampaignLabel(campaignMap, post.campaignId)}
                             </div>
                             <div className="line-clamp-2 text-sm text-white/80">{post.caption}</div>
+                            {post.assetIds.length > 0 ? (
+                              <div className="text-xs text-muted-foreground">{post.assetIds.length} attached asset{post.assetIds.length === 1 ? "" : "s"}</div>
+                            ) : null}
                           </div>
                         </button>
                       );
@@ -1669,17 +2047,53 @@ export default function SocialCalendarPage() {
                           {anyTargetRequiresMedia ? <span className="text-xs text-amber-300">Required</span> : <span className="text-xs text-muted-foreground">Optional</span>}
                         </div>
                         <div className="rounded-[18px] border border-dashed border-white/10 bg-black/20 p-4">
-                          {selectedAssetIds.length > 0 ? (
-                            <div className="space-y-2">
-                              {selectedAssetIds.map((assetId, index) => (
-                                <div key={`${assetId}-${index}`} className="flex items-center justify-between gap-3 rounded-[14px] border border-white/10 bg-white/[0.03] px-3 py-2">
-                                  <div className="min-w-0">
-                                    <div className="text-xs font-medium text-white">Asset {index + 1}</div>
-                                    <div className="truncate text-[11px] text-muted-foreground">{assetId}</div>
+                          {selectedAssets.length > 0 ? (
+                            <div className="space-y-3">
+                              {selectedAssets.map(({ assetId, asset }, index) => {
+                                const isVideoAsset = asset?.type === "video" || asset?.mimeType?.startsWith("video/");
+                                const previewUrl = asset?.thumbnail || asset?.downloadUrl;
+                                return (
+                                  <div key={`${assetId}-${index}`} className="grid gap-3 rounded-[16px] border border-white/10 bg-white/[0.03] p-3 sm:grid-cols-[120px_1fr]">
+                                    <div className="flex aspect-video items-center justify-center overflow-hidden rounded-[14px] border border-white/10 bg-black/30">
+                                      {isVideoAsset && asset?.downloadUrl ? (
+                                        <video src={asset.downloadUrl} className="h-full w-full object-cover" muted controls preload="metadata" />
+                                      ) : previewUrl ? (
+                                        // eslint-disable-next-line @next/next/no-img-element
+                                        <img src={previewUrl} alt="" className="h-full w-full object-cover" />
+                                      ) : (
+                                        <ImageIcon className="h-5 w-5 text-muted-foreground" />
+                                      )}
+                                    </div>
+                                    <div className="min-w-0 space-y-2">
+                                      <div className="flex items-start justify-between gap-3">
+                                        <div className="min-w-0">
+                                          <div className="truncate text-sm font-medium text-white">{getAssetPreviewLabel(asset, assetId)}</div>
+                                          <div className="mt-1 truncate text-xs text-muted-foreground">
+                                            {asset?.type || "asset"} · {assetId}
+                                          </div>
+                                        </div>
+                                        <span className="rounded-full border border-white/10 px-2 py-0.5 text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
+                                          {index + 1}
+                                        </span>
+                                      </div>
+                                      <div className="flex flex-wrap gap-2">
+                                        <Button type="button" size="sm" variant="outline" disabled={index === 0} onClick={() => moveSelectedAsset(index, -1)} className="h-8 rounded-[12px]">
+                                          <ArrowUp className="h-3.5 w-3.5" />
+                                          Move up
+                                        </Button>
+                                        <Button type="button" size="sm" variant="outline" disabled={index === selectedAssets.length - 1} onClick={() => moveSelectedAsset(index, 1)} className="h-8 rounded-[12px]">
+                                          <ArrowDown className="h-3.5 w-3.5" />
+                                          Move down
+                                        </Button>
+                                        <Button type="button" size="sm" variant="ghost" onClick={() => removeSelectedAsset(assetId)} className="h-8 rounded-[12px] text-red-300 hover:text-red-200">
+                                          <Trash2 className="h-3.5 w-3.5" />
+                                          Remove
+                                        </Button>
+                                      </div>
+                                    </div>
                                   </div>
-                                  <span className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground">Order {index + 1}</span>
-                                </div>
-                              ))}
+                                );
+                              })}
                             </div>
                           ) : (
                             <div className="space-y-2 text-sm text-muted-foreground">
@@ -1810,9 +2224,105 @@ export default function SocialCalendarPage() {
                             <Link href="/ai-studio">Adapt for platform</Link>
                           </Button>
                         </div>
+                        {publishTargetAccounts.length > 1 ? (
+                          <div className="space-y-3 rounded-[18px] border border-white/10 bg-white/[0.025] p-4">
+                            <div>
+                              <div className="text-sm font-medium text-white">Destination captions</div>
+                              <p className="mt-1 text-xs text-muted-foreground">Leave a field empty to use the main caption for that account.</p>
+                            </div>
+                            {publishTargetAccounts.map((account) => (
+                              <div key={account.socialAccountId} className="space-y-2">
+                                <label className="text-xs font-medium text-muted-foreground">
+                                  {account.providerLabel} · {getAccountDisplayLabel(account)}
+                                </label>
+                                <Textarea
+                                  value={form.destinationCaptions[account.socialAccountId] || ""}
+                                  onChange={(event) => updateDestinationCaption(account.socialAccountId, event.target.value)}
+                                  rows={3}
+                                  placeholder={`Custom ${account.providerLabel} caption`}
+                                  className="rounded-[16px] border-white/10 bg-white/[0.03]"
+                                />
+                              </div>
+                            ))}
+                          </div>
+                        ) : null}
                       </>
                     ) : null}
                   </section>
+
+                  {!isEventsMode && targetPlatforms.length > 0 ? (
+                    <section className="space-y-3 rounded-[18px] border border-white/10 bg-white/[0.025] p-4">
+                      <div>
+                        <label className="text-sm font-medium">Platform settings</label>
+                        <p className="mt-1 text-xs text-muted-foreground">These prepare the post for native publishing rules later.</p>
+                      </div>
+                      {targetPlatforms.includes("tiktok") ? (
+                        <div className="space-y-2">
+                          <label className="text-xs font-medium text-muted-foreground">TikTok privacy</label>
+                          <select
+                            value={form.tiktokPrivacy}
+                            onChange={(event) => updateField("tiktokPrivacy", event.target.value as CalendarFormState["tiktokPrivacy"])}
+                            aria-label="TikTok privacy setting"
+                            className="h-11 w-full rounded-[16px] border border-white/10 bg-background px-3 text-sm"
+                          >
+                            <option value="public">Public</option>
+                            <option value="friends">Friends</option>
+                            <option value="private">Private</option>
+                          </select>
+                        </div>
+                      ) : null}
+                      {targetPlatforms.includes("instagram") ? (
+                        <div className="space-y-2">
+                          <label className="text-xs font-medium text-muted-foreground">Instagram placement</label>
+                          <select
+                            value={form.instagramPublishAs}
+                            onChange={(event) => updateField("instagramPublishAs", event.target.value as CalendarFormState["instagramPublishAs"])}
+                            aria-label="Instagram placement"
+                            className="h-11 w-full rounded-[16px] border border-white/10 bg-background px-3 text-sm"
+                          >
+                            <option value="feed">Feed</option>
+                            <option value="reel">Reel</option>
+                            <option value="story">Story</option>
+                          </select>
+                        </div>
+                      ) : null}
+                      {targetPlatforms.includes("youtube") ? (
+                        <div className="grid gap-3 md:grid-cols-2">
+                          <div className="space-y-2">
+                            <label className="text-xs font-medium text-muted-foreground">YouTube title</label>
+                            <Input value={form.youtubeTitle} onChange={(event) => updateField("youtubeTitle", event.target.value)} placeholder="Video title" className="rounded-[16px] border-white/10 bg-white/[0.03]" />
+                          </div>
+                          <div className="space-y-2">
+                            <label className="text-xs font-medium text-muted-foreground">YouTube visibility</label>
+                            <select
+                              value={form.youtubeVisibility}
+                              onChange={(event) => updateField("youtubeVisibility", event.target.value as CalendarFormState["youtubeVisibility"])}
+                              aria-label="YouTube visibility"
+                              className="h-11 w-full rounded-[16px] border border-white/10 bg-background px-3 text-sm"
+                            >
+                              <option value="private">Private</option>
+                              <option value="unlisted">Unlisted</option>
+                              <option value="public">Public</option>
+                            </select>
+                          </div>
+                        </div>
+                      ) : null}
+                      {targetPlatforms.includes("linkedin") ? (
+                        <div className="space-y-2">
+                          <label className="text-xs font-medium text-muted-foreground">LinkedIn destination type</label>
+                          <select
+                            value={form.linkedinDestinationType}
+                            onChange={(event) => updateField("linkedinDestinationType", event.target.value as CalendarFormState["linkedinDestinationType"])}
+                            aria-label="LinkedIn destination type"
+                            className="h-11 w-full rounded-[16px] border border-white/10 bg-background px-3 text-sm"
+                          >
+                            <option value="profile">Profile</option>
+                            <option value="organization">Organization</option>
+                          </select>
+                        </div>
+                      ) : null}
+                    </section>
+                  ) : null}
 
                   <section className="space-y-3">
                     <label className="text-sm font-medium">{isEventsMode ? "Schedule" : "5. Schedule"}</label>
@@ -1904,6 +2414,61 @@ export default function SocialCalendarPage() {
                   </div>
                 </form>
               </GlassCard>
+
+              {selectedPost && !isEventsMode ? (
+                <GlassCard className="p-5">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <h2 className="text-lg font-semibold text-white">Publishing readiness</h2>
+                      <p className="mt-1 text-sm text-muted-foreground">
+                        Worker-ready payload, provider metadata, and recent publishing attempts for this post.
+                      </p>
+                    </div>
+                    {publishReadinessLoading ? <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /> : <SquareArrowOutUpRight className="h-5 w-5 text-primary" />}
+                  </div>
+
+                  <div className="mt-4 grid gap-3 md:grid-cols-3">
+                    <div className="rounded-[16px] border border-white/10 bg-white/[0.03] p-3">
+                      <div className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Payload</div>
+                      <div className="mt-2 text-sm font-medium text-white">{publishPayload?.payloadVersion || "Not loaded"}</div>
+                      <div className="mt-1 text-xs text-muted-foreground">{publishPayload?.content.mediaItems.length || 0} media item(s)</div>
+                    </div>
+                    <div className="rounded-[16px] border border-white/10 bg-white/[0.03] p-3">
+                      <div className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Destination</div>
+                      <div className="mt-2 truncate text-sm font-medium text-white">{publishPayload?.destination.handle || publishPayload?.destination.accountName || "No account"}</div>
+                      <div className="mt-1 text-xs text-muted-foreground">{publishPayload?.platform || selectedPost.platform}</div>
+                    </div>
+                    <div className="rounded-[16px] border border-white/10 bg-white/[0.03] p-3">
+                      <div className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Attempts</div>
+                      <div className="mt-2 text-sm font-medium text-white">{publishAttempts.length}</div>
+                      <div className="mt-1 text-xs text-muted-foreground">Recorded publish attempts</div>
+                    </div>
+                  </div>
+
+                  <div className="mt-4 space-y-2">
+                    <div className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">Recent attempts</div>
+                    {publishAttempts.length > 0 ? publishAttempts.map((attempt) => (
+                      <div key={attempt.publishAttemptId} className="rounded-[14px] border border-white/10 bg-white/[0.025] p-3">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div className="text-sm font-medium text-white">Attempt #{attempt.attemptNumber}</div>
+                          <Badge variant="outline" className={cn("border px-2 py-0 text-[10px] uppercase tracking-[0.16em]", attempt.status === "success" ? "border-emerald-500/25 text-emerald-300" : attempt.status === "failed" ? "border-red-500/25 text-red-300" : "border-white/10 text-muted-foreground")}>
+                            {attempt.status}
+                          </Badge>
+                        </div>
+                        <div className="mt-1 text-xs text-muted-foreground">
+                          {attempt.triggeredAt ? format(parseISO(attempt.triggeredAt), "MMM d, HH:mm") : "No timestamp"} · {attempt.provider || attempt.platform}
+                        </div>
+                        {attempt.errorMessage ? <div className="mt-2 text-xs text-red-200">{attempt.errorMessage}</div> : null}
+                        {attempt.providerPostId ? <div className="mt-2 text-xs text-muted-foreground">Provider post: {attempt.providerPostId}</div> : null}
+                      </div>
+                    )) : (
+                      <div className="rounded-[14px] border border-dashed border-white/10 p-4 text-sm text-muted-foreground">
+                        No publish attempts recorded yet. The native publishing worker will write attempts here.
+                      </div>
+                    )}
+                  </div>
+                </GlassCard>
+              ) : null}
 
               <GlassCard className="p-5">
                 <div className="flex items-center justify-between gap-3">
