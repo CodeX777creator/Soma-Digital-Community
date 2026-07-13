@@ -20,8 +20,10 @@ const socialPublishRetryDelayMinutes = defineInt('SOCIAL_PUBLISH_RETRY_DELAY_MIN
 const socialPublishLeaseMinutes = defineInt('SOCIAL_PUBLISH_LEASE_MINUTES', { default: 10 });
 
 type SocialPlatform = 'tiktok' | 'instagram' | 'facebook' | 'linkedin' | 'x' | 'youtube';
-type ScheduledPostStatus = 'draft' | 'scheduled' | 'published' | 'failed' | 'editing';
+type ScheduledPostStatus = 'draft' | 'scheduled' | 'publishing' | 'published' | 'failed' | 'editing' | 'cancelled';
 type SocialPublishAttemptStatus = 'processing' | 'success' | 'failed' | 'skipped';
+type ScheduledPostContentType = 'text' | 'image' | 'carousel' | 'video' | 'document';
+type MediaItemType = 'image' | 'video' | 'document' | 'audio' | 'unknown';
 
 interface EncryptedPayload {
   algorithm: 'aes-256-gcm';
@@ -55,14 +57,20 @@ interface ScheduledPostDoc {
   ownerId: string;
   platform: SocialPlatform;
   socialAccountId?: string;
+  connectedAccountId?: string;
+  publicationGroupId?: string;
+  contentType?: ScheduledPostContentType;
   status: ScheduledPostStatus;
   scheduledTime: admin.firestore.Timestamp;
   title?: string;
   caption: string;
+  hashtags?: string[];
+  cta?: string;
   assetIds: string[];
   campaignId?: string;
   notes?: string;
   timezone?: string;
+  platformSettings?: Record<string, unknown>;
   metadata?: Record<string, unknown>;
   attemptCount?: number;
   lastAttemptAt?: admin.firestore.Timestamp | null;
@@ -74,6 +82,9 @@ interface ScheduledPostDoc {
   failedAt?: admin.firestore.Timestamp | null;
   lastError?: string | null;
   externalPostId?: string | null;
+  providerPostId?: string | null;
+  failureCode?: string | null;
+  failureMessage?: string | null;
   publishProviderResponse?: string | null;
 }
 
@@ -83,15 +94,36 @@ interface PublishAttemptDoc {
   ownerId: string;
   platform: SocialPlatform;
   socialAccountId?: string;
+  publicationGroupId?: string;
+  provider?: string;
+  contentType?: ScheduledPostContentType;
   attemptNumber: number;
   status: SocialPublishAttemptStatus;
   triggeredAt: admin.firestore.Timestamp;
   startedAt?: admin.firestore.Timestamp | null;
   finishedAt?: admin.firestore.Timestamp | null;
+  durationMs?: number | null;
   externalPostId?: string | null;
+  providerPostId?: string | null;
+  failureCode?: string | null;
   errorMessage?: string | null;
   providerResponse?: string | null;
   retryable?: boolean;
+  payloadVersion?: string;
+  metadata?: Record<string, unknown>;
+}
+
+interface GeneratedAssetDoc {
+  ownerId?: string;
+  userId?: string;
+  title?: string;
+  type?: string;
+  contentType?: string;
+  mimeType?: string;
+  status?: string;
+  downloadUrl?: string;
+  thumbnail?: string;
+  storagePath?: string;
   metadata?: Record<string, unknown>;
 }
 
@@ -185,6 +217,81 @@ function sanitizeText(value: unknown, maxLength: number): string | undefined {
   if (typeof value !== 'string') return undefined;
   const trimmed = value.slice(0, maxLength).replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '');
   return trimmed.trim() || undefined;
+}
+
+function sanitizeStringArray(value: unknown, maxItems = 40): string[] {
+  if (!Array.isArray(value)) return [];
+  const seen = new Set<string>();
+  const items: string[] = [];
+  value.forEach((item) => {
+    const sanitized = sanitizeText(item, 80);
+    if (!sanitized) return;
+    const normalized = sanitized.replace(/^#/, '');
+    if (!normalized || seen.has(normalized.toLowerCase())) return;
+    seen.add(normalized.toLowerCase());
+    items.push(normalized);
+  });
+  return items.slice(0, maxItems);
+}
+
+function getDefaultContentType(platform: SocialPlatform): ScheduledPostContentType {
+  switch (platform) {
+    case 'tiktok':
+    case 'youtube':
+      return 'video';
+    case 'instagram':
+      return 'image';
+    default:
+      return 'text';
+  }
+}
+
+function buildFinalSocialText(caption: string, hashtags: string[], cta?: string): string {
+  const parts = [caption.trim()];
+  if (cta?.trim()) {
+    parts.push(cta.trim());
+  }
+  if (hashtags.length > 0) {
+    parts.push(hashtags.map((tag) => `#${tag.replace(/^#/, '')}`).join(' '));
+  }
+  return parts.filter(Boolean).join('\n\n');
+}
+
+function inferMediaItemType(asset: GeneratedAssetDoc | null): MediaItemType {
+  if (!asset) return 'unknown';
+  const rawType = `${asset.type || asset.contentType || asset.mimeType || ''}`.toLowerCase();
+  if (rawType.includes('video')) return 'video';
+  if (rawType.includes('image')) return 'image';
+  if (rawType.includes('audio')) return 'audio';
+  if (rawType.includes('document') || rawType.includes('pdf')) return 'document';
+  return 'unknown';
+}
+
+async function resolveGeneratedAsset(assetId: string, ownerId: string): Promise<GeneratedAssetDoc | null> {
+  const assetRef = db.collection('generatedAssets').doc(assetId);
+  const direct = await assetRef.get();
+  if (direct.exists) {
+    const data = direct.data() as GeneratedAssetDoc;
+    const assetOwner = data.ownerId || data.userId;
+    if (assetOwner && assetOwner !== ownerId) {
+      return null;
+    }
+    return data;
+  }
+
+  const query = await db
+    .collection('generatedAssets')
+    .where('assetId', '==', assetId)
+    .limit(1)
+    .get();
+
+  if (query.empty) return null;
+  const data = query.docs[0].data() as GeneratedAssetDoc;
+  const assetOwner = data.ownerId || data.userId;
+  if (assetOwner && assetOwner !== ownerId) {
+    return null;
+  }
+  return data;
 }
 
 function resolvePublishEndpoint(platform: SocialPlatform, account: SocialAccountDoc): string | null {

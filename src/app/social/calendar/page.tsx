@@ -1593,13 +1593,13 @@ export default function SocialCalendarPage() {
                     <div className="text-sm font-medium text-white">Soma AI actions</div>
                     <div className="mt-3 grid gap-2">
                       <Button asChild size="sm" variant="outline" className="justify-start rounded-[14px]">
-                        <Link href="/ai-studio">Generate post ideas</Link>
+                        <Link href="/ai-studio">Write caption</Link>
                       </Button>
                       <Button asChild size="sm" variant="outline" className="justify-start rounded-[14px]">
                         <Link href="/ai-studio">Repurpose recent asset</Link>
                       </Button>
                       <Button asChild size="sm" variant="ghost" className="justify-start rounded-[14px]">
-                        <Link href="/ai/mentor">Ask AI Mentor for a campaign angle</Link>
+                        <Link href="/ai-studio">Fill content gap</Link>
                       </Button>
                     </div>
                   </div>
@@ -2006,7 +2006,8 @@ export default function SocialCalendarPage() {
                                 )}
                               >
                                 <span className="block text-sm font-medium">{provider?.label || account.providerLabel}</span>
-                                <span className="mt-1 block truncate text-xs">{getAccountDisplayLabel(account)}</span>
+                                <span className="mt-1 block truncate text-sm text-white">{getAccountDisplayLabel(account)}</span>
+                                <span className="mt-1 block truncate text-[11px] text-muted-foreground">{account.accountName}</span>
                                 <span className="mt-2 inline-flex rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] text-emerald-300">Connected</span>
                               </button>
                             );
@@ -2100,13 +2101,16 @@ export default function SocialCalendarPage() {
                               <p>{anyTargetRequiresMedia ? "Attach a completed AI Studio asset before scheduling this format." : "Attach media from AI Studio when this post needs visuals or video."}</p>
                               <div className="flex flex-wrap gap-2">
                                 <Button asChild size="sm" variant="outline" className="rounded-[14px]">
-                                  <Link href="/ai-studio">Open AI Studio</Link>
+                                  <Link href="/ai/image-studio">Generate image</Link>
+                                </Button>
+                                <Button asChild size="sm" variant="outline" className="rounded-[14px]">
+                                  <Link href="/ai/video-studio">Generate video</Link>
+                                </Button>
+                                <Button type="button" size="sm" variant="ghost" onClick={() => loadStudioAssets()} className="rounded-[14px]">
+                                  Find recent asset
                                 </Button>
                                 <Button asChild size="sm" variant="ghost" className="rounded-[14px]">
-                                  <Link href="/ai/image-studio">Image assets</Link>
-                                </Button>
-                                <Button asChild size="sm" variant="ghost" className="rounded-[14px]">
-                                  <Link href="/ai/video-studio">Video assets</Link>
+                                  <Link href="/ai-studio">Repurpose existing content</Link>
                                 </Button>
                               </div>
                             </div>
@@ -2218,7 +2222,19 @@ export default function SocialCalendarPage() {
                         </div>
                         <div className="flex flex-wrap gap-2">
                           <Button asChild type="button" size="sm" variant="outline" className="rounded-[14px]">
-                            <Link href="/ai-studio">Write with Soma AI</Link>
+                            <Link href="/ai-studio">Write caption</Link>
+                          </Button>
+                          <Button asChild type="button" size="sm" variant="ghost" className="rounded-[14px]">
+                            <Link href="/ai-studio">Shorten</Link>
+                          </Button>
+                          <Button asChild type="button" size="sm" variant="ghost" className="rounded-[14px]">
+                            <Link href="/ai-studio">Add hook</Link>
+                          </Button>
+                          <Button asChild type="button" size="sm" variant="ghost" className="rounded-[14px]">
+                            <Link href="/ai-studio">Add CTA</Link>
+                          </Button>
+                          <Button asChild type="button" size="sm" variant="ghost" className="rounded-[14px]">
+                            <Link href="/ai-studio">Generate hashtags</Link>
                           </Button>
                           <Button asChild type="button" size="sm" variant="ghost" className="rounded-[14px]">
                             <Link href="/ai-studio">Adapt for platform</Link>
@@ -2353,6 +2369,28 @@ export default function SocialCalendarPage() {
                       </select>
                       {campaigns.length === 0 ? <p className="text-xs text-muted-foreground">{campaignOptionalLabel}</p> : null}
                     </div>
+                    {!isEventsMode ? (
+                      <div className="flex flex-wrap gap-2">
+                        <Button asChild type="button" size="sm" variant="outline" className="rounded-[14px]">
+                          <Link href="/ai-studio">Suggest best time</Link>
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => {
+                            const firstGap = contentGapDays[0];
+                            if (firstGap) {
+                              updateField("scheduledDate", format(firstGap, "yyyy-MM-dd"));
+                            }
+                          }}
+                          disabled={contentGapDays.length === 0}
+                          className="rounded-[14px]"
+                        >
+                          Fill content gap
+                        </Button>
+                      </div>
+                    ) : null}
                   </section>
 
                   <button
