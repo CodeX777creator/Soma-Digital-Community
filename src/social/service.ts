@@ -422,7 +422,7 @@ export async function updateSocialAccount(
     || current.connectionType
     || (credentialEnvelope ? 'oauth' : 'manual');
   const nextStatus = patch.status || (credentialEnvelope ? 'connected' : current.status);
-  const updated: SocialAccountDoc = {
+  const updated = stripUndefined<SocialAccountDoc>({
     ...current,
     providerLabel: provider.label,
     accountName: patch.accountName ? normalizeAccountName(patch.accountName) : current.accountName,
@@ -439,7 +439,7 @@ export async function updateSocialAccount(
     metadata: patch.metadata ? normalizeMetadata(patch.metadata) : current.metadata,
     updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     disconnectedAt: nextStatus === 'disconnected' ? admin.firestore.FieldValue.serverTimestamp() : current.disconnectedAt || null,
-  };
+  });
 
   await adminDb.collection('socialAccounts').doc(accountId).set(updated, { merge: true });
   logger.info('[Social] Updated social account', {
