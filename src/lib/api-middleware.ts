@@ -276,7 +276,7 @@ export function createAPIHandler<T>(
       delayMs?: number;
     };
   } = {}
-) {
+  ) {
   return async (req: NextRequest, context: RouteContext): Promise<NextResponse> => {
     const startTime = Date.now();
     const requestId = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
@@ -324,20 +324,31 @@ export function createAPIHandler<T>(
       return result;
     } catch (error) {
       const duration = Date.now() - startTime;
+
+      const errorRecord = error as {
+        status?: number;
+        code?: string;
+        message?: string;
+        retryAfter?: number;
+      } | null;
+
+      const knownStatus = typeof errorRecord?.status === 'number' ? errorRecord.status : null;
+      const knownCode = typeof errorRecord?.code === 'string' ? errorRecord.code : undefined;
+      const knownMessage = typeof errorRecord?.message === 'string' ? errorRecord.message : undefined;
       
       // Handle known error types
-      if (error instanceof APIRequestError) {
+      if (error instanceof APIRequestError || knownStatus) {
         logger.warn(`API request error: ${req.url}`, {
-          status: error.status,
-          code: error.code,
+          status: error instanceof APIRequestError ? error.status : knownStatus,
+          code: error instanceof APIRequestError ? error.code : knownCode,
           duration: `${duration}ms`,
           requestId,
         });
         
-        return apiError(error.message, {
-          status: error.status,
-          code: error.code,
-          retryAfter: error instanceof RateLimitError ? error.retryAfter : undefined,
+        return apiError(error instanceof APIRequestError ? error.message : knownMessage || 'Request failed', {
+          status: error instanceof APIRequestError ? error.status : knownStatus || 500,
+          code: error instanceof APIRequestError ? error.code : knownCode,
+          retryAfter: error instanceof RateLimitError ? error.retryAfter : typeof errorRecord?.retryAfter === 'number' ? errorRecord.retryAfter : undefined,
         });
       }
 
