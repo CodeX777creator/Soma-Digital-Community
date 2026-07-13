@@ -25,7 +25,7 @@ function parseCampaignId(req: NextRequest): string {
 const handler = createAPIHandler(
   async (req) => {
     logger.info('[API /social/campaigns/[campaignId]] Received request');
-    const entitlements = await requireSubscription(req as any, 'pro');
+    const entitlements = await requireSubscription(req as any, 'explorer');
     const campaignId = parseCampaignId(req);
     if (!campaignId) {
       return apiError('campaignId is required', { status: 400, code: 'INVALID_INPUT' });

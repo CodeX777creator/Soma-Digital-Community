@@ -21,7 +21,7 @@ function parseAssetIds(value: unknown): string[] | undefined {
 const handler = createAPIHandler(
   async (req, context) => {
     logger.info('[API /social/scheduled-posts/[postId]] Received request');
-    const entitlements = await requireSubscription(req as any, 'pro');
+    const entitlements = await requireSubscription(req as any, 'explorer');
     const { postId } = await context.params;
 
     if (!postId) {

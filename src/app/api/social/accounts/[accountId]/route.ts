@@ -37,7 +37,7 @@ function normalizeStatus(value: unknown): SocialAccountStatus | undefined {
 const handler = createAPIHandler(
   async (req, context) => {
     logger.info('[API /social/accounts/[accountId]] Received request');
-    const entitlements = await requireSubscription(req as any, 'pro');
+    const entitlements = await requireSubscription(req as any, 'explorer');
     const { accountId } = await context.params;
 
     if (!accountId) {

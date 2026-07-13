@@ -40,7 +40,7 @@ function parseAssetIds(value: unknown): string[] | undefined {
 const handler = createAPIHandler(
   async (req) => {
     logger.info('[API /social/scheduled-posts] Received request');
-    const entitlements = await requireSubscription(req as any, 'pro');
+    const entitlements = await requireSubscription(req as any, 'explorer');
 
     if (req.method === 'GET') {
       let month: string | undefined;

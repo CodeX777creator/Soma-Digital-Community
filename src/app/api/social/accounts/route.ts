@@ -48,7 +48,7 @@ function parseLimit(req: NextRequest): number {
 const handler = createAPIHandler(
   async (req) => {
     logger.info('[API /social/accounts] Received request');
-    const entitlements = await requireSubscription(req as any, 'pro');
+    const entitlements = await requireSubscription(req as any, 'explorer');
 
     if (req.method === 'GET') {
       const limit = parseLimit(req);
