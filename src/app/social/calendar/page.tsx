@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { ChangeEvent, FormEvent, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import {
   addMonths,
@@ -111,6 +111,13 @@ type StudioAssetSummary = {
 type StudioAssetsResponse = {
   assets: StudioAssetSummary[];
 };
+
+type StudioAssetUploadResponse = {
+  asset: StudioAssetSummary;
+};
+
+const IMAGE_UPLOAD_MAX_BYTES = 10 * 1024 * 1024;
+const VIDEO_UPLOAD_MAX_BYTES = 100 * 1024 * 1024;
 
 interface CalendarFormState {
   title: string;
@@ -410,6 +417,7 @@ export default function SocialCalendarPage() {
   const [campaignLoadingState, setCampaignLoadingState] = useState(true);
   const [studioAssets, setStudioAssets] = useState<StudioAssetSummary[]>([]);
   const [studioAssetsLoading, setStudioAssetsLoading] = useState(false);
+  const [mediaUploading, setMediaUploading] = useState(false);
   const [selectedPostId, setSelectedPostId] = useState<string | null>(null);
   const [selectedCampaignId, setSelectedCampaignId] = useState<string | null>(null);
   const [dragOverDay, setDragOverDay] = useState<string | null>(null);
@@ -758,6 +766,85 @@ export default function SocialCalendarPage() {
   const clearCampaignForm = () => {
     setSelectedCampaignId(null);
     setCampaignForm(buildEmptyCampaignForm());
+  };
+
+  const handleMediaUpload = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file || !user) return;
+
+    const isImage = file.type.startsWith("image/");
+    const isVideo = file.type.startsWith("video/");
+    if (!isImage && !isVideo) {
+      toast({
+        title: "Unsupported file",
+        description: "Upload an image or video file.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const maxBytes = isImage ? IMAGE_UPLOAD_MAX_BYTES : VIDEO_UPLOAD_MAX_BYTES;
+    if (file.size > maxBytes) {
+      toast({
+        title: "File too large",
+        description: `${isImage ? "Images" : "Videos"} must be ${Math.round(maxBytes / 1024 / 1024)} MB or smaller.`,
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (isVideo && form.contentType !== "video") {
+      updateField("contentType", "video");
+    }
+    if (isImage && form.contentType === "video") {
+      updateField("contentType", "image");
+    }
+
+    try {
+      setMediaUploading(true);
+      const idToken = await user.getIdToken();
+      const payload = new FormData();
+      payload.append("file", file);
+      payload.append("title", file.name.replace(/\.[^.]+$/, ""));
+
+      const response = await fetch("/api/ai/studio/assets/upload", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${idToken}`,
+        },
+        body: payload,
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: "Upload failed" }));
+        throw new Error(errorData.error || "Upload failed.");
+      }
+
+      const data = (await response.json()) as StudioAssetUploadResponse;
+      setStudioAssets((current) => [data.asset, ...current.filter((asset) => asset.assetId !== data.asset.assetId)]);
+      setForm((current) => {
+        const assetIds = splitAssetIds(current.assetIds);
+        const nextIds = assetIds.includes(data.asset.assetId) ? assetIds : [...assetIds, data.asset.assetId];
+        return {
+          ...current,
+          assetIds: nextIds.join(", "),
+        };
+      });
+
+      toast({
+        title: "Media uploaded",
+        description: "The asset has been attached to this scheduled post.",
+      });
+    } catch (error) {
+      toast({
+        title: "Upload failed",
+        description: error instanceof Error ? error.message : "Could not upload media.",
+        variant: "destructive",
+      });
+    } finally {
+      setMediaUploading(false);
+    }
   };
 
   const refreshCalendar = async () => {
@@ -1610,6 +1697,30 @@ export default function SocialCalendarPage() {
                               </div>
                             </div>
                           )}
+                        </div>
+                        <div className="rounded-[18px] border border-white/10 bg-white/[0.025] p-4">
+                          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                            <div>
+                              <div className="text-sm font-medium text-white">Upload media</div>
+                              <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                                Images up to 10 MB. Videos up to 100 MB. Supported: JPG, PNG, WebP, GIF, MP4, WebM, MOV.
+                              </p>
+                            </div>
+                            <label className={cn(
+                              "inline-flex h-10 cursor-pointer items-center justify-center gap-2 rounded-[14px] border border-white/10 bg-white/[0.04] px-4 text-sm font-medium transition hover:bg-white/[0.08]",
+                              mediaUploading && "pointer-events-none opacity-60"
+                            )}>
+                              {mediaUploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+                              {mediaUploading ? "Uploading" : "Choose file"}
+                              <input
+                                type="file"
+                                accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/webm,video/quicktime"
+                                className="sr-only"
+                                disabled={mediaUploading}
+                                onChange={handleMediaUpload}
+                              />
+                            </label>
+                          </div>
                         </div>
                         <Input
                           value={form.assetIds}
