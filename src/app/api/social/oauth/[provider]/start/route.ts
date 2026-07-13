@@ -26,7 +26,7 @@ const handler = createAPIHandler(
       return apiError('Unsupported provider', { status: 400, code: 'INVALID_PROVIDER' });
     }
 
-    const entitlements = await requireSubscription(req as any, 'pro');
+    const entitlements = await requireSubscription(req as any, 'explorer');
     const body = await req.json().catch(() => ({} as Record<string, unknown>));
     const rule = getSocialOAuthRule(provider);
     const accountName = typeof body.accountName === 'string' && body.accountName.trim()
