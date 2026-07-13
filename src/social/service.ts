@@ -47,6 +47,12 @@ type SocialAccountDoc = {
   disconnectedAt?: admin.firestore.Timestamp | admin.firestore.FieldValue | null;
 };
 
+function stripUndefined<T extends Record<string, unknown>>(value: T): T {
+  return Object.fromEntries(
+    Object.entries(value).filter(([, entryValue]) => entryValue !== undefined)
+  ) as T;
+}
+
 function toIso(value: unknown): string | null {
   if (!value) return null;
   if (value instanceof admin.firestore.Timestamp) {
@@ -345,7 +351,7 @@ export async function createSocialAccount(input: SocialAccountInput): Promise<So
   const now = admin.firestore.FieldValue.serverTimestamp();
   const docRef = adminDb.collection('socialAccounts').doc();
 
-  const doc: SocialAccountDoc = {
+  const doc = stripUndefined<SocialAccountDoc>({
     socialAccountId: docRef.id,
     ownerId,
     providerId: provider.id,
@@ -367,7 +373,7 @@ export async function createSocialAccount(input: SocialAccountInput): Promise<So
     createdAt: now,
     updatedAt: now,
     disconnectedAt: null,
-  };
+  });
 
   await docRef.set(doc);
   logger.info('[Social] Created social account', {
