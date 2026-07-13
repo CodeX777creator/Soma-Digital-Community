@@ -9,6 +9,7 @@ import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import { useAuth } from "@/providers/AuthProvider";
 import { db } from "@/lib/firebase";
+import { authFetch } from "@/lib/clientApi";
 import { doc, onSnapshot } from "firebase/firestore";
 import {
   Rocket,
@@ -26,7 +27,6 @@ import {
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
-import Link from "next/link";
 
 interface RoadmapStep {
   title: string;
@@ -51,9 +51,12 @@ interface UserRoadmap {
 }
 
 export default function MyRoadmap() {
-  const { user } = useAuth();
+  const { user, userData } = useAuth();
   const [roadmap, setRoadmap] = useState<UserRoadmap | null>(null);
   const [loading, setLoading] = useState(true);
+  const [generating, setGenerating] = useState(false);
+  const [generationError, setGenerationError] = useState<string | null>(null);
+  const [roadmapGoal, setRoadmapGoal] = useState("");
   const [activeTab, setActiveTab] = useState<'overview' | 'plan' | 'strategy'>('overview');
 
   useEffect(() => {
@@ -88,6 +91,42 @@ export default function MyRoadmap() {
     },
   };
 
+  const handleGenerateRoadmap = async () => {
+    setGenerating(true);
+    setGenerationError(null);
+    try {
+      const fallbackGoal = [
+        userData?.goal,
+        userData?.businessGoal,
+        userData?.businessGoals,
+        userData?.selectedIdentity,
+        userData?.skillLevel ? `Skill level: ${userData.skillLevel}` : "",
+      ].filter(Boolean).join("\n");
+      const goals = roadmapGoal.trim() || fallbackGoal;
+
+      if (!goals.trim()) {
+        setGenerationError("Tell Soma AI what you want to build first.");
+        return;
+      }
+
+      const response = await authFetch("/api/mentor/roadmap", {
+        method: "POST",
+        body: JSON.stringify({ goals }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(payload?.error || payload?.message || "Unable to generate your roadmap.");
+      }
+      if (payload?.roadmap) {
+        setRoadmap(payload.roadmap as UserRoadmap);
+      }
+    } catch (error) {
+      setGenerationError(error instanceof Error ? error.message : "Unable to generate your roadmap.");
+    } finally {
+      setGenerating(false);
+    }
+  };
+
   return (
     <ProtectedRoute>
       <AppLayout>
@@ -108,10 +147,33 @@ export default function MyRoadmap() {
                   You haven't generated an AI digital wealth strategy yet, or your previous plan was not complete. Get started with your custom growth framework.
                 </p>
               </div>
-              <Button asChild className="h-12 px-6 rounded-xl font-bold blue-glow">
-                <Link href="/open?step=1">
-                  Generate Your Roadmap <ArrowRight className="w-4 h-4 ml-2" />
-                </Link>
+              <div className="w-full max-w-xl rounded-3xl border border-white/10 bg-white/[0.035] p-5 text-left">
+                <label className="text-sm font-medium text-white">What are you building?</label>
+                <textarea
+                  value={roadmapGoal}
+                  onChange={(event) => setRoadmapGoal(event.target.value)}
+                  rows={4}
+                  placeholder={userData?.goal ? `Use profile goal: ${userData.goal}` : "Example: I want to build a digital product business around AI content systems for small businesses."}
+                  className="mt-3 w-full resize-none rounded-2xl border border-white/10 bg-black/25 px-4 py-3 text-sm text-white outline-none placeholder:text-white/30 focus:border-primary/50"
+                />
+                <p className="mt-2 text-xs text-muted-foreground">
+                  Leave this blank to use your saved profile goal.
+                </p>
+              </div>
+              {generationError && (
+                <div className="max-w-xl rounded-2xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-100">
+                  {generationError}
+                </div>
+              )}
+              <Button
+                type="button"
+                onClick={handleGenerateRoadmap}
+                disabled={generating}
+                className="h-12 px-6 rounded-xl font-bold blue-glow"
+              >
+                {generating ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Sparkles className="w-4 h-4 mr-2" />}
+                {generating ? "Generating Roadmap..." : "Generate Your Roadmap"}
+                {!generating && <ArrowRight className="w-4 h-4 ml-2" />}
               </Button>
             </div>
           ) : (

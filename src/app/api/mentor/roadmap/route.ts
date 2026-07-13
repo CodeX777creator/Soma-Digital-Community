@@ -3,12 +3,13 @@ import { requireSubscription } from '@/lib/serverAuth';
 import { generatePersonalizedRoadmap } from '@/ai/flows/ai-mentor-personalized-roadmap-flow';
 import { apiResponse, apiError, createAPIHandler } from '@/lib/api-middleware';
 import { logger } from '@/lib/logger';
+import { admin, adminDb } from '@/lib/firebaseAdmin';
 
 const handler = createAPIHandler(
   async (req) => {
     logger.info('[API /mentor/roadmap] Received request');
     
-    const entitlements = await requireSubscription(req as any, 'pro');
+    const entitlements = await requireSubscription(req as any, 'explorer');
     logger.info('[API /mentor/roadmap] Auth successful', { userId: entitlements.uid });
     
     const body = await req.json();
@@ -23,9 +24,40 @@ const handler = createAPIHandler(
       }
     }
 
+    const profileGoals = [
+      entitlements.profile.goal,
+      entitlements.profile.businessGoal,
+      entitlements.profile.businessGoals,
+      entitlements.profile.selectedIdentity,
+      entitlements.profile.skillLevel ? `Skill level: ${entitlements.profile.skillLevel}` : '',
+      entitlements.profile.industry ? `Industry: ${entitlements.profile.industry}` : '',
+    ].filter(Boolean).join('\n');
+
+    const businessGoals = (typeof body.goals === 'string' && body.goals.trim())
+      ? body.goals.trim()
+      : profileGoals;
+
+    if (!businessGoals.trim()) {
+      return apiError('Add a business goal to generate your roadmap.', { status: 400, code: 'MISSING_GOALS' });
+    }
+
     const roadmap = await generatePersonalizedRoadmap({
-      businessGoals: body.goals ?? entitlements.profile.goal,
+      businessGoals,
+      userId: entitlements.uid,
+      existingContext: typeof body.existingContext === 'string' ? body.existingContext : undefined,
     });
+
+    await adminDb
+      .collection('users')
+      .doc(entitlements.uid)
+      .collection('roadmaps')
+      .doc('current')
+      .set({
+        ...roadmap,
+        source: 'dashboard_generation',
+        generatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      }, { merge: true });
 
     return apiResponse({ roadmap });
   },
