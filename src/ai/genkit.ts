@@ -1,5 +1,5 @@
 import { genkit } from 'genkit';
-import { executeTextCompletion } from '@/ai/platform';
+import { executeMonetizedTextRequest } from '@/services/ai-platform';
 
 const MODEL_TIERS = {
   SIMPLE: { id: 'moonshot-v1-8k', temp: 0.7, maxTokens: 512, costRank: 1 },
@@ -28,15 +28,32 @@ function normalizeMessages(messages: any[]) {
 
 async function generateWithAIPlatform(request: any) {
   const normalizedMessages = normalizeMessages(request.messages);
-  const result = await executeTextCompletion({
+  const userId = request.config?.userId;
+  if (typeof userId !== 'string' || !userId.trim()) {
+    throw new Error('Genkit AI requests require an authenticated userId for Creator Credit enforcement.');
+  }
+
+  const userTier = request.config?.userTier || 'pro';
+  const result = await executeMonetizedTextRequest({
     task: 'mentor_chat',
     messages: normalizedMessages,
+    userId,
     modelHint: request.config?.modelHint,
     qualityMode: request.config?.modelHint === 'cheap' ? 'economy' : request.config?.modelHint === 'smart' ? 'premium' : 'balanced',
     maxOutputTokens: request.config?.maxOutputTokens,
     topP: request.config?.topP,
     stopSequences: request.config?.stopSequences,
-    userTier: request.config?.userTier,
+    userTier,
+  }, {
+    userId,
+    task: 'mentor_chat',
+    feature: 'mentor_chat',
+    modality: 'text',
+    message: normalizedMessages.map((message) => message.content).join('\n').slice(0, 2048),
+    userTier,
+    providerMode: 'hybrid',
+    allowByok: true,
+    requestId: `genkit_${Date.now()}`,
   });
 
   return {

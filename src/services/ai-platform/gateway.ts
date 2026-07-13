@@ -3,6 +3,7 @@ import "server-only";
 import { logger } from "@/lib/logger";
 import {
   executeTextCompletion,
+  createTextStream,
   executeImageGeneration,
   executeVideoGeneration,
   executeAudioGeneration,
@@ -11,6 +12,7 @@ import {
   type AIVideoRequest,
   type AIAudioRequest,
 } from "@/ai/platform/service";
+import type { StreamChunk } from "@/ai/core/streaming-handler";
 import { createRequestSignature, estimateCreditCost, getCreatorCreditDashboard, reserveCredits, finalizeCredits, refundCredits } from "./credits";
 import { routeMonetizedAIRequest } from "./orchestrator";
 import { getProviderConnection, listProviderConnections, toggleProviderConnection, upsertProviderConnection, removeProviderConnection } from "./byok";
@@ -30,7 +32,10 @@ async function reserveForContext(context: AIExecutionContext, estimatedCostUsd: 
     userTier: normalizeRoutingPlan(context.userTier),
   });
 
-  const credits = estimateCreditCost(plan, context.feature);
+  const creditOverride = typeof context.metadata?.creditOverride === "number" && Number.isFinite(context.metadata.creditOverride)
+    ? Math.max(0, Math.floor(context.metadata.creditOverride))
+    : null;
+  const credits = creditOverride ?? await estimateCreditCost(plan, context.feature);
   const providerConnection = context.allowByok
     ? await getProviderConnection(context.userId, route.providerId)
     : null;
@@ -212,6 +217,106 @@ export async function executeMonetizedTextRequest(
   }
 }
 
+export async function* executeMonetizedTextStream(
+  request: AITextRequest,
+  context: AIExecutionContext
+): AsyncGenerator<StreamChunk> {
+  const startedAt = Date.now();
+  const estimate = request.maxOutputTokens ? request.maxOutputTokens / 1000 : 2;
+  const lease = await reserveForContext(context, estimate);
+  let providerId = lease.providerId;
+  let modelId = lease.modelId;
+  let finishReason = "";
+  let completed = false;
+
+  try {
+    const stream = await createTextStream({
+      ...request,
+      userTier: normalizeRoutingPlan(context.userTier),
+      providerPreference: lease.providerId,
+      qualityMode: request.qualityMode,
+    });
+
+    for await (const chunk of stream as AsyncIterable<any>) {
+      if (chunk.model) {
+        modelId = chunk.model;
+      }
+
+      const choice = chunk.choices?.[0];
+      const content = choice?.delta?.content || "";
+      if (choice?.finish_reason) {
+        finishReason = choice.finish_reason;
+      }
+
+      if (content) {
+        yield {
+          id: lease.requestId,
+          content,
+          isComplete: false,
+          metadata: {
+            model: modelId,
+          },
+        };
+      }
+    }
+
+    const durationMs = Date.now() - startedAt;
+    await finalizeCredits(lease, {
+      durationMs,
+      creditsCharged: lease.billingSource === "byok" ? 0 : lease.creditsReserved,
+      actualCostUsd: durationMs / 1000,
+      modelId,
+      providerId,
+      status: "charged",
+      metadata: {
+        requestType: "text_stream",
+        finishReason: finishReason || "stop",
+      },
+    });
+    await recordOutcome({
+      lease,
+      status: "succeeded",
+      durationMs,
+      requestType: "text",
+      responsePlanProviderId: providerId,
+      responsePlanModelId: modelId,
+      actualCostUsd: durationMs / 1000,
+      creditsCharged: lease.billingSource === "byok" ? 0 : lease.creditsReserved,
+      creditsRefunded: 0,
+    });
+    completed = true;
+
+    yield {
+      id: lease.requestId,
+      content: "",
+      isComplete: true,
+      metadata: {
+        model: modelId,
+        finishReason: finishReason || "stop",
+      },
+    };
+  } catch (error) {
+    if (!completed) {
+      await refundCredits(lease, error instanceof Error ? error.message : String(error), {
+        requestType: "text_stream",
+      });
+      await recordOutcome({
+        lease,
+        status: "failed",
+        durationMs: Date.now() - startedAt,
+        requestType: "text",
+        responsePlanProviderId: providerId,
+        responsePlanModelId: modelId,
+        actualCostUsd: 0,
+        creditsCharged: 0,
+        creditsRefunded: lease.creditsReserved,
+        errorMessage: error instanceof Error ? error.message : String(error),
+      });
+    }
+    throw error;
+  }
+}
+
 export async function executeMonetizedImageRequest(
   request: AIImageRequest,
   context: AIExecutionContext
@@ -310,6 +415,58 @@ export async function executeMonetizedVideoRequest(
     });
     throw error;
   }
+}
+
+export async function recordMonetizedUsageCharge(
+  context: AIExecutionContext,
+  input: {
+    requestType: "text" | "image" | "video" | "audio";
+    estimatedCostUsd: number;
+    actualCostUsd?: number;
+    durationMs?: number;
+    modelId?: string;
+    providerId?: string;
+    metadata?: Record<string, unknown>;
+  }
+) {
+  const lease = await reserveForContext(context, input.estimatedCostUsd);
+  const durationMs = input.durationMs ?? 0;
+  const providerId = input.providerId || lease.providerId;
+  const modelId = input.modelId || lease.modelId;
+
+  await finalizeCredits(lease, {
+    durationMs,
+    creditsCharged: lease.billingSource === "byok" ? 0 : lease.creditsReserved,
+    actualCostUsd: input.actualCostUsd ?? input.estimatedCostUsd,
+    modelId,
+    providerId,
+    status: "charged",
+    metadata: {
+      requestType: input.requestType,
+      ...input.metadata,
+    },
+  });
+
+  await recordOutcome({
+    lease,
+    status: "succeeded",
+    durationMs,
+    requestType: input.requestType,
+    responsePlanProviderId: providerId,
+    responsePlanModelId: modelId,
+    actualCostUsd: input.actualCostUsd ?? input.estimatedCostUsd,
+    creditsCharged: lease.billingSource === "byok" ? 0 : lease.creditsReserved,
+    creditsRefunded: 0,
+  });
+
+  return {
+    billing: {
+      creditsReserved: lease.creditsReserved,
+      creditsCharged: lease.billingSource === "byok" ? 0 : lease.creditsReserved,
+      creditsRefunded: 0,
+      billingSource: lease.billingSource,
+    },
+  };
 }
 
 export async function executeMonetizedAudioRequest(

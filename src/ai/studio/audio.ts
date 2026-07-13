@@ -6,7 +6,8 @@ import { detectInjection } from '@/ai/guardrails';
 import { estimateTokenCount } from '@/ai/core/tokenizer';
 import { recordUsage } from '@/ai/analytics';
 import { extractJsonObject } from '@/ai/platform';
-import { executeMonetizedAudioRequest, executeMonetizedTextRequest, normalizeRoutingPlan } from '@/services/ai-platform';
+import { executeTextCompletion } from '@/ai/platform/service';
+import { executeMonetizedAudioRequest, normalizeRoutingPlan } from '@/services/ai-platform';
 import { renderAudioAsset, type AudioRenderResult } from './audio-renderer';
 import {
   AUDIO_LANGUAGES,
@@ -215,7 +216,7 @@ async function planAudioBlueprint(input: AudioGenerationInput) {
     conversationSummary: input.conversationSummary,
   });
 
-  const completion = await executeMonetizedTextRequest({
+  const completion = await executeTextCompletion({
     task: 'content_generation',
     userId: input.userId,
     userTier: normalizeRoutingPlan(input.userTier || 'pro'),
@@ -225,16 +226,6 @@ async function planAudioBlueprint(input: AudioGenerationInput) {
       { role: 'user', content: prompt.userPrompt },
     ],
     maxOutputTokens: 1800,
-  }, {
-    userId: input.userId || 'anonymous',
-    task: 'content_generation',
-    feature: 'content_generation',
-    modality: 'text',
-    message: prompt.userPrompt,
-    userTier: input.userTier || 'pro',
-    providerMode: 'hybrid',
-    allowByok: true,
-    requestId: `audio_plan_${Date.now()}`,
   });
 
   const parsed = extractJsonObject<Record<string, any>>(completion.text);

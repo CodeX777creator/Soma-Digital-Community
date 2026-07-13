@@ -3,8 +3,34 @@ import { requireSubscription } from '@/lib/serverAuth';
 import { apiResponse, apiError, createAPIHandler, withTimeout } from '@/lib/api-middleware';
 import { logger } from '@/lib/logger';
 import { sanitizePromptInput } from '@/lib/security';
-import { aiMentorChatEnhanced, aiMentorChatStream } from '@/ai/flows/ai-mentor-chat-flow-enhanced';
-import { createStreamingResponse, createSSEStream } from '@/ai/core/streaming-handler';
+import { aiMentorChatEnhanced } from '@/ai/flows/ai-mentor-chat-flow-enhanced';
+import { createStreamingResponse, createSSEStream, type StreamChunk } from '@/ai/core/streaming-handler';
+
+async function* streamPaidMentorResponse(
+  result: Awaited<ReturnType<typeof aiMentorChatEnhanced>>,
+  requestId: string
+): AsyncGenerator<StreamChunk> {
+  const chunkSize = 42;
+  for (let index = 0; index < result.response.length; index += chunkSize) {
+    yield {
+      id: requestId,
+      content: result.response.slice(index, index + chunkSize),
+      isComplete: false,
+    };
+  }
+
+  yield {
+    id: requestId,
+    content: '',
+    isComplete: true,
+    metadata: {
+      model: result.metadata.model,
+      tokensUsed: result.metadata.tokensUsed.input + result.metadata.tokensUsed.output,
+      finishReason: 'stop',
+      securityThreatLevel: (result.metadata.security?.threatLevel || 'none') as NonNullable<StreamChunk['metadata']>['securityThreatLevel'],
+    },
+  };
+}
 
 const handler = createAPIHandler(
   async (req, _context) => {
@@ -57,23 +83,34 @@ const handler = createAPIHandler(
       requestId,
     });
 
+    const creatorTier =
+      entitlements.subscription.plan === 'elite'
+        ? 'elite'
+        : entitlements.subscription.plan === 'explorer'
+          ? 'explorer'
+          : 'pro';
+
     if (enableStreaming) {
-      // Return streaming response
-      const streamGenerator = aiMentorChatStream({
-        history: sanitizedHistory,
-        message: sanitized,
-        userId: entitlements.uid,
-        threadId: body.threadId || `thread_${Date.now()}`,
-        userContext: {
-          goals: entitlements.profile?.goal,
-          skillLevel: entitlements.profile?.skillLevel,
-          preferredTone: 'professional',
-        },
-        modelHint: body.modelHint || 'auto',
-      });
+      const result = await withTimeout(
+        aiMentorChatEnhanced({
+          history: sanitizedHistory,
+          message: sanitized,
+          userId: entitlements.uid,
+          threadId: body.threadId || `thread_${Date.now()}`,
+          userContext: {
+            goals: entitlements.profile?.goal,
+            skillLevel: entitlements.profile?.skillLevel,
+            preferredTone: 'professional',
+          },
+          modelHint: body.modelHint || 'auto',
+          userTier: creatorTier,
+        }),
+        30000,
+        'AI Mentor Chat'
+      );
 
       return createStreamingResponse(
-        createSSEStream(streamGenerator, { maxDurationMs: 60000 }),
+        createSSEStream(streamPaidMentorResponse(result, requestId), { maxDurationMs: 60000 }),
         { headers: { 'X-Request-ID': requestId } }
       ) as NextResponse;
     }
@@ -91,6 +128,7 @@ const handler = createAPIHandler(
           preferredTone: 'professional',
         },
         modelHint: body.modelHint || 'auto',
+        userTier: creatorTier,
       }),
       30000,
       'AI Mentor Chat'

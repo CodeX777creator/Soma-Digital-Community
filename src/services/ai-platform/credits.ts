@@ -34,6 +34,11 @@ type CreditAccountDoc = {
   lastUpdatedAt?: admin.firestore.Timestamp | admin.firestore.FieldValue;
 };
 
+function normalizeCreatorPlan(plan: CreatorPlan | string | undefined): CreatorPlan {
+  if (plan === "pro" || plan === "elite" || plan === "enterprise") return plan;
+  return "explorer";
+}
+
 function currentPeriod(date = new Date()): string {
   return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}`;
 }
@@ -88,7 +93,33 @@ export function resolveFeatureCredits(plan: CreatorPlan, feature: MonetizedFeatu
   return typeof override === "number" ? override : creatorCreditPolicies[feature].baseCredits;
 }
 
-export function estimateCreditCost(plan: CreatorPlan, feature: MonetizedFeature, quantity = 1): number {
+export async function resolveFeatureCreditsFromConfig(plan: CreatorPlan, feature: MonetizedFeature): Promise<number> {
+  try {
+    const snap = await adminDb.collection("config").doc("creatorCredits").get();
+    if (snap.exists) {
+      const config = normalizeCreatorCreditConfig(snap.data());
+      const configured = config.featurePricing[feature];
+      if (typeof configured === "number" && Number.isFinite(configured) && configured >= 0) {
+        return configured;
+      }
+    }
+  } catch (error) {
+    logger.warn("[AI Credits] Falling back to default feature credits", {
+      plan,
+      feature,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+
+  return resolveFeatureCredits(plan, feature);
+}
+
+export async function estimateCreditCost(plan: CreatorPlan, feature: MonetizedFeature, quantity = 1): Promise<number> {
+  const featureCredits = await resolveFeatureCreditsFromConfig(plan, feature);
+  return Math.max(0, featureCredits * Math.max(1, quantity));
+}
+
+export function estimateDefaultCreditCost(plan: CreatorPlan, feature: MonetizedFeature, quantity = 1): number {
   const featureCredits = resolveFeatureCredits(plan, feature);
   return Math.max(0, featureCredits * Math.max(1, quantity));
 }
@@ -395,14 +426,64 @@ export async function refundCredits(lease: AIExecutionLease, reason: string, met
   });
 }
 
+export async function recordSkippedCredits(
+  context: AIExecutionContext,
+  reason: string,
+  metadata?: Record<string, unknown>
+): Promise<CreditLedgerEntry> {
+  const periodId = currentPeriod();
+  const entryId = `skip_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  const requestId = context.requestId || createRequestSignature({
+    userId: context.userId,
+    feature: context.feature,
+    task: context.task,
+    message: context.message,
+  });
+  const plan = normalizeCreatorPlan(context.userTier);
+  await getOrCreateAccount(context.userId, plan, context.providerMode || "hybrid");
+
+  const entry: CreditLedgerEntry = {
+    entryId,
+    userId: context.userId,
+    periodId,
+    timestamp: new Date().toISOString(),
+    task: context.task,
+    modality: context.modality,
+    feature: context.feature,
+    providerId: context.providerPreference || "vercel-ai-gateway",
+    modelId: typeof context.metadata?.modelId === "string" ? context.metadata.modelId : "cached",
+    billingSource: "sdc_credits",
+    creditsReserved: 0,
+    creditsCharged: 0,
+    creditsRefunded: 0,
+    durationMs: 0,
+    status: "skipped",
+    requestId,
+    reason,
+    providerMode: context.providerMode || "hybrid",
+    estimatedCostUsd: 0,
+    actualCostUsd: 0,
+    metadata: {
+      ...(context.metadata || {}),
+      ...(metadata || {}),
+    },
+  };
+
+  await ledgerRef().doc(entryId).set(entry);
+  return entry;
+}
+
 export async function getCreatorCreditDashboard(userId: string, plan: CreatorPlan, providerMode: ProviderMode) {
   const snapshot = await getCreatorCreditSnapshot(userId, plan, providerMode);
   const ledger = await listCreditLedger(userId, 25);
   const planProfile = await getPlanProfile(plan);
+  const configSnap = await adminDb.collection("config").doc("creatorCredits").get();
+  const config = normalizeCreatorCreditConfig(configSnap.exists ? configSnap.data() : undefined);
 
   return {
     snapshot,
-    creditPolicies: creatorCreditPolicies,
+    creditPolicies: config.featurePricing,
+    toolPricing: config.toolPricing,
     planProfile,
     recentActivity: ledger,
     providerMode,

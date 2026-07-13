@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { createUserWithEmailAndPassword, updateProfile, signInWithRedirect, signInWithPopup, GoogleAuthProvider, sendEmailVerification } from "firebase/auth";
 import { auth } from "@/lib/firebase";
 import { GOOGLE_REDIRECT_PENDING_KEY, GOOGLE_REDIRECT_STORAGE_KEY, getSafeRedirectPath, isStandaloneApp } from "@/lib/auth";
+import { getAuthActionCodeSettings } from "@/lib/firebase-auth-actions";
 import { dbService } from "@/lib/db";
 import { createNotification } from "@/lib/notifications";
 import { useToast } from "@/hooks/use-toast";
@@ -151,7 +152,7 @@ export function AccountCreationStep() {
       await saveUserData(user, name, false);
       
       // Send verification email
-      await sendEmailVerification(user);
+      await sendEmailVerification(user, getAuthActionCodeSettings());
       setVerificationSent(true);
       
       toast({
@@ -291,7 +292,7 @@ export function AccountCreationStep() {
                 if (!auth) return;
                 const user = auth.currentUser;
                 if (user) {
-                  sendEmailVerification(user)
+                  sendEmailVerification(user, getAuthActionCodeSettings())
                     .then(() => toast({title: "Link Resent", description: "Verification email has been sent again.",}))
                     .catch((error) => toast({title: "Failed to resend", description: error.message || "Failed to resend verification email.", variant: "destructive"}));
                 }

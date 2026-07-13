@@ -49,7 +49,8 @@ type CreditDashboard = {
     dailyCap: number;
     concurrentJobs: number;
   };
-  creditPolicies: Record<string, { baseCredits: number }>;
+  creditPolicies: Record<string, number>;
+  toolPricing: Record<string, number>;
 };
 
 function formatDate(value: string) {

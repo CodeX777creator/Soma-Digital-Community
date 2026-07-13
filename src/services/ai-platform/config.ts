@@ -26,7 +26,7 @@ export const creatorCreditPolicies: Record<MonetizedFeature, CreatorCreditPolicy
   translation: { feature: "translation", baseCredits: 2, monthlyLimit: 40, concurrentLimit: 4, byokEligible: true },
   document_generation: { feature: "document_generation", baseCredits: 20, monthlyLimit: 20, concurrentLimit: 2, byokEligible: true },
   business_planner: { feature: "business_planner", baseCredits: 10, monthlyLimit: 12, concurrentLimit: 2, byokEligible: true },
-  social_media_generator: { feature: "social_media_generator", baseCredits: 10, monthlyLimit: 30, concurrentLimit: 2, byokEligible: true },
+  social_media_generator: { feature: "social_media_generator", baseCredits: 5, monthlyLimit: 30, concurrentLimit: 2, byokEligible: true },
   sales_coach: { feature: "sales_coach", baseCredits: 5, monthlyLimit: 30, concurrentLimit: 2, byokEligible: true },
   funnel_builder: { feature: "funnel_builder", baseCredits: 20, monthlyLimit: 16, concurrentLimit: 2, byokEligible: true },
   calendar_generation: { feature: "calendar_generation", baseCredits: 15, monthlyLimit: 16, concurrentLimit: 2, byokEligible: true },

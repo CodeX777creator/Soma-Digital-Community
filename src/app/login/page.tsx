@@ -18,6 +18,7 @@ import {
 } from "firebase/auth";
 import { auth } from "@/lib/firebase";
 import { isStandaloneApp, requiresEmailVerification } from "@/lib/auth";
+import { getAuthActionCodeSettings } from "@/lib/firebase-auth-actions";
 import { useToast } from "@/hooks/use-toast";
 
 export default function LoginPage() {
@@ -110,7 +111,7 @@ export default function LoginPage() {
 
       const currentUser = auth.currentUser;
       if (requiresEmailVerification(currentUser) && currentUser) {
-        await sendEmailVerification(currentUser);
+        await sendEmailVerification(currentUser, getAuthActionCodeSettings());
         await signOut(auth);
         setError("Please verify your email before signing in. We sent a new verification link to your inbox.");
         return;
@@ -183,7 +184,7 @@ export default function LoginPage() {
     }
     setIsLoading(true);
     try {
-      await sendPasswordResetEmail(auth, email);
+      await sendPasswordResetEmail(auth, email, getAuthActionCodeSettings());
       toast({
         title: "Reset link sent!",
         description: "Check your email to reset your password.",

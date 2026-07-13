@@ -6,7 +6,8 @@ import { detectInjection } from '@/ai/guardrails';
 import { estimateTokenCount } from '@/ai/core/tokenizer';
 import { recordUsage } from '@/ai/analytics';
 import { extractJsonObject } from '@/ai/platform';
-import { executeMonetizedTextRequest, normalizeRoutingPlan } from '@/services/ai-platform';
+import { executeTextCompletion } from '@/ai/platform/service';
+import { normalizeRoutingPlan, recordMonetizedUsageCharge } from '@/services/ai-platform';
 import { renderVideoAsset, type VideoRenderResult } from './video-renderer';
 import {
   VIDEO_ASPECT_RATIOS,
@@ -222,7 +223,7 @@ async function planVideoBlueprint(input: VideoGenerationInput) {
     conversationSummary: input.conversationSummary,
   });
 
-  const completion = await executeMonetizedTextRequest({
+  const completion = await executeTextCompletion({
     task: 'content_generation',
     userId: input.userId,
     userTier: normalizeRoutingPlan(input.userTier || 'pro'),
@@ -232,16 +233,6 @@ async function planVideoBlueprint(input: VideoGenerationInput) {
       { role: 'user', content: prompt.userPrompt },
     ],
     maxOutputTokens: 2200,
-  }, {
-    userId: input.userId || 'anonymous',
-    task: 'content_generation',
-    feature: 'content_generation',
-    modality: 'text',
-    message: prompt.userPrompt,
-    userTier: input.userTier || 'pro',
-    providerMode: 'hybrid',
-    allowByok: true,
-    requestId: `video_plan_${Date.now()}`,
   });
 
   const parsed = extractJsonObject<Record<string, any>>(completion.text);
@@ -433,6 +424,42 @@ export async function generateVideoStudioAsset(
     downloadUrl = bundleDownloadUrl;
     mimeType = 'application/json';
   }
+
+  const submittedRealRender =
+    renderOutcome.renderer !== 'bundle' &&
+    (renderOutcome.status === 'completed' || renderOutcome.status === 'queued');
+  const chargeFeature = submittedRealRender ? 'video_generation' : 'content_generation';
+
+  await recordMonetizedUsageCharge({
+    userId: ownerId,
+    task: chargeFeature,
+    feature: chargeFeature,
+    modality: submittedRealRender ? 'video' : 'text',
+    message: submittedRealRender ? blueprint.renderPrompt : blueprint.prompt.userPrompt,
+    userTier: input.userTier || 'pro',
+    providerMode: 'hybrid',
+    allowByok: !submittedRealRender,
+    requestId: `${submittedRealRender ? 'video_render' : 'video_plan'}_${assetId}`,
+    metadata: {
+      assetId,
+      schemaVariant: 'video-generation-v1',
+      renderer: renderOutcome.renderer,
+      renderStatus: renderOutcome.status,
+      creditPolicy: submittedRealRender ? 'video_generation_render' : 'content_generation_blueprint',
+    },
+  }, {
+    requestType: submittedRealRender ? 'video' : 'text',
+    estimatedCostUsd: submittedRealRender ? 0.2 : 0.02,
+    actualCostUsd: submittedRealRender ? 0.2 : 0.02,
+    durationMs: Date.now() - startedAt,
+    providerId,
+    modelId,
+    metadata: {
+      assetId,
+      renderer: renderOutcome.renderer,
+      renderStatus: renderOutcome.status,
+    },
+  });
 
   const checksum = createHash('sha256')
     .update(JSON.stringify({

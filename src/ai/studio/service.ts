@@ -4,7 +4,7 @@ import { estimateTokenCount } from '@/ai/core/tokenizer';
 import { globalSemanticCache, isCacheableQuery } from '@/ai/core/semantic-cache';
 import { extractJsonObject } from '@/ai/platform';
 import { persistStudioArtifact } from '@/ai/telemetry/firestore';
-import { executeMonetizedTextRequest, normalizeRoutingPlan } from '@/services/ai-platform';
+import { executeMonetizedTextRequest, normalizeRoutingPlan, recordSkippedCredits } from '@/services/ai-platform';
 import { logger } from '@/lib/logger';
 import { sanitizeString } from '@/lib/security';
 import {
@@ -12,6 +12,7 @@ import {
   getStudioPromptLibrary,
   resolveStudioContentType,
 } from './prompts';
+import { resolveStudioCreditPolicy } from './credit-policy';
 import type {
   StudioGenerationInput,
   StudioGenerationOutput,
@@ -126,6 +127,25 @@ async function generateStudioContentInternal(
       const cachedOutput = normalizeParsedOutput(JSON.parse(cached.response) as Partial<StudioGenerationOutput>, resolvedContentType);
       const cachedModel = cached.metadata.model || 'cached-model';
       const cachedPromptVersion = cached.metadata.promptVersion || STUDIO_PROMPT_VERSION;
+      const cachedCreditPolicy = await resolveStudioCreditPolicy(resolvedContentType);
+      await recordSkippedCredits({
+        userId: options.userId || input.userId,
+        task: 'content_generation',
+        feature: cachedCreditPolicy.feature,
+        modality: 'text',
+        message: cacheKey,
+        userTier: options.userTier || 'pro',
+        providerMode: 'hybrid',
+        requestId: `studio_cache_${startedAt}`,
+        metadata: {
+          cacheHit: true,
+          studioContentType: resolvedContentType,
+          modelId: cachedModel,
+          promptVersion: cachedPromptVersion,
+        },
+      }, 'cache_hit', {
+        creditsWouldHaveCharged: cachedCreditPolicy.credits,
+      });
       recordUsage({
         timestamp: startedAt,
         userId: input.userId,
@@ -185,6 +205,7 @@ async function generateStudioContentInternal(
     resolvedContentType === 'prompt_library'
       ? 'premium'
       : 'balanced';
+  const creditPolicy = await resolveStudioCreditPolicy(resolvedContentType);
 
   const result = await executeMonetizedTextRequest({
     task: 'content_generation',
@@ -199,13 +220,17 @@ async function generateStudioContentInternal(
   } as any, {
     userId: options.userId || input.userId || 'anonymous',
     task: 'content_generation',
-    feature: 'content_generation',
+    feature: creditPolicy.feature,
     modality: 'text',
     message: prompt.userPrompt,
     userTier: options.userTier || 'pro',
     providerMode: 'hybrid',
     allowByok: true,
     requestId: `studio_${startedAt}`,
+    metadata: {
+      studioContentType: resolvedContentType,
+      creditOverride: creditPolicy.credits,
+    },
   });
 
   const parsed = extractJsonObject<Partial<StudioGenerationOutput>>(result.text);

@@ -9,7 +9,8 @@ import { globalSemanticCache, isCacheableQuery } from '@/ai/core/semantic-cache'
 import { estimateTokenCount } from '@/ai/core/tokenizer';
 import { detectInjection } from '@/ai/guardrails';
 import { logger } from '@/lib/logger';
-import { buildRoadmapPrompt, executeTextCompletion, extractJsonObject } from '@/ai/platform';
+import { buildRoadmapPrompt, extractJsonObject } from '@/ai/platform';
+import { executeMonetizedTextRequest, recordSkippedCredits } from '@/services/ai-platform';
 
 const BusinessGoalsInputSchema = z.object({
   businessGoals: z.string().describe('The user\'s business goals and aspirations.'),
@@ -70,6 +71,22 @@ export async function generatePersonalizedRoadmap(
           cached: true,
           durationMs: Date.now() - startTime,
         });
+        await recordSkippedCredits({
+          userId: input.userId,
+          task: 'roadmap_generation',
+          feature: 'business_planner',
+          modality: 'text',
+          message: cacheKey,
+          userTier: 'pro',
+          providerMode: 'hybrid',
+          requestId: `roadmap_cache_${startTime}`,
+          metadata: {
+            cacheHit: true,
+            modelId: cachedModel,
+          },
+        }, 'cache_hit', {
+          creditsWouldHaveCharged: 10,
+        });
         return JSON.parse(cached.response) as PersonalizedRoadmapOutput;
       }
     }
@@ -84,7 +101,7 @@ export async function generatePersonalizedRoadmap(
       conversationSummary: input.existingContext,
     });
 
-    const result = await executeTextCompletion({
+    const result = await executeMonetizedTextRequest({
       task: 'roadmap_generation',
       userId: input.userId,
       userTier: 'pro',
@@ -94,6 +111,16 @@ export async function generatePersonalizedRoadmap(
         { role: 'user', content: prompt.userPrompt },
       ],
       maxOutputTokens: 1800,
+    }, {
+      userId: input.userId || 'anonymous',
+      task: 'roadmap_generation',
+      feature: 'business_planner',
+      modality: 'text',
+      message: prompt.userPrompt,
+      userTier: 'pro',
+      providerMode: 'hybrid',
+      allowByok: true,
+      requestId: `roadmap_${startTime}`,
     });
 
     const output = PersonalizedRoadmapOutputSchema.parse(extractJsonObject<PersonalizedRoadmapOutput>(result.text));

@@ -36,6 +36,8 @@ import { auth, db } from "@/lib/firebase";
 import {
   CreatorCreditBundle,
   CreatorCreditConfig,
+  CreatorCreditFeatureKey,
+  CreatorCreditToolKey,
   DEFAULT_CREATOR_CREDIT_CONFIG,
   normalizeCreatorCreditConfig,
 } from "@/lib/creator-credit-config";
@@ -57,6 +59,41 @@ const tierLabels: Array<{ id: keyof CreatorCreditConfig["tierAllocations"]; labe
   { id: "pro", label: "Pro" },
   { id: "elite", label: "Elite" },
   { id: "enterprise", label: "Enterprise" },
+];
+const featurePricingLabels: Array<{ id: CreatorCreditFeatureKey; label: string }> = [
+  { id: "mentor_chat", label: "AI Mentor chat" },
+  { id: "ai_chat", label: "AI Chat" },
+  { id: "translation", label: "Translation" },
+  { id: "social_media_generator", label: "Social media generator" },
+  { id: "document_generation", label: "Document generation" },
+  { id: "content_generation", label: "Content generation" },
+  { id: "business_planner", label: "Business planner" },
+  { id: "calendar_generation", label: "Marketing planner" },
+  { id: "funnel_builder", label: "Funnel builder" },
+  { id: "prompt_library", label: "Prompt library" },
+  { id: "image_generation", label: "Image generation" },
+  { id: "voice_generation", label: "Voice/audio generation" },
+  { id: "video_generation", label: "Video generation/render" },
+  { id: "business_coach", label: "Business coach" },
+  { id: "sales_coach", label: "Sales coach" },
+];
+const toolPricingLabels: Array<{ id: CreatorCreditToolKey; label: string }> = [
+  { id: "caption", label: "Captions / social posts" },
+  { id: "ad_copy", label: "Ad copy" },
+  { id: "email", label: "Email generator" },
+  { id: "blog", label: "Blog generator" },
+  { id: "script", label: "Script generator" },
+  { id: "carousel", label: "Carousel copy" },
+  { id: "business_planner", label: "Business planner" },
+  { id: "marketing_planner", label: "Marketing planner" },
+  { id: "sales_funnel", label: "Sales funnel" },
+  { id: "prompt_library", label: "Prompt library generation" },
+  { id: "image", label: "Image generation" },
+  { id: "voice_audio", label: "Voice/audio generation" },
+  { id: "video_render", label: "Video render" },
+  { id: "mentor_chat", label: "AI Mentor chat" },
+  { id: "ai_chat", label: "AI Chat" },
+  { id: "translation", label: "Translation" },
 ];
 
 function toDate(value: any): Date | null {
@@ -285,6 +322,12 @@ export default function AdminSettingsPage() {
       setError("Creator Credit bundles need unique IDs, positive credit amounts, and non-negative prices.");
       return;
     }
+    const invalidFeaturePricing = Object.values(creatorCreditsDraft.featurePricing).some((credits) => credits < 0 || !Number.isFinite(credits));
+    const invalidToolPricing = Object.values(creatorCreditsDraft.toolPricing).some((credits) => credits < 0 || !Number.isFinite(credits));
+    if (invalidFeaturePricing || invalidToolPricing) {
+      setError("Creator Credit feature and tool prices must be zero or higher.");
+      return;
+    }
 
     setSavingCreatorCredits(true);
     setError(null);
@@ -418,6 +461,64 @@ export default function AdminSettingsPage() {
               />
             </Field>
           ))}
+        </div>
+
+        <div className="mt-6 grid gap-5 xl:grid-cols-2">
+          <div className="rounded-lg border border-white/10 bg-black/15 p-4">
+            <div className="mb-4">
+              <p className="text-sm font-semibold text-white">Feature credit pricing</p>
+              <p className="text-xs text-white/45">Used by the AI gateway and ledger when a request maps directly to a feature.</p>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              {featurePricingLabels.map((feature) => (
+                <Field key={feature.id} label={feature.label}>
+                  <input
+                    type="number"
+                    min={0}
+                    step={1}
+                    className={inputCls}
+                    aria-label={`${feature.label} credits`}
+                    value={creatorCreditsDraft.featurePricing[feature.id]}
+                    onChange={(e) => setCreatorCreditsDraft((current) => ({
+                      ...current,
+                      featurePricing: {
+                        ...current.featurePricing,
+                        [feature.id]: Math.max(0, Number(e.target.value) || 0),
+                      },
+                    }))}
+                  />
+                </Field>
+              ))}
+            </div>
+          </div>
+
+          <div className="rounded-lg border border-white/10 bg-black/15 p-4">
+            <div className="mb-4">
+              <p className="text-sm font-semibold text-white">Studio tool pricing</p>
+              <p className="text-xs text-white/45">Fine-tunes visible AI Studio tools such as captions, ad copy, blogs, voice, and video.</p>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              {toolPricingLabels.map((tool) => (
+                <Field key={tool.id} label={tool.label}>
+                  <input
+                    type="number"
+                    min={0}
+                    step={1}
+                    className={inputCls}
+                    aria-label={`${tool.label} credits`}
+                    value={creatorCreditsDraft.toolPricing[tool.id]}
+                    onChange={(e) => setCreatorCreditsDraft((current) => ({
+                      ...current,
+                      toolPricing: {
+                        ...current.toolPricing,
+                        [tool.id]: Math.max(0, Number(e.target.value) || 0),
+                      },
+                    }))}
+                  />
+                </Field>
+              ))}
+            </div>
+          </div>
         </div>
 
         <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">

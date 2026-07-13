@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { sendPasswordResetEmail, signOut, updateProfile } from "firebase/auth";
 import { auth } from "@/lib/firebase";
+import { getAuthActionCodeSettings } from "@/lib/firebase-auth-actions";
 import { dbService } from "@/lib/db";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
@@ -207,7 +208,7 @@ export default function ProfilePage() {
     if (!user?.email || !auth) return;
     setIsPasswordSending(true);
     try {
-      await sendPasswordResetEmail(auth, user.email);
+      await sendPasswordResetEmail(auth, user.email, getAuthActionCodeSettings());
       toast({ title: "Password reset sent", description: `A reset link was sent to ${user.email}.` });
     } catch (error) {
       toast({ title: "Reset failed", description: "Unable to send reset email." });

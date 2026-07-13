@@ -9,7 +9,8 @@ import { globalSemanticCache, isCacheableQuery } from '@/ai/core/semantic-cache'
 import { estimateTokenCount } from '@/ai/core/tokenizer';
 import { detectInjection } from '@/ai/guardrails';
 import { logger } from '@/lib/logger';
-import { buildStrategicAdvicePrompt, executeTextCompletion, extractJsonObject } from '@/ai/platform';
+import { buildStrategicAdvicePrompt, extractJsonObject } from '@/ai/platform';
+import { executeMonetizedTextRequest, recordSkippedCredits } from '@/services/ai-platform';
 
 const AIMentorStrategicAdviceInputSchema = z.object({
   topic: z.string().describe('The specific business topic the user wants advice on.'),
@@ -60,6 +61,22 @@ export async function aiMentorStrategicAdvice(input: AIMentorStrategicAdviceInpu
           cached: true,
           durationMs: Date.now() - startTime,
         });
+        await recordSkippedCredits({
+          userId: input.userId,
+          task: 'strategic_advice',
+          feature: 'business_coach',
+          modality: 'text',
+          message: cacheKey,
+          userTier: 'pro',
+          providerMode: 'hybrid',
+          requestId: `strategic_advice_cache_${startTime}`,
+          metadata: {
+            cacheHit: true,
+            modelId: cachedModel,
+          },
+        }, 'cache_hit', {
+          creditsWouldHaveCharged: 1,
+        });
         return JSON.parse(cached.response) as AIMentorStrategicAdviceOutput;
       }
     }
@@ -76,7 +93,7 @@ export async function aiMentorStrategicAdvice(input: AIMentorStrategicAdviceInpu
       },
     });
 
-    const result = await executeTextCompletion({
+    const result = await executeMonetizedTextRequest({
       task: 'strategic_advice',
       userId: input.userId,
       userTier: 'pro',
@@ -86,6 +103,16 @@ export async function aiMentorStrategicAdvice(input: AIMentorStrategicAdviceInpu
         { role: 'user', content: prompt.userPrompt },
       ],
       maxOutputTokens: 1600,
+    }, {
+      userId: input.userId || 'anonymous',
+      task: 'strategic_advice',
+      feature: 'business_coach',
+      modality: 'text',
+      message: prompt.userPrompt,
+      userTier: 'pro',
+      providerMode: 'hybrid',
+      allowByok: true,
+      requestId: `strategic_advice_${startTime}`,
     });
 
     const output = AIMentorStrategicAdviceOutputSchema.parse(extractJsonObject<AIMentorStrategicAdviceOutput>(result.text));
