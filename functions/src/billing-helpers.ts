@@ -186,6 +186,7 @@ export async function saveCanonicalSubscriptionState(
 
   // Only update user tier if subscription is active
   // This prevents users from appearing upgraded during pending/cancelled states
+  const effectiveTier = state.subscriptionStatus === 'active' ? state.subscriptionPlan : 'explorer';
   if (state.subscriptionStatus === 'active') {
     batch.set(
       userRef,
@@ -201,8 +202,6 @@ export async function saveCanonicalSubscriptionState(
       { merge: true }
     );
   } else {
-    // For non-active states, only update the subscription object without changing tier
-    // This preserves the user's current tier until payment is confirmed
     batch.set(
       userRef,
       {
@@ -210,6 +209,8 @@ export async function saveCanonicalSubscriptionState(
           ...state,
           updatedAt: timestamp,
         },
+        subscriptionTier: effectiveTier,
+        tier: effectiveTier,
         updatedAt: timestamp,
       },
       { merge: true }

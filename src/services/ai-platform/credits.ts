@@ -25,6 +25,8 @@ type CreditAccountDoc = {
   monthlyCreditsGranted: number;
   monthlyCreditsUsed: number;
   monthlyCreditsReserved: number;
+  purchasedCreditsGranted?: number;
+  purchasedCreditsRemaining?: number;
   remainingCredits: number;
   byokEnabled: boolean;
   providerMode: ProviderMode;
@@ -78,6 +80,20 @@ async function getCreditsForPlan(plan: CreatorPlan): Promise<number> {
       error: error instanceof Error ? error.message : String(error),
     });
     return planCreditProfiles[plan].monthlyCreatorCredits;
+  }
+}
+
+async function getLegacyPurchasedCredits(userId: string): Promise<number> {
+  try {
+    const snap = await adminDb.collection("users").doc(userId).get();
+    const purchased = snap.data()?.credits?.purchased;
+    return safeCount(purchased);
+  } catch (error) {
+    logger.warn("[AI Credits] Unable to read legacy purchased credits", {
+      userId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return 0;
   }
 }
 
@@ -148,6 +164,8 @@ function serializeAccount(doc: CreditAccountDoc): CreatorCreditSnapshot {
     monthlyCreditsGranted: safeCount(doc.monthlyCreditsGranted),
     monthlyCreditsUsed: safeCount(doc.monthlyCreditsUsed),
     monthlyCreditsReserved: safeCount(doc.monthlyCreditsReserved),
+    purchasedCreditsGranted: safeCount(doc.purchasedCreditsGranted),
+    purchasedCreditsRemaining: safeCount(doc.purchasedCreditsRemaining),
     remainingCredits: safeCount(doc.remainingCredits),
     byokEnabled: doc.byokEnabled === true,
     providerMode: doc.providerMode || "hybrid",
@@ -166,6 +184,7 @@ async function getOrCreateAccount(userId: string, plan: CreatorPlan, providerMod
   const monthlyCredits = await getCreditsForPlan(plan);
 
   if (!snap.exists) {
+    const legacyPurchasedCredits = await getLegacyPurchasedCredits(userId);
     const doc: CreditAccountDoc = {
       userId,
       plan,
@@ -173,7 +192,9 @@ async function getOrCreateAccount(userId: string, plan: CreatorPlan, providerMod
       monthlyCreditsGranted: monthlyCredits,
       monthlyCreditsUsed: 0,
       monthlyCreditsReserved: 0,
-      remainingCredits: monthlyCredits,
+      purchasedCreditsGranted: legacyPurchasedCredits,
+      purchasedCreditsRemaining: legacyPurchasedCredits,
+      remainingCredits: monthlyCredits + legacyPurchasedCredits,
       byokEnabled: false,
       providerMode,
       resetAt: admin.firestore.Timestamp.now(),
@@ -187,13 +208,27 @@ async function getOrCreateAccount(userId: string, plan: CreatorPlan, providerMod
 
   const data = snap.data() as CreditAccountDoc;
   const next = { ...data };
+  const needsLegacyPurchasedMigration =
+    typeof data.purchasedCreditsGranted !== "number" ||
+    typeof data.purchasedCreditsRemaining !== "number";
+  const legacyPurchasedCredits = needsLegacyPurchasedMigration
+    ? await getLegacyPurchasedCredits(userId)
+    : 0;
+  if (needsLegacyPurchasedMigration) {
+    next.purchasedCreditsGranted = legacyPurchasedCredits;
+    next.purchasedCreditsRemaining = legacyPurchasedCredits;
+    next.remainingCredits = safeCount(next.remainingCredits) + legacyPurchasedCredits;
+  }
   const accountPeriod = data.periodId || periodId;
   if (accountPeriod !== periodId) {
+    const purchasedCreditsRemaining = safeCount(next.purchasedCreditsRemaining);
     next.periodId = periodId;
     next.monthlyCreditsGranted = monthlyCredits;
     next.monthlyCreditsUsed = 0;
     next.monthlyCreditsReserved = 0;
-    next.remainingCredits = monthlyCredits;
+    next.purchasedCreditsRemaining = purchasedCreditsRemaining;
+    next.purchasedCreditsGranted = safeCount(next.purchasedCreditsGranted);
+    next.remainingCredits = monthlyCredits + purchasedCreditsRemaining;
     next.plan = plan;
     next.resetAt = admin.firestore.Timestamp.now();
     next.nextResetAt = nextResetAt;
@@ -202,12 +237,20 @@ async function getOrCreateAccount(userId: string, plan: CreatorPlan, providerMod
     return next;
   }
 
-  if (safeCount(data.monthlyCreditsGranted) !== monthlyCredits || data.plan !== plan || data.providerMode !== providerMode) {
+  if (
+    safeCount(data.monthlyCreditsGranted) !== monthlyCredits ||
+    data.plan !== plan ||
+    data.providerMode !== providerMode ||
+    needsLegacyPurchasedMigration
+  ) {
+    const purchasedCreditsRemaining = safeCount(next.purchasedCreditsRemaining);
     next.monthlyCreditsGranted = monthlyCredits;
     next.remainingCredits = Math.max(
       0,
       monthlyCredits - safeCount(data.monthlyCreditsUsed) - safeCount(data.monthlyCreditsReserved)
-    );
+    ) + purchasedCreditsRemaining;
+    next.purchasedCreditsRemaining = purchasedCreditsRemaining;
+    next.purchasedCreditsGranted = safeCount(next.purchasedCreditsGranted);
     next.plan = plan;
     next.providerMode = providerMode;
     next.lastUpdatedAt = admin.firestore.FieldValue.serverTimestamp();
@@ -266,6 +309,8 @@ export async function reserveCredits(context: AIExecutionContext, credits: numbe
   const providerId = context.providerPreference || "vercel-ai-gateway";
   const modelId = context.metadata?.modelId as string | undefined || "auto";
   const accountRefDoc = accountRef(context.userId);
+  let includedCreditsReserved = 0;
+  let purchasedCreditsReserved = 0;
 
   await adminDb.runTransaction(async (transaction) => {
     const snap = await transaction.get(accountRefDoc);
@@ -275,12 +320,20 @@ export async function reserveCredits(context: AIExecutionContext, credits: numbe
 
     const data = snap.data() as CreditAccountDoc;
     if (billingSource === "sdc_credits") {
-      if (data.remainingCredits < credits) {
+      const includedAvailable = Math.max(
+        0,
+        safeCount(data.monthlyCreditsGranted) - safeCount(data.monthlyCreditsUsed) - safeCount(data.monthlyCreditsReserved)
+      );
+      includedCreditsReserved = Math.min(credits, includedAvailable);
+      purchasedCreditsReserved = Math.max(0, credits - includedCreditsReserved);
+
+      if (safeCount(data.remainingCredits) < credits || safeCount(data.purchasedCreditsRemaining) < purchasedCreditsReserved) {
         throw new Error("Creator credits exhausted");
       }
 
       transaction.set(accountRefDoc, {
-        monthlyCreditsReserved: admin.firestore.FieldValue.increment(credits),
+        monthlyCreditsReserved: admin.firestore.FieldValue.increment(includedCreditsReserved),
+        purchasedCreditsRemaining: admin.firestore.FieldValue.increment(-purchasedCreditsReserved),
         remainingCredits: admin.firestore.FieldValue.increment(-credits),
         lastUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
       }, { merge: true });
@@ -302,6 +355,8 @@ export async function reserveCredits(context: AIExecutionContext, credits: numbe
       modelId,
       billingSource,
       creditsReserved: billingSource === "sdc_credits" ? credits : 0,
+      includedCreditsReserved,
+      purchasedCreditsReserved,
       creditsCharged: 0,
       creditsRefunded: 0,
       durationMs: 0,
@@ -334,6 +389,8 @@ export async function reserveCredits(context: AIExecutionContext, credits: numbe
     modelId,
     billingSource,
     creditsReserved: billingSource === "sdc_credits" ? credits : 0,
+    includedCreditsReserved: billingSource === "sdc_credits" ? includedCreditsReserved : 0,
+    purchasedCreditsReserved: billingSource === "sdc_credits" ? purchasedCreditsReserved : 0,
     estimatedCostUsd,
     providerMode: context.providerMode || "hybrid",
     periodId,
@@ -360,7 +417,13 @@ export async function finalizeCredits(lease: AIExecutionLease, input: {
 
     const ledger = snap.data() as CreditLedgerEntry;
     const charged = input.status === "charged" ? (input.creditsCharged ?? lease.creditsReserved) : 0;
+    const includedReserved = Math.max(0, lease.includedCreditsReserved || 0);
+    const purchasedReserved = Math.max(0, lease.purchasedCreditsReserved || 0);
+    const includedCharged = Math.min(charged, includedReserved);
+    const purchasedCharged = Math.min(Math.max(0, charged - includedCharged), purchasedReserved);
     const refunded = Math.max(0, lease.creditsReserved - charged);
+    const includedRefunded = Math.max(0, includedReserved - includedCharged);
+    const purchasedRefunded = Math.max(0, purchasedReserved - purchasedCharged);
 
     transaction.set(ledgerDoc, {
       ...ledger,
@@ -379,8 +442,9 @@ export async function finalizeCredits(lease: AIExecutionLease, input: {
 
     if (lease.billingSource === "sdc_credits") {
       transaction.set(accountDoc, {
-        monthlyCreditsUsed: admin.firestore.FieldValue.increment(charged),
-        monthlyCreditsReserved: admin.firestore.FieldValue.increment(-lease.creditsReserved),
+        monthlyCreditsUsed: admin.firestore.FieldValue.increment(includedCharged),
+        monthlyCreditsReserved: admin.firestore.FieldValue.increment(-includedReserved),
+        purchasedCreditsRemaining: admin.firestore.FieldValue.increment(purchasedRefunded),
         lastUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
       }, { merge: true });
       if (refunded > 0) {
@@ -404,6 +468,8 @@ export async function refundCredits(lease: AIExecutionLease, reason: string, met
     }
 
     const ledger = snap.data() as CreditLedgerEntry;
+    const includedReserved = Math.max(0, lease.includedCreditsReserved || 0);
+    const purchasedReserved = Math.max(0, lease.purchasedCreditsReserved || 0);
     transaction.set(ledgerDoc, {
       ...ledger,
       creditsRefunded: lease.creditsReserved,
@@ -418,7 +484,8 @@ export async function refundCredits(lease: AIExecutionLease, reason: string, met
 
     if (lease.billingSource === "sdc_credits" && lease.creditsReserved > 0) {
       transaction.set(accountDoc, {
-        monthlyCreditsReserved: admin.firestore.FieldValue.increment(-lease.creditsReserved),
+        monthlyCreditsReserved: admin.firestore.FieldValue.increment(-includedReserved),
+        purchasedCreditsRemaining: admin.firestore.FieldValue.increment(purchasedReserved),
         remainingCredits: admin.firestore.FieldValue.increment(lease.creditsReserved),
         lastUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
       }, { merge: true });

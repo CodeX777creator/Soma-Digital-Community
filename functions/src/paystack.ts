@@ -194,6 +194,7 @@ async function saveCanonicalSubscriptionState(
 
   // Only update user tier if subscription is active
   // This prevents users from appearing upgraded during pending/cancelled states
+  const effectiveTier = state.subscriptionStatus === 'active' ? state.subscriptionPlan : 'explorer';
   if (state.subscriptionStatus === 'active') {
     batch.set(
       userRef,
@@ -209,8 +210,6 @@ async function saveCanonicalSubscriptionState(
       { merge: true }
     );
   } else {
-    // For non-active states, only update the subscription object without changing tier
-    // This preserves the user's current tier until payment is confirmed
     batch.set(
       userRef,
       {
@@ -218,6 +217,8 @@ async function saveCanonicalSubscriptionState(
           ...state,
           updatedAt: timestamp,
         },
+        subscriptionTier: effectiveTier,
+        tier: effectiveTier,
         updatedAt: timestamp,
       },
       { merge: true }
@@ -247,6 +248,67 @@ const defaultCreditBundles: CreatorCreditBundle[] = [
   { id: 'credits_100', label: '100 Credits', credits: 100, priceCents: 800, currency: 'USD', sortOrder: 50, active: true },
   { id: 'credits_250', label: '250 Credits', credits: 250, priceCents: 1750, currency: 'USD', sortOrder: 60, active: true },
 ];
+
+function currentCreditPeriod(): string {
+  const now = new Date();
+  return `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}`;
+}
+
+function firstDayOfNextCreditMonth(): Date {
+  const now = new Date();
+  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1, 0, 0, 0, 0));
+}
+
+async function grantPurchasedCreatorCredits(transaction: admin.firestore.Transaction, userId: string, credits: number, metadata: Record<string, unknown>) {
+  const accountRef = db.collection('creatorCreditAccounts').doc(userId);
+  const accountSnap = await transaction.get(accountRef);
+  const periodId = currentCreditPeriod();
+  const timestamp = admin.firestore.FieldValue.serverTimestamp();
+  const baseAccount = accountSnap.exists ? accountSnap.data() || {} : {};
+
+  transaction.set(accountRef, {
+    userId,
+    plan: typeof baseAccount.plan === 'string' ? baseAccount.plan : 'explorer',
+    periodId: typeof baseAccount.periodId === 'string' ? baseAccount.periodId : periodId,
+    monthlyCreditsGranted: typeof baseAccount.monthlyCreditsGranted === 'number' ? baseAccount.monthlyCreditsGranted : 0,
+    monthlyCreditsUsed: typeof baseAccount.monthlyCreditsUsed === 'number' ? baseAccount.monthlyCreditsUsed : 0,
+    monthlyCreditsReserved: typeof baseAccount.monthlyCreditsReserved === 'number' ? baseAccount.monthlyCreditsReserved : 0,
+    purchasedCreditsGranted: admin.firestore.FieldValue.increment(credits),
+    purchasedCreditsRemaining: admin.firestore.FieldValue.increment(credits),
+    remainingCredits: admin.firestore.FieldValue.increment(credits),
+    byokEnabled: baseAccount.byokEnabled === true,
+    providerMode: typeof baseAccount.providerMode === 'string' ? baseAccount.providerMode : 'hybrid',
+    resetAt: baseAccount.resetAt || admin.firestore.Timestamp.now(),
+    nextResetAt: baseAccount.nextResetAt || admin.firestore.Timestamp.fromDate(firstDayOfNextCreditMonth()),
+    activeFeatureCounts: baseAccount.activeFeatureCounts || {},
+    lastUpdatedAt: timestamp,
+  }, { merge: true });
+
+  const ledgerRef = db.collection('creatorCreditLedger').doc(`purchase_${metadata.purchaseId || Date.now()}`);
+  transaction.set(ledgerRef, {
+    entryId: ledgerRef.id,
+    userId,
+    periodId,
+    timestamp: new Date().toISOString(),
+    task: 'credit_purchase',
+    modality: 'billing',
+    feature: 'creator_credit_purchase',
+    providerId: 'paystack',
+    modelId: 'none',
+    billingSource: 'purchase',
+    creditsReserved: 0,
+    creditsCharged: 0,
+    creditsRefunded: 0,
+    creditsPurchased: credits,
+    durationMs: 0,
+    status: 'credited',
+    requestId: String(metadata.paystackReference || metadata.purchaseId || ledgerRef.id),
+    providerMode: 'credits',
+    estimatedCostUsd: 0,
+    actualCostUsd: 0,
+    metadata,
+  });
+}
 
 function normalizeCreditBundles(config: CreatorCreditConfig | undefined): CreatorCreditBundle[] {
   const rawBundles = Array.isArray(config?.bundles) ? config.bundles : defaultCreditBundles;
@@ -333,6 +395,15 @@ async function processCreditPurchaseWebhook(eventId: string, eventType: string, 
       paystackReference: data.reference || purchase.paystackReference || null,
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     }, { merge: true });
+
+    await grantPurchasedCreatorCredits(transaction, userId, credits, {
+      purchaseId,
+      bundleId: purchase.bundleId || data.metadata.bundleId || null,
+      paystackReference: data.reference || purchase.paystackReference || null,
+      priceCents: purchase.priceCents || null,
+      currency: purchase.currency || null,
+      eventId,
+    });
 
     transaction.set(db.collection('users').doc(userId), {
       credits: {

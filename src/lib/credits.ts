@@ -2,7 +2,7 @@
 // Strategy: Community is FREE for everyone. AI/Resources/Founder access is PREMIUM.
 // This creates network effects (big community) while monetizing high-value features.
 
-import { doc, getDoc, updateDoc, increment, serverTimestamp, runTransaction } from "firebase/firestore";
+import { doc, getDoc, serverTimestamp } from "firebase/firestore";
 import { db } from "./firebase";
 import {
   DEFAULT_CREATOR_CREDIT_ALLOCATIONS,
@@ -83,6 +83,36 @@ async function getMonthlyQuotaForTier(tier: UserTier): Promise<number> {
  * Get user's current credit status
  */
 export async function getUserCredits(userId: string): Promise<UserCredits | null> {
+  if (typeof window !== "undefined") {
+    try {
+      const response = await fetch("/api/creator-credits", {
+        credentials: "include",
+        cache: "no-store",
+      });
+      if (response.ok) {
+        const data = await response.json();
+        const snapshot = data.snapshot;
+        const plan = data.subscription?.plan || snapshot?.plan || "explorer";
+        const monthlyQuota = Number(snapshot?.monthlyCreditsGranted || 0);
+        const monthlyReserved = Number(snapshot?.monthlyCreditsReserved || 0);
+        const usedThisMonth = Number(snapshot?.monthlyCreditsUsed || 0);
+        const purchasedCredits = Number(snapshot?.purchasedCreditsRemaining || 0);
+        const remainingFree = Math.max(0, monthlyQuota - usedThisMonth - monthlyReserved);
+        return {
+          tier: plan,
+          monthlyQuota,
+          usedThisMonth,
+          remainingFree,
+          purchasedCredits,
+          totalCreditsUsed: usedThisMonth,
+          lastResetDate: snapshot?.resetAt || null,
+        };
+      }
+    } catch {
+      // Fall through to the legacy Firestore read for older local/dev surfaces.
+    }
+  }
+
   if (!db) return null;
   
   const userRef = doc(db, "users", userId);
@@ -102,7 +132,6 @@ export async function getUserCredits(userId: string): Promise<UserCredits | null
                       lastReset.getFullYear() !== now.getFullYear();
   
   if (shouldReset) {
-    await resetMonthlyQuota(userId);
     return {
       tier,
       monthlyQuota,
@@ -156,73 +185,21 @@ export async function canUseAIChat(userId: string): Promise<{ allowed: boolean; 
  * Consume one AI chat credit
  */
 export async function consumeAIChat(userId: string): Promise<{ success: boolean; remaining: number }> {
-  if (!db) throw new Error("Database not initialized");
-  
-  const userRef = doc(db, "users", userId);
-  const preflightSnap = await getDoc(userRef);
-  if (!preflightSnap.exists()) throw new Error("User not found");
-  const preflightTier: UserTier = preflightSnap.data().tier || "explorer";
-  const monthlyQuota = await getMonthlyQuotaForTier(preflightTier);
-  
-  return runTransaction(db, async (transaction) => {
-    const snap = await transaction.get(userRef);
-    if (!snap.exists()) throw new Error("User not found");
-    
-    const data = snap.data();
-    const usedThisMonth = data.usage?.aiChatsThisMonth || 0;
-    const purchased = data.credits?.purchased || 0;
-    
-    // Use included monthly credits first
-    if (usedThisMonth < monthlyQuota) {
-      transaction.update(userRef, {
-        'usage.aiChatsThisMonth': increment(1),
-        'credits.totalUsed': increment(1),
-        'updatedAt': serverTimestamp(),
-      });
-      return { success: true, remaining: monthlyQuota - usedThisMonth - 1 };
-    }
-    
-    // Use purchased credits
-    if (purchased > 0) {
-      transaction.update(userRef, {
-        'credits.purchased': increment(-1),
-        'credits.totalUsed': increment(1),
-        'updatedAt': serverTimestamp(),
-      });
-      return { success: true, remaining: purchased - 1 };
-    }
-    
-    throw new Error("No credits available");
-  });
+  throw new Error("Direct client credit consumption is retired. Use the AI platform gateway.");
 }
 
 /**
  * Add purchased credits to user's account
  */
 export async function addCredits(userId: string, amount: number): Promise<void> {
-  if (!db) throw new Error("Database not initialized");
-  
-  const userRef = doc(db, "users", userId);
-  await updateDoc(userRef, {
-    'credits.purchased': increment(amount),
-    'updatedAt': serverTimestamp(),
-  });
+  throw new Error("Direct client credit grants are retired. Use Paystack webhook or admin credit adjustments.");
 }
 
 /**
  * Reset monthly quota (called at month start or manually)
  */
 export async function resetMonthlyQuota(userId: string): Promise<void> {
-  if (!db) throw new Error("Database not initialized");
-  
-  const userRef = doc(db, "users", userId);
-  await updateDoc(userRef, {
-    'usage.aiChatsThisMonth': 0,
-    'usage.resourcesDownloaded': 0,
-    'usage.liveCallsAttended': 0,
-    'usage.lastResetDate': serverTimestamp(),
-    'updatedAt': serverTimestamp(),
-  });
+  throw new Error("Direct client credit resets are retired. Use creatorCreditAccounts monthly reset logic.");
 }
 
 /**

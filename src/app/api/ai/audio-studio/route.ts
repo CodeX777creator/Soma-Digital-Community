@@ -105,7 +105,7 @@ function parseLimit(req: NextRequest): number {
 const handler = createAPIHandler(
   async (req) => {
     logger.info('[API /ai/audio-studio] Received request');
-    const entitlements = await requireSubscription(req as any, 'pro');
+    const entitlements = await requireSubscription(req as any, 'explorer');
 
     const body = await req.json();
 
@@ -171,7 +171,7 @@ const handler = createAPIHandler(
 
 export const GET = createAPIHandler(
   async (req) => {
-    const entitlements = await requireSubscription(req as any, 'pro');
+    const entitlements = await requireSubscription(req as any, 'explorer');
     const limit = parseLimit(req);
     const assets = await listAudioStudioAssets(entitlements.uid, limit);
 

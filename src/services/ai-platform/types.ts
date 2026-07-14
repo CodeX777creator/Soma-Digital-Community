@@ -86,6 +86,8 @@ export interface CreatorCreditSnapshot {
   monthlyCreditsGranted: number;
   monthlyCreditsUsed: number;
   monthlyCreditsReserved: number;
+  purchasedCreditsGranted: number;
+  purchasedCreditsRemaining: number;
   remainingCredits: number;
   byokEnabled: boolean;
   providerMode: ProviderMode;
@@ -107,6 +109,8 @@ export interface CreditLedgerEntry {
   modelId: string;
   billingSource: BillingSource;
   creditsReserved: number;
+  includedCreditsReserved?: number;
+  purchasedCreditsReserved?: number;
   creditsCharged: number;
   creditsRefunded: number;
   durationMs: number;
@@ -147,6 +151,8 @@ export interface AIExecutionLease {
   modelId: string;
   billingSource: BillingSource;
   creditsReserved: number;
+  includedCreditsReserved?: number;
+  purchasedCreditsReserved?: number;
   estimatedCostUsd: number;
   providerMode: ProviderMode;
   qualityMode?: AIQualityMode;

@@ -274,6 +274,11 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    match /config/{configId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
     match /webhook_events/{eventId} {
       allow read: if isAdmin();
       allow write: if false;

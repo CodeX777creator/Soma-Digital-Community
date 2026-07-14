@@ -27,7 +27,7 @@ const handler = createAPIHandler(
   async (req) => {
     logger.info('[API /ai/studio] Received request');
 
-    const entitlements = await requireSubscription(req as any, 'pro');
+    const entitlements = await requireSubscription(req as any, 'explorer');
     logger.info('[API /ai/studio] Auth successful', { userId: entitlements.uid });
 
     const body = await req.json();
@@ -90,7 +90,7 @@ export const GET = createAPIHandler(
   async (req) => {
     logger.info('[API /ai/studio] Prompt library requested');
 
-    const entitlements = await requireSubscription(req as any, 'pro');
+    const entitlements = await requireSubscription(req as any, 'explorer');
 
     const url = new URL(req.url);
     const limit = Math.min(Math.max(Number(url.searchParams.get('limit') || '12') || 12, 1), 50);
