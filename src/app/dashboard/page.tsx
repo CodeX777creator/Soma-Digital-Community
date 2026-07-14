@@ -13,6 +13,7 @@ import {
   Crown,
   Loader,
   MessageSquare,
+  Plus,
   Sparkles,
   Target,
   Users,
@@ -26,7 +27,7 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { UserAvatar } from "@/components/ui/user-avatar";
 import { UpgradeModal } from "@/components/premium/UpgradeModal";
-import { UsageTracker } from "@/components/billing/UsageTracker";
+import { CreditPurchase } from "@/components/billing/CreditPurchase";
 import { useAuth } from "@/providers/AuthProvider";
 import { useSubscription } from "@/hooks/useSubscription";
 import {
@@ -40,6 +41,9 @@ import { UserProfile } from "@/lib/db";
 import { cn } from "@/lib/utils";
 import { getPlanLabel, getUpgradeLabel, getUpgradeTarget } from "@/lib/plan-ui";
 import { useUserStore } from "@/store/useUserStore";
+import { app } from "@/lib/firebase";
+import { getFunctions, httpsCallable } from "firebase/functions";
+import type { CreatorCreditBundle } from "@/lib/creator-credit-config";
 
 type CreditDashboard = {
   snapshot: {
@@ -70,6 +74,64 @@ type CreditDashboard = {
     status: string;
     durationMs: number;
   }>;
+};
+
+type DashboardSummary = {
+  roadmap: {
+    generated: boolean;
+    progress: number;
+    completedSteps: number;
+    totalSteps: number;
+    stageLabel: string;
+    nextStep: {
+      id: string;
+      label: string;
+      href: string;
+      completed: boolean;
+      detail?: string;
+    };
+    steps: Array<{
+      id: string;
+      label: string;
+      href: string;
+      completed: boolean;
+      detail?: string;
+    }>;
+  };
+  recommendations: Array<{
+    title: string;
+    type: string;
+    href: string;
+    description: string;
+  }>;
+  events: Array<{
+    id: string;
+    title: string | null;
+    caption: string;
+    platform: string;
+    status: string;
+    scheduledTime: string;
+  }>;
+  scheduledContent: Array<{
+    id: string;
+    title: string | null;
+    caption: string;
+    platform: string;
+    status: string;
+    scheduledTime: string;
+  }>;
+  automation: {
+    status: "ready" | "needs_schedule" | "needs_connection";
+    href: string;
+    label: string;
+    description: string;
+  };
+  activity: {
+    communityPosts: number;
+    mentorThreads: number;
+    scheduledPosts: number;
+    connectedAccounts: number;
+  };
 };
 
 function getDisplayName(user: User | null, userData: UserProfile | null): string {
@@ -135,6 +197,9 @@ function DashboardContent() {
   const [initialUpgradePlan, setInitialUpgradePlan] = useState<"pro" | "elite" | null>(null);
   const [creditDashboard, setCreditDashboard] = useState<CreditDashboard | null>(null);
   const [creditLoading, setCreditLoading] = useState(true);
+  const [summary, setSummary] = useState<DashboardSummary | null>(null);
+  const [summaryLoading, setSummaryLoading] = useState(true);
+  const [showCreditPurchase, setShowCreditPurchase] = useState(false);
   const upgradeTarget = getUpgradeTarget(tier);
   const planLabel = getPlanLabel(tier);
   const planActionLabel = getUpgradeLabel(tier);
@@ -186,6 +251,34 @@ function DashboardContent() {
     };
   }, [user]);
 
+  useEffect(() => {
+    let active = true;
+
+    const loadSummary = async () => {
+      if (!user) {
+        setSummaryLoading(false);
+        return;
+      }
+
+      try {
+        setSummaryLoading(true);
+        const response = await authFetch("/api/dashboard/summary");
+        if (!response.ok) throw new Error("Unable to load dashboard summary.");
+        const json = await response.json();
+        if (active) setSummary(json);
+      } catch {
+        if (active) setSummary(null);
+      } finally {
+        if (active) setSummaryLoading(false);
+      }
+    };
+
+    void loadSummary();
+    return () => {
+      active = false;
+    };
+  }, [user]);
+
   const creditUsage = useMemo(() => {
     if (!creditDashboard?.snapshot.monthlyCreditsGranted) return 0;
     return Math.min(
@@ -197,6 +290,12 @@ function DashboardContent() {
   const missionProgress = missions.length
     ? Math.round((missions.filter((mission) => mission.completed).length / missions.length) * 100)
     : 0;
+  const roadmapProgress = summary?.roadmap.progress ?? 0;
+  const roadmapStage = summary?.roadmap.stageLabel ?? "Starting Point";
+  const nextRoadmapStep = summary?.roadmap.nextStep;
+  const performanceMax = useMemo(() => {
+    return Math.max(...performanceData.slice(-7).map((item: any) => Number(item.xp || item.value || 0)), 0);
+  }, [performanceData]);
 
   if (!mounted) return null;
 
@@ -210,6 +309,26 @@ function DashboardContent() {
             if (!open) setInitialUpgradePlan(null);
           }}
           initialPlan={initialUpgradePlan}
+        />
+        <CreditPurchase
+          isOpen={showCreditPurchase}
+          onClose={() => setShowCreditPurchase(false)}
+          onPurchase={async (bundle: CreatorCreditBundle) => {
+            if (!user?.uid) throw new Error("Please sign in to buy credits.");
+            const createCreditPurchase = httpsCallable<
+              { bundleId: string; userId: string; idempotencyKey: string },
+              { authorizationUrl: string | null; status: string; message?: string }
+            >(getFunctions(app), "createPaystackCreditPurchase");
+            const result = await createCreditPurchase({
+              bundleId: bundle.id,
+              userId: user.uid,
+              idempotencyKey: `paystack-credits:${user.uid}:${bundle.id}`,
+            });
+            if (!result.data.authorizationUrl) {
+              throw new Error(result.data.message || "Paystack did not return a checkout link.");
+            }
+            window.location.href = result.data.authorizationUrl;
+          }}
         />
 
         <div className="grid gap-8 xl:grid-cols-[1fr_340px]">
@@ -255,8 +374,10 @@ function DashboardContent() {
                         <p className="text-sm font-medium text-white">Continue your journey</p>
                         <ChevronRight className="h-4 w-4 text-[#BFC6D4]" />
                       </div>
-                      <p className="mt-2 text-sm text-[#BFC6D4]">AI Business Roadmap</p>
-                      <Progress value={60} className="mt-4 h-2" />
+                      <p className="mt-2 text-sm text-[#BFC6D4]">
+                        {summaryLoading ? "Loading roadmap signal" : nextRoadmapStep?.label || "AI Business Roadmap"}
+                      </p>
+                      <Progress value={roadmapProgress} className="mt-4 h-2" />
                     </Link>
                     <Link href="/ai/studio" className="rounded-[18px] border border-white/[0.08] bg-[#090B13]/60 p-5 transition hover:bg-white/[0.06]">
                       <div className="flex items-center justify-between">
@@ -287,7 +408,13 @@ function DashboardContent() {
                 <OperatingCard title="Ask AI Mentor" description="Get guidance on the next business move." href="/mentor" icon={Bot} tone="purple" />
                 <OperatingCard title="Go to AI Studio" description="Create images, video, voice, and copy." href="/ai/studio" icon={Sparkles} tone="blue" />
                 <OperatingCard title="Post in Community" description="Share progress and get feedback." href="/community" icon={Users} tone="green" />
-                <OperatingCard title="Automation" description="Automate content and workflow tasks." href="/tools/autopilot" icon={Zap} tone="pink" />
+                <OperatingCard
+                  title="Automation"
+                  description={summary?.automation.description || "Connect accounts and schedule content before automation runs."}
+                  href={summary?.automation.href || "/social"}
+                  icon={Zap}
+                  tone="pink"
+                />
               </div>
             </section>
 
@@ -306,21 +433,26 @@ function DashboardContent() {
                   <div className="flex items-center justify-between">
                     <div>
                       <p className="font-medium text-white">AI Business Roadmap</p>
-                      <p className="mt-1 text-sm text-[#BFC6D4]">Level {stats?.level || 1} - Foundation Builder</p>
+                      <p className="mt-1 text-sm text-[#BFC6D4]">Level {stats?.level || 1} - {roadmapStage}</p>
                     </div>
-                    <span className="text-sm text-white">60%</span>
+                    <span className="text-sm text-white">{roadmapProgress}%</span>
                   </div>
-                  <Progress value={60} className="mt-4 h-2" />
+                  <Progress value={roadmapProgress} className="mt-4 h-2" />
                   <div className="mt-5 space-y-3">
-                    {["Complete profile", "Join the community", "Ask AI Mentor 3 times", "Create your first post"].map((item, index) => (
-                      <div key={item} className="flex items-center justify-between gap-3 text-sm">
+                    {(summary?.roadmap.steps || []).map((item) => (
+                      <Link key={item.id} href={item.href} className="flex items-center justify-between gap-3 rounded-[14px] px-2 py-1.5 text-sm transition hover:bg-white/[0.04]">
                         <span className="flex items-center gap-3 text-[#BFC6D4]">
-                          <CheckCircle2 className={cn("h-4 w-4", index < 2 ? "text-[#22C55E]" : "text-[#7E8799]")} />
-                          {item}
+                          <CheckCircle2 className={cn("h-4 w-4", item.completed ? "text-[#22C55E]" : "text-[#7E8799]")} />
+                          {item.label}
                         </span>
-                        <span className="text-[#7E8799]">{index < 2 ? "Done" : "Open"}</span>
-                      </div>
+                        <span className="text-[#7E8799]">{item.completed ? "Done" : item.detail || "Open"}</span>
+                      </Link>
                     ))}
+                    {!summary?.roadmap.steps?.length && (
+                      <p className="rounded-[14px] border border-dashed border-white/[0.08] p-3 text-sm text-[#BFC6D4]">
+                        Your roadmap signal will appear after your profile loads.
+                      </p>
+                    )}
                   </div>
                 </div>
               </div>
@@ -340,7 +472,8 @@ function DashboardContent() {
                     </div>
                   ) : performanceData.length ? (
                     performanceData.slice(-7).map((item: any, index: number) => {
-                      const value = Math.max(12, Math.min(100, Number(item.xp || item.value || 0)));
+                      const rawValue = Math.max(0, Number(item.xp || item.value || 0));
+                      const value = performanceMax > 0 ? Math.max(4, Math.min(100, Math.round((rawValue / performanceMax) * 100))) : 0;
                       return (
                         <div key={`${item.name}-${index}`} className="flex flex-1 flex-col items-center gap-2">
                           <div className="flex h-40 w-full items-end rounded-full bg-white/[0.04]">
@@ -371,15 +504,15 @@ function DashboardContent() {
                 </Button>
               </div>
               <div className="grid gap-4 md:grid-cols-3">
-                {[
-                  { title: "Content That Converts", type: "Course", href: "/marketplace" },
-                  { title: "AI Writer Pro", type: "Tool", href: "/ai/studio" },
-                  { title: "Start Your Online Business", type: "Guide", href: "/my-courses" },
-                ].map((item) => (
+                {(summary?.recommendations || [
+                  { title: "Create with AI Studio", type: "AI Studio", href: "/ai/studio", description: "Turn your next idea into content, media, or a campaign." },
+                  { title: "Ask AI Mentor", type: "Mentor", href: "/mentor", description: "Get guidance on the next business move." },
+                  { title: "Plan content", type: "Scheduler", href: "/social/calendar?mode=scheduler", description: "Schedule content so your business shows up consistently." },
+                ]).map((item) => (
                   <Link key={item.title} href={item.href} className="rounded-[18px] border border-white/[0.08] bg-[#151A2E]/72 p-5 transition hover:-translate-y-1 hover:bg-[#1A2140]/85">
                     <Badge className="rounded-full bg-white/[0.06] text-[#BFC6D4]">{item.type}</Badge>
                     <p className="mt-4 text-base font-medium text-white">{item.title}</p>
-                    <p className="mt-2 text-sm text-[#BFC6D4]">Open inside your SDC operating system.</p>
+                    <p className="mt-2 text-sm text-[#BFC6D4]">{item.description}</p>
                   </Link>
                 ))}
               </div>
@@ -419,21 +552,37 @@ function DashboardContent() {
                     <span className="text-xs text-[#BFC6D4]">used</span>
                   </div>
                 </div>
-                <div className="grid flex-1 gap-3 text-sm">
-                  <div className="flex justify-between gap-3 text-[#BFC6D4]"><span>Credits</span><span className="text-white">{creditDashboard?.snapshot.remainingCredits ?? "--"}</span></div>
-                  <div className="flex justify-between gap-3 text-[#BFC6D4]"><span>Reserved</span><span className="text-white">{creditDashboard?.snapshot.monthlyCreditsReserved ?? "--"}</span></div>
-                  <div className="flex justify-between gap-3 text-[#BFC6D4]"><span>BYOK</span><span className="text-white">{creditDashboard?.snapshot.byokEnabled ? "On" : "Off"}</span></div>
-                  <div className="flex justify-between gap-3 text-[#BFC6D4]"><span>Mode</span><span className="text-white capitalize">{creditDashboard?.snapshot.providerMode || "hybrid"}</span></div>
+                  <div className="grid flex-1 gap-3 text-sm">
+                  <div className="flex justify-between gap-3 text-[#BFC6D4]"><span>Available</span><span className="text-white">{creditDashboard?.snapshot.remainingCredits ?? "--"}</span></div>
+                  <div className="flex justify-between gap-3 text-[#BFC6D4]"><span>Included monthly</span><span className="text-white">{creditDashboard?.snapshot.monthlyCreditsGranted ?? "--"}</span></div>
+                  <div className="flex justify-between gap-3 text-[#BFC6D4]"><span>Used this month</span><span className="text-white">{creditDashboard?.snapshot.monthlyCreditsUsed ?? "--"}</span></div>
+                  <div className="flex justify-between gap-3 text-[#BFC6D4]"><span>In progress</span><span className="text-white">{creditDashboard?.snapshot.monthlyCreditsReserved ?? "--"}</span></div>
                 </div>
               </div>
+              <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
+                <Button
+                  type="button"
+                  onClick={() => setShowCreditPurchase(true)}
+                  className="h-11 rounded-[16px] bg-gradient-to-r from-[#4F9DFF] via-[#5B5FFF] to-[#8B5CF6] font-medium"
+                >
+                  <Plus className="h-4 w-4" />
+                  Buy Credits
+                </Button>
+                <Button asChild variant="outline" className="h-11 rounded-[16px] border-white/[0.08] bg-white/[0.03]">
+                  <Link href="/settings/credits">View History</Link>
+                </Button>
+              </div>
+              {creditDashboard?.snapshot.monthlyCreditsGranted === 0 && (
+                <p className="mt-4 rounded-[16px] border border-[#4F9DFF]/20 bg-[#4F9DFF]/10 p-3 text-sm leading-6 text-[#BFC6D4]">
+                  Explorer can enter AI Studio freely. AI generation uses purchased Creator Credits or a Pro/Elite plan.
+                </p>
+              )}
               <p className="mt-5 border-t border-white/[0.06] pt-4 text-sm text-[#7E8799]">
                 {creditDashboard?.snapshot.nextResetAt
                   ? `Resets ${new Date(creditDashboard.snapshot.nextResetAt).toLocaleDateString()}`
                   : "Credit usage updates automatically."}
               </p>
             </div>
-
-            <UsageTracker />
 
             <div className="rounded-[18px] border border-white/[0.08] bg-[#151A2E]/72 p-5 shadow-[0_18px_60px_rgba(0,0,0,0.22)]">
               <div className="flex items-center justify-between">
@@ -471,8 +620,32 @@ function DashboardContent() {
                   <Link href="/social/calendar?mode=events">View all</Link>
                 </Button>
               </div>
-              <div className="mt-5 rounded-[16px] border border-dashed border-white/[0.08] p-5 text-sm leading-6 text-[#BFC6D4]">
-                Scheduled events will appear here once they are published to the calendar.
+              <div className="mt-5 space-y-3">
+                {summary?.events.length ? (
+                  summary.events.map((event) => (
+                    <Link
+                      key={event.id}
+                      href="/social/calendar?mode=events"
+                      className="flex items-center gap-3 rounded-[16px] border border-white/[0.08] bg-[#090B13]/55 p-3 transition hover:bg-white/[0.06]"
+                    >
+                      <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[14px] bg-white/[0.06] text-[#4F9DFF]">
+                        <CalendarDays className="h-5 w-5" />
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-sm font-medium text-white">
+                          {event.title || event.caption || "Scheduled event"}
+                        </span>
+                        <span className="mt-1 block text-xs text-[#BFC6D4]">
+                          {new Date(event.scheduledTime).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}
+                        </span>
+                      </span>
+                    </Link>
+                  ))
+                ) : (
+                  <div className="rounded-[16px] border border-dashed border-white/[0.08] p-5 text-sm leading-6 text-[#BFC6D4]">
+                    No live classes are scheduled yet. Events will appear here when admin-run sessions are added.
+                  </div>
+                )}
               </div>
             </div>
 

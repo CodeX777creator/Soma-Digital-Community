@@ -7,18 +7,16 @@ import {
   limit as firestoreLimit,
   getDocs,
   where,
-  serverTimestamp,
   doc,
-  runTransaction,
   onSnapshot,
   FirestoreError,
 } from 'firebase/firestore';
 import { useAuth } from '@/providers/AuthProvider';
-import { seedMissionsIfMissing } from '@/lib/missions';
 import { awardXPAction, calculateWeeklyXP } from '@/lib/xp';
 import { logger, logFirestoreError } from '@/lib/logger';
 import { withRetry } from '@/lib/retry';
 import { getEffectiveUserTier } from '@/lib/tier';
+import { authFetch } from '@/lib/clientApi';
 
 // Types
 export interface DashboardLeaderboardEntry {
@@ -259,11 +257,12 @@ export function useDailyMissions() {
         })) as DailyMission[];
 
         if (missionData.length === 0) {
-          // Seed missions for today if missing
           try {
-            await seedMissionsIfMissing(user.uid);
+            const response = await authFetch('/api/dashboard/missions/seed', { method: 'POST' });
+            if (!response.ok) throw new Error('Mission seed request failed');
           } catch (seedError) {
             logger.error('Failed to seed missions', seedError instanceof Error ? seedError : undefined);
+            setLoading(false);
           }
         } else {
           setMissions(missionData);
@@ -292,19 +291,18 @@ export function useDailyMissions() {
   const completeMission = useCallback(async (missionId: string) => {
     if (!user?.uid || !db) return;
     
-    const firestore = db;
     try {
-      const missionRef = doc(firestore, `users/${user.uid}/missions`, missionId);
-      
-      const xpAwarded = await runTransaction(firestore, async (tx) => {
-        const snap = await tx.get(missionRef);
-        if (!snap.exists()) throw new Error('Mission not found');
-        const data = snap.data() as any;
-        if (data.completed) return 0;
-        const xp = typeof data.xp === 'number' ? data.xp : (typeof data.xpReward === 'number' ? data.xpReward : 0);
-        tx.update(missionRef, { completed: true, completedAt: serverTimestamp() });
-        return xp;
+      const response = await authFetch(`/api/dashboard/missions/${encodeURIComponent(missionId)}/complete`, {
+        method: 'POST',
       });
+
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(typeof data.error === 'string' ? data.error : 'Mission completion failed');
+      }
+
+      const result = await response.json();
+      const xpAwarded = Number(result.xpAwarded || 0);
 
       if (xpAwarded && xpAwarded > 0) {
         awardXPAction('mission_completed', {
@@ -376,7 +374,7 @@ export function useDashboardStats() {
           return;
         }
 
-        const data = snapshot.data();
+        const data = snapshot.data() as Record<string, any>;
         const xp = typeof data.xp === 'number' ? data.xp : 0;
         
         const tier = getEffectiveUserTier(data);

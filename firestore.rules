@@ -252,7 +252,8 @@ service cloud.firestore {
 
       // ── Missions (private to owner) ───────────────────────────────────────
       match /missions/{missionId} {
-        allow read, write: if isUser(userId);
+        allow read: if isUser(userId);
+        allow create, update, delete: if false;
       }
 
       // ── Notifications (private to owner) ─────────────────────────────────
