@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { useUserStore } from "@/store/useUserStore";
 import { useAuth } from "@/providers/AuthProvider";
 import { dbService } from "@/lib/db";
-import { awardXP } from "@/lib/xp";
+import { awardXPAction } from "@/lib/xp";
 import { GlassCard } from "@/components/ui/glass-card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -177,7 +177,9 @@ export function GrowthEngine() {
       ownsLegacyBuilders: confirmedOwned,
       growthAssessmentResult: classificationResult
     });
-    await awardXP(user.uid, 20, 'profile', { growthAssessmentResult: classificationResult });
+    await awardXPAction('growth_assessment_complete', {
+      metadata: { growthAssessmentResult: JSON.stringify(classificationResult).slice(0, 500) },
+    });
 
     setIsAnalyzing(false);
     setCurrentStep(6); // Final Results state

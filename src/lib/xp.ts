@@ -1,33 +1,19 @@
-import { getFunctions, httpsCallable } from 'firebase/functions';
-import { getApp } from 'firebase/app';
 import {
   collection,
   query,
   where,
   orderBy,
   getDocs,
-  updateDoc,
-  doc,
-  serverTimestamp,
-  increment,
-  runTransaction,
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
-
-export type XPEventType =
-  | 'mission'
-  | 'post'
-  | 'comment'
-  | 'reply'
-  | 'mentor'
-  | 'profile'
-  | 'login'
-  | 'streak'
-  | 'other';
+import { authFetch } from '@/lib/clientApi';
+import type { XPActionKey, XPEventType } from '@/lib/xp-policy';
 
 export interface XPEvent {
   xp: number;
   type: XPEventType;
+  action?: XPActionKey;
+  resourceId?: string | null;
   metadata?: Record<string, any> | null;
   createdAt: any;
 }
@@ -38,20 +24,30 @@ export interface WeeklyPerformancePoint {
   date: string;
 }
 
-const functions = getFunctions(getApp());
-const logXPEventCallable = httpsCallable(functions, 'logXPEvent');
-
-export async function logXPEvent(
-  userId: string,
-  type: XPEventType,
-  xp: number,
-  metadata: Record<string, any> | null = null
+export async function awardXPAction(
+  action: XPActionKey,
+  options: {
+    resourceId?: string | null;
+    metadata?: Record<string, any> | null;
+    xpOverride?: number;
+  } = {}
 ) {
-  if (!userId) {
-    throw new Error('Missing userId for XP logging');
+  const response = await authFetch('/api/xp/award', {
+    method: 'POST',
+    body: JSON.stringify({
+      action,
+      resourceId: options.resourceId || undefined,
+      metadata: options.metadata || undefined,
+      xpOverride: options.xpOverride,
+    }),
+  });
+
+  if (!response.ok) {
+    const body = await response.json().catch(() => null);
+    throw new Error(body?.error || 'Unable to award XP');
   }
 
-  await logXPEventCallable({ userId, type, xp, metadata });
+  return response.json() as Promise<{ awarded: boolean; xp: number; eventId?: string; reason?: string }>;
 }
 
 export async function awardXP(
@@ -60,38 +56,24 @@ export async function awardXP(
   type: XPEventType,
   metadata: Record<string, any> | null = null
 ) {
-  if (!userId || xp <= 0 || !db) {
-    return;
-  }
+  const resourceId =
+    typeof metadata?.missionId === 'string' ? metadata.missionId :
+    typeof metadata?.postId === 'string' ? metadata.postId :
+    typeof metadata?.commentId === 'string' ? metadata.commentId :
+    type;
+  const action: XPActionKey =
+    type === 'post' ? 'community_post_created' :
+    type === 'comment' ? 'community_comment_created' :
+    type === 'reply' ? 'community_reply_created' :
+    type === 'mission' ? 'mission_completed' :
+    type === 'login' ? 'daily_login' :
+    'growth_assessment_complete';
 
-  const firestore = db;
-  const userRef = doc(firestore, 'users', userId);
+  return awardXPAction(action, { resourceId, metadata, xpOverride: xp });
+}
 
-  await runTransaction(firestore, async (tx) => {
-    const userSnap = await tx.get(userRef);
-    if (!userSnap.exists()) {
-      tx.set(
-        userRef,
-        {
-          xp,
-          streak: 0,
-          createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp(),
-        },
-        { merge: true }
-      );
-    } else {
-      tx.update(userRef, {
-        xp: increment(xp),
-      });
-    }
-  });
-
-  try {
-    await logXPEvent(userId, type, xp, metadata);
-  } catch (error) {
-    console.error("[XP] Failed to log XP event cloud function:", error);
-  }
+export async function logXPEvent() {
+  throw new Error('logXPEvent is deprecated. Use awardXPAction so XP totals and events stay consistent.');
 }
 
 export async function calculateWeeklyXP(userId: string): Promise<WeeklyPerformancePoint[]> {

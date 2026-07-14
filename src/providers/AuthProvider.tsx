@@ -9,6 +9,7 @@ import { dbService, UserProfile } from "@/lib/db";
 import { useUserStore } from "@/store/useUserStore";
 import { logger, logFirestoreError } from "@/lib/logger";
 import { bootstrapAuthenticatedUser } from "@/lib/auth-bootstrap";
+import { awardXPAction } from "@/lib/xp";
 
 interface AuthContextType {
   user: User | null;
@@ -165,6 +166,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         try {
           const { profile } = await bootstrapAuthenticatedUser({
             displayName: firebaseUser.displayName,
+          });
+          await awardXPAction("daily_login").catch((xpError) => {
+            logger.error("Failed to award login XP", xpError instanceof Error ? xpError : undefined);
           });
 
           if (isMounted.current) {

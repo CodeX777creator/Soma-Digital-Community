@@ -62,19 +62,6 @@ function buildExplorerSubscription(uid: string) {
   };
 }
 
-function toDate(value: any): Date | null {
-  if (!value) return null;
-  if (typeof value.toDate === "function") return value.toDate();
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? null : date;
-}
-
-function isSameDay(a: Date, b: Date) {
-  return a.getFullYear() === b.getFullYear()
-    && a.getMonth() === b.getMonth()
-    && a.getDate() === b.getDate();
-}
-
 async function resolveSubscription(uid: string, profile: Record<string, any> | null | undefined) {
   const summary = normalizeSubscription(profile?.subscription);
 
@@ -120,17 +107,6 @@ export const POST = createAPIHandler(
     const subscription = await resolveSubscription(uid, existing);
     const tier = getSubscriptionPlan(subscription.subscriptionPlan);
     const now = FieldValue.serverTimestamp();
-    const today = new Date();
-    const yesterday = new Date(today);
-    yesterday.setDate(today.getDate() - 1);
-    const lastLogin = toDate(existing?.lastLogin);
-    const shouldRecordLogin = !lastLogin || !isSameDay(lastLogin, today);
-    const previousStreak = typeof existing?.streak === "number" ? existing.streak : 0;
-    const nextStreak = !lastLogin
-      ? 1
-      : isSameDay(lastLogin, yesterday)
-        ? previousStreak + 1
-        : 1;
     const displayName =
       sanitizeOptionalString(body.displayName, 160) ||
       sanitizeOptionalString(firebaseUser.displayName, 160) ||
@@ -160,19 +136,14 @@ export const POST = createAPIHandler(
       onboardingComplete: existing?.onboardingComplete === true || body.onboardingComplete === true,
       xp: typeof existing?.xp === "number" ? existing.xp : 0,
       level: typeof existing?.level === "number" ? existing.level : 1,
-      streak: shouldRecordLogin ? nextStreak : previousStreak,
+      streak: typeof existing?.streak === "number" ? existing.streak : 0,
       roadmapGenerated: existing?.roadmapGenerated === true,
       updatedAt: now,
-      lastLogin: shouldRecordLogin ? now : existing?.lastLogin || now,
+      lastLogin: now,
     };
 
     if (!userSnap.exists) {
       update.createdAt = now;
-    }
-
-    if (shouldRecordLogin) {
-      update.xp = FieldValue.increment(5);
-      update.lastLoginAwardedAt = now;
     }
 
     const identities = sanitizeIdentities(body.onboarding?.identities);
@@ -202,7 +173,7 @@ export const POST = createAPIHandler(
       photoURL: update.photoURL,
       avatarURL: update.avatarURL,
       tier,
-      xp: shouldRecordLogin ? FieldValue.increment(5) : update.xp,
+      xp: update.xp,
       level: update.level,
       createdAt: existing?.createdAt || now,
       updatedAt: now,

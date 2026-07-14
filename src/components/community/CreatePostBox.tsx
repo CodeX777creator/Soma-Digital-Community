@@ -12,7 +12,7 @@ import { cn } from "@/lib/utils";
 import { UserAvatar } from "@/components/ui/user-avatar";
 import { useUserStore } from "@/store/useUserStore";
 import { authFetch } from "@/lib/clientApi";
-import { awardXP } from "@/lib/xp";
+import { awardXPAction } from "@/lib/xp";
 import { CommunityChannel, DEFAULT_POST_CHANNEL, getChannelLabel, POST_CHANNELS, PostChannel } from "@/lib/communityChannels";
 import { getDownloadURL, ref, uploadBytes, uploadBytesResumable } from "firebase/storage";
 import { storage } from "@/lib/firebase";
@@ -190,7 +190,10 @@ export function CreatePostBox({ selectedChannel = "all" }: CreatePostBoxProps) {
 
       incrementEngagementScore(15);
       dbService.saveUserProfile(user.uid, { engagementScore: (engagementScore || 0) + 15 });
-      await awardXP(user.uid, 15, 'post', { postType, tagCount: tags.length });
+      await awardXPAction('community_post_created', {
+        resourceId: result.id,
+        metadata: { postType, tagCount: tags.length },
+      });
 
       setContent("");
       setTags([]);

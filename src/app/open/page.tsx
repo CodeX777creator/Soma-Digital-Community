@@ -19,8 +19,7 @@ import { auth } from "@/lib/firebase";
 import { GOOGLE_REDIRECT_PENDING_KEY, GOOGLE_REDIRECT_STORAGE_KEY, getSafeRedirectPath } from "@/lib/auth";
 import { bootstrapAuthenticatedUser } from "@/lib/auth-bootstrap";
 import { dbService } from "@/lib/db";
-import { createNotification } from "@/lib/notifications";
-import { awardXP } from "@/lib/xp";
+import { awardXPAction } from "@/lib/xp";
 
 async function saveGoogleOnboardingData(user: User) {
   const {
@@ -51,18 +50,13 @@ async function saveGoogleOnboardingData(user: User) {
   }
 
   try {
-    await awardXP(user.uid, 25, "profile", {
+    await awardXPAction("onboarding_complete", {
+      metadata: {
       onboardingComplete: true,
       goal: goal || null,
       skillLevel: skillLevel || null,
+      },
     });
-    await createNotification(
-      user.uid,
-      "welcome",
-      "Welcome to Soma Digital",
-      "Your account is ready. Start your first mission from the dashboard.",
-      "/dashboard"
-    );
   } catch (error) {
     console.error("[Google Signup] Non-critical welcome setup failed:", error);
   }

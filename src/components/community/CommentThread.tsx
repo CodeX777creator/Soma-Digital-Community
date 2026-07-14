@@ -6,7 +6,7 @@ import { Send, ChevronDown, CornerDownRight, MessageCircle } from "lucide-react"
 import { Comment, postService } from "@/lib/db";
 import { useAuth } from "@/providers/AuthProvider";
 import { cn } from "@/lib/utils";
-import { awardXP } from "@/lib/xp";
+import { awardXPAction } from "@/lib/xp";
 import { createNotification } from "@/lib/notifications";
 
 const TIER_COLORS: Record<string, string> = {
@@ -155,7 +155,7 @@ function CommentItem({
     
     setSubmitting(true);
     try {
-      await postService.addReply(postId, comment.id, user.uid, {
+      const replyId = await postService.addReply(postId, comment.id, user.uid, {
         name: userData?.name || user.displayName || "Anonymous",
         photoURL: user.photoURL || undefined,
         tier: userData?.tier || 'explorer',
@@ -166,7 +166,10 @@ function CommentItem({
       setShowReplies(true);
       
       // Award XP for replying
-      await awardXP(user.uid, 3, 'reply', { postId, parentCommentId: comment.id });
+      await awardXPAction('community_reply_created', {
+        resourceId: replyId,
+        metadata: { postId, parentCommentId: comment.id },
+      });
       
       // Notify parent comment author
       if (comment.authorId !== user.uid) {
@@ -325,7 +328,7 @@ export function CommentThread({ postId, initialCount }: CommentThreadProps) {
     
     try {
       console.log('[CommentThread] Calling addComment');
-      await postService.addComment(postId, user.uid, {
+      const commentId = await postService.addComment(postId, user.uid, {
         name: userData?.name || user.displayName || "Anonymous",
         photoURL: user.photoURL || undefined,
         tier: userData?.tier || 'explorer',
@@ -344,7 +347,10 @@ export function CommentThread({ postId, initialCount }: CommentThreadProps) {
         );
       }
 
-      await awardXP(user.uid, 5, 'comment', { postId });
+      await awardXPAction('community_comment_created', {
+        resourceId: commentId,
+        metadata: { postId },
+      });
     } catch (err) {
       console.error('[CommentThread] Failed to add comment:', err);
       // Revert optimistic comment

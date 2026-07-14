@@ -1,5 +1,5 @@
 import { initializeApp, getApps } from 'firebase-admin/app';
-import { getFirestore, Timestamp } from 'firebase-admin/firestore';
+import { getFirestore, FieldValue, Timestamp } from 'firebase-admin/firestore';
 import { onCall } from 'firebase-functions/v2/https';
 
 if (!getApps().length) {
@@ -54,11 +54,22 @@ export const logXPEvent = onCall(async (req) => {
   }
 
   const eventRef = db.collection('users').doc(uid).collection('xpEvents').doc();
-  await eventRef.set({
-    xp,
-    type,
-    metadata,
-    createdAt: Timestamp.now(),
+  await db.runTransaction(async (tx) => {
+    tx.set(eventRef, {
+      xp,
+      type,
+      metadata,
+      source: 'legacy_logXPEvent_callable',
+      createdAt: Timestamp.now(),
+    });
+    tx.set(db.collection('users').doc(uid), {
+      xp: FieldValue.increment(xp),
+      updatedAt: FieldValue.serverTimestamp(),
+    }, { merge: true });
+    tx.set(db.collection('publicProfiles').doc(uid), {
+      xp: FieldValue.increment(xp),
+      updatedAt: FieldValue.serverTimestamp(),
+    }, { merge: true });
   });
 
   return { success: true };

@@ -10,14 +10,12 @@ import {
   serverTimestamp,
   doc,
   runTransaction,
-  increment,
   onSnapshot,
   FirestoreError,
 } from 'firebase/firestore';
 import { useAuth } from '@/providers/AuthProvider';
 import { seedMissionsIfMissing } from '@/lib/missions';
-import { calculateWeeklyXP, logXPEvent } from '@/lib/xp';
-import { createNotification } from '@/lib/notifications';
+import { awardXPAction, calculateWeeklyXP } from '@/lib/xp';
 import { logger, logFirestoreError } from '@/lib/logger';
 import { withRetry } from '@/lib/retry';
 import { getEffectiveUserTier } from '@/lib/tier';
@@ -304,28 +302,17 @@ export function useDailyMissions() {
         const data = snap.data() as any;
         if (data.completed) return 0;
         const xp = typeof data.xp === 'number' ? data.xp : (typeof data.xpReward === 'number' ? data.xpReward : 0);
-        const userRef = doc(firestore, 'users', user.uid);
         tx.update(missionRef, { completed: true, completedAt: serverTimestamp() });
-        tx.update(userRef, { xp: increment(xp) });
         return xp;
       });
 
       if (xpAwarded && xpAwarded > 0) {
-        // Fire these in the background - don't block UI
-        Promise.all([
-          logXPEvent(user.uid, 'mission', xpAwarded, { missionId }).catch(err => 
-            logger.error('Failed to log XP event', err instanceof Error ? err : undefined)
-          ),
-          createNotification(
-            user.uid,
-            'mission',
-            'Mission completed',
-            `You earned ${xpAwarded} XP for completing a mission.`,
-            `/dashboard?mission=${missionId}`
-          ).catch(err => 
-            logger.error('Failed to create notification', err instanceof Error ? err : undefined)
-          ),
-        ]);
+        awardXPAction('mission_completed', {
+          resourceId: missionId,
+          metadata: { missionId },
+        }).catch(err =>
+          logger.error('Failed to award mission XP', err instanceof Error ? err : undefined)
+        );
       }
 
       // Optimistic update

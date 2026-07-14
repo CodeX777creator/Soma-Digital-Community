@@ -11,11 +11,10 @@ import { GOOGLE_REDIRECT_PENDING_KEY, GOOGLE_REDIRECT_STORAGE_KEY, getSafeRedire
 import { getAuthActionCodeSettings } from "@/lib/firebase-auth-actions";
 import { bootstrapAuthenticatedUser } from "@/lib/auth-bootstrap";
 import { dbService } from "@/lib/db";
-import { createNotification } from "@/lib/notifications";
 import { useToast } from "@/hooks/use-toast";
 import { useRouter, useSearchParams } from "next/navigation";
 import { validatePassword, cn } from "@/lib/utils";
-import { awardXP } from "@/lib/xp";
+import { awardXPAction } from "@/lib/xp";
 
 export function AccountCreationStep() {
   const { roadmap, nextStep, prevStep, identities, goal, skillLevel, plan, budget, availableTime } = useOnboardingStore();
@@ -89,14 +88,9 @@ export function AccountCreationStep() {
 
     if (emailVerified) {
       try {
-        await awardXP(user.uid, 25, 'profile', { onboardingComplete: true, goal: goal || null, skillLevel: skillLevel || null });
-        await createNotification(
-          user.uid,
-          'welcome',
-          'Welcome to Soma Digital',
-          'Your account is ready. Start your first mission from the dashboard.',
-          '/dashboard'
-        );
+        await awardXPAction('onboarding_complete', {
+          metadata: { onboardingComplete: true, goal: goal || null, skillLevel: skillLevel || null },
+        });
       } catch (setupError) {
         console.error("Non-critical signup setup failed:", setupError);
       }
@@ -251,14 +245,9 @@ export function AccountCreationStep() {
         });
         
         try {
-          await awardXP(user.uid, 25, 'profile', { onboardingComplete: true, goal: goal || null, skillLevel: skillLevel || null });
-          await createNotification(
-            user.uid,
-            'welcome',
-            'Welcome to Soma Digital',
-            'Your account is ready. Start your first mission from the dashboard.',
-            '/dashboard'
-          );
+          await awardXPAction('onboarding_complete', {
+            metadata: { onboardingComplete: true, goal: goal || null, skillLevel: skillLevel || null },
+          });
         } catch (setupError) {
           console.error("Non-critical signup setup failed:", setupError);
         }
