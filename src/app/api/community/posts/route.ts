@@ -65,6 +65,25 @@ function isValidUrl(value: unknown): boolean {
   }
 }
 
+function isOwnedCommunityImageUrl(value: string, uid: string): boolean {
+  try {
+    const parsed = new URL(value);
+    const decodedPath = decodeURIComponent(parsed.pathname);
+    const encodedOwnerPath = `community-posts%2F${uid}%2F`;
+    const decodedOwnerPath = `community-posts/${uid}/`;
+
+    return (
+      parsed.hostname.endsWith("firebasestorage.googleapis.com") &&
+      (
+        parsed.pathname.includes(encodedOwnerPath) ||
+        decodedPath.includes(decodedOwnerPath)
+      )
+    );
+  } catch {
+    return false;
+  }
+}
+
 const handler = createAPIHandler(
   async (req) => {
     const { uid, email } = await requireAuth(req as any);
@@ -107,6 +126,12 @@ const handler = createAPIHandler(
       const urlValidation = validateUrl(imageUrl);
       if (!urlValidation.valid) {
         return apiError('Invalid image URL format', { status: 400, code: 'INVALID_IMAGE_URL' });
+      }
+      if (!isOwnedCommunityImageUrl(imageUrl, uid)) {
+        return apiError('Image must be uploaded from your community media library', {
+          status: 400,
+          code: 'IMAGE_NOT_OWNED',
+        });
       }
     }
 

@@ -7,7 +7,6 @@ import { Comment, postService } from "@/lib/db";
 import { useAuth } from "@/providers/AuthProvider";
 import { cn } from "@/lib/utils";
 import { awardXPAction } from "@/lib/xp";
-import { createNotification } from "@/lib/notifications";
 
 const TIER_COLORS: Record<string, string> = {
   explorer: "border-white/20",
@@ -170,18 +169,6 @@ function CommentItem({
         resourceId: replyId,
         metadata: { postId, parentCommentId: comment.id },
       });
-      
-      // Notify parent comment author
-      if (comment.authorId !== user.uid) {
-        await createNotification(
-          comment.authorId,
-          'reply',
-          'New reply to your comment',
-          `${userData?.name || user.displayName || 'Someone'} replied to your comment.`,
-          `/community?post=${postId}`,
-          user.uid
-        );
-      }
     } catch (err) {
       console.error('Failed to add reply:', err);
     } finally {
@@ -305,10 +292,7 @@ export function CommentThread({ postId, initialCount }: CommentThreadProps) {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    console.log('[CommentThread] Submitting comment:', { input: input.trim(), hasUser: !!user, hasUserData: !!userData });
-    
     if (!input.trim() || !user) {
-      console.log('[CommentThread] Missing required data, returning');
       return;
     }
     
@@ -327,25 +311,11 @@ export function CommentThread({ postId, initialCount }: CommentThreadProps) {
     setInput("");
     
     try {
-      console.log('[CommentThread] Calling addComment');
       const commentId = await postService.addComment(postId, user.uid, {
         name: userData?.name || user.displayName || "Anonymous",
         photoURL: user.photoURL || undefined,
         tier: userData?.tier || 'explorer',
       }, optimisticComment.content);
-      console.log('[CommentThread] addComment successful');
-
-      const post = await postService.getPost(postId);
-      if (post && post.authorId && post.authorId !== user.uid) {
-        await createNotification(
-          post.authorId,
-          'comment',
-          'New comment on your post',
-          `${userData?.name || user.displayName || 'Someone'} left a comment on your post.`,
-          `/community?post=${postId}`,
-          user.uid
-        );
-      }
 
       await awardXPAction('community_comment_created', {
         resourceId: commentId,

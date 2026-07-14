@@ -6,11 +6,10 @@ import { Image as ImageIcon, Link as LinkIcon, Send, Loader2, X, ZoomIn } from "
 import { ImageLightbox } from "./ImageLightbox";
 import { Button } from "@/components/ui/button";
 import { GlassCard } from "@/components/ui/glass-card";
-import { PostType, dbService } from "@/lib/db";
+import { PostType } from "@/lib/db";
 import { useAuth } from "@/providers/AuthProvider";
 import { cn } from "@/lib/utils";
 import { UserAvatar } from "@/components/ui/user-avatar";
-import { useUserStore } from "@/store/useUserStore";
 import { authFetch } from "@/lib/clientApi";
 import { awardXPAction } from "@/lib/xp";
 import { CommunityChannel, DEFAULT_POST_CHANNEL, getChannelLabel, POST_CHANNELS, PostChannel } from "@/lib/communityChannels";
@@ -21,10 +20,10 @@ import { processAvatarForUpload } from "@/lib/avatar-optimization";
 const TAG_SUGGESTIONS = ["AI", "SaaS", "Funnel", "Growth", "Win", "Design", "Web3", "Mindset", "Jobs", "Showcase"];
 
 const POST_TYPES: { type: PostType; label: string; icon: string }[] = [
-  { type: "insight",    label: "Insight",   icon: "💡" },
-  { type: "win",        label: "Win",        icon: "🏆" },
-  { type: "question",  label: "Question",   icon: "❓" },
-  { type: "mentorship",label: "Mentorship", icon: "🤝" },
+  { type: "insight", label: "Insight", icon: "In" },
+  { type: "win", label: "Win", icon: "W" },
+  { type: "question", label: "Question", icon: "Q" },
+  { type: "mentorship", label: "Mentorship", icon: "M" },
 ];
 
 type CreatePostBoxProps = {
@@ -33,7 +32,6 @@ type CreatePostBoxProps = {
 
 export function CreatePostBox({ selectedChannel = "all" }: CreatePostBoxProps) {
   const { user, userData } = useAuth();
-  const { incrementEngagementScore, engagementScore } = useUserStore();
   const [content, setContent] = useState("");
   const [tags, setTags] = useState<string[]>([]);
   const [channel, setChannel] = useState<PostChannel>(DEFAULT_POST_CHANNEL);
@@ -69,8 +67,6 @@ export function CreatePostBox({ selectedChannel = "all" }: CreatePostBoxProps) {
   const uploadImage = async (file: File) => {
     setImageError(null);
     setImageUploading(true);
-    console.log('[CreatePostBox] Starting image upload:', { fileName: file.name, fileType: file.type, fileSize: file.size });
-    
     try {
       // Check if already has image
       if (imageUrl) {
@@ -101,11 +97,6 @@ export function CreatePostBox({ selectedChannel = "all" }: CreatePostBoxProps) {
             quality: 0.8,
             format: 'webp',
           });
-          console.log('[CreatePostBox] Image optimized:', {
-            originalSize: file.size,
-            optimizedSize: fileToUpload.size,
-            reduction: `${Math.round((1 - fileToUpload.size / file.size) * 100)}%`
-          });
         } catch (optError) {
           console.warn('[CreatePostBox] Optimization failed, using original:', optError);
           // Continue with original file if optimization fails
@@ -115,14 +106,8 @@ export function CreatePostBox({ selectedChannel = "all" }: CreatePostBoxProps) {
       }
       
       const imageRef = ref(storage, `community-posts/${user.uid}/${Date.now()}-${fileToUpload.name}`);
-      console.log('[CreatePostBox] Uploading to:', imageRef.fullPath);
-      
       const snapshot = await uploadBytes(imageRef, fileToUpload, { contentType: fileToUpload.type });
-      console.log('[CreatePostBox] Upload successful, getting download URL');
-      
       const url = await getDownloadURL(snapshot.ref);
-      console.log('[CreatePostBox] Got download URL:', url);
-      
       setImageUrl(url);
     } catch (err: any) {
       console.error('[CreatePostBox] Image upload failed:', err);
@@ -140,16 +125,7 @@ export function CreatePostBox({ selectedChannel = "all" }: CreatePostBoxProps) {
   };
 
   const handlePost = async () => {
-    console.log('[CreatePostBox] handlePost called:', { 
-      hasUser: !!user, 
-      hasUserData: !!userData, 
-      content: content.trim().length,
-      hasImage: !!imageUrl,
-      hasLink: !!linkUrl.trim()
-    });
-    
     if (!user || (!content.trim() && !imageUrl && !linkUrl.trim())) {
-      console.log('[CreatePostBox] Missing required data');
       return;
     }
     
@@ -169,14 +145,10 @@ export function CreatePostBox({ selectedChannel = "all" }: CreatePostBoxProps) {
       if (imageUrl) payload.imageUrl = imageUrl;
       if (linkUrl.trim()) payload.linkUrl = linkUrl.trim();
 
-      console.log('[CreatePostBox] Sending payload:', payload);
-
       const response = await authFetch('/api/community/posts', {
         method: 'POST',
         body: JSON.stringify(payload),
       });
-
-      console.log('[CreatePostBox] Response status:', response.status);
 
       if (!response.ok) {
         const body = await response.json().catch(() => null);
@@ -186,10 +158,6 @@ export function CreatePostBox({ selectedChannel = "all" }: CreatePostBoxProps) {
       }
 
       const result = await response.json();
-      console.log('[CreatePostBox] Post successful:', result);
-
-      incrementEngagementScore(15);
-      dbService.saveUserProfile(user.uid, { engagementScore: (engagementScore || 0) + 15 });
       await awardXPAction('community_post_created', {
         resourceId: result.id,
         metadata: { postType, tagCount: tags.length },

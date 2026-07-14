@@ -19,8 +19,8 @@ import { Post, postService } from "@/lib/db";
 import { COMMUNITY_CHANNELS, CommunityChannel } from "@/lib/communityChannels";
 import { useAuth } from "@/providers/AuthProvider";
 import { db } from "@/lib/firebase";
-import { createNotification } from "@/lib/notifications";
-import { collection, doc, onSnapshot, serverTimestamp, writeBatch } from "firebase/firestore";
+import { authFetch } from "@/lib/clientApi";
+import { collection, onSnapshot } from "firebase/firestore";
 
 // ─── Static AI Intel Sections ─────────────────────────────────────────────────
 
@@ -99,6 +99,7 @@ export default function CommunityPage() {
     const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
     const [deletedPost, setDeletedPost] = useState<Post | null>(null);
   const [followingIds, setFollowingIds] = useState<Set<string>>(new Set());
+  const [hiddenPostIds, setHiddenPostIds] = useState<Set<string>>(new Set());
   const [followLoadingId, setFollowLoadingId] = useState<string | null>(null);
 
     useEffect(() => {
@@ -113,6 +114,13 @@ export default function CommunityPage() {
     if (!user?.uid || !db) return;
     return onSnapshot(collection(db, "users", user.uid, "following"), (snapshot) => {
       setFollowingIds(new Set(snapshot.docs.map((item) => item.id)));
+    });
+  }, [user?.uid]);
+
+  useEffect(() => {
+    if (!user?.uid || !db) return;
+    return onSnapshot(collection(db, "users", user.uid, "hiddenPosts"), (snapshot) => {
+      setHiddenPostIds(new Set(snapshot.docs.map((item) => item.id)));
     });
   }, [user?.uid]);
 
@@ -180,9 +188,15 @@ export default function CommunityPage() {
     setEditModalPost(null);
   };
 
+  const handleHidePost = (postId: string) => {
+    setHiddenPostIds((current) => new Set([...current, postId]));
+    setPosts((current) => current.filter((post) => post.id !== postId));
+  };
+
   // Derived: win posts from today
-  const founderWins = posts.filter(p => p.type === "win" && !p.deleted).slice(0, 5);
-  const tagCounts = posts.reduce<Record<string, number>>((acc, post) => {
+  const visiblePosts = posts.filter(p => !p.deleted && !hiddenPostIds.has(p.id));
+  const founderWins = visiblePosts.filter(p => p.type === "win").slice(0, 5);
+  const tagCounts = visiblePosts.reduce<Record<string, number>>((acc, post) => {
     if (post.deleted) return acc;
     post.tags?.forEach((tag) => {
       acc[tag] = (acc[tag] || 0) + 1;
@@ -190,9 +204,9 @@ export default function CommunityPage() {
     return acc;
   }, {});
   const trendingTags = Object.entries(tagCounts).sort((a, b) => b[1] - a[1]).slice(0, 8);
-  const sortedPosts = [...posts].filter(p => !p.deleted).sort((a, b) => postTimestamp(b) - postTimestamp(a));
+  const sortedPosts = [...visiblePosts].sort((a, b) => postTimestamp(b) - postTimestamp(a));
   const filteredPosts = sortedPosts.filter((post) => matchesChannel(post, activeChannel));
-  const activePosts = posts.filter(p => !p.deleted);
+  const activePosts = visiblePosts;
   const channelCounts = CHANNEL_NAV.reduce<Record<CommunityChannel, number>>((acc, channel) => {
     acc[channel.id] = channel.id === "all"
       ? activePosts.length
@@ -221,35 +235,12 @@ export default function CommunityPage() {
     setFollowLoadingId(person.id);
     const isFollowing = followingIds.has(person.id);
     try {
-      const batch = writeBatch(db);
-      const followingRef = doc(db, "users", user.uid, "following", person.id);
-      const followerRef = doc(db, "users", person.id, "followers", user.uid);
-      if (isFollowing) {
-        batch.delete(followingRef);
-        batch.delete(followerRef);
-      } else {
-        const viewerName = userData?.name || user.displayName || user.email || "Community member";
-        batch.set(followingRef, {
-          userId: person.id,
-          name: person.name,
-          followedAt: serverTimestamp(),
-        }, { merge: true });
-        batch.set(followerRef, {
-          userId: user.uid,
-          name: viewerName,
-          followedAt: serverTimestamp(),
-        }, { merge: true });
-      }
-      await batch.commit();
-      if (!isFollowing) {
-        await createNotification(
-          person.id,
-          "info",
-          "New follower",
-          `${userData?.name || user.displayName || "Someone"} followed you.`,
-          "/community",
-          user.uid
-        ).catch(() => undefined);
+      const response = await authFetch(`/api/community/follows/${person.id}`, {
+        method: isFollowing ? "DELETE" : "POST",
+      });
+      if (!response.ok) {
+        const body = await response.json().catch(() => null);
+        throw new Error(body?.error || body?.message || "Unable to update follow");
       }
     } finally {
       setFollowLoadingId(null);
@@ -432,6 +423,7 @@ export default function CommunityPage() {
                       post={post}
                       onEdit={handleEditPost}
                       onDelete={handleDeletePost}
+                      onHide={handleHidePost}
                       isPendingDelete={pendingDeleteId === post.id}
                     />
                   ))}

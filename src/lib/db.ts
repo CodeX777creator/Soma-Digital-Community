@@ -11,13 +11,13 @@ import {
   serverTimestamp,
   onSnapshot,
   increment,
-  runTransaction,
   getCountFromServer,
   limit as firestoreLimit,
   QuerySnapshot,
   DocumentData
 } from "firebase/firestore";
 import { db } from "./firebase";
+import { authFetch } from "@/lib/clientApi";
 
 // ─── Community Feed Types ─────────────────────────────────────────────────────
 
@@ -161,47 +161,13 @@ export const postService = {
 
   // Toggle / change reaction — Firestore is the eventual source of truth
   async setReaction(postId: string, userId: string, newReaction: ReactionType | null): Promise<void> {
-    if (!db) throw new Error('Database not initialized');
-    const reactionId = `${userId}_${postId}`;
-    const reactionRef = doc(db, 'likes', reactionId);
-    const postRef = doc(db, 'posts', postId);
-
-    try {
-      await runTransaction(db, async (tx) => {
-        const existing = await tx.get(reactionRef);
-        const existingType: ReactionType | null = existing.exists()
-          ? (existing.data() as PostReaction).type
-          : null;
-
-        if (existingType === newReaction || newReaction === null) {
-          // Remove reaction
-          if (existing.exists()) {
-            tx.delete(reactionRef);
-            tx.update(postRef, {
-              likeCount: increment(-1),
-              [`reactionCounts.${existingType}`]: increment(-1),
-            });
-          }
-        } else {
-          // Add or swap reaction
-          tx.set(reactionRef, { type: newReaction, userId, createdAt: serverTimestamp() });
-          if (existingType) {
-            // Swap: decrement old, increment new
-            tx.update(postRef, {
-              [`reactionCounts.${existingType}`]: increment(-1),
-              [`reactionCounts.${newReaction}`]: increment(1),
-            });
-          } else {
-            // New reaction
-            tx.update(postRef, {
-              likeCount: increment(1),
-              [`reactionCounts.${newReaction}`]: increment(1),
-            });
-          }
-        }
+    const response = await authFetch(`/api/community/posts/${postId}/reaction`, {
+      method: 'PATCH',
+      body: JSON.stringify({ reaction: newReaction }),
     });
-    } catch (error) {
-      throw error;
+    if (!response.ok) {
+      const body = await response.json().catch(() => null);
+      throw new Error(body?.error || body?.message || 'Unable to update reaction');
     }
   },
 
@@ -213,31 +179,15 @@ export const postService = {
     content: string,
     parentId?: string | null
   ): Promise<string> {
-    if (!db) throw new Error('Database not initialized');
-    const commentsRef = collection(db, 'posts', postId, 'comments');
-    const docRef = await addDoc(commentsRef, {
-      postId,
-      authorId: userId,
-      authorName: userData.name || 'Anonymous',
-      authorAvatar: userData.photoURL || null,
-      authorTier: userData.tier || 'explorer',
-      content,
-      parentId: parentId || null,
-      replyCount: 0,
-      createdAt: serverTimestamp(),
+    const response = await authFetch(`/api/community/posts/${postId}/comments`, {
+      method: 'POST',
+      body: JSON.stringify({ content, parentId: parentId || null }),
     });
-    
-    // Increment comment count on post
-    await updateDoc(doc(db, 'posts', postId), { commentCount: increment(1) });
-    
-    // If this is a reply, increment parent's replyCount
-    if (parentId) {
-      await updateDoc(doc(db, 'posts', postId, 'comments', parentId), { 
-        replyCount: increment(1) 
-      });
+    const body = await response.json().catch(() => null);
+    if (!response.ok) {
+      throw new Error(body?.error || body?.message || 'Unable to add comment');
     }
-    
-    return docRef.id;
+    return body.id;
   },
 
   // Add a reply to a comment
@@ -286,37 +236,47 @@ export const postService = {
 
   // Pin / unpin a post (admin)
   async pinPost(postId: string, pinned: boolean): Promise<void> {
-    if (!db) throw new Error('Database not initialized');
-    await updateDoc(doc(db, 'posts', postId), { isPinned: pinned });
+    const response = await authFetch(`/api/community/posts/${postId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ action: 'pin', isPinned: pinned }),
+    });
+    if (!response.ok) {
+      const body = await response.json().catch(() => null);
+      throw new Error(body?.error || body?.message || 'Unable to update pin status');
+    }
   },
 
   // Update a post (author only)
   async updatePost(postId: string, updates: Partial<Post>): Promise<void> {
-    if (!db) throw new Error('Database not initialized');
-    await updateDoc(doc(db, 'posts', postId), {
-      ...updates,
-      updatedAt: serverTimestamp(),
+    const response = await authFetch(`/api/community/posts/${postId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(updates),
     });
+    if (!response.ok) {
+      const body = await response.json().catch(() => null);
+      throw new Error(body?.error || body?.message || 'Unable to update post');
+    }
   },
 
   // Delete a post (author or admin)
   async deletePost(postId: string): Promise<void> {
-    if (!db) throw new Error('Database not initialized');
-    await updateDoc(doc(db, 'posts', postId), { 
-      deleted: true,
-      content: '[deleted]',
-      deletedAt: serverTimestamp(),
-    });
+    const response = await authFetch(`/api/community/posts/${postId}`, { method: 'DELETE' });
+    if (!response.ok) {
+      const body = await response.json().catch(() => null);
+      throw new Error(body?.error || body?.message || 'Unable to delete post');
+    }
   },
 
   // Restore a deleted post (undo delete)
   async restorePost(postId: string, originalContent: string): Promise<void> {
-    if (!db) throw new Error('Database not initialized');
-    await updateDoc(doc(db, 'posts', postId), { 
-      deleted: false,
-      content: originalContent,
-      deletedAt: null,
+    const response = await authFetch(`/api/community/posts/${postId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ action: 'restore', content: originalContent }),
     });
+    if (!response.ok) {
+      const body = await response.json().catch(() => null);
+      throw new Error(body?.error || body?.message || 'Unable to restore post');
+    }
   },
 
   // Update mission progress

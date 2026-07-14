@@ -35,6 +35,7 @@ import { useAuth } from "@/providers/AuthProvider";
 import { Post, postService } from "@/lib/db";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
+import { authFetch } from "@/lib/clientApi";
 
 // Time limit for editing posts (30 minutes in milliseconds)
 const EDIT_TIME_LIMIT = 60 * 60 * 1000;
@@ -44,6 +45,7 @@ interface PostOptionsMenuProps {
   post: Post;
   onEdit?: () => void;
   onDelete?: (postId: string, post: Post) => void;
+  onHide?: (postId: string) => void;
   onPin?: () => void;
   isAdmin?: boolean;
 }
@@ -51,7 +53,8 @@ interface PostOptionsMenuProps {
 export function PostOptionsMenu({ 
   post, 
   onEdit, 
-  onDelete, 
+  onDelete,
+  onHide,
   onPin,
   isAdmin = false 
 }: PostOptionsMenuProps) {
@@ -106,18 +109,51 @@ export function PostOptionsMenu({
     });
   };
 
-  const handleReport = () => {
-    toast({
-      title: "Report submitted",
-      description: "Thank you for helping keep our community safe.",
-    });
+  const handleReport = async () => {
+    try {
+      const response = await authFetch("/api/community/reports", {
+        method: "POST",
+        body: JSON.stringify({ postId: post.id, reason: "other" }),
+      });
+      if (!response.ok) {
+        const body = await response.json().catch(() => null);
+        throw new Error(body?.error || body?.message || "Unable to report post");
+      }
+      toast({
+        title: "Report submitted",
+        description: "Thanks for helping keep the community safe. Our team will review it.",
+      });
+    } catch (error: any) {
+      toast({
+        title: "Report failed",
+        description: error?.message || "Please try again.",
+        variant: "destructive",
+      });
+    }
   };
 
-  const handleHide = () => {
-    toast({
-      title: "Post hidden",
-      description: "You won't see this post in your feed.",
-    });
+  const handleHide = async () => {
+    try {
+      const response = await authFetch("/api/community/hidden-posts", {
+        method: "POST",
+        body: JSON.stringify({ postId: post.id }),
+      });
+      if (!response.ok) {
+        const body = await response.json().catch(() => null);
+        throw new Error(body?.error || body?.message || "Unable to hide post");
+      }
+      onHide?.(post.id);
+      toast({
+        title: "Post hidden",
+        description: "You won't see this post in your feed.",
+      });
+    } catch (error: any) {
+      toast({
+        title: "Hide failed",
+        description: error?.message || "Please try again.",
+        variant: "destructive",
+      });
+    }
   };
 
   const handleDeleteConfirm = async () => {

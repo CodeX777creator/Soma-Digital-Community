@@ -18,7 +18,6 @@ import { OptimizedImage } from "@/components/ui/optimized-image";
 import { UserAvatar } from "@/components/ui/user-avatar";
 import { PostOptionsMenu } from "./PostOptionsMenu";
 import { useToast } from "@/hooks/use-toast";
-import { createNotification } from "@/lib/notifications";
 import { Post, ReactionType, postService } from "@/lib/db";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/providers/AuthProvider";
@@ -59,10 +58,11 @@ interface PostCardProps {
   post: Post;
   onEdit?: (post: Post) => void;
   onDelete?: (postId: string, post?: Post) => void;
+  onHide?: (postId: string) => void;
   isPendingDelete?: boolean;
 }
 
-export const PostCardOptimized = memo(function PostCardOptimized({ post, onEdit, onDelete, isPendingDelete }: PostCardProps) {
+export const PostCardOptimized = memo(function PostCardOptimized({ post, onEdit, onDelete, onHide, isPendingDelete }: PostCardProps) {
   const meta = useMemo(() => POST_TYPE_META[post.type] || POST_TYPE_META.insight, [post.type]);
   const { user, userData } = useAuth();
   const { toast } = useToast();
@@ -89,28 +89,9 @@ export const PostCardOptimized = memo(function PostCardOptimized({ post, onEdit,
     }
 
     setIsReacting(true);
-    const shouldNotify =
-      !!reaction &&
-      !currentReaction &&
-      !!post.authorId &&
-      post.authorId !== user.uid;
 
     try {
       await postService.setReaction(post.id, user.uid, reaction);
-
-      if (shouldNotify) {
-        const actorName = userData?.name || user.displayName || "Someone";
-        createNotification(
-          post.authorId,
-          "like",
-          "New reaction on your post",
-          `${actorName} reacted to your community post.`,
-          `/community?post=${post.id}`,
-          user.uid
-        ).catch((error) => {
-          console.error("Failed to create reaction notification:", error);
-        });
-      }
     } catch (error) {
       console.error("Failed to update reaction:", error);
       toast({ title: "Reaction failed", description: "Please try again.", variant: "destructive" });
@@ -213,11 +194,21 @@ export const PostCardOptimized = memo(function PostCardOptimized({ post, onEdit,
             post={post}
             onEdit={() => onEdit?.(post)}
             onDelete={(postId, postObj) => onDelete?.(postId, postObj)}
-            onPin={() => {
-              toast({
-                title: "Pin post",
-                description: "Pin functionality will be triggered here.",
-              });
+            onHide={onHide}
+            onPin={async () => {
+              try {
+                await postService.pinPost(post.id, !post.isPinned);
+                toast({
+                  title: post.isPinned ? "Post unpinned" : "Post pinned",
+                  description: "The community feed will update shortly.",
+                });
+              } catch (error: any) {
+                toast({
+                  title: "Pin failed",
+                  description: error?.message || "Please try again.",
+                  variant: "destructive",
+                });
+              }
             }}
             isAdmin={userData?.role === 'admin'}
           />

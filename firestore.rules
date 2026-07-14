@@ -54,20 +54,29 @@ service cloud.firestore {
     match /posts/{postId} {
       allow read: if true;
 
-      allow create: if isAuthed()
-        && request.resource.data.authorId == request.auth.uid
-        // Validate required fields
-        && request.resource.data.content is string
-        && request.resource.data.content.size() > 0
-        && request.resource.data.content.size() <= 5000
-        // Enforce safe defaults on creation
-        && request.resource.data.isPinned == false
-        && request.resource.data.likeCount == 0
-        && request.resource.data.commentCount == 0
-        // Validate optional fields
-        && isValidOptionalString(request.resource.data.imageUrl, 2048)
-        && isValidOptionalString(request.resource.data.linkUrl, 2048)
-        && (request.resource.data.channel == null || request.resource.data.channel is string);
+      allow create: if isAdmin()
+        || (
+          isAuthed()
+          && request.resource.data.authorId == request.auth.uid
+          && request.resource.data.keys().hasOnly([
+            'authorId', 'authorName', 'authorAvatar', 'authorTier', 'authorRole',
+            'isFounder', 'content', 'channel', 'tags', 'type', 'isPinned',
+            'likeCount', 'commentCount', 'imageUrl', 'linkUrl', 'reactionCounts',
+            'createdAt', 'updatedAt'
+          ])
+          // Validate required fields
+          && request.resource.data.content is string
+          && request.resource.data.content.size() > 0
+          && request.resource.data.content.size() <= 5000
+          // Enforce safe defaults on creation
+          && request.resource.data.isPinned == false
+          && request.resource.data.likeCount == 0
+          && request.resource.data.commentCount == 0
+          // Validate optional fields
+          && isValidOptionalString(request.resource.data.imageUrl, 2048)
+          && isValidOptionalString(request.resource.data.linkUrl, 2048)
+          && (request.resource.data.channel == null || request.resource.data.channel is string)
+        );
 
       // Author can edit content/tags/type but NOT authorId, likeCount, or commentCount.
       // Must be within 30 minutes of creation (or be admin)
@@ -77,6 +86,8 @@ service cloud.firestore {
           isAdmin()
           || (request.time - resource.data.createdAt) < duration.value(30, "m")
         )
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['content', 'tags', 'type', 'channel', 'linkUrl', 'editedAt', 'isEdited', 'updatedAt'])
         && request.resource.data.authorId == resource.data.authorId
         && request.resource.data.likeCount == resource.data.likeCount
         && request.resource.data.commentCount == resource.data.commentCount
@@ -132,6 +143,10 @@ service cloud.firestore {
       allow read: if true;
 
       allow create: if isAuthed()
+        && request.resource.data.keys().hasOnly([
+          'postId', 'authorId', 'authorName', 'authorAvatar', 'authorTier',
+          'content', 'parentId', 'replyCount', 'createdAt', 'updatedAt'
+        ])
         && request.resource.data.authorId == request.auth.uid
         && request.resource.data.postId == postId
         && request.resource.data.content is string
@@ -142,6 +157,8 @@ service cloud.firestore {
         && (
           (
             resource.data.authorId == request.auth.uid
+            && request.resource.data.diff(resource.data).affectedKeys()
+              .hasOnly(['content', 'editedAt', 'isEdited', 'updatedAt'])
             && request.resource.data.authorId == resource.data.authorId
             && request.resource.data.content is string
             && request.resource.data.content.size() <= 2000
@@ -165,6 +182,9 @@ service cloud.firestore {
       // Only the owner can create/update their own reaction
       allow create, update: if isAuthed()
         && request.resource.data.userId == request.auth.uid
+        && request.resource.data.postId is string
+        && request.resource.data.type in ['like', 'love', 'funny', 'wow', 'sad', 'fire']
+        && request.resource.data.keys().hasOnly(['postId', 'userId', 'type', 'createdAt', 'updatedAt'])
         && likeId.matches('^' + request.auth.uid + '_[a-zA-Z0-9_-]+$');
 
       allow delete: if isAuthed() && resource.data.userId == request.auth.uid;
@@ -238,11 +258,7 @@ service cloud.firestore {
       // ── Notifications (private to owner) ─────────────────────────────────
       match /notifications/{notificationId} {
         allow read, update, delete: if isUser(userId);
-        allow create: if isAuthed()
-          && (
-            isUser(userId)
-            || request.resource.data.createdBy == request.auth.uid
-          )
+        allow create: if isUser(userId)
           && request.resource.data.type in ['info', 'success', 'warning', 'like', 'comment', 'reply', 'mission', 'mentor', 'subscription', 'welcome']
           && request.resource.data.title is string
           && request.resource.data.title.size() > 0
@@ -256,6 +272,21 @@ service cloud.firestore {
           && request.resource.data.createdAt == request.time;
       }
 
+      match /following/{targetUserId} {
+        allow read: if isUser(userId) || isAdmin();
+        allow create, update, delete: if false;
+      }
+
+      match /followers/{viewerUserId} {
+        allow read: if isUser(userId) || isAdmin();
+        allow create, update, delete: if false;
+      }
+
+      match /hiddenPosts/{postId} {
+        allow read: if isUser(userId);
+        allow create, update, delete: if false;
+      }
+
       // ── XP Event Logs (server-validated) ──────────────────────────────────
       match /xpEvents/{eventId} {
         allow read: if isUser(userId);
@@ -267,6 +298,21 @@ service cloud.firestore {
     match /publicProfiles/{userId} {
       allow read: if true;
       allow write: if false;
+
+      match /following/{targetUserId} {
+        allow read: if true;
+        allow write: if false;
+      }
+
+      match /followers/{viewerUserId} {
+        allow read: if true;
+        allow write: if false;
+      }
+    }
+
+    match /postReports/{reportId} {
+      allow read, update, delete: if isAdmin();
+      allow create: if false;
     }
 
     match /subscriptions/{subscriptionId} {
