@@ -172,51 +172,45 @@ service cloud.firestore {
 
     // ── User Profiles ─────────────────────────────────────────────────────────
     match /users/{userId} {
-      // Public read (avatars, names visible in feed)
-      allow read: if true;
+      allow read: if isUser(userId) || isAdmin();
 
-      // New profile: must own the doc, tier locked to 'explorer', no admin flag
+      // New profile: must own the doc and may only create an Explorer/member profile.
       allow create: if isUser(userId)
         && request.resource.data.uid == userId
         && request.resource.data.tier == 'explorer'
+        && request.resource.data.subscriptionTier == 'explorer'
+        && request.resource.data.subscriptionPlan == 'explorer'
+        && request.resource.data.subscriptionStatus == 'active'
+        && request.resource.data.subscription.provider in ['system', 'free']
+        && request.resource.data.subscription.userId == userId
+        && request.resource.data.subscription.subscriptionPlan == 'explorer'
+        && request.resource.data.subscription.plan == 'explorer'
+        && request.resource.data.subscription.planId == 'explorer'
+        && request.resource.data.subscription.subscriptionStatus == 'active'
+        && request.resource.data.subscription.status == 'active'
         && request.resource.data.get('isAdmin', false) == false
-        && request.resource.data.get('role', null) != 'admin'
-        && (!request.resource.data.keys().hasAny(['roles']) || 
+        && request.resource.data.get('role', 'member') == 'member'
+        && (!request.resource.data.keys().hasAny(['roles']) ||
             (request.resource.data.roles is list && !('admin' in request.resource.data.roles)));
 
-      // Self-update: cannot change uid, tier, isAdmin, role, or subscription via client
-      // But CAN update missions, stats, and engagement scores
-      allow update: if isUser(userId)
-        && request.resource.data.uid == resource.data.uid
-        && request.resource.data.tier == resource.data.tier
-        && request.resource.data.get('isAdmin', false) == resource.data.get('isAdmin', false)
-        && request.resource.data.get('role', null) == resource.data.get('role', null)
-        && (!request.resource.data.keys().hasAny(['roles']) || 
-            request.resource.data.roles == resource.data.roles)
-        && request.resource.data.get('subscription', null) == resource.data.get('subscription', null);
-
-      // Allow self-update of mission progress, stats, and credits
+      // Self-updates are intentionally allowlisted. Entitlement, billing, and admin
+      // fields are written only by trusted server code/Admin SDK.
       allow update: if isUser(userId)
         && (
-          // Only missions/stats fields are changing
           request.resource.data.diff(resource.data).affectedKeys()
             .hasOnly(['missions', 'postCount', 'commentCount', 'likeCount', 'engagementScore', 'updatedAt'])
           ||
-          // Only xp field is changing
           request.resource.data.diff(resource.data).affectedKeys()
             .hasOnly(['xp', 'updatedAt'])
           ||
-          // Only usage tracking fields are changing (AI chats, etc)
-          request.resource.data.diff(resource.data).affectedKeys()
-            .hasOnly(['usage', 'updatedAt'])
-          ||
-          // Only credits field is changing (purchased credits)
-          request.resource.data.diff(resource.data).affectedKeys()
-            .hasOnly(['credits', 'updatedAt'])
-          ||
-          // Profile fields update (name, photo, etc)
           request.resource.data.diff(resource.data).affectedKeys()
             .hasOnly(['name', 'displayName', 'photoURL', 'avatarURL', 'avatarUrl', 'selectedIdentity', 'updatedAt'])
+          ||
+          request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['growthAssessmentDismissed', 'growthAssessmentResult', 'ownsLegacyBuilders', 'engagementScore', 'updatedAt'])
+          ||
+          request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['pushSubscriptions', 'updatedAt'])
         );
 
       // Admins may update anything (tier upgrades, subscription writes from backend)
@@ -271,6 +265,11 @@ service cloud.firestore {
         allow create: if false; // XP events are written by trusted backend functions only.
         allow update, delete: if false;
       }
+    }
+
+    match /publicProfiles/{userId} {
+      allow read: if true;
+      allow write: if false;
     }
 
     match /subscriptions/{subscriptionId} {

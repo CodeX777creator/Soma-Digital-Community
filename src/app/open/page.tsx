@@ -17,6 +17,7 @@ import { Cpu } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { auth } from "@/lib/firebase";
 import { GOOGLE_REDIRECT_PENDING_KEY, GOOGLE_REDIRECT_STORAGE_KEY, getSafeRedirectPath } from "@/lib/auth";
+import { bootstrapAuthenticatedUser } from "@/lib/auth-bootstrap";
 import { dbService } from "@/lib/db";
 import { createNotification } from "@/lib/notifications";
 import { awardXP } from "@/lib/xp";
@@ -32,21 +33,18 @@ async function saveGoogleOnboardingData(user: User) {
     roadmap,
   } = useOnboardingStore.getState();
 
-  const userData: Record<string, any> = {
-    name: user.displayName || "Explorer",
-    email: user.email || "",
-    emailVerified: true,
+  await bootstrapAuthenticatedUser({
+    displayName: user.displayName || "Explorer",
     onboardingComplete: true,
-  };
-
-  if (identities.length > 0) userData.identities = identities;
-  if (goal) userData.goal = goal;
-  if (skillLevel) userData.skillLevel = skillLevel;
-  if (plan) userData.intendedPlan = plan;
-  if (budget) userData.budget = budget;
-  if (availableTime) userData.availableTime = availableTime;
-
-  await dbService.saveUserProfile(user.uid, userData);
+    onboarding: {
+      identities,
+      goal: goal || null,
+      skillLevel: skillLevel || null,
+      intendedPlan: plan || null,
+      budget: budget || null,
+      availableTime: availableTime || null,
+    },
+  });
 
   if (roadmap) {
     await dbService.saveRoadmap(user.uid, roadmap);
@@ -90,15 +88,27 @@ function OnboardingController() {
   const handledEntryPlan = useRef<string | null>(null);
   const handledGoogleRedirect = useRef(false);
   const [isCheckingGoogleRedirect, setIsCheckingGoogleRedirect] = useState(true);
+  const [isCheckingExistingUser, setIsCheckingExistingUser] = useState(true);
   const [googleRedirectError, setGoogleRedirectError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!auth) return;
+    if (!auth) {
+      setIsCheckingExistingUser(false);
+      return;
+    }
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
-      if (!user) return;
-      const profile = await dbService.getUserProfile(user.uid);
-      if (profile?.onboardingComplete === true) {
-        router.replace("/dashboard");
+      try {
+        if (!user) {
+          setIsCheckingExistingUser(false);
+          return;
+        }
+        const profile = await dbService.getUserProfile(user.uid);
+        if (profile?.onboardingComplete === true) {
+          router.replace("/dashboard");
+          return;
+        }
+      } finally {
+        setIsCheckingExistingUser(false);
       }
     });
     return unsubscribe;
@@ -157,7 +167,7 @@ function OnboardingController() {
   }, [router, searchParams]);
 
   useEffect(() => {
-    if (isCheckingGoogleRedirect) return;
+    if (isCheckingGoogleRedirect || isCheckingExistingUser) return;
 
     const planParam = searchParams.get("plan");
     const stepParam = searchParams.get("step");
@@ -202,6 +212,7 @@ function OnboardingController() {
     currentStep,
     goal,
     identities.length,
+    isCheckingExistingUser,
     isCheckingGoogleRedirect,
     reset,
     searchParams,
@@ -233,7 +244,7 @@ function OnboardingController() {
 
   const TOTAL_STEPS = 8;
 
-  if (isCheckingGoogleRedirect) {
+  if (isCheckingGoogleRedirect || isCheckingExistingUser) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background text-primary animate-pulse">
         Completing Google sign in...

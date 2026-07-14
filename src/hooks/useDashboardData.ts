@@ -86,7 +86,7 @@ export function useDashboardLeaderboard(limit = 10) {
         setLoading(true);
         setError(null);
         
-        const usersRef = collection(db, 'users');
+        const usersRef = collection(db, 'publicProfiles');
         const q = query(
           usersRef,
           orderBy('xp', 'desc'),

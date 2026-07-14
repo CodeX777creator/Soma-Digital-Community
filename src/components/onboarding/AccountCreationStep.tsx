@@ -9,6 +9,7 @@ import { createUserWithEmailAndPassword, updateProfile, signInWithRedirect, sign
 import { auth } from "@/lib/firebase";
 import { GOOGLE_REDIRECT_PENDING_KEY, GOOGLE_REDIRECT_STORAGE_KEY, getSafeRedirectPath, isStandaloneApp } from "@/lib/auth";
 import { getAuthActionCodeSettings } from "@/lib/firebase-auth-actions";
+import { bootstrapAuthenticatedUser } from "@/lib/auth-bootstrap";
 import { dbService } from "@/lib/db";
 import { createNotification } from "@/lib/notifications";
 import { useToast } from "@/hooks/use-toast";
@@ -73,31 +74,32 @@ export function AccountCreationStep() {
   };
 
   const saveUserData = async (user: any, nameToSave: string, emailVerified = user.emailVerified === true) => {
-    const userData: any = {
-      name: nameToSave || "Explorer",
-      email: user.email || email,
-      emailVerified,
+    await bootstrapAuthenticatedUser({
+      displayName: nameToSave || user.displayName || "Explorer",
       onboardingComplete: emailVerified,
-    };
-
-    if (identities) userData.identities = identities;
-    if (goal) userData.goal = goal;
-    if (skillLevel) userData.skillLevel = skillLevel;
-    if (plan) userData.intendedPlan = plan;
-    if (budget) userData.budget = budget;
-    if (availableTime) userData.availableTime = availableTime;
-
-    await dbService.saveUserProfile(user.uid, userData);
+      onboarding: {
+        identities,
+        goal: goal || null,
+        skillLevel: skillLevel || null,
+        intendedPlan: plan || null,
+        budget: budget || null,
+        availableTime: availableTime || null,
+      },
+    });
 
     if (emailVerified) {
-      await awardXP(user.uid, 25, 'profile', { onboardingComplete: true, goal: goal || null, skillLevel: skillLevel || null });
-      await createNotification(
-        user.uid,
-        'welcome',
-        'Welcome to Soma Digital',
-        'Your account is ready. Start your first mission from the dashboard.',
-        '/dashboard'
-      );
+      try {
+        await awardXP(user.uid, 25, 'profile', { onboardingComplete: true, goal: goal || null, skillLevel: skillLevel || null });
+        await createNotification(
+          user.uid,
+          'welcome',
+          'Welcome to Soma Digital',
+          'Your account is ready. Start your first mission from the dashboard.',
+          '/dashboard'
+        );
+      } catch (setupError) {
+        console.error("Non-critical signup setup failed:", setupError);
+      }
     }
 
     if (roadmap) {
@@ -235,9 +237,17 @@ export function AccountCreationStep() {
     try {
       await user.reload();
       if (auth.currentUser?.emailVerified) {
-        await dbService.saveUserProfile(user.uid, {
-          emailVerified: true,
+        await bootstrapAuthenticatedUser({
+          displayName: user.displayName || name || "Explorer",
           onboardingComplete: true,
+          onboarding: {
+            identities,
+            goal: goal || null,
+            skillLevel: skillLevel || null,
+            intendedPlan: plan || null,
+            budget: budget || null,
+            availableTime: availableTime || null,
+          },
         });
         
         try {

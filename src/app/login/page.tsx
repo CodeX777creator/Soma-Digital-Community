@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useState, useEffect } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { motion } from "framer-motion";
 import { Cpu, ArrowRight, Mail, Lock, Loader2, Eye, EyeOff, ChevronLeft } from "lucide-react";
 import { 
@@ -17,12 +17,14 @@ import {
   onAuthStateChanged
 } from "firebase/auth";
 import { auth } from "@/lib/firebase";
-import { isStandaloneApp, requiresEmailVerification } from "@/lib/auth";
+import { getSafeRedirectPath, isStandaloneApp, requiresEmailVerification } from "@/lib/auth";
 import { getAuthActionCodeSettings } from "@/lib/firebase-auth-actions";
+import { bootstrapAuthenticatedUser } from "@/lib/auth-bootstrap";
 import { useToast } from "@/hooks/use-toast";
 
-export default function LoginPage() {
+function LoginPageContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -31,6 +33,7 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [isForgotPassword, setIsForgotPassword] = useState(false);
   const { toast } = useToast();
+  const safeRedirect = getSafeRedirectPath(searchParams.get("redirect")) || "/dashboard";
 
   // Handle redirect result and auth state changes
   useEffect(() => {
@@ -48,6 +51,10 @@ export default function LoginPage() {
         
         if (result?.user) {
           const info = getAdditionalUserInfo(result);
+          await bootstrapAuthenticatedUser({
+            displayName: result.user.displayName,
+            onboardingComplete: !info?.isNewUser,
+          });
           
           if (info?.isNewUser) {
             // New user - redirect to onboarding
@@ -55,12 +62,12 @@ export default function LoginPage() {
               title: "Welcome! Let's set up your profile",
               description: "Complete onboarding to activate your account.",
             });
-            router.push("/onboarding");
+            router.push(`/open?redirect=${encodeURIComponent(safeRedirect)}`);
             return;
           } else {
             // Existing user - redirect to dashboard
             toast({ title: "Welcome back!" });
-            router.push("/dashboard");
+            router.push(safeRedirect);
             return;
           }
         }
@@ -89,13 +96,13 @@ export default function LoginPage() {
         }
 
         // User is signed in
-        router.push("/dashboard");
+        router.push(safeRedirect);
       }
     });
 
     return () => unsubscribe();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [error, router]);
+  }, [error, router, safeRedirect, isLoading, isGoogleLoading, toast]);
 
   const handleEmailLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -117,7 +124,11 @@ export default function LoginPage() {
         return;
       }
 
-      router.push("/dashboard");
+      await bootstrapAuthenticatedUser({
+        displayName: credential.user.displayName,
+        onboardingComplete: credential.user.emailVerified,
+      });
+      router.push(safeRedirect);
     } catch (err: any) {
       setError(err.message || "Failed to sign in. Please check your credentials.");
     } finally {
@@ -148,17 +159,21 @@ export default function LoginPage() {
 
       const result = await signInWithPopup(auth, provider);
       const info = getAdditionalUserInfo(result);
+      await bootstrapAuthenticatedUser({
+        displayName: result.user.displayName,
+        onboardingComplete: !info?.isNewUser,
+      });
 
       if (info?.isNewUser) {
         toast({
           title: "Welcome! Let's set up your profile",
           description: "Complete onboarding to activate your account.",
         });
-        router.replace("/onboarding");
+        router.replace(`/open?redirect=${encodeURIComponent(safeRedirect)}`);
         return;
       }
 
-      router.replace("/dashboard");
+      router.replace(safeRedirect);
     } catch (err: any) {
       console.error("Google sign-in error:", err);
       const message =
@@ -386,5 +401,13 @@ export default function LoginPage() {
         </div>
       </motion.div>
     </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={null}>
+      <LoginPageContent />
+    </Suspense>
   );
 }

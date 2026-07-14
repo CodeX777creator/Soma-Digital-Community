@@ -13,7 +13,7 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (!loading && !user) {
-      router.push(`/open?redirect=${pathname}`);
+      router.push(`/login?redirect=${encodeURIComponent(pathname)}`);
     }
   }, [user, loading, router, pathname]);
 

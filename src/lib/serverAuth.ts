@@ -1,4 +1,5 @@
 import { NextRequest } from 'next/server';
+import { FieldValue } from 'firebase-admin/firestore';
 import { adminAuth, adminDb } from '@/lib/firebaseAdmin';
 import { hasPlan, isSubscriptionActive, normalizeSubscription, SubscriptionPlan, UserEntitlements } from '@/lib/entitlements';
 
@@ -48,10 +49,66 @@ export async function requireAuth(req: NextRequest): Promise<{ uid: string; emai
 export async function requireUserEntitlements(req: NextRequest): Promise<UserEntitlements> {
   const { uid } = await requireAuth(req);
   const userRef = adminDb.doc(`users/${uid}`);
-  const userSnap = await userRef.get();
+  let userSnap = await userRef.get();
 
   if (!userSnap.exists) {
-    throw authError('Authenticated user was not found');
+    const firebaseUser = await adminAuth.getUser(uid);
+    const timestamp = FieldValue.serverTimestamp();
+    const subscriptionId = `system_explorer_${uid}`;
+    const subscription = {
+      provider: 'system',
+      subscriptionId,
+      userId: uid,
+      subscriptionPlan: 'explorer',
+      planId: 'explorer',
+      plan: 'explorer',
+      subscriptionStatus: 'active',
+      status: 'active',
+      currentPeriodEnd: null,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    };
+    const displayName = firebaseUser.displayName || 'Explorer';
+    const batch = adminDb.batch();
+    batch.set(adminDb.collection('subscriptions').doc(subscriptionId), subscription, { merge: true });
+    batch.set(userRef, {
+      uid,
+      email: firebaseUser.email || '',
+      name: displayName,
+      displayName,
+      photoURL: firebaseUser.photoURL || null,
+      avatarURL: firebaseUser.photoURL || null,
+      emailVerified: firebaseUser.emailVerified === true,
+      role: 'member',
+      roles: [],
+      isAdmin: false,
+      tier: 'explorer',
+      subscriptionTier: 'explorer',
+      subscriptionPlan: 'explorer',
+      subscriptionStatus: 'active',
+      subscription,
+      onboardingComplete: false,
+      xp: 0,
+      level: 1,
+      streak: 0,
+      roadmapGenerated: false,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    }, { merge: true });
+    batch.set(adminDb.collection('publicProfiles').doc(uid), {
+      uid,
+      name: displayName,
+      displayName,
+      photoURL: firebaseUser.photoURL || null,
+      avatarURL: firebaseUser.photoURL || null,
+      tier: 'explorer',
+      xp: 0,
+      level: 1,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    }, { merge: true });
+    await batch.commit();
+    userSnap = await userRef.get();
   }
 
   const profile = userSnap.data();

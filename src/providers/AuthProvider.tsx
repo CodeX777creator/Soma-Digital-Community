@@ -1,14 +1,14 @@
 "use client";
 
 import React, { createContext, useContext, useEffect, useState, useRef, useCallback } from "react";
-import { onAuthStateChanged, User } from "firebase/auth";
-import { serverTimestamp, doc, onSnapshot, FirestoreError } from "firebase/firestore";
+import { onAuthStateChanged, signOut, User } from "firebase/auth";
+import { doc, onSnapshot, FirestoreError } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
 import { requiresEmailVerification } from "@/lib/auth";
 import { dbService, UserProfile } from "@/lib/db";
 import { useUserStore } from "@/store/useUserStore";
-import { awardXP } from "@/lib/xp";
 import { logger, logFirestoreError } from "@/lib/logger";
+import { bootstrapAuthenticatedUser } from "@/lib/auth-bootstrap";
 
 interface AuthContextType {
   user: User | null;
@@ -138,6 +138,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
       return;
     }
+    const authInstance = auth;
 
     // Clean up any existing listener
     if (authUnsubscribeRef.current) {
@@ -148,6 +149,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (!isMounted.current) return;
 
       if (requiresEmailVerification(firebaseUser)) {
+        if (authInstance.currentUser) {
+          await signOut(authInstance);
+        }
         setUser(null);
         setUserData(null);
         clearState();
@@ -159,61 +163,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       
       if (firebaseUser) {
         try {
-          const profile = await dbService.getUserProfile(firebaseUser.uid);
-
-          const today = new Date();
-          const yesterday = new Date(today);
-          yesterday.setDate(today.getDate() - 1);
-          yesterday.setHours(0, 0, 0, 0);
-
-          const isSameDay = (a: Date, b: Date) =>
-            a.getFullYear() === b.getFullYear() &&
-            a.getMonth() === b.getMonth() &&
-            a.getDate() === b.getDate();
-
-          let updatedProfile = profile;
-          let shouldRewardLogin = false;
-          let newStreak = 1;
-
-          if (profile) {
-            const rawLastLogin = profile.lastLogin;
-            const lastLogin = rawLastLogin?.toDate 
-              ? rawLastLogin.toDate() 
-              : rawLastLogin 
-                ? new Date(rawLastLogin) 
-                : null;
-
-            if (!lastLogin || !isSameDay(lastLogin, today)) {
-              shouldRewardLogin = true;
-              newStreak = lastLogin && isSameDay(lastLogin, yesterday)
-                ? (typeof profile.streak === 'number' ? profile.streak + 1 : 1)
-                : 1;
-            }
-          } else {
-            shouldRewardLogin = true;
-            newStreak = 1;
-          }
-
-          if (shouldRewardLogin && isMounted.current) {
-            try {
-              await dbService.saveUserProfile(firebaseUser.uid, {
-                lastLogin: serverTimestamp(),
-                streak: newStreak,
-              });
-              await awardXP(firebaseUser.uid, 5, 'login', { streak: newStreak });
-              updatedProfile = {
-                ...(profile ?? {}),
-                streak: newStreak,
-                lastLogin: today,
-              } as UserProfile;
-            } catch (xpError) {
-              logger.error("Failed to award login XP", xpError instanceof Error ? xpError : undefined);
-            }
-          }
+          const { profile } = await bootstrapAuthenticatedUser({
+            displayName: firebaseUser.displayName,
+          });
 
           if (isMounted.current) {
-            setUserData(updatedProfile);
-            if (updatedProfile) syncProfile(updatedProfile);
+            setUserData(profile as UserProfile);
+            syncProfile(profile);
           }
         } catch (error) {
           handleError(error, "Failed to fetch user profile");

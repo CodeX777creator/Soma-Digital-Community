@@ -11,7 +11,7 @@ import {
 } from "firebase/auth";
 import { ArrowRight, CheckCircle2, Cpu, Loader2, Lock, Mail, ShieldAlert, XCircle } from "lucide-react";
 import { auth } from "@/lib/firebase";
-import { dbService } from "@/lib/db";
+import { bootstrapAuthenticatedUser } from "@/lib/auth-bootstrap";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
@@ -102,8 +102,8 @@ function AuthActionContent() {
           if (currentUser) {
             await currentUser.reload();
             if (currentUser.emailVerified) {
-              await dbService.saveUserProfile(currentUser.uid, {
-                emailVerified: true,
+              await bootstrapAuthenticatedUser({
+                displayName: currentUser.displayName,
                 onboardingComplete: true,
               });
             }

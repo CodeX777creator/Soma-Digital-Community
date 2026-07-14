@@ -359,7 +359,14 @@ export interface UserProfile {
   uid: string;
   email: string;
   name: string;
+  displayName?: string;
+  role?: 'member' | 'admin' | string;
+  roles?: string[];
+  isAdmin?: boolean;
   tier: 'explorer' | 'pro' | 'elite';
+  subscriptionTier?: 'explorer' | 'pro' | 'elite';
+  subscriptionPlan?: 'explorer' | 'pro' | 'elite';
+  subscriptionStatus?: 'active' | 'cancelled' | 'past_due' | 'expired';
   onboardingComplete: boolean;
   selectedIdentity: string;
   experienceLevel: string;
@@ -383,6 +390,11 @@ export interface UserProfile {
     provider: string;
     status: string;
     plan: 'explorer' | 'pro' | 'elite';
+    subscriptionId?: string;
+    subscriptionPlan?: 'explorer' | 'pro' | 'elite';
+    subscriptionStatus?: 'active' | 'cancelled' | 'past_due' | 'expired';
+    planId?: 'explorer' | 'pro' | 'elite';
+    userId?: string;
     transactionId?: string;
     startedAt?: any;
     expiresAt?: any;
@@ -402,7 +414,11 @@ export const dbService = {
       subscription,
       isAdmin,
       roles,
+      role,
       plan,
+      subscriptionPlan,
+      subscriptionStatus,
+      subscriptionTier,
       ...safeData
     } = data as any;
 
@@ -410,12 +426,24 @@ export const dbService = {
     if (!snap.exists()) {
       const defaultProfile = {
         uid: userId,
+        role: 'member',
+        roles: [],
+        isAdmin: false,
         tier: 'explorer',
         subscription: {
-          provider: 'free',
+          provider: 'system',
+          subscriptionId: `system_explorer_${userId}`,
+          userId,
+          subscriptionPlan: 'explorer',
+          planId: 'explorer',
           status: 'active',
-          plan: 'explorer'
+          subscriptionStatus: 'active',
+          plan: 'explorer',
+          currentPeriodEnd: null
         },
+        subscriptionPlan: 'explorer',
+        subscriptionStatus: 'active',
+        subscriptionTier: 'explorer',
         onboardingComplete: false,
         xp: 0,
         roadmapGenerated: false,
@@ -510,7 +538,7 @@ export const dbService = {
   async getGlobalStats() {
     if (!db) throw new Error('Database not initialized');
     try {
-      const usersRef = collection(db, 'users');
+      const usersRef = collection(db, 'publicProfiles');
       const postsRef = collection(db, 'posts');
       
       const [usersCount, postsCount] = await Promise.all([
@@ -549,7 +577,7 @@ export const dbService = {
   async getRecentMembers(limitCount = 4) {
     if (!db) throw new Error('Database not initialized');
     try {
-      const usersRef = collection(db, 'users');
+      const usersRef = collection(db, 'publicProfiles');
       const q = query(usersRef, orderBy('createdAt', 'desc'), firestoreLimit(limitCount));
       const snap = await getDocs(q);
       return snap.docs.map(doc => ({
