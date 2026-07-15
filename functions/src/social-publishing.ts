@@ -1,7 +1,7 @@
 import * as admin from 'firebase-admin';
 import crypto from 'crypto';
 import { onSchedule } from 'firebase-functions/v2/scheduler';
-import { defineInt, defineSecret, defineString } from 'firebase-functions/params';
+import { defineBoolean, defineInt, defineSecret, defineString } from 'firebase-functions/params';
 import { sendNotificationWithPush } from './push-notifications';
 
 const db = admin.firestore();
@@ -14,14 +14,25 @@ const socialPublishEndpointFacebook = defineString('SOCIAL_PUBLISH_ENDPOINT_FACE
 const socialPublishEndpointLinkedIn = defineString('SOCIAL_PUBLISH_ENDPOINT_LINKEDIN', { default: '' });
 const socialPublishEndpointX = defineString('SOCIAL_PUBLISH_ENDPOINT_X', { default: '' });
 const socialPublishEndpointYouTube = defineString('SOCIAL_PUBLISH_ENDPOINT_YOUTUBE', { default: '' });
+const socialNativePublishingEnabled = defineBoolean('SOCIAL_NATIVE_PUBLISHING_ENABLED', { default: false });
+const socialMetaGraphBaseUrl = defineString('SOCIAL_META_GRAPH_BASE_URL', { default: 'https://graph.facebook.com/v20.0' });
+const socialTikTokApiBaseUrl = defineString('SOCIAL_TIKTOK_API_BASE_URL', { default: 'https://open.tiktokapis.com' });
+const socialLinkedInApiBaseUrl = defineString('SOCIAL_LINKEDIN_API_BASE_URL', { default: 'https://api.linkedin.com/v2' });
+const socialXApiBaseUrl = defineString('SOCIAL_X_API_BASE_URL', { default: 'https://api.twitter.com/2' });
+const socialYouTubeApiBaseUrl = defineString('SOCIAL_YOUTUBE_API_BASE_URL', { default: 'https://www.googleapis.com/youtube/v3' });
+const socialYouTubeUploadBaseUrl = defineString('SOCIAL_YOUTUBE_UPLOAD_BASE_URL', { default: 'https://www.googleapis.com/upload/youtube/v3' });
 const socialPublishBatchSize = defineInt('SOCIAL_PUBLISH_BATCH_SIZE', { default: 20 });
 const socialPublishMaxAttempts = defineInt('SOCIAL_PUBLISH_MAX_ATTEMPTS', { default: 5 });
 const socialPublishRetryDelayMinutes = defineInt('SOCIAL_PUBLISH_RETRY_DELAY_MINUTES', { default: 15 });
 const socialPublishLeaseMinutes = defineInt('SOCIAL_PUBLISH_LEASE_MINUTES', { default: 10 });
+const socialPublishUserDailyLimit = defineInt('SOCIAL_PUBLISH_USER_DAILY_LIMIT', { default: 50 });
+const socialPublishProviderRateLimitPerMinute = defineInt('SOCIAL_PUBLISH_PROVIDER_RATE_LIMIT_PER_MINUTE', { default: 30 });
+const socialPublishDuplicateWindowHours = defineInt('SOCIAL_PUBLISH_DUPLICATE_WINDOW_HOURS', { default: 24 });
+const socialTokenExpiryAlertWindowDays = defineInt('SOCIAL_TOKEN_EXPIRY_ALERT_WINDOW_DAYS', { default: 7 });
 
 type SocialPlatform = 'tiktok' | 'instagram' | 'facebook' | 'linkedin' | 'x' | 'youtube';
 type ScheduledPostStatus = 'draft' | 'scheduled' | 'publishing' | 'published' | 'failed' | 'editing' | 'cancelled';
-type SocialPublishAttemptStatus = 'processing' | 'success' | 'failed' | 'skipped';
+type SocialPublishAttemptStatus = 'processing' | 'pending_confirmation' | 'success' | 'failed' | 'skipped';
 type ScheduledPostContentType = 'text' | 'image' | 'carousel' | 'video' | 'document';
 type MediaItemType = 'image' | 'video' | 'document' | 'audio' | 'unknown';
 
@@ -47,6 +58,7 @@ interface SocialAccountDoc {
   metadata?: Record<string, unknown>;
   timezone?: string;
   scopes?: string[];
+  connectionReadiness?: Record<string, unknown>;
   expiresAt?: admin.firestore.Timestamp | null;
   lastSyncedAt?: admin.firestore.Timestamp | null;
   lastError?: string | null;
@@ -141,6 +153,85 @@ interface PublishOutcome {
   errorMessage?: string;
   retryable?: boolean;
   failureCode?: string;
+  deliveryMode?: 'native' | 'external_endpoint';
+  confirmationRequired?: boolean;
+  providerPublishStatus?: 'submitted' | 'processing' | 'published' | 'failed';
+}
+
+interface PublishGuardOutcome {
+  ok: boolean;
+  reason?: string;
+  retryable?: boolean;
+  failureCode?: string;
+}
+
+interface NativeStatusOutcome {
+  state: 'pending' | 'published' | 'failed' | 'unknown';
+  externalPostId?: string;
+  providerResponse?: string;
+  errorMessage?: string;
+  failureCode?: string;
+  retryable?: boolean;
+}
+
+interface NativePublishPayload {
+  payloadVersion: 'social-publish-v1';
+  scheduledPostId: string;
+  ownerId: string;
+  publicationGroupId?: string;
+  platform: SocialPlatform;
+  connectedAccountId?: string;
+  destination: {
+    socialAccountId: string;
+    providerAccountId?: string;
+    accountName: string;
+    handle?: string;
+    status: string;
+  };
+  title?: string;
+  caption: string;
+  campaignId?: string;
+  notes?: string;
+  content: {
+    contentType: ScheduledPostContentType;
+    caption: string;
+    hashtags: string[];
+    cta?: string;
+    finalText: string;
+    mediaItems: Array<{
+      assetId: string;
+      order: number;
+      type: MediaItemType;
+      mimeType?: string;
+      downloadUrl?: string;
+      thumbnail?: string;
+      storagePath?: string;
+    }>;
+  };
+  scheduling: {
+    scheduledTime: string;
+    timezone?: string;
+    status: ScheduledPostStatus;
+  };
+  platformSettings: Record<string, unknown>;
+  metadata: Record<string, unknown>;
+  credentials?: {
+    externalAccountId?: string;
+  };
+}
+
+interface NativePublisherContext {
+  post: ScheduledPostDoc;
+  account: SocialAccountDoc;
+  credentials: DecryptedCredentials | null;
+  payload: NativePublishPayload;
+}
+
+interface NativePublisher {
+  providerId: SocialPlatform;
+  canPublish(context: NativePublisherContext): { ok: boolean; reason?: string; retryable?: boolean; failureCode?: string };
+  publish(context: NativePublisherContext): Promise<PublishOutcome>;
+  checkStatus?(context: NativePublisherContext): Promise<NativeStatusOutcome>;
 }
 
 function decodeMasterKey(rawKey: string): Buffer {
@@ -195,6 +286,28 @@ function decryptCredentials(envelope?: EncryptedPayload | null): DecryptedCreden
   };
 }
 
+async function readCredentialEnvelope(account: SocialAccountDoc): Promise<EncryptedPayload | null> {
+  const accountId = account.socialAccountId;
+  if (accountId) {
+    const secretSnapshot = await db.collection('socialAccountSecrets').doc(accountId).get();
+    if (secretSnapshot.exists) {
+      const secret = secretSnapshot.data() as { credentialEnvelope?: EncryptedPayload | null; ownerId?: string };
+      if (secret.ownerId && secret.ownerId !== account.ownerId) {
+        throw new Error('Social account secret owner mismatch.');
+      }
+      if (secret.credentialEnvelope) {
+        return secret.credentialEnvelope;
+      }
+    }
+  }
+
+  return account.credentialEnvelope || null;
+}
+
+async function readCredentials(account: SocialAccountDoc): Promise<DecryptedCredentials | null> {
+  return decryptCredentials(await readCredentialEnvelope(account));
+}
+
 function toIso(value: unknown): string | null {
   if (!value) return null;
   if (value instanceof admin.firestore.Timestamp) {
@@ -247,6 +360,252 @@ function getDefaultContentType(platform: SocialPlatform): ScheduledPostContentTy
   }
 }
 
+function requiresMedia(platform: SocialPlatform, contentType: ScheduledPostContentType): boolean {
+  if (platform === 'tiktok' || platform === 'youtube' || platform === 'instagram') return true;
+  return contentType !== 'text';
+}
+
+function hasCompatibleMedia(payload: NativePublishPayload): boolean {
+  const items = payload.content.mediaItems || [];
+  switch (payload.platform) {
+    case 'tiktok':
+    case 'youtube':
+      return items.some((item) => item.type === 'video' && Boolean(item.downloadUrl || item.storagePath));
+    case 'instagram':
+      return items.some((item) => ['image', 'video'].includes(item.type) && Boolean(item.downloadUrl || item.storagePath));
+    case 'linkedin':
+      return payload.content.contentType === 'document'
+        ? items.some((item) => item.type === 'document' && Boolean(item.downloadUrl || item.storagePath))
+        : items.every((item) => item.type !== 'audio');
+    default:
+      return items.every((item) => item.type !== 'audio');
+  }
+}
+
+function baseNativeValidation(context: NativePublisherContext): { ok: boolean; reason?: string; retryable?: boolean; failureCode?: string } {
+  if (!context.credentials?.accessToken) {
+    return {
+      ok: false,
+      reason: 'Connected account has no usable access token.',
+      retryable: false,
+      failureCode: 'PROVIDER_REAUTH_REQUIRED',
+    };
+  }
+
+  if (!context.account.providerAccountId) {
+    return {
+      ok: false,
+      reason: 'No provider destination is selected for this account.',
+      retryable: false,
+      failureCode: 'PROVIDER_DESTINATION_REQUIRED',
+    };
+  }
+
+  if (requiresMedia(context.post.platform, context.payload.content.contentType) && !hasCompatibleMedia(context.payload)) {
+    return {
+      ok: false,
+      reason: `${context.post.platform} requires compatible media before publishing.`,
+      retryable: false,
+      failureCode: 'PROVIDER_MEDIA_REQUIRED',
+    };
+  }
+
+  return { ok: true };
+}
+
+function contentTypeHeader(headers: Headers): string {
+  return headers.get('content-type') || '';
+}
+
+function hasScope(account: SocialAccountDoc, scope: string): boolean {
+  return (account.scopes || []).includes(scope);
+}
+
+function sanitizeBoolean(value: unknown, fallback = false): boolean {
+  return typeof value === 'boolean' ? value : fallback;
+}
+
+function sanitizeNumber(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+}
+
+function sanitizeStringSetting(value: unknown, maxLength = 300): string | undefined {
+  return typeof value === 'string' ? value.slice(0, maxLength).trim() || undefined : undefined;
+}
+
+function sanitizeStringListSetting(value: unknown, maxItems = 20): string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((item): item is string => typeof item === 'string')
+    .map((item) => item.slice(0, 80).trim())
+    .filter(Boolean)
+    .slice(0, maxItems);
+}
+
+async function fetchMediaBytes(url: string): Promise<{ bytes: Buffer; contentType: string; contentLength: number }> {
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`Could not fetch media asset (${response.status})`);
+  }
+  const contentType = response.headers.get('content-type') || 'application/octet-stream';
+  const arrayBuffer = await response.arrayBuffer();
+  const bytes = Buffer.from(arrayBuffer);
+  return {
+    bytes,
+    contentType,
+    contentLength: bytes.length,
+  };
+}
+
+async function putBinaryToProvider(input: {
+  url: string;
+  bytes: Buffer;
+  contentType: string;
+  headers?: Record<string, string>;
+}): Promise<PublishOutcome> {
+  const response = await fetch(input.url, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': input.contentType,
+      'Content-Length': String(input.bytes.length),
+      ...(input.headers || {}),
+    },
+    body: input.bytes,
+  });
+  const responseText = await response.text().catch(() => '');
+  if (!response.ok) {
+    return {
+      success: false,
+      errorMessage: `Provider upload returned HTTP ${response.status}`,
+      failureCode: response.status === 429 ? 'PROVIDER_RATE_LIMITED' : 'PROVIDER_MEDIA_UPLOAD_FAILED',
+      providerResponse: responseText.slice(0, 2000),
+      retryable: response.status >= 500 || response.status === 429,
+      deliveryMode: 'native',
+    };
+  }
+  return {
+    success: true,
+    providerResponse: responseText.slice(0, 2000),
+    deliveryMode: 'native',
+  };
+}
+
+async function postJsonToProvider(input: {
+  url: string;
+  accessToken: string;
+  body: Record<string, unknown>;
+  headers?: Record<string, string>;
+}): Promise<PublishOutcome> {
+  const response = await fetch(input.url, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${input.accessToken}`,
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+      ...(input.headers || {}),
+    },
+    body: JSON.stringify(input.body),
+  });
+
+  const responseText = await response.text().catch(() => '');
+  const providerResponse = responseText.slice(0, 2000);
+  let parsed: Record<string, unknown> = {};
+  try {
+    if (responseText && contentTypeHeader(response.headers).includes('application/json')) {
+      parsed = JSON.parse(responseText) as Record<string, unknown>;
+    }
+  } catch {
+    parsed = {};
+  }
+
+  if (!response.ok) {
+    const errorMessage = typeof parsed.error === 'object' && parsed.error
+      ? JSON.stringify(parsed.error).slice(0, 500)
+      : typeof parsed.error === 'string'
+        ? parsed.error
+        : `Provider returned HTTP ${response.status}`;
+    return {
+      success: false,
+      errorMessage,
+      failureCode: response.status === 429 ? 'PROVIDER_RATE_LIMITED' : 'PROVIDER_NATIVE_REJECTED',
+      providerResponse,
+      retryable: response.status >= 500 || response.status === 429,
+      deliveryMode: 'native',
+    };
+  }
+
+  const externalPostId = typeof parsed.id === 'string'
+    ? parsed.id
+    : typeof parsed.post_id === 'string'
+      ? parsed.post_id
+      : typeof parsed.video_id === 'string'
+        ? parsed.video_id
+        : undefined;
+
+  return {
+    success: true,
+    externalPostId,
+    providerResponse,
+    deliveryMode: 'native',
+  };
+}
+
+async function getJsonFromProvider(input: {
+  url: string;
+  accessToken: string;
+  params?: Record<string, string>;
+}): Promise<{ ok: boolean; data: Record<string, unknown>; providerResponse: string; errorMessage?: string; retryable?: boolean; failureCode?: string }> {
+  const url = new URL(input.url);
+  Object.entries(input.params || {}).forEach(([key, value]) => url.searchParams.set(key, value));
+  const response = await fetch(url.toString(), {
+    method: 'GET',
+    headers: {
+      Authorization: `Bearer ${input.accessToken}`,
+      Accept: 'application/json',
+    },
+  });
+  const responseText = await response.text().catch(() => '');
+  const providerResponse = responseText.slice(0, 2000);
+  let parsed: Record<string, unknown> = {};
+  try {
+    parsed = responseText ? JSON.parse(responseText) as Record<string, unknown> : {};
+  } catch {
+    parsed = {};
+  }
+  if (!response.ok) {
+    const errorMessage = typeof parsed.error === 'object' && parsed.error
+      ? JSON.stringify(parsed.error).slice(0, 500)
+      : `Provider returned HTTP ${response.status}`;
+    return {
+      ok: false,
+      data: parsed,
+      providerResponse,
+      errorMessage,
+      failureCode: response.status === 429 ? 'PROVIDER_RATE_LIMITED' : 'PROVIDER_NATIVE_REJECTED',
+      retryable: response.status >= 500 || response.status === 429,
+    };
+  }
+  return { ok: true, data: parsed, providerResponse };
+}
+
+async function resolveMetaPageAccessToken(context: NativePublisherContext): Promise<string> {
+  const userToken = context.credentials?.accessToken || '';
+  const pageId = context.account.providerAccountId || '';
+  if (!userToken || !pageId) return userToken;
+
+  const baseUrl = socialMetaGraphBaseUrl.value().replace(/\/$/, '');
+  const response = await getJsonFromProvider({
+    url: `${baseUrl}/me/accounts`,
+    accessToken: userToken,
+    params: { fields: 'id,name,access_token' },
+  });
+  if (!response.ok) return userToken;
+
+  const pages = Array.isArray(response.data.data) ? response.data.data as Record<string, unknown>[] : [];
+  const page = pages.find((entry) => entry.id === pageId);
+  return typeof page?.access_token === 'string' && page.access_token ? page.access_token : userToken;
+}
+
 function buildFinalSocialText(caption: string, hashtags: string[], cta?: string): string {
   const parts = [caption.trim()];
   if (cta?.trim()) {
@@ -256,6 +615,919 @@ function buildFinalSocialText(caption: string, hashtags: string[], cta?: string)
     parts.push(hashtags.map((tag) => `#${tag.replace(/^#/, '')}`).join(' '));
   }
   return parts.filter(Boolean).join('\n\n');
+}
+
+function isCalendarEvent(post: Pick<ScheduledPostDoc, 'metadata'>): boolean {
+  return post.metadata?.calendarMode === 'events';
+}
+
+class UnsupportedNativePublisher implements NativePublisher {
+  constructor(public providerId: SocialPlatform, private reason: string) {}
+
+  canPublish(): { ok: boolean; reason?: string; retryable?: boolean; failureCode?: string } {
+    return {
+      ok: false,
+      reason: this.reason,
+      retryable: false,
+      failureCode: 'PROVIDER_NATIVE_UNSUPPORTED',
+    };
+  }
+
+  async publish(): Promise<PublishOutcome> {
+    return {
+      success: false,
+      errorMessage: this.reason,
+      retryable: false,
+      failureCode: 'PROVIDER_NATIVE_UNSUPPORTED',
+      deliveryMode: 'native',
+    };
+  }
+}
+
+class TikTokNativePublisher implements NativePublisher {
+  providerId: SocialPlatform = 'tiktok';
+
+  canPublish(context: NativePublisherContext) {
+    const base = baseNativeValidation(context);
+    if (!base.ok) return base;
+    const hasVideo = context.payload.content.mediaItems.some((item) => item.type === 'video' && Boolean(item.downloadUrl));
+    if (!hasVideo) {
+      return {
+        ok: false,
+        reason: 'TikTok native publishing requires a video asset with a public HTTPS URL.',
+        retryable: false,
+        failureCode: 'TIKTOK_VIDEO_URL_REQUIRED',
+      };
+    }
+
+    const mode = this.resolveMode(context);
+    if (mode === 'direct' && !hasScope(context.account, 'video.publish')) {
+      return {
+        ok: false,
+        reason: 'TikTok Direct Post requires the video.publish scope.',
+        retryable: false,
+        failureCode: 'TIKTOK_DIRECT_POST_SCOPE_MISSING',
+      };
+    }
+    if (mode === 'draft' && !hasScope(context.account, 'video.upload')) {
+      return {
+        ok: false,
+        reason: 'TikTok draft upload requires the video.upload scope.',
+        retryable: false,
+        failureCode: 'TIKTOK_UPLOAD_SCOPE_MISSING',
+      };
+    }
+
+    return { ok: true };
+  }
+
+  async publish(context: NativePublisherContext): Promise<PublishOutcome> {
+    const mode = this.resolveMode(context);
+    const video = context.payload.content.mediaItems.find((item) => item.type === 'video' && item.downloadUrl);
+    if (!video?.downloadUrl) {
+      return {
+        success: false,
+        errorMessage: 'TikTok native publishing requires a video URL.',
+        retryable: false,
+        failureCode: 'TIKTOK_VIDEO_URL_REQUIRED',
+        deliveryMode: 'native',
+      };
+    }
+
+    const baseUrl = socialTikTokApiBaseUrl.value().replace(/\/$/, '');
+    const postInfo = await this.buildPostInfo(context);
+    const endpoint = mode === 'draft'
+      ? `${baseUrl}/v2/post/publish/inbox/video/init/`
+      : `${baseUrl}/v2/post/publish/video/init/`;
+    const body = {
+      post_info: postInfo,
+      source_info: {
+        source: 'PULL_FROM_URL',
+        video_url: video.downloadUrl,
+      },
+    };
+
+    const response = await this.postTikTok(endpoint, context.credentials?.accessToken || '', body);
+    if (!response.success) {
+      return response;
+    }
+
+    return {
+      ...response,
+      confirmationRequired: true,
+      providerPublishStatus: 'submitted',
+      providerResponse: JSON.stringify({
+        deliveryMode: 'native',
+        provider: 'tiktok',
+        mode,
+        status: 'SUBMITTED',
+        publishId: response.externalPostId,
+        note: 'TikTok accepted the publish request. Status polling should reconcile the final provider status.',
+        raw: response.providerResponse ? JSON.parse(response.providerResponse) : null,
+      }).slice(0, 2000),
+    };
+  }
+
+  async checkStatus(context: NativePublisherContext): Promise<NativeStatusOutcome> {
+    const publishId = context.post.providerPostId || context.post.externalPostId;
+    if (!publishId) {
+      return {
+        state: 'unknown',
+        errorMessage: 'TikTok publish status cannot be checked without a publish_id.',
+        failureCode: 'TIKTOK_PUBLISH_ID_MISSING',
+        retryable: false,
+      };
+    }
+
+    const baseUrl = socialTikTokApiBaseUrl.value().replace(/\/$/, '');
+    const response = await fetch(`${baseUrl}/v2/post/publish/status/fetch/`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${context.credentials?.accessToken || ''}`,
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+      },
+      body: JSON.stringify({ publish_id: publishId }),
+    });
+    const text = await response.text().catch(() => '');
+    const providerResponse = text.slice(0, 2000);
+    let parsed: Record<string, unknown> = {};
+    try {
+      parsed = text ? JSON.parse(text) as Record<string, unknown> : {};
+    } catch {
+      parsed = {};
+    }
+
+    if (!response.ok) {
+      return {
+        state: 'unknown',
+        errorMessage: `TikTok status check returned HTTP ${response.status}`,
+        failureCode: response.status === 429 ? 'PROVIDER_RATE_LIMITED' : 'TIKTOK_STATUS_CHECK_FAILED',
+        providerResponse,
+        retryable: response.status >= 500 || response.status === 429,
+      };
+    }
+
+    const error = parsed.error as Record<string, unknown> | undefined;
+    if (error && typeof error.code === 'string' && error.code !== 'ok') {
+      return {
+        state: error.code === 'rate_limit_exceeded' ? 'unknown' : 'failed',
+        errorMessage: typeof error.message === 'string' ? error.message : error.code,
+        failureCode: error.code === 'rate_limit_exceeded' ? 'PROVIDER_RATE_LIMITED' : 'TIKTOK_STATUS_REJECTED',
+        providerResponse,
+        retryable: error.code === 'rate_limit_exceeded',
+      };
+    }
+
+    const data = (parsed.data || {}) as Record<string, unknown>;
+    const status = typeof data.status === 'string' ? data.status : '';
+    const failureReason = typeof data.fail_reason === 'string' ? data.fail_reason : undefined;
+    if (['PUBLISH_COMPLETE', 'SEND_TO_USER_INBOX'].includes(status)) {
+      return { state: 'published', externalPostId: publishId, providerResponse };
+    }
+    if (['FAILED', 'PUBLISH_FAILED', 'REJECTED'].includes(status) || failureReason) {
+      return {
+        state: 'failed',
+        externalPostId: publishId,
+        errorMessage: failureReason || `TikTok publish status is ${status || 'failed'}.`,
+        failureCode: 'TIKTOK_PUBLISH_FAILED',
+        providerResponse,
+        retryable: false,
+      };
+    }
+    return { state: 'pending', externalPostId: publishId, providerResponse, retryable: true };
+  }
+
+  private resolveMode(context: NativePublisherContext): 'direct' | 'draft' {
+    const requested = context.payload.platformSettings.tiktokPublishMode
+      || context.payload.platformSettings.publishMode
+      || context.payload.platformSettings.mode;
+    if (requested === 'draft' || requested === 'inbox' || requested === 'upload') return 'draft';
+    if (requested === 'direct') return 'direct';
+    return hasScope(context.account, 'video.publish') ? 'direct' : 'draft';
+  }
+
+  private async buildPostInfo(context: NativePublisherContext): Promise<Record<string, unknown>> {
+    const settings = context.payload.platformSettings || {};
+    const creatorInfo = await this.fetchCreatorInfo(context.credentials?.accessToken || '').catch((error) => ({
+      privacyLevelOptions: [] as string[],
+      warning: error instanceof Error ? error.message : String(error),
+    }));
+    const privacyOptions = creatorInfo.privacyLevelOptions;
+    const requestedPrivacy = typeof settings.privacyLevel === 'string' ? settings.privacyLevel : undefined;
+    const privacyLevel = requestedPrivacy && privacyOptions.includes(requestedPrivacy)
+      ? requestedPrivacy
+      : privacyOptions.includes('SELF_ONLY')
+        ? 'SELF_ONLY'
+        : privacyOptions[0] || 'SELF_ONLY';
+
+    const postInfo: Record<string, unknown> = {
+      title: context.payload.content.finalText.slice(0, 2200),
+      privacy_level: privacyLevel,
+      disable_duet: sanitizeBoolean(settings.disableDuet, false),
+      disable_comment: sanitizeBoolean(settings.disableComment, false),
+      disable_stitch: sanitizeBoolean(settings.disableStitch, false),
+    };
+
+    const coverTimestamp = sanitizeNumber(settings.videoCoverTimestampMs);
+    if (coverTimestamp !== undefined) {
+      postInfo.video_cover_timestamp_ms = coverTimestamp;
+    }
+
+    if (typeof settings.isAigc === 'boolean') {
+      postInfo.is_aigc = settings.isAigc;
+    }
+    if (typeof settings.brandContentToggle === 'boolean') {
+      postInfo.brand_content_toggle = settings.brandContentToggle;
+    }
+    if (typeof settings.brandOrganicToggle === 'boolean') {
+      postInfo.brand_organic_toggle = settings.brandOrganicToggle;
+    }
+
+    return postInfo;
+  }
+
+  private async fetchCreatorInfo(accessToken: string): Promise<{ privacyLevelOptions: string[] }> {
+    const baseUrl = socialTikTokApiBaseUrl.value().replace(/\/$/, '');
+    const response = await fetch(`${baseUrl}/v2/post/publish/creator_info/query/`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+      },
+      body: JSON.stringify({}),
+    });
+    const text = await response.text().catch(() => '');
+    const parsed = text ? JSON.parse(text) as Record<string, unknown> : {};
+    if (!response.ok) {
+      throw new Error(`TikTok creator info returned HTTP ${response.status}`);
+    }
+    const error = parsed.error as Record<string, unknown> | undefined;
+    if (error && typeof error.code === 'string' && error.code !== 'ok') {
+      throw new Error(typeof error.message === 'string' ? error.message : error.code);
+    }
+    const data = (parsed.data || {}) as Record<string, unknown>;
+    const options = Array.isArray(data.privacy_level_options)
+      ? data.privacy_level_options.filter((item): item is string => typeof item === 'string')
+      : [];
+    return { privacyLevelOptions: options };
+  }
+
+  private async postTikTok(url: string, accessToken: string, body: Record<string, unknown>): Promise<PublishOutcome> {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+      },
+      body: JSON.stringify(body),
+    });
+    const text = await response.text().catch(() => '');
+    const providerResponse = text.slice(0, 2000);
+    let parsed: Record<string, unknown> = {};
+    try {
+      parsed = text ? JSON.parse(text) as Record<string, unknown> : {};
+    } catch {
+      parsed = {};
+    }
+
+    if (!response.ok) {
+      return {
+        success: false,
+        errorMessage: `TikTok returned HTTP ${response.status}`,
+        failureCode: response.status === 429 ? 'PROVIDER_RATE_LIMITED' : 'TIKTOK_REQUEST_FAILED',
+        providerResponse,
+        retryable: response.status >= 500 || response.status === 429,
+        deliveryMode: 'native',
+      };
+    }
+
+    const error = parsed.error as Record<string, unknown> | undefined;
+    if (error && typeof error.code === 'string' && error.code !== 'ok') {
+      return {
+        success: false,
+        errorMessage: typeof error.message === 'string' ? error.message : error.code,
+        failureCode: error.code === 'rate_limit_exceeded' ? 'PROVIDER_RATE_LIMITED' : 'TIKTOK_REQUEST_REJECTED',
+        providerResponse,
+        retryable: error.code === 'rate_limit_exceeded',
+        deliveryMode: 'native',
+      };
+    }
+
+    const data = (parsed.data || {}) as Record<string, unknown>;
+    const publishId = typeof data.publish_id === 'string' ? data.publish_id : undefined;
+    if (!publishId) {
+      return {
+        success: false,
+        errorMessage: 'TikTok accepted the request but did not return a publish_id.',
+        failureCode: 'TIKTOK_PUBLISH_ID_MISSING',
+        providerResponse,
+        retryable: true,
+        deliveryMode: 'native',
+      };
+    }
+
+    return {
+      success: true,
+      externalPostId: publishId,
+      providerResponse,
+      deliveryMode: 'native',
+    };
+  }
+}
+
+class FacebookNativePublisher implements NativePublisher {
+  providerId: SocialPlatform = 'facebook';
+
+  canPublish(context: NativePublisherContext) {
+    const base = baseNativeValidation(context);
+    if (!base.ok) return base;
+    if (context.payload.content.contentType === 'video' && !context.payload.content.mediaItems.some((item) => item.type === 'video' && item.downloadUrl)) {
+      return {
+        ok: false,
+        reason: 'Facebook video publishing requires a video asset with a public URL.',
+        retryable: false,
+        failureCode: 'FACEBOOK_VIDEO_URL_REQUIRED',
+      };
+    }
+    return { ok: true };
+  }
+
+  async publish(context: NativePublisherContext): Promise<PublishOutcome> {
+    const pageId = context.account.providerAccountId;
+    const accessToken = await resolveMetaPageAccessToken(context);
+    const media = context.payload.content.mediaItems.find((item) => item.type === 'image' && item.downloadUrl);
+    const video = context.payload.content.mediaItems.find((item) => item.type === 'video' && item.downloadUrl);
+    const baseUrl = `${socialMetaGraphBaseUrl.value().replace(/\/$/, '')}/${pageId}`;
+    if (video?.downloadUrl) {
+      return postJsonToProvider({
+        url: `${baseUrl}/videos`,
+        accessToken,
+        body: {
+          file_url: video.downloadUrl,
+          description: context.payload.content.finalText,
+        },
+      });
+    }
+
+    if (media?.downloadUrl) {
+      return postJsonToProvider({
+        url: `${baseUrl}/photos`,
+        accessToken,
+        body: {
+          url: media.downloadUrl,
+          caption: context.payload.content.finalText,
+          published: true,
+        },
+      });
+    }
+
+    return postJsonToProvider({
+      url: `${baseUrl}/feed`,
+      accessToken,
+      body: {
+        message: context.payload.content.finalText,
+      },
+    });
+  }
+}
+
+class InstagramNativePublisher implements NativePublisher {
+  providerId: SocialPlatform = 'instagram';
+
+  canPublish(context: NativePublisherContext) {
+    const base = baseNativeValidation(context);
+    if (!base.ok) return base;
+    const media = context.payload.content.mediaItems.filter((item) => ['image', 'video'].includes(item.type) && item.downloadUrl);
+    if (media.length === 0) {
+      return {
+        ok: false,
+        reason: 'Instagram publishing requires at least one image or video with a public URL.',
+        retryable: false,
+        failureCode: 'INSTAGRAM_MEDIA_URL_REQUIRED',
+      };
+    }
+    if (context.payload.content.contentType === 'carousel' && media.length < 2) {
+      return {
+        ok: false,
+        reason: 'Instagram carousel publishing requires at least two media assets.',
+        retryable: false,
+        failureCode: 'INSTAGRAM_CAROUSEL_MEDIA_REQUIRED',
+      };
+    }
+    return { ok: true };
+  }
+
+  async publish(context: NativePublisherContext): Promise<PublishOutcome> {
+    const accessToken = await resolveMetaPageAccessToken(context);
+    const igUserId = context.account.providerAccountId || context.credentials?.externalAccountId || '';
+    const baseUrl = `${socialMetaGraphBaseUrl.value().replace(/\/$/, '')}/${igUserId}`;
+    const mediaItems = context.payload.content.mediaItems
+      .filter((item) => ['image', 'video'].includes(item.type) && item.downloadUrl)
+      .sort((left, right) => left.order - right.order);
+
+    const contentType = context.payload.content.contentType;
+    if (contentType === 'carousel' || mediaItems.length > 1) {
+      const childIds: string[] = [];
+      for (const item of mediaItems.slice(0, 10)) {
+        const child = await this.createMediaContainer({
+          url: `${baseUrl}/media`,
+          accessToken,
+          body: this.buildContainerBody(item, context, true),
+        });
+        if (!child.success || !child.externalPostId) return child;
+        childIds.push(child.externalPostId);
+      }
+
+      const parent = await this.createMediaContainer({
+        url: `${baseUrl}/media`,
+        accessToken,
+        body: {
+          caption: context.payload.content.finalText,
+          media_type: 'CAROUSEL',
+          children: childIds.join(','),
+        },
+      });
+      if (!parent.success || !parent.externalPostId) return parent;
+      return this.publishContainer(baseUrl, accessToken, parent.externalPostId, {
+        carouselChildren: childIds,
+      });
+    }
+
+    const item = mediaItems[0];
+    const container = await this.createMediaContainer({
+      url: `${baseUrl}/media`,
+      accessToken,
+      body: this.buildContainerBody(item, context, false),
+    });
+    if (!container.success || !container.externalPostId) return container;
+    return this.publishContainer(baseUrl, accessToken, container.externalPostId);
+  }
+
+  private buildContainerBody(
+    item: NativePublishPayload['content']['mediaItems'][number],
+    context: NativePublisherContext,
+    isCarouselItem: boolean
+  ): Record<string, unknown> {
+    const body: Record<string, unknown> = {
+      is_carousel_item: isCarouselItem,
+    };
+    if (!isCarouselItem) {
+      body.caption = context.payload.content.finalText;
+    }
+    if (item.type === 'video') {
+      body.media_type = context.payload.platformSettings.instagramMediaType === 'VIDEO' ? 'VIDEO' : 'REELS';
+      body.video_url = item.downloadUrl;
+      body.share_to_feed = sanitizeBoolean(context.payload.platformSettings.shareToFeed, true);
+      return body;
+    }
+    body.image_url = item.downloadUrl;
+    return body;
+  }
+
+  private async createMediaContainer(input: {
+    url: string;
+    accessToken: string;
+    body: Record<string, unknown>;
+  }): Promise<PublishOutcome> {
+    const result = await postJsonToProvider(input);
+    if (!result.success) {
+      return {
+        ...result,
+        failureCode: result.failureCode || 'INSTAGRAM_CONTAINER_CREATE_FAILED',
+      };
+    }
+    if (!result.externalPostId) {
+      return {
+        success: false,
+        errorMessage: 'Instagram media container did not return an ID.',
+        failureCode: 'INSTAGRAM_CONTAINER_ID_MISSING',
+        providerResponse: result.providerResponse,
+        retryable: true,
+        deliveryMode: 'native',
+      };
+    }
+    return result;
+  }
+
+  private async publishContainer(
+    baseUrl: string,
+    accessToken: string,
+    creationId: string,
+    metadata?: Record<string, unknown>
+  ): Promise<PublishOutcome> {
+    const result = await postJsonToProvider({
+      url: `${baseUrl}/media_publish`,
+      accessToken,
+      body: {
+        creation_id: creationId,
+      },
+    });
+    if (!result.success) {
+      return {
+        ...result,
+        failureCode: result.failureCode || 'INSTAGRAM_MEDIA_PUBLISH_FAILED',
+      };
+    }
+    return {
+      ...result,
+      externalPostId: result.externalPostId || creationId,
+      providerResponse: JSON.stringify({
+        provider: 'instagram',
+        creationId,
+        mediaId: result.externalPostId || null,
+        ...(metadata || {}),
+        raw: result.providerResponse ? JSON.parse(result.providerResponse) : null,
+      }).slice(0, 2000),
+    };
+  }
+}
+
+class LinkedInNativePublisher implements NativePublisher {
+  providerId: SocialPlatform = 'linkedin';
+
+  canPublish(context: NativePublisherContext) {
+    const base = baseNativeValidation(context);
+    if (!base.ok) return base;
+    const unsupported = context.payload.content.mediaItems.find((item) => item.type !== 'image');
+    if (unsupported) {
+      return {
+        ok: false,
+        reason: 'LinkedIn video and document publishing require dedicated upload adapters.',
+        retryable: false,
+        failureCode: 'PROVIDER_NATIVE_UPLOAD_REQUIRED',
+      };
+    }
+    return { ok: true };
+  }
+
+  async publish(context: NativePublisherContext): Promise<PublishOutcome> {
+    const author = context.account.providerAccountId?.startsWith('urn:')
+      ? context.account.providerAccountId
+      : `urn:li:person:${context.account.providerAccountId}`;
+    const image = context.payload.content.mediaItems.find((item) => item.type === 'image' && item.downloadUrl);
+    if (image?.downloadUrl) {
+      const mediaUrn = await this.uploadImage(context, author, image.downloadUrl);
+      if (!mediaUrn.success || !mediaUrn.externalPostId) return mediaUrn;
+      return this.createPost(context, author, 'IMAGE', [{
+        status: 'READY',
+        media: mediaUrn.externalPostId,
+        title: { text: context.payload.title || context.payload.caption.slice(0, 80) || 'SDC image post' },
+      }]);
+    }
+    return this.createPost(context, author, 'NONE');
+  }
+
+  private async uploadImage(context: NativePublisherContext, author: string, imageUrl: string): Promise<PublishOutcome> {
+    const baseUrl = socialLinkedInApiBaseUrl.value().replace(/\/$/, '');
+    const register = await postJsonToProvider({
+      url: `${baseUrl}/assets?action=registerUpload`,
+      accessToken: context.credentials?.accessToken || '',
+      headers: { 'X-Restli-Protocol-Version': '2.0.0' },
+      body: {
+        registerUploadRequest: {
+          recipes: ['urn:li:digitalmediaRecipe:feedshare-image'],
+          owner: author,
+          serviceRelationships: [{
+            relationshipType: 'OWNER',
+            identifier: 'urn:li:userGeneratedContent',
+          }],
+        },
+      },
+    });
+    if (!register.success || !register.providerResponse) return register;
+
+    let parsed: Record<string, unknown> = {};
+    try {
+      parsed = JSON.parse(register.providerResponse) as Record<string, unknown>;
+    } catch {
+      parsed = {};
+    }
+    const value = (parsed.value || {}) as Record<string, unknown>;
+    const asset = typeof value.asset === 'string' ? value.asset : undefined;
+    const uploadMechanism = (value.uploadMechanism || {}) as Record<string, unknown>;
+    const mediaUpload = (uploadMechanism['com.linkedin.digitalmedia.uploading.MediaUploadHttpRequest'] || {}) as Record<string, unknown>;
+    const uploadUrl = typeof mediaUpload.uploadUrl === 'string' ? mediaUpload.uploadUrl : undefined;
+    if (!asset || !uploadUrl) {
+      return {
+        success: false,
+        errorMessage: 'LinkedIn did not return a media upload URL.',
+        failureCode: 'LINKEDIN_UPLOAD_URL_MISSING',
+        providerResponse: register.providerResponse,
+        retryable: true,
+        deliveryMode: 'native',
+      };
+    }
+
+    const media = await fetchMediaBytes(imageUrl);
+    const uploaded = await putBinaryToProvider({
+      url: uploadUrl,
+      bytes: media.bytes,
+      contentType: media.contentType.startsWith('image/') ? media.contentType : 'image/jpeg',
+    });
+    if (!uploaded.success) return uploaded;
+    return {
+      success: true,
+      externalPostId: asset,
+      providerResponse: JSON.stringify({ provider: 'linkedin', asset, upload: uploaded.providerResponse || null }).slice(0, 2000),
+      deliveryMode: 'native',
+    };
+  }
+
+  private async createPost(
+    context: NativePublisherContext,
+    author: string,
+    shareMediaCategory: 'NONE' | 'IMAGE',
+    media?: Array<Record<string, unknown>>
+  ): Promise<PublishOutcome> {
+    const baseUrl = socialLinkedInApiBaseUrl.value().replace(/\/$/, '');
+    return postJsonToProvider({
+      url: `${baseUrl}/ugcPosts`,
+      accessToken: context.credentials?.accessToken || '',
+      headers: { 'X-Restli-Protocol-Version': '2.0.0' },
+      body: {
+        author,
+        lifecycleState: 'PUBLISHED',
+        specificContent: {
+          'com.linkedin.ugc.ShareContent': {
+            shareCommentary: {
+              text: context.payload.content.finalText,
+            },
+            shareMediaCategory,
+            ...(media ? { media } : {}),
+          },
+        },
+        visibility: {
+          'com.linkedin.ugc.MemberNetworkVisibility': 'PUBLIC',
+        },
+      },
+    });
+  }
+}
+
+class XNativePublisher implements NativePublisher {
+  providerId: SocialPlatform = 'x';
+
+  canPublish(context: NativePublisherContext) {
+    const base = baseNativeValidation(context);
+    if (!base.ok) return base;
+    const mediaIds = this.resolveMediaIds(context);
+    if (context.payload.content.mediaItems.length > 0 && mediaIds.length === 0) {
+      return {
+        ok: false,
+        reason: 'X media publishing requires pre-uploaded media IDs or the media upload adapter.',
+        retryable: false,
+        failureCode: 'PROVIDER_NATIVE_UPLOAD_REQUIRED',
+      };
+    }
+    if (context.payload.content.finalText.length > 280) {
+      return {
+        ok: false,
+        reason: 'X posts must be 280 characters or fewer.',
+        retryable: false,
+        failureCode: 'PROVIDER_CAPTION_TOO_LONG',
+      };
+    }
+    return { ok: true };
+  }
+
+  async publish(context: NativePublisherContext): Promise<PublishOutcome> {
+    const mediaIds = this.resolveMediaIds(context);
+    const body: Record<string, unknown> = {
+      text: context.payload.content.finalText,
+    };
+    if (mediaIds.length > 0) {
+      body.media = { media_ids: mediaIds.slice(0, 4) };
+    }
+    return postJsonToProvider({
+      url: `${socialXApiBaseUrl.value().replace(/\/$/, '')}/tweets`,
+      accessToken: context.credentials?.accessToken || '',
+      body,
+    });
+  }
+
+  private resolveMediaIds(context: NativePublisherContext): string[] {
+    const raw = context.payload.platformSettings.xMediaIds || context.payload.platformSettings.mediaIds;
+    return sanitizeStringListSetting(raw, 4);
+  }
+}
+
+class YouTubeNativePublisher implements NativePublisher {
+  providerId: SocialPlatform = 'youtube';
+
+  canPublish(context: NativePublisherContext) {
+    const base = baseNativeValidation(context);
+    if (!base.ok) return base;
+    const video = this.resolveVideo(context);
+    if (!video?.downloadUrl) {
+      return {
+        ok: false,
+        reason: 'YouTube publishing requires one completed video asset with a public URL.',
+        retryable: false,
+        failureCode: 'YOUTUBE_VIDEO_URL_REQUIRED',
+      };
+    }
+    if (!hasScope(context.account, 'https://www.googleapis.com/auth/youtube.upload')) {
+      return {
+        ok: false,
+        reason: 'The connected YouTube account is missing the upload permission.',
+        retryable: false,
+        failureCode: 'YOUTUBE_UPLOAD_SCOPE_MISSING',
+      };
+    }
+    return { ok: true };
+  }
+
+  async publish(context: NativePublisherContext): Promise<PublishOutcome> {
+    const video = this.resolveVideo(context);
+    if (!video?.downloadUrl) {
+      return {
+        success: false,
+        errorMessage: 'YouTube publishing requires a video asset URL.',
+        failureCode: 'YOUTUBE_VIDEO_URL_REQUIRED',
+        retryable: false,
+        deliveryMode: 'native',
+      };
+    }
+
+    const media = await fetchMediaBytes(video.downloadUrl);
+    const contentType = media.contentType.startsWith('video/') ? media.contentType : video.mimeType || 'video/mp4';
+    const uploadUrl = await this.createUploadSession(context, media.contentLength, contentType);
+    if (!uploadUrl.success || !uploadUrl.providerResponse) return uploadUrl;
+
+    const uploaded = await putBinaryToProvider({
+      url: uploadUrl.providerResponse,
+      bytes: media.bytes,
+      contentType,
+    });
+    if (!uploaded.success) return uploaded;
+
+    let parsed: Record<string, unknown> = {};
+    try {
+      parsed = uploaded.providerResponse ? JSON.parse(uploaded.providerResponse) as Record<string, unknown> : {};
+    } catch {
+      parsed = {};
+    }
+
+    const externalPostId = typeof parsed.id === 'string' ? parsed.id : undefined;
+    return {
+      success: true,
+      externalPostId,
+      providerResponse: JSON.stringify({
+        provider: 'youtube',
+        videoId: externalPostId || null,
+        raw: parsed,
+      }).slice(0, 2000),
+      deliveryMode: 'native',
+      confirmationRequired: true,
+      providerPublishStatus: 'processing',
+    };
+  }
+
+  async checkStatus(context: NativePublisherContext): Promise<NativeStatusOutcome> {
+    const videoId = context.post.providerPostId || context.post.externalPostId;
+    if (!videoId) {
+      return {
+        state: 'unknown',
+        errorMessage: 'YouTube publish status cannot be checked without a video ID.',
+        failureCode: 'YOUTUBE_VIDEO_ID_MISSING',
+        retryable: false,
+      };
+    }
+
+    const response = await getJsonFromProvider({
+      url: `${socialYouTubeApiBaseUrl.value().replace(/\/$/, '')}/videos`,
+      accessToken: context.credentials?.accessToken || '',
+      params: {
+        part: 'status',
+        id: videoId,
+      },
+    });
+    if (!response.ok) {
+      return {
+        state: 'unknown',
+        externalPostId: videoId,
+        providerResponse: response.providerResponse,
+        errorMessage: response.errorMessage || 'Could not check YouTube video status.',
+        failureCode: response.failureCode || 'YOUTUBE_STATUS_CHECK_FAILED',
+        retryable: response.retryable ?? true,
+      };
+    }
+
+    const items = Array.isArray(response.data.items) ? response.data.items as Record<string, unknown>[] : [];
+    const item = items[0];
+    const status = (item?.status || {}) as Record<string, unknown>;
+    const uploadStatus = typeof status.uploadStatus === 'string' ? status.uploadStatus : '';
+    const rejectionReason = typeof status.rejectionReason === 'string' ? status.rejectionReason : undefined;
+    if (uploadStatus === 'processed') {
+      return { state: 'published', externalPostId: videoId, providerResponse: response.providerResponse };
+    }
+    if (['failed', 'rejected', 'deleted'].includes(uploadStatus) || rejectionReason) {
+      return {
+        state: 'failed',
+        externalPostId: videoId,
+        errorMessage: rejectionReason || `YouTube upload status is ${uploadStatus || 'failed'}.`,
+        failureCode: 'YOUTUBE_PROCESSING_FAILED',
+        providerResponse: response.providerResponse,
+        retryable: false,
+      };
+    }
+    return { state: 'pending', externalPostId: videoId, providerResponse: response.providerResponse, retryable: true };
+  }
+
+  private resolveVideo(context: NativePublisherContext) {
+    return context.payload.content.mediaItems
+      .sort((left, right) => left.order - right.order)
+      .find((item) => item.type === 'video' && item.downloadUrl);
+  }
+
+  private async createUploadSession(
+    context: NativePublisherContext,
+    contentLength: number,
+    contentType: string
+  ): Promise<PublishOutcome> {
+    const baseUrl = socialYouTubeUploadBaseUrl.value().replace(/\/$/, '');
+    const response = await fetch(`${baseUrl}/videos?uploadType=resumable&part=snippet,status`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${context.credentials?.accessToken || ''}`,
+        'Content-Type': 'application/json; charset=UTF-8',
+        'X-Upload-Content-Type': contentType,
+        'X-Upload-Content-Length': String(contentLength),
+      },
+      body: JSON.stringify(this.buildMetadata(context)),
+    });
+
+    const responseText = await response.text().catch(() => '');
+    const location = response.headers.get('location') || '';
+    if (!response.ok) {
+      return {
+        success: false,
+        errorMessage: `YouTube upload session returned HTTP ${response.status}`,
+        failureCode: response.status === 429 ? 'PROVIDER_RATE_LIMITED' : 'YOUTUBE_UPLOAD_SESSION_FAILED',
+        providerResponse: responseText.slice(0, 2000),
+        retryable: response.status >= 500 || response.status === 429,
+        deliveryMode: 'native',
+      };
+    }
+    if (!location) {
+      return {
+        success: false,
+        errorMessage: 'YouTube did not return a resumable upload URL.',
+        failureCode: 'YOUTUBE_UPLOAD_URL_MISSING',
+        providerResponse: responseText.slice(0, 2000),
+        retryable: true,
+        deliveryMode: 'native',
+      };
+    }
+    return {
+      success: true,
+      providerResponse: location,
+      deliveryMode: 'native',
+    };
+  }
+
+  private buildMetadata(context: NativePublisherContext): Record<string, unknown> {
+    const settings = context.payload.platformSettings || {};
+    const rawPrivacy = sanitizeStringSetting(settings.youtubePrivacyStatus || settings.privacyStatus, 20);
+    const privacyStatus = rawPrivacy && ['public', 'unlisted', 'private'].includes(rawPrivacy)
+      ? rawPrivacy
+      : 'private';
+    const settingsTags = sanitizeStringListSetting(settings.youtubeTags || settings.tags, 30);
+    const tags = settingsTags.length > 0 ? settingsTags : context.payload.content.hashtags.slice(0, 30);
+    const title = sanitizeStringSetting(settings.youtubeTitle || settings.title, 100)
+      || sanitizeStringSetting(context.payload.title, 100)
+      || sanitizeStringSetting(context.payload.caption, 100)
+      || 'SDC video';
+
+    return {
+      snippet: {
+        title,
+        description: context.payload.content.finalText.slice(0, 5000),
+        tags,
+        categoryId: sanitizeStringSetting(settings.youtubeCategoryId || settings.categoryId, 20) || '22',
+      },
+      status: {
+        privacyStatus,
+        selfDeclaredMadeForKids: sanitizeBoolean(settings.madeForKids || settings.selfDeclaredMadeForKids, false),
+      },
+    };
+  }
+}
+
+const NATIVE_PUBLISHERS: Record<SocialPlatform, NativePublisher> = {
+  tiktok: new TikTokNativePublisher(),
+  instagram: new InstagramNativePublisher(),
+  facebook: new FacebookNativePublisher(),
+  linkedin: new LinkedInNativePublisher(),
+  x: new XNativePublisher(),
+  youtube: new YouTubeNativePublisher(),
+};
+
+function getNativePublisher(platform: SocialPlatform): NativePublisher {
+  return NATIVE_PUBLISHERS[platform];
 }
 
 function inferMediaItemType(asset: GeneratedAssetDoc | null): MediaItemType {
@@ -329,7 +1601,7 @@ function resolvePublishEndpoint(platform: SocialPlatform, account: SocialAccount
   return fallback || null;
 }
 
-async function buildPublishPayload(post: ScheduledPostDoc, account: SocialAccountDoc, credentials: DecryptedCredentials | null) {
+async function buildPublishPayload(post: ScheduledPostDoc, account: SocialAccountDoc, credentials: DecryptedCredentials | null): Promise<NativePublishPayload> {
   const hashtags = sanitizeStringArray(post.hashtags);
   const contentType = post.contentType || getDefaultContentType(post.platform);
   const caption = post.caption || '';
@@ -391,6 +1663,8 @@ async function buildPublishPayload(post: ScheduledPostDoc, account: SocialAccoun
 }
 
 function isEligibleForProcessing(post: ScheduledPostDoc, now: Date): boolean {
+  if (isCalendarEvent(post)) return false;
+
   const dueAt = post.scheduledTime.toDate().getTime();
   if (dueAt > now.getTime()) return false;
   if (post.status === 'published' || post.status === 'publishing' || post.status === 'cancelled') return false;
@@ -489,7 +1763,8 @@ async function claimScheduledPost(postRef: admin.firestore.DocumentReference<adm
 
 async function markPublishFailure(postRef: admin.firestore.DocumentReference<admin.firestore.DocumentData>, post: ScheduledPostDoc, errorMessage: string, retryable: boolean, externalPostId?: string, providerResponse?: string): Promise<void> {
   const attemptCount = typeof post.attemptCount === 'number' ? post.attemptCount : 1;
-  const delayMinutes = Math.max(1, socialPublishRetryDelayMinutes.value() * Math.min(attemptCount, 5));
+  const exponentialMultiplier = Math.min(2 ** Math.max(0, attemptCount - 1), 16);
+  const delayMinutes = Math.max(1, socialPublishRetryDelayMinutes.value() * exponentialMultiplier);
   const nextRetryAt = retryable && attemptCount < socialPublishMaxAttempts.value()
     ? admin.firestore.Timestamp.fromDate(new Date(Date.now() + delayMinutes * 60 * 1000))
     : null;
@@ -514,6 +1789,34 @@ async function markPublishFailure(postRef: admin.firestore.DocumentReference<adm
     const message = `${post.platform} post failed to publish. ${errorMessage.slice(0, 120)}`;
     await notifyPublishStatus(post.ownerId, 'social_publish_failed', 'Post publishing failed', `${title} needs attention. ${message}`, '/social/calendar');
   }
+}
+
+async function markPublishPendingConfirmation(
+  postRef: admin.firestore.DocumentReference<admin.firestore.DocumentData>,
+  post: ScheduledPostDoc,
+  account: SocialAccountDoc,
+  externalPostId?: string,
+  providerResponse?: string
+): Promise<void> {
+  await postRef.set({
+    status: 'publishing',
+    publishedBy: account.socialAccountId,
+    lastError: null,
+    failureCode: null,
+    failureMessage: null,
+    nextRetryAt: null,
+    externalPostId: externalPostId || post.externalPostId || null,
+    providerPostId: externalPostId || post.providerPostId || post.externalPostId || null,
+    publishProviderResponse: providerResponse ? providerResponse.slice(0, 2000) : post.publishProviderResponse || null,
+    publishLeaseId: null,
+    publishLeaseExpiresAt: null,
+    metadata: {
+      ...(post.metadata || {}),
+      publishConfirmationStatus: 'pending',
+      publishConfirmationStartedAt: new Date().toISOString(),
+    },
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  }, { merge: true });
 }
 
 async function markPublishSuccess(
@@ -563,6 +1866,205 @@ async function notifyPublishStatus(
   }
 }
 
+function dayKey(date = new Date()): string {
+  return date.toISOString().slice(0, 10);
+}
+
+function minuteKey(date = new Date()): string {
+  return date.toISOString().slice(0, 16).replace(/[-:T]/g, '');
+}
+
+function canonicalPostText(post: ScheduledPostDoc): string {
+  return [
+    post.platform,
+    (post.caption || '').trim().toLowerCase().replace(/\s+/g, ' '),
+    (post.hashtags || []).map((tag) => tag.replace(/^#/, '').toLowerCase()).sort().join(','),
+    (post.assetIds || []).join(','),
+  ].join('|');
+}
+
+function postFingerprint(post: ScheduledPostDoc): string {
+  return crypto.createHash('sha256').update(canonicalPostText(post)).digest('hex');
+}
+
+function tokenExpiryState(account: SocialAccountDoc): 'expired' | 'expiring' | 'valid' {
+  if (!account.expiresAt) return 'valid';
+  const expiresMs = account.expiresAt.toMillis();
+  if (expiresMs <= Date.now()) return 'expired';
+  const windowMs = Math.max(1, socialTokenExpiryAlertWindowDays.value()) * 24 * 60 * 60 * 1000;
+  return expiresMs <= Date.now() + windowMs ? 'expiring' : 'valid';
+}
+
+async function recordSocialAuditLog(input: {
+  ownerId: string;
+  action: string;
+  targetType: string;
+  targetId: string;
+  metadata?: Record<string, unknown>;
+}): Promise<void> {
+  await db.collection('socialAuditLogs').doc().set({
+    ownerId: input.ownerId,
+    action: input.action,
+    targetType: input.targetType,
+    targetId: input.targetId,
+    metadata: input.metadata || {},
+    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+  });
+}
+
+async function reserveCounter(
+  collection: string,
+  docId: string,
+  limit: number,
+  metadata: Record<string, unknown>
+): Promise<boolean> {
+  if (limit <= 0) return true;
+  const ref = db.collection(collection).doc(docId);
+  return db.runTransaction(async (transaction) => {
+    const snapshot = await transaction.get(ref);
+    const current = snapshot.exists ? Number((snapshot.data() || {}).count || 0) : 0;
+    if (current >= limit) return false;
+    transaction.set(ref, {
+      ...metadata,
+      count: current + 1,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      createdAt: snapshot.exists ? (snapshot.data() || {}).createdAt || admin.firestore.FieldValue.serverTimestamp() : admin.firestore.FieldValue.serverTimestamp(),
+    }, { merge: true });
+    return true;
+  });
+}
+
+async function reserveDuplicateFingerprint(post: ScheduledPostDoc): Promise<PublishGuardOutcome> {
+  const fingerprint = postFingerprint(post);
+  const ref = db.collection('socialPublishFingerprints').doc(`${post.ownerId}_${post.platform}_${fingerprint}`);
+  const now = admin.firestore.Timestamp.now();
+  const windowMs = Math.max(1, socialPublishDuplicateWindowHours.value()) * 60 * 60 * 1000;
+
+  return db.runTransaction(async (transaction) => {
+    const snapshot = await transaction.get(ref);
+    if (snapshot.exists) {
+      const data = snapshot.data() || {};
+      const existingPostId = typeof data.scheduledPostId === 'string' ? data.scheduledPostId : '';
+      const createdAt = data.createdAt as admin.firestore.Timestamp | undefined;
+      const fresh = createdAt ? Date.now() - createdAt.toMillis() <= windowMs : true;
+      if (existingPostId && existingPostId !== post.scheduledPostId && fresh) {
+        return {
+          ok: false,
+          retryable: false,
+          failureCode: 'DUPLICATE_POST_DETECTED',
+          reason: 'A near-identical post was already queued or published recently.',
+        };
+      }
+    }
+
+    transaction.set(ref, {
+      ownerId: post.ownerId,
+      platform: post.platform,
+      scheduledPostId: post.scheduledPostId,
+      fingerprint,
+      createdAt: snapshot.exists ? (snapshot.data() || {}).createdAt || now : now,
+      updatedAt: now,
+    }, { merge: true });
+    return { ok: true };
+  });
+}
+
+async function evaluatePublishGuards(post: ScheduledPostDoc, account: SocialAccountDoc | null): Promise<PublishGuardOutcome> {
+  const pauseSnap = await db.collection('socialPublishingControls').doc(post.ownerId).get();
+  if ((pauseSnap.data() || {}).paused === true) {
+    return {
+      ok: false,
+      retryable: true,
+      failureCode: 'PUBLISHING_PAUSED',
+      reason: 'All scheduled publishing is paused for this account.',
+    };
+  }
+
+  if (!account) return { ok: true };
+
+  if (account.status === 'paused') {
+    return {
+      ok: false,
+      retryable: true,
+      failureCode: 'SOCIAL_ACCOUNT_PAUSED',
+      reason: `${account.providerLabel || account.providerId} publishing is paused.`,
+    };
+  }
+
+  const expiry = tokenExpiryState(account);
+  if (expiry === 'expired') {
+    await notifyPublishStatus(post.ownerId, 'social_token_expired', 'Reconnect social account', `${account.providerLabel || account.providerId} access expired. Reconnect before publishing.`, '/social');
+    return {
+      ok: false,
+      retryable: false,
+      failureCode: 'TOKEN_EXPIRED',
+      reason: `${account.providerLabel || account.providerId} token has expired. Reconnect the account.`,
+    };
+  }
+  if (expiry === 'expiring') {
+    const alertKey = `token_expiring_${account.socialAccountId}_${dayKey()}`;
+    const alertRef = db.collection('socialReliabilityAlerts').doc(alertKey);
+    const alertSnap = await alertRef.get();
+    if (!alertSnap.exists) {
+      await alertRef.set({
+        ownerId: post.ownerId,
+        socialAccountId: account.socialAccountId,
+        providerId: account.providerId,
+        type: 'token_expiring',
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+      await notifyPublishStatus(post.ownerId, 'social_token_expiring', 'Social account token expires soon', `${account.providerLabel || account.providerId} may need reconnection soon.`, '/social');
+    }
+  }
+
+  const readiness = (account.metadata?.connectionReadiness || (account as unknown as { connectionReadiness?: unknown }).connectionReadiness) as Record<string, unknown> | undefined;
+  const missingScopes = Array.isArray(readiness?.missingScopes) ? readiness?.missingScopes : [];
+  if (missingScopes.length > 0 || readiness?.permissionsVerified === false) {
+    await notifyPublishStatus(post.ownerId, 'social_permission_attention', 'Social permissions need attention', `${account.providerLabel || account.providerId} may be missing required publishing permissions.`, '/social');
+    return {
+      ok: false,
+      retryable: false,
+      failureCode: 'PERMISSION_EXPIRED_OR_MISSING',
+      reason: `${account.providerLabel || account.providerId} permissions need attention.`,
+    };
+  }
+
+  const duplicate = await reserveDuplicateFingerprint(post);
+  if (!duplicate.ok) return duplicate;
+
+  const dailyOk = await reserveCounter(
+    'socialPublishUserDailyLimits',
+    `${post.ownerId}_${dayKey()}`,
+    socialPublishUserDailyLimit.value(),
+    { ownerId: post.ownerId, dateKey: dayKey() }
+  );
+  if (!dailyOk) {
+    return {
+      ok: false,
+      retryable: true,
+      failureCode: 'USER_DAILY_PUBLISH_LIMIT',
+      reason: 'Daily publishing limit reached. Remaining posts will retry tomorrow.',
+    };
+  }
+
+  const providerOk = await reserveCounter(
+    'socialPublishProviderRateLimits',
+    `${post.platform}_${minuteKey()}`,
+    socialPublishProviderRateLimitPerMinute.value(),
+    { providerId: post.platform, minuteKey: minuteKey() }
+  );
+  if (!providerOk) {
+    return {
+      ok: false,
+      retryable: true,
+      failureCode: 'PROVIDER_RATE_LIMIT',
+      reason: `${post.platform} rate limit reached. This post will retry shortly.`,
+    };
+  }
+
+  return { ok: true };
+}
+
 async function attemptPublish(post: ScheduledPostDoc, account: SocialAccountDoc): Promise<PublishOutcome> {
   if (!account) {
     return {
@@ -572,17 +2074,40 @@ async function attemptPublish(post: ScheduledPostDoc, account: SocialAccountDoc)
     };
   }
 
-  const credentials = decryptCredentials(account.credentialEnvelope || null);
+  const credentials = await readCredentials(account);
+  const payload = await buildPublishPayload(post, account, credentials);
+
+  if (socialNativePublishingEnabled.value()) {
+    const publisher = getNativePublisher(post.platform);
+    const nativeContext: NativePublisherContext = { post, account, credentials, payload };
+    const readiness = publisher.canPublish(nativeContext);
+    if (readiness.ok) {
+      return publisher.publish(nativeContext);
+    }
+
+    const endpointForFallback = resolvePublishEndpoint(post.platform, account);
+    if (!endpointForFallback) {
+      return {
+        success: false,
+        errorMessage: readiness.reason || `Native publishing is not ready for ${post.platform}`,
+        retryable: readiness.retryable ?? false,
+        failureCode: readiness.failureCode || 'PROVIDER_NATIVE_UNAVAILABLE',
+        deliveryMode: 'native',
+      };
+    }
+  }
+
   const endpoint = resolvePublishEndpoint(post.platform, account);
   if (!endpoint) {
     return {
       success: false,
       errorMessage: `No publish endpoint is configured for ${account.providerLabel}`,
       retryable: true,
+      failureCode: 'PROVIDER_ENDPOINT_MISSING',
+      deliveryMode: 'external_endpoint',
     };
   }
 
-  const payload = await buildPublishPayload(post, account, credentials);
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     'X-Social-Platform': post.platform,
@@ -611,6 +2136,7 @@ async function attemptPublish(post: ScheduledPostDoc, account: SocialAccountDoc)
       failureCode: response.status === 429 ? 'PROVIDER_RATE_LIMITED' : 'PROVIDER_ENDPOINT_REJECTED',
       providerResponse,
       retryable: response.status >= 500 || response.status === 429,
+      deliveryMode: 'external_endpoint',
     };
   }
 
@@ -638,12 +2164,14 @@ async function attemptPublish(post: ScheduledPostDoc, account: SocialAccountDoc)
     success: true,
     externalPostId,
     providerResponse,
+    deliveryMode: 'external_endpoint',
   };
 }
 
 async function processScheduledPosts(): Promise<{
   processed: number;
   published: number;
+  pendingConfirmation: number;
   failed: number;
   skipped: number;
 }> {
@@ -657,6 +2185,7 @@ async function processScheduledPosts(): Promise<{
 
   let processed = 0;
   let published = 0;
+  let pendingConfirmation = 0;
   let failed = 0;
   let skipped = 0;
 
@@ -673,6 +2202,7 @@ async function processScheduledPosts(): Promise<{
     const connectedAccountId = claimed.connectedAccountId || claimed.socialAccountId;
     const account = await pickSocialAccount(claimed.ownerId, claimed.platform, connectedAccountId);
     const startedAtDate = new Date();
+    const guard = await evaluatePublishGuards(claimed, account);
 
     await recordPublishAttempt({
       publishAttemptId,
@@ -696,6 +2226,36 @@ async function processScheduledPosts(): Promise<{
       },
     });
 
+    if (!guard.ok) {
+      await markPublishFailure(doc.ref, claimed, guard.reason || 'Publish blocked by reliability controls.', guard.retryable ?? true);
+      await updatePublishAttempt(publishAttemptId, {
+        status: guard.retryable === false ? 'failed' : 'skipped',
+        finishedAt: admin.firestore.Timestamp.now(),
+        durationMs: Date.now() - startedAtDate.getTime(),
+        failureCode: guard.failureCode || 'PUBLISH_GUARD_BLOCKED',
+        errorMessage: guard.reason || 'Publish blocked by reliability controls.',
+        retryable: guard.retryable ?? true,
+        metadata: {
+          guardBlocked: true,
+          guardCode: guard.failureCode || 'PUBLISH_GUARD_BLOCKED',
+        },
+      });
+      await recordSocialAuditLog({
+        ownerId: claimed.ownerId,
+        action: 'publish_blocked',
+        targetType: 'scheduledPost',
+        targetId: claimed.scheduledPostId,
+        metadata: {
+          platform: claimed.platform,
+          reason: guard.reason || null,
+          failureCode: guard.failureCode || null,
+        },
+      });
+      failed += guard.retryable === false ? 1 : 0;
+      skipped += guard.retryable === false ? 0 : 1;
+      continue;
+    }
+
     try {
       const outcome = account
         ? await attemptPublish(claimed, account)
@@ -705,17 +2265,32 @@ async function processScheduledPosts(): Promise<{
             retryable: false,
           };
       if (outcome.success) {
-        await markPublishSuccess(doc.ref, claimed, account as SocialAccountDoc, outcome.externalPostId, outcome.providerResponse);
+        const awaitingConfirmation = Boolean(outcome.confirmationRequired);
+        if (awaitingConfirmation) {
+          await markPublishPendingConfirmation(doc.ref, claimed, account as SocialAccountDoc, outcome.externalPostId, outcome.providerResponse);
+        } else {
+          await markPublishSuccess(doc.ref, claimed, account as SocialAccountDoc, outcome.externalPostId, outcome.providerResponse);
+        }
         await updatePublishAttempt(publishAttemptId, {
-          status: 'success',
+          status: awaitingConfirmation ? 'pending_confirmation' : 'success',
           finishedAt: admin.firestore.Timestamp.now(),
           durationMs: Date.now() - startedAtDate.getTime(),
           externalPostId: outcome.externalPostId || null,
           providerPostId: outcome.externalPostId || null,
           providerResponse: outcome.providerResponse || null,
-          retryable: false,
+          retryable: awaitingConfirmation,
+          metadata: {
+            deliveryMode: outcome.deliveryMode || 'external_endpoint',
+            nativePublishingEnabled: socialNativePublishingEnabled.value(),
+            providerPublishStatus: outcome.providerPublishStatus || (awaitingConfirmation ? 'submitted' : 'published'),
+            confirmationRequired: awaitingConfirmation,
+          },
         });
-        published += 1;
+        if (awaitingConfirmation) {
+          pendingConfirmation += 1;
+        } else {
+          published += 1;
+        }
       } else {
         await markPublishFailure(doc.ref, claimed, outcome.errorMessage || 'Publish failed', outcome.retryable ?? true, outcome.externalPostId, outcome.providerResponse);
         await updatePublishAttempt(publishAttemptId, {
@@ -728,6 +2303,10 @@ async function processScheduledPosts(): Promise<{
           providerPostId: outcome.externalPostId || null,
           providerResponse: outcome.providerResponse || null,
           retryable: outcome.retryable ?? true,
+          metadata: {
+            deliveryMode: outcome.deliveryMode || 'external_endpoint',
+            nativePublishingEnabled: socialNativePublishingEnabled.value(),
+          },
         });
         failed += 1;
       }
@@ -746,7 +2325,240 @@ async function processScheduledPosts(): Promise<{
     }
   }
 
-  return { processed, published, failed, skipped };
+  return { processed, published, pendingConfirmation, failed, skipped };
+}
+
+async function findPendingPublishAttempt(scheduledPostId: string): Promise<admin.firestore.QueryDocumentSnapshot<admin.firestore.DocumentData> | null> {
+  const snapshot = await db
+    .collection('socialPublishAttempts')
+    .where('scheduledPostId', '==', scheduledPostId)
+    .limit(20)
+    .get();
+
+  const pending = snapshot.docs
+    .filter((doc) => (doc.data() as PublishAttemptDoc).status === 'pending_confirmation')
+    .sort((left, right) => {
+      const leftTime = ((left.data() as PublishAttemptDoc).triggeredAt as admin.firestore.Timestamp | undefined)?.toMillis?.() || 0;
+      const rightTime = ((right.data() as PublishAttemptDoc).triggeredAt as admin.firestore.Timestamp | undefined)?.toMillis?.() || 0;
+      return rightTime - leftTime;
+    });
+  return pending[0] || null;
+}
+
+async function reconcilePublishingPost(
+  snapshot: admin.firestore.QueryDocumentSnapshot<admin.firestore.DocumentData>
+): Promise<'published' | 'failed' | 'pending' | 'skipped'> {
+  const post = {
+    ...(snapshot.data() as ScheduledPostDoc),
+    scheduledPostId: typeof snapshot.data().scheduledPostId === 'string' ? snapshot.data().scheduledPostId : snapshot.id,
+  };
+  if (isCalendarEvent(post)) return 'skipped';
+
+  const account = await pickSocialAccount(post.ownerId, post.platform, post.connectedAccountId || post.socialAccountId);
+  if (!account) {
+    await markPublishFailure(snapshot.ref, post, `No connected ${post.platform} account is available for reconciliation.`, false);
+    return 'failed';
+  }
+
+  const credentials = await readCredentials(account);
+  const payload = await buildPublishPayload(post, account, credentials);
+  const publisher = getNativePublisher(post.platform);
+  if (!publisher.checkStatus) {
+    return 'skipped';
+  }
+
+  const attempt = await findPendingPublishAttempt(post.scheduledPostId);
+  const outcome = await publisher.checkStatus({ post, account, credentials, payload });
+  const now = admin.firestore.Timestamp.now();
+
+  if (outcome.state === 'published') {
+    await markPublishSuccess(snapshot.ref, post, account, outcome.externalPostId || post.providerPostId || post.externalPostId || undefined, outcome.providerResponse);
+    if (attempt) {
+      await updatePublishAttempt(attempt.id, {
+        status: 'success',
+        finishedAt: now,
+        externalPostId: outcome.externalPostId || post.externalPostId || null,
+        providerPostId: outcome.externalPostId || post.providerPostId || post.externalPostId || null,
+        providerResponse: outcome.providerResponse || null,
+        retryable: false,
+        metadata: {
+          ...((attempt.data() as PublishAttemptDoc).metadata || {}),
+          reconciledAt: now.toDate().toISOString(),
+          providerPublishStatus: 'published',
+        },
+      });
+    }
+    return 'published';
+  }
+
+  if (outcome.state === 'failed') {
+    await markPublishFailure(
+      snapshot.ref,
+      post,
+      outcome.errorMessage || 'Provider reported publish failure.',
+      outcome.retryable ?? false,
+      outcome.externalPostId || post.providerPostId || post.externalPostId || undefined,
+      outcome.providerResponse
+    );
+    if (attempt) {
+      await updatePublishAttempt(attempt.id, {
+        status: 'failed',
+        finishedAt: now,
+        failureCode: outcome.failureCode || 'PROVIDER_CONFIRMATION_FAILED',
+        errorMessage: outcome.errorMessage || 'Provider reported publish failure.',
+        externalPostId: outcome.externalPostId || post.externalPostId || null,
+        providerPostId: outcome.externalPostId || post.providerPostId || post.externalPostId || null,
+        providerResponse: outcome.providerResponse || null,
+        retryable: outcome.retryable ?? false,
+        metadata: {
+          ...((attempt.data() as PublishAttemptDoc).metadata || {}),
+          reconciledAt: now.toDate().toISOString(),
+          providerPublishStatus: 'failed',
+        },
+      });
+    }
+    return 'failed';
+  }
+
+  await snapshot.ref.set({
+    publishProviderResponse: outcome.providerResponse ? outcome.providerResponse.slice(0, 2000) : post.publishProviderResponse || null,
+    metadata: {
+      ...(post.metadata || {}),
+      publishConfirmationStatus: outcome.state,
+      lastPublishStatusCheckAt: now.toDate().toISOString(),
+      lastPublishStatusError: outcome.errorMessage || null,
+    },
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  }, { merge: true });
+  if (attempt) {
+    await updatePublishAttempt(attempt.id, {
+      providerResponse: outcome.providerResponse || (attempt.data() as PublishAttemptDoc).providerResponse || null,
+      retryable: outcome.retryable ?? true,
+      metadata: {
+        ...((attempt.data() as PublishAttemptDoc).metadata || {}),
+        reconciledAt: now.toDate().toISOString(),
+        providerPublishStatus: outcome.state,
+        providerStatusError: outcome.errorMessage || null,
+      },
+    });
+  }
+  return 'pending';
+}
+
+async function reconcilePublishingStatuses(): Promise<{
+  checked: number;
+  published: number;
+  failed: number;
+  pending: number;
+  skipped: number;
+}> {
+  if (!socialNativePublishingEnabled.value()) {
+    return { checked: 0, published: 0, failed: 0, pending: 0, skipped: 0 };
+  }
+
+  const snapshot = await db
+    .collection('scheduledPosts')
+    .where('status', '==', 'publishing')
+    .limit(socialPublishBatchSize.value())
+    .get();
+
+  let checked = 0;
+  let published = 0;
+  let failed = 0;
+  let pending = 0;
+  let skipped = 0;
+
+  for (const doc of snapshot.docs) {
+    checked += 1;
+    try {
+      const result = await reconcilePublishingPost(doc);
+      if (result === 'published') published += 1;
+      else if (result === 'failed') failed += 1;
+      else if (result === 'pending') pending += 1;
+      else skipped += 1;
+    } catch (error) {
+      console.warn('[SocialPublishing] reconcilePublishingPost failed', {
+        scheduledPostId: doc.id,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      skipped += 1;
+    }
+  }
+
+  return { checked, published, failed, pending, skipped };
+}
+
+async function scanSocialConnectionReliability(): Promise<{ checked: number; alerts: number }> {
+  const snapshot = await db
+    .collection('socialAccounts')
+    .where('status', '==', 'connected')
+    .limit(500)
+    .get();
+
+  let checked = 0;
+  let alerts = 0;
+
+  for (const doc of snapshot.docs) {
+    const account = {
+      ...(doc.data() as SocialAccountDoc),
+      socialAccountId: typeof doc.data().socialAccountId === 'string' ? doc.data().socialAccountId : doc.id,
+    };
+    checked += 1;
+
+    const expiry = tokenExpiryState(account);
+    if (expiry === 'expired' || expiry === 'expiring') {
+      const alertKey = `${expiry}_${account.socialAccountId}_${dayKey()}`;
+      const alertRef = db.collection('socialReliabilityAlerts').doc(alertKey);
+      const alertSnap = await alertRef.get();
+      if (!alertSnap.exists) {
+        await alertRef.set({
+          ownerId: account.ownerId,
+          socialAccountId: account.socialAccountId,
+          providerId: account.providerId,
+          type: expiry === 'expired' ? 'token_expired' : 'token_expiring',
+          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+        await notifyPublishStatus(
+          account.ownerId,
+          expiry === 'expired' ? 'social_token_expired' : 'social_token_expiring',
+          expiry === 'expired' ? 'Reconnect social account' : 'Social account token expires soon',
+          expiry === 'expired'
+            ? `${account.providerLabel || account.providerId} access expired. Reconnect before publishing.`
+            : `${account.providerLabel || account.providerId} access may need renewal soon.`,
+          '/social'
+        );
+        alerts += 1;
+      }
+    }
+
+    const readiness = account.connectionReadiness || {};
+    const missingScopes = Array.isArray(readiness.missingScopes) ? readiness.missingScopes : [];
+    if (missingScopes.length > 0 || readiness.permissionsVerified === false) {
+      const alertKey = `permission_${account.socialAccountId}_${dayKey()}`;
+      const alertRef = db.collection('socialReliabilityAlerts').doc(alertKey);
+      const alertSnap = await alertRef.get();
+      if (!alertSnap.exists) {
+        await alertRef.set({
+          ownerId: account.ownerId,
+          socialAccountId: account.socialAccountId,
+          providerId: account.providerId,
+          type: 'permission_attention',
+          missingScopes,
+          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+        await notifyPublishStatus(
+          account.ownerId,
+          'social_permission_attention',
+          'Social permissions need attention',
+          `${account.providerLabel || account.providerId} is missing required permissions for publishing or analytics.`,
+          '/social'
+        );
+        alerts += 1;
+      }
+    }
+  }
+
+  return { checked, alerts };
 }
 
 export const publishScheduledSocialPosts = onSchedule(
@@ -758,5 +2570,28 @@ export const publishScheduledSocialPosts = onSchedule(
   async () => {
     const summary = await processScheduledPosts();
     console.log('[SocialPublishing] publishScheduledSocialPosts', summary);
+  }
+);
+
+export const reconcileSocialPublishStatuses = onSchedule(
+  {
+    schedule: '*/10 * * * *',
+    timeZone: 'UTC',
+    secrets: [socialCredentialsMasterKey],
+  },
+  async () => {
+    const summary = await reconcilePublishingStatuses();
+    console.log('[SocialPublishing] reconcileSocialPublishStatuses', summary);
+  }
+);
+
+export const scanSocialConnectionReliabilityAlerts = onSchedule(
+  {
+    schedule: '0 */6 * * *',
+    timeZone: 'UTC',
+  },
+  async () => {
+    const summary = await scanSocialConnectionReliability();
+    console.log('[SocialPublishing] scanSocialConnectionReliabilityAlerts', summary);
   }
 );

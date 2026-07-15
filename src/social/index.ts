@@ -6,7 +6,9 @@ export {
   getSocialHubSummary,
   listSocialAccounts,
   listSocialProviders,
+  refreshSocialAccountDestinations,
   updateSocialAccount,
+  selectSocialAccountDestination,
   createScheduledPost,
   deleteScheduledPost,
   getContentCalendarSummary,
@@ -14,10 +16,19 @@ export {
   updateScheduledPost,
   moveScheduledPost,
   applySocialPublishOutcome,
+  cancelScheduledPost,
   buildNormalizedPublishPayload,
+  getSocialPublishingPause,
   listSocialPublishAttempts,
   recordSocialPublishAttempt,
+  listSocialPostAnalytics,
+  retryScheduledPost,
+  setSocialPublishingPaused,
 } from './service';
+
+export {
+  syncSocialConnectionReadiness,
+} from './readiness';
 
 export {
   getSocialProvider,
@@ -35,7 +46,10 @@ export type {
   SocialAccountRecord,
   SocialAccountStatus,
   SocialAccountUpdateInput,
+  SocialConnectionReadiness,
+  SocialConnectionReadinessStatus,
   SocialCredentialPayload,
+  SocialProviderDestination,
   ContentCalendarSummary,
   ScheduledPostInput,
   ScheduledPostRecord,
@@ -44,6 +58,9 @@ export type {
   SocialPublishAttemptInput,
   SocialPublishAttemptRecord,
   SocialPublishAttemptStatus,
+  SocialPostAnalyticsMetrics,
+  SocialPostAnalyticsRecord,
+  SocialPublishingPauseRecord,
   NormalizedSocialMediaItem,
   NormalizedSocialPublishPayload,
   SocialHubSummary,

@@ -5,6 +5,7 @@ import { useSearchParams } from "next/navigation";
 import type { ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
 import {
+  AlertTriangle,
   ArrowRight,
   BarChart3,
   CalendarDays,
@@ -114,6 +115,48 @@ function formatDate(value?: string | null): string {
   return parsed.toLocaleString();
 }
 
+function getReadinessTone(account: SocialAccountRecord): {
+  label: string;
+  className: string;
+  icon: ReactNode;
+  helper: string;
+} {
+  const readiness = account.connectionReadiness;
+  if (!readiness) {
+    return {
+      label: "Connected",
+      className: "border-blue-400/20 bg-blue-500/12 text-blue-100",
+      icon: <CheckCircle2 className="h-3.5 w-3.5" />,
+      helper: "Readiness check pending.",
+    };
+  }
+
+  if (readiness.publishReady) {
+    return {
+      label: readiness.analyticsReady ? "Publish + analytics ready" : "Publish ready",
+      className: "border-emerald-400/20 bg-emerald-500/12 text-emerald-200",
+      icon: <CheckCircle2 className="h-3.5 w-3.5" />,
+      helper: readiness.summary || "Ready for scheduled publishing.",
+    };
+  }
+
+  if (readiness.status === "permission_missing" || readiness.status === "needs_reauth") {
+    return {
+      label: "Needs attention",
+      className: "border-amber-400/25 bg-amber-500/12 text-amber-100",
+      icon: <AlertTriangle className="h-3.5 w-3.5" />,
+      helper: readiness.summary || readiness.warnings[0] || "Reconnect or update provider permissions.",
+    };
+  }
+
+  return {
+    label: "Review readiness",
+    className: "border-violet-300/20 bg-violet-500/12 text-violet-100",
+    icon: <AlertTriangle className="h-3.5 w-3.5" />,
+    helper: readiness.summary || readiness.warnings[0] || "Connection is active, but publishing readiness is still being verified.",
+  };
+}
+
 export default function SocialHubPage() {
   const { user } = useAuth();
   const { toast } = useToast();
@@ -138,6 +181,7 @@ export default function SocialHubPage() {
   const [loading, setLoading] = useState(false);
   const [loadingHistory, setLoadingHistory] = useState(true);
   const [connectingProvider, setConnectingProvider] = useState<SocialPlatform | null>(null);
+  const [destinationActionAccountId, setDestinationActionAccountId] = useState<string | null>(null);
   const [oauthHandshake, setOAuthHandshake] = useState<OAuthStartResponse | null>(null);
 
   useEffect(() => {
@@ -323,6 +367,74 @@ export default function SocialHubPage() {
     }
   };
 
+  const refreshDestinations = async (accountId: string) => {
+    if (!user || loading) return;
+
+    try {
+      setDestinationActionAccountId(accountId);
+      const idToken = await user.getIdToken();
+      const response = await fetch(`/api/social/accounts/${accountId}/destinations`, {
+        method: "GET",
+        headers: { Authorization: `Bearer ${idToken}` },
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: "Unknown error" }));
+        throw new Error(errorData.error || "Could not refresh destinations.");
+      }
+
+      await loadAccounts();
+      toast({
+        title: "Destinations refreshed",
+        description: "Available publishing destinations were synced from the provider.",
+      });
+    } catch (error) {
+      toast({
+        title: "Destination refresh failed",
+        description: error instanceof Error ? error.message : "Could not refresh this account.",
+        variant: "destructive",
+      });
+    } finally {
+      setDestinationActionAccountId(null);
+    }
+  };
+
+  const selectDestination = async (accountId: string, destinationId: string) => {
+    if (!user || loading || !destinationId) return;
+
+    try {
+      setDestinationActionAccountId(accountId);
+      const idToken = await user.getIdToken();
+      const response = await fetch(`/api/social/accounts/${accountId}/destinations`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${idToken}`,
+        },
+        body: JSON.stringify({ destinationId }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: "Unknown error" }));
+        throw new Error(errorData.error || "Could not select destination.");
+      }
+
+      await loadAccounts();
+      toast({
+        title: "Destination selected",
+        description: "Scheduled posts will use the selected publishing destination.",
+      });
+    } catch (error) {
+      toast({
+        title: "Destination update failed",
+        description: error instanceof Error ? error.message : "Could not update this account.",
+        variant: "destructive",
+      });
+    } finally {
+      setDestinationActionAccountId(null);
+    }
+  };
+
   return (
     <ProtectedRoute>
       <AppLayout>
@@ -422,7 +534,12 @@ export default function SocialHubPage() {
                   <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
                     {accounts
                       .filter((account) => account.status === "connected")
-                      .map((account) => (
+                      .map((account) => {
+                        const readinessTone = getReadinessTone(account);
+                        const destinations = account.providerDestinations || [];
+                        const selectedDestination = destinations.find((destination) => destination.destinationId === account.selectedDestinationId) || destinations[0];
+                        const destinationBusy = destinationActionAccountId === account.socialAccountId;
+                        return (
                         <GlassCard key={account.socialAccountId} className="group overflow-hidden rounded-[24px] border-white/10 bg-white/[0.045] p-5 transition duration-300 hover:-translate-y-1 hover:bg-white/[0.065]">
                           <div className="flex items-start justify-between gap-4">
                             <div className="flex items-center gap-4">
@@ -439,18 +556,69 @@ export default function SocialHubPage() {
                             </Button>
                           </div>
 
-                          <div className="mt-5 inline-flex rounded-full border border-emerald-400/20 bg-emerald-500/12 px-3 py-1 text-xs font-medium text-emerald-200">
-                            Connected
+                          <div className={cn("mt-5 inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-medium", readinessTone.className)}>
+                            {readinessTone.icon}
+                            {readinessTone.label}
+                          </div>
+                          <p className="mt-3 min-h-[40px] text-sm leading-5 text-white/55">{readinessTone.helper}</p>
+
+                          <div className="mt-5 rounded-2xl border border-white/8 bg-white/[0.035] p-3">
+                            <div className="flex items-start justify-between gap-3">
+                              <div>
+                                <div className="text-xs uppercase tracking-[0.16em] text-white/38">Publishing destination</div>
+                                <div className="mt-1 text-sm font-medium text-white">
+                                  {selectedDestination?.handle || selectedDestination?.label || account.handle || account.accountName}
+                                </div>
+                                <div className="mt-0.5 text-xs text-white/42">
+                                  {selectedDestination ? `${selectedDestination.type} · ${selectedDestination.providerAccountId}` : "Refresh to discover provider destinations"}
+                                </div>
+                              </div>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                className="rounded-xl text-white/48 hover:text-white"
+                                onClick={() => refreshDestinations(account.socialAccountId)}
+                                disabled={destinationBusy}
+                                aria-label={`Refresh ${account.providerLabel} destinations`}
+                              >
+                                {destinationBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                              </Button>
+                            </div>
+
+                            {destinations.length > 1 ? (
+                              <select
+                                aria-label={`Select ${account.providerLabel} publishing destination`}
+                                value={account.selectedDestinationId || selectedDestination?.destinationId || ""}
+                                onChange={(event) => selectDestination(account.socialAccountId, event.target.value)}
+                                disabled={destinationBusy}
+                                className="mt-3 h-10 w-full rounded-xl border border-white/10 bg-[#090B13] px-3 text-sm text-white outline-none transition focus:border-violet-300/50"
+                              >
+                                {destinations.map((destination) => (
+                                  <option key={destination.destinationId} value={destination.destinationId}>
+                                    {destination.handle || destination.label} · {destination.type}
+                                  </option>
+                                ))}
+                              </select>
+                            ) : null}
                           </div>
 
                           <div className="mt-6 grid grid-cols-2 gap-3 text-sm">
+                            <div>
+                              <div className="text-white/42">Publishing</div>
+                              <div className="mt-1 font-medium text-white">{account.connectionReadiness?.publishReady ? "Ready" : "Review"}</div>
+                            </div>
+                            <div>
+                              <div className="text-white/42">Analytics</div>
+                              <div className="mt-1 font-medium text-white">{account.connectionReadiness?.analyticsReady ? "Ready" : "Limited"}</div>
+                            </div>
                             <div>
                               <div className="text-white/42">Authorization</div>
                               <div className="mt-1 font-medium text-white">{account.hasCredentials ? "Encrypted" : "Pending sync"}</div>
                             </div>
                             <div>
                               <div className="text-white/42">Updated</div>
-                              <div className="mt-1 font-medium text-white">{formatDate(account.updatedAt)}</div>
+                              <div className="mt-1 font-medium text-white">{formatDate(account.connectionReadiness?.checkedAt || account.updatedAt)}</div>
                             </div>
                           </div>
 
@@ -471,7 +639,8 @@ export default function SocialHubPage() {
                             </Button>
                           </div>
                         </GlassCard>
-                      ))}
+                      );
+                      })}
                   </div>
                 )}
               </section>

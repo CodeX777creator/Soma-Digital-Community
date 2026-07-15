@@ -229,6 +229,15 @@ export function buildSocialOAuthState(input: {
   };
 }
 
+export function getSocialOAuthStateHash(state: string): string {
+  const [encodedPayload] = state.split('.', 2);
+  if (!encodedPayload) {
+    throw new Error('Invalid OAuth state');
+  }
+  const body = decodeBase64Url(encodedPayload);
+  return crypto.createHash('sha256').update(body).digest('hex');
+}
+
 export function verifySocialOAuthState(providerId: SocialPlatform, state: string): SocialOAuthState {
   const [encodedPayload, encodedSignature] = state.split('.', 2);
   if (!encodedPayload || !encodedSignature) {

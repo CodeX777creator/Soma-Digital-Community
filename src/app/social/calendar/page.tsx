@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { ChangeEvent, FormEvent, useEffect, useMemo, useState, type ReactNode } from "react";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   addMonths,
   eachDayOfInterval,
@@ -37,6 +37,13 @@ import {
   FileText,
   Hash,
   Megaphone,
+  AlertTriangle,
+  BarChart3,
+  Eye,
+  Heart,
+  MessageCircle,
+  MousePointerClick,
+  Send,
 } from "lucide-react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
@@ -60,6 +67,7 @@ import {
   type SocialCampaignStatus,
   type SocialAccountRecord,
   type SocialPublishAttemptRecord,
+  type SocialPostAnalyticsRecord,
   type NormalizedSocialPublishPayload,
 } from "@/social/types";
 import {
@@ -80,6 +88,14 @@ type CalendarResponse = {
   };
   posts: ScheduledPostRecord[];
 };
+
+function isEventCalendarPost(post: ScheduledPostRecord): boolean {
+  return post.metadata?.calendarMode === "events";
+}
+
+function filterSchedulerPosts(posts: ScheduledPostRecord[]): ScheduledPostRecord[] {
+  return posts.filter((post) => !isEventCalendarPost(post));
+}
 
 type CalendarPostResponse = {
   post: ScheduledPostRecord;
@@ -123,6 +139,45 @@ type StudioAssetUploadResponse = {
 
 type PublishAttemptsResponse = {
   attempts: SocialPublishAttemptRecord[];
+};
+
+type PostAnalyticsResponse = {
+  analytics: SocialPostAnalyticsRecord[];
+};
+
+type SchedulerAIResponse = {
+  action: string;
+  label: string;
+  content: {
+    title: string;
+    summary: string;
+    generatedContent: string;
+    strategicTips: string[];
+    variants: string[];
+    providerId: string;
+    modelId: string;
+  };
+  suggestion: {
+    platform?: SocialPlatform;
+    caption?: string;
+    hashtags?: string[];
+    cta?: string;
+    scheduledDate?: string;
+    scheduledTime?: string;
+    campaignName?: string;
+    campaignGoal?: string;
+  };
+};
+
+type PublishingControlsResponse = {
+  controls: {
+    ownerId: string;
+    paused: boolean;
+    reason?: string;
+    pausedAt?: string | null;
+    resumedAt?: string | null;
+    updatedAt?: string | null;
+  };
 };
 
 type PublishPayloadResponse = {
@@ -180,20 +235,22 @@ interface CampaignFormState {
   color: string;
 }
 
-type CalendarViewMode = "month" | "week" | "agenda";
-type ComposerWorkflowStep = "platform" | "ai" | "edit" | "preview" | "schedule" | "publish";
+type CalendarViewMode = "month" | "week" | "agenda" | "queue" | "analytics";
+type ComposerWorkflowStep = "platform" | "format" | "ai" | "edit" | "preview" | "schedule" | "publish" | "analytics";
 
 const COMPOSER_WORKFLOW_STEPS: Array<{
   id: ComposerWorkflowStep;
   title: string;
   description: string;
 }> = [
-  { id: "platform", title: "Platform", description: "Choose destinations and format." },
-  { id: "ai", title: "AI", description: "Generate or improve assets." },
-  { id: "edit", title: "Edit", description: "Attach media and write copy." },
-  { id: "preview", title: "Preview", description: "Review the final post." },
+  { id: "platform", title: "Destination", description: "Choose connected accounts." },
+  { id: "format", title: "Format", description: "Select the content shape." },
+  { id: "ai", title: "Media", description: "Add or generate assets." },
+  { id: "edit", title: "Caption", description: "Write and adapt copy." },
+  { id: "preview", title: "Preview", description: "Review each platform." },
   { id: "schedule", title: "Schedule", description: "Pick the publishing time." },
-  { id: "publish", title: "Publish", description: "Confirm and queue it." },
+  { id: "publish", title: "Auto-publish", description: "Queue the worker." },
+  { id: "analytics", title: "Track", description: "Monitor results." },
 ];
 
 const STATUS_LABELS: Record<ScheduledPostStatus, string> = {
@@ -402,6 +459,28 @@ function canDragScheduledPost(post: ScheduledPostRecord): boolean {
 function getPostPreviewAsset(post: ScheduledPostRecord, assetMap: Record<string, StudioAssetSummary>): StudioAssetSummary | undefined {
   const firstAssetId = post.assetIds?.[0];
   return firstAssetId ? assetMap[firstAssetId] : undefined;
+}
+
+function getPostAccount(post: ScheduledPostRecord, accountMap: Record<string, SocialAccountRecord>): SocialAccountRecord | undefined {
+  const accountId = post.connectedAccountId || post.socialAccountId;
+  return accountId ? accountMap[accountId] : undefined;
+}
+
+function getPostReadinessWarning(
+  post: ScheduledPostRecord,
+  accountMap: Record<string, SocialAccountRecord>,
+  assetMap: Record<string, StudioAssetSummary>
+): string | null {
+  if (post.status === "published" || post.status === "cancelled") return null;
+  const account = getPostAccount(post, accountMap);
+  if (!account) return "No destination account selected";
+  if (account.status !== "connected") return "Destination account is not connected";
+  if (account.lastError) return account.lastError;
+  const contentType = post.contentType || getDefaultContentType(post.platform);
+  if (requiresMedia(post.platform, contentType) && post.assetIds.length === 0) return "Media required before publishing";
+  const missingAsset = post.assetIds.find((assetId) => !assetMap[assetId]);
+  if (missingAsset) return "Attached media is not available yet";
+  return null;
 }
 
 function buildPlatformSettings(platform: SocialPlatform, form: CalendarFormState): Record<string, unknown> {
@@ -668,6 +747,11 @@ function formatCompactMetric(value: number): string {
   }).format(value);
 }
 
+function formatEngagementRate(value: number): string {
+  const normalized = value > 1 ? value : value * 100;
+  return `${Math.round(normalized * 10) / 10}%`;
+}
+
 function getConsistencyScore(posts: ScheduledPostRecord[], month: Date): number {
   const activePosts = posts.filter((post) => post.status === "scheduled" || post.status === "published");
   const activeDays = new Set(
@@ -683,38 +767,26 @@ function getConsistencyScore(posts: ScheduledPostRecord[], month: Date): number 
 
 export default function SocialCalendarPage() {
   const { user, userData } = useAuth();
+  const router = useRouter();
   const searchParams = useSearchParams();
   const { toast } = useToast();
-  const calendarMode = searchParams.get("mode") === "events" ? "events" : "scheduler";
-  const isEventsMode = calendarMode === "events";
-  const pageLabel = isEventsMode ? "Events" : "Scheduler";
-  const pageTitle = isEventsMode ? "Manage live events across the month" : "Schedule content across the month";
-  const pageDescription = isEventsMode
-    ? "Plan and move live classes, workshops, and sessions in one visual calendar."
-    : "Plan, edit, and move social content in one visual calendar. Drag a post to a new day when a reschedule makes more sense.";
-  const createEntryLabel = isEventsMode ? "Create event" : "Create post";
-  const emptyStateLabel = isEventsMode
-    ? "Create your first scheduled event, generate a session outline in AI Studio, or connect another platform."
-    : "Create your first scheduled post, generate content in AI Studio, or connect another platform.";
-  const createCardHeading = isEventsMode ? "Create event" : "Create post";
-  const createCardDescription = isEventsMode
-    ? "Update the event details or move it to a better time."
-    : "Update the content or move it to a better time.";
-  const postHeadingLabel = isEventsMode ? "Event details" : "Post copy";
-  const campaignSectionLabel = isEventsMode ? "Series" : "Campaigns";
-  const campaignSectionHelper = isEventsMode
-    ? "A quick list of this month&apos;s live event series."
-    : "A quick list of the month&apos;s scheduled entries.";
-  const campaignEmptyLabel = isEventsMode ? "No event series yet." : "No scheduled content for this month yet.";
-  const campaignOptionalLabel = isEventsMode
-    ? "Series are optional. You can organize events later."
-    : "Campaigns are optional. You can organize posts later.";
-  const campaignEditorLabel = isEventsMode ? "Create series" : "Create campaign";
-  const campaignEditorDescription = isEventsMode
-    ? "Group related live sessions under a shared series."
-    : "Group related posts under a shared campaign.";
-  const saveDraftLabel = isEventsMode ? "Save draft" : "Save draft";
-  const scheduleLabel = isEventsMode ? "Schedule event" : "Schedule post";
+  const isEventsMode = false;
+  const pageLabel = "Scheduler";
+  const pageTitle = "Schedule content across the month";
+  const pageDescription = "Plan, edit, and move social content in one visual calendar. Drag a post to a new day when a reschedule makes more sense.";
+  const createEntryLabel = "Create post";
+  const emptyStateLabel = "Create your first scheduled post, generate content in AI Studio, or connect another platform.";
+  const createCardHeading = "Create post";
+  const createCardDescription = "Update the content or move it to a better time.";
+  const postHeadingLabel = "Post copy";
+  const campaignSectionLabel = "Campaigns";
+  const campaignSectionHelper = "A quick list of the month's scheduled entries.";
+  const campaignEmptyLabel = "No scheduled content for this month yet.";
+  const campaignOptionalLabel = "Campaigns are optional. You can organize posts later.";
+  const campaignEditorLabel = "Create campaign";
+  const campaignEditorDescription = "Group related posts under a shared campaign.";
+  const saveDraftLabel = "Save draft";
+  const scheduleLabel = "Schedule post";
   const [currentMonth, setCurrentMonth] = useState(() => startOfMonth(new Date()));
   const [viewMode, setViewMode] = useState<CalendarViewMode>("month");
   const [campaignFilter, setCampaignFilter] = useState<string>("all");
@@ -763,6 +835,9 @@ export default function SocialCalendarPage() {
   const [publishAttempts, setPublishAttempts] = useState<SocialPublishAttemptRecord[]>([]);
   const [publishPayload, setPublishPayload] = useState<NormalizedSocialPublishPayload | null>(null);
   const [publishReadinessLoading, setPublishReadinessLoading] = useState(false);
+  const [postAnalytics, setPostAnalytics] = useState<SocialPostAnalyticsRecord[]>([]);
+  const [selectedPostAnalytics, setSelectedPostAnalytics] = useState<SocialPostAnalyticsRecord[]>([]);
+  const [selectedPostPanelTab, setSelectedPostPanelTab] = useState<"readiness" | "analytics">("readiness");
   const [selectedPostId, setSelectedPostId] = useState<string | null>(null);
   const [selectedCampaignId, setSelectedCampaignId] = useState<string | null>(null);
   const [dragOverDay, setDragOverDay] = useState<string | null>(null);
@@ -770,6 +845,10 @@ export default function SocialCalendarPage() {
   const [form, setForm] = useState<CalendarFormState>(() => buildEmptyForm(getTodayDateString()));
   const [campaignForm, setCampaignForm] = useState<CampaignFormState>(() => buildEmptyCampaignForm());
   const [workflowStep, setWorkflowStep] = useState<ComposerWorkflowStep>("platform");
+  const [schedulerAiLoadingAction, setSchedulerAiLoadingAction] = useState<string | null>(null);
+  const [schedulerAiResult, setSchedulerAiResult] = useState<SchedulerAIResponse | null>(null);
+  const [publishingControls, setPublishingControls] = useState<PublishingControlsResponse["controls"] | null>(null);
+  const [publishingControlLoading, setPublishingControlLoading] = useState(false);
   const [creditDashboard, setCreditDashboard] = useState<CreditDashboard | null>(null);
   const [creditLoading, setCreditLoading] = useState(true);
 
@@ -789,6 +868,13 @@ export default function SocialCalendarPage() {
       return acc;
     }, {});
   }, [campaigns]);
+
+  const socialAccountMap = useMemo(() => {
+    return connectedAccounts.reduce<Record<string, SocialAccountRecord>>((acc, account) => {
+      acc[account.socialAccountId] = account;
+      return acc;
+    }, {});
+  }, [connectedAccounts]);
 
   const filteredPosts = useMemo(() => {
     if (campaignFilter === "all") {
@@ -860,6 +946,10 @@ export default function SocialCalendarPage() {
     return agendaPosts.filter((post) => new Date(post.scheduledTime).getTime() >= now && post.status !== "published" && post.status !== "cancelled");
   }, [agendaPosts]);
 
+  const queuePosts = useMemo(() => {
+    return agendaPosts.filter((post) => ["scheduled", "publishing", "failed", "editing"].includes(post.status));
+  }, [agendaPosts]);
+
   const todaysPosts = useMemo(() => {
     const todayKey = format(new Date(), "yyyy-MM-dd");
     return agendaPosts.filter((post) => format(parseISO(post.scheduledTime), "yyyy-MM-dd") === todayKey);
@@ -874,6 +964,18 @@ export default function SocialCalendarPage() {
     () => sumAccountMetric(connectedAccounts, ["monthlyReach", "reach", "totalReach", "impressions", "monthlyImpressions", "totalImpressions"]),
     [connectedAccounts]
   );
+  const engagementMetric = useMemo(
+    () => sumAccountMetric(connectedAccounts, ["monthlyEngagement", "engagement", "totalEngagement", "engagements", "interactions", "totalInteractions"]),
+    [connectedAccounts]
+  );
+  const likesMetric = useMemo(
+    () => sumAccountMetric(connectedAccounts, ["monthlyLikes", "likes", "totalLikes", "likeCount"]),
+    [connectedAccounts]
+  );
+  const commentsMetric = useMemo(
+    () => sumAccountMetric(connectedAccounts, ["monthlyComments", "comments", "totalComments", "commentCount"]),
+    [connectedAccounts]
+  );
   const clicksMetric = useMemo(
     () => sumAccountMetric(connectedAccounts, ["monthlyClicks", "clicks", "linkClicks", "websiteClicks", "totalClicks"]),
     [connectedAccounts]
@@ -881,36 +983,70 @@ export default function SocialCalendarPage() {
   const consistencyScore = useMemo(() => getConsistencyScore(filteredPosts, currentMonth), [currentMonth, filteredPosts]);
   const schedulerAnalyticsCards = useMemo(() => {
     const scheduledCount = visibleSummary.byStatus.scheduled + visibleSummary.byStatus.publishing;
+    const failedCount = visibleSummary.byStatus.failed;
     return [
       {
-        label: "Posts",
-        value: formatCompactMetric(visibleSummary.totalPosts),
-        helper: "This month",
+        label: "Posts scheduled",
+        value: formatCompactMetric(scheduledCount),
+        helper: "Queued to publish",
         tone: "text-white",
+        icon: Send,
       },
       {
-        label: "Reach",
+        label: "Published",
+        value: formatCompactMetric(visibleSummary.byStatus.published),
+        helper: "This month",
+        tone: "text-emerald-300",
+        icon: CalendarDays,
+      },
+      {
+        label: "Needs attention",
+        value: formatCompactMetric(failedCount),
+        helper: failedCount > 0 ? "Review failed posts" : "No failed posts",
+        tone: failedCount > 0 ? "text-red-300" : "text-muted-foreground",
+        icon: AlertTriangle,
+      },
+      {
+        label: "Total reach",
         value: reachMetric.synced ? formatCompactMetric(reachMetric.value) : "0",
         helper: reachMetric.synced ? "Synced from platforms" : "Analytics not synced",
         tone: reachMetric.synced ? "text-white" : "text-muted-foreground",
+        icon: Eye,
+      },
+      {
+        label: "Total engagement",
+        value: engagementMetric.synced ? formatCompactMetric(engagementMetric.value) : "0",
+        helper: engagementMetric.synced ? "Synced from platforms" : "Analytics not synced",
+        tone: engagementMetric.synced ? "text-white" : "text-muted-foreground",
+        icon: BarChart3,
+      },
+      {
+        label: "Likes",
+        value: likesMetric.synced ? formatCompactMetric(likesMetric.value) : "0",
+        helper: likesMetric.synced ? "Synced from platforms" : "Analytics not synced",
+        tone: likesMetric.synced ? "text-white" : "text-muted-foreground",
+        icon: Heart,
+      },
+      {
+        label: "Comments",
+        value: commentsMetric.synced ? formatCompactMetric(commentsMetric.value) : "0",
+        helper: commentsMetric.synced ? "Synced from platforms" : "Analytics not synced",
+        tone: commentsMetric.synced ? "text-white" : "text-muted-foreground",
+        icon: MessageCircle,
       },
       {
         label: "Clicks",
         value: clicksMetric.synced ? formatCompactMetric(clicksMetric.value) : "0",
         helper: clicksMetric.synced ? "Tracked from accounts" : "Analytics not synced",
         tone: clicksMetric.synced ? "text-white" : "text-muted-foreground",
-      },
-      {
-        label: "Scheduled",
-        value: formatCompactMetric(scheduledCount),
-        helper: "Queued to publish",
-        tone: "text-white",
+        icon: MousePointerClick,
       },
       {
         label: "Consistency Score",
         value: `${consistencyScore}%`,
         helper: consistencyScore >= 70 ? "Strong rhythm" : consistencyScore > 0 ? "Build momentum" : "Start scheduling",
         tone: consistencyScore >= 70 ? "text-emerald-300" : consistencyScore > 0 ? "text-amber-300" : "text-muted-foreground",
+        icon: BarChart3,
       },
       {
         label: "AI Credits",
@@ -919,9 +1055,10 @@ export default function SocialCalendarPage() {
           ? `${creditDashboard.snapshot.monthlyCreditsUsed} used this cycle`
           : "Buy or upgrade to create",
         tone: creditDashboard?.snapshot.remainingCredits ? "text-white" : "text-muted-foreground",
+        icon: Sparkles,
       },
     ];
-  }, [clicksMetric, consistencyScore, creditDashboard, creditLoading, reachMetric, visibleSummary]);
+  }, [clicksMetric, commentsMetric, consistencyScore, creditDashboard, creditLoading, engagementMetric, likesMetric, reachMetric, visibleSummary]);
 
   const connectedPlatforms = useMemo(() => {
     return new Set(connectedAccounts.filter((account) => account.status === "connected").map((account) => account.providerId));
@@ -971,6 +1108,97 @@ export default function SocialCalendarPage() {
       return acc;
     }, {});
   }, [studioAssets]);
+  const postsNeedingAttention = useMemo(() => {
+    return queuePosts.filter((post) => getPostReadinessWarning(post, socialAccountMap, studioAssetMap) || post.status === "failed");
+  }, [queuePosts, socialAccountMap, studioAssetMap]);
+  const postAnalyticsByPostId = useMemo(() => {
+    return postAnalytics.reduce<Record<string, SocialPostAnalyticsRecord>>((acc, record) => {
+      const existing = acc[record.scheduledPostId];
+      const existingTime = existing?.lastSyncedAt ? Date.parse(existing.lastSyncedAt) : 0;
+      const nextTime = record.lastSyncedAt ? Date.parse(record.lastSyncedAt) : 0;
+      if (!existing || nextTime >= existingTime) acc[record.scheduledPostId] = record;
+      return acc;
+    }, {});
+  }, [postAnalytics]);
+  const selectedPostLatestAnalytics = useMemo(() => {
+    if (!selectedPostId) return null;
+    return selectedPostAnalytics[0] || postAnalyticsByPostId[selectedPostId] || null;
+  }, [postAnalyticsByPostId, selectedPostAnalytics, selectedPostId]);
+  const postAnalyticsTotals = useMemo(() => {
+    return postAnalytics.reduce(
+      (acc, record) => {
+        acc.likes += record.metrics.likes || 0;
+        acc.comments += record.metrics.comments || 0;
+        acc.shares += record.metrics.shares || 0;
+        acc.saves += record.metrics.saves || 0;
+        acc.clicks += record.metrics.clicks || 0;
+        acc.views += record.metrics.views || 0;
+        acc.reach += record.metrics.reach || 0;
+        acc.impressions += record.metrics.impressions || 0;
+        acc.engagement += (record.metrics.likes || 0) + (record.metrics.comments || 0) + (record.metrics.shares || 0) + (record.metrics.saves || 0) + (record.metrics.clicks || 0);
+        return acc;
+      },
+      { likes: 0, comments: 0, shares: 0, saves: 0, clicks: 0, views: 0, reach: 0, impressions: 0, engagement: 0 }
+    );
+  }, [postAnalytics]);
+  const topPerformingPosts = useMemo(() => {
+    return postAnalytics
+      .map((record) => {
+        const post = posts.find((item) => item.scheduledPostId === record.scheduledPostId);
+        const score =
+          (record.metrics.engagementRate || 0) * 100 +
+          (record.metrics.likes || 0) +
+          (record.metrics.comments || 0) * 2 +
+          (record.metrics.shares || 0) * 3 +
+          (record.metrics.saves || 0) * 2 +
+          (record.metrics.clicks || 0) * 2;
+        return { record, post, score };
+      })
+      .filter((item) => item.post)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 5);
+  }, [postAnalytics, posts]);
+  const bestPostingTimeFromAnalytics = useMemo(() => {
+    const buckets = new Map<number, { count: number; score: number }>();
+    postAnalytics.forEach((record) => {
+      const post = posts.find((item) => item.scheduledPostId === record.scheduledPostId);
+      if (!post?.scheduledTime) return;
+      const hour = parseISO(post.scheduledTime).getHours();
+      const current = buckets.get(hour) || { count: 0, score: 0 };
+      current.count += 1;
+      current.score +=
+        (record.metrics.likes || 0) +
+        (record.metrics.comments || 0) * 2 +
+        (record.metrics.shares || 0) * 3 +
+        (record.metrics.saves || 0) * 2 +
+        (record.metrics.clicks || 0) * 2 +
+        (record.metrics.views || 0) * 0.05;
+      buckets.set(hour, current);
+    });
+    const best = [...buckets.entries()].sort((a, b) => (b[1].score / Math.max(b[1].count, 1)) - (a[1].score / Math.max(a[1].count, 1)))[0];
+    if (!best) return { label: suggestedPostingTime.label, source: "Based on your schedule until post analytics sync" };
+    const hourDate = new Date();
+    hourDate.setHours(best[0], 0, 0, 0);
+    return {
+      label: format(hourDate, "h:mm a"),
+      source: `Best average engagement from ${best[1].count} synced post${best[1].count === 1 ? "" : "s"}`,
+    };
+  }, [postAnalytics, posts, suggestedPostingTime.label]);
+  const platformAnalytics = useMemo(() => {
+    return SOCIAL_PROVIDER_REGISTRY.map((provider) => {
+      const records = postAnalytics.filter((record) => record.platform === provider.id);
+      const totals = records.reduce(
+        (acc, record) => {
+          acc.reach += record.metrics.reach || 0;
+          acc.views += record.metrics.views || 0;
+          acc.engagement += (record.metrics.likes || 0) + (record.metrics.comments || 0) + (record.metrics.shares || 0) + (record.metrics.saves || 0) + (record.metrics.clicks || 0);
+          return acc;
+        },
+        { reach: 0, views: 0, engagement: 0 }
+      );
+      return { provider, records: records.length, ...totals };
+    }).filter((item) => item.records > 0);
+  }, [postAnalytics]);
   const selectedAssets = useMemo(() => {
     return selectedAssetIds.map((assetId) => ({
       assetId,
@@ -993,11 +1221,11 @@ export default function SocialCalendarPage() {
     ? publishTargetAccounts.some((account) => requiresMedia(account.providerId, form.contentType))
     : mediaIsRequired;
   const canPublishToSelectedPlatform = isEventsMode
-    ? connectedPlatforms.has(form.platform)
+    ? true
     : publishTargetAccounts.length > 0;
   const canSaveDraft = isEventsMode ? canPublishToSelectedPlatform && Boolean(form.caption.trim()) : publishTargetAccounts.length > 0;
   const canSchedulePost = isEventsMode
-    ? canPublishToSelectedPlatform && Boolean(form.caption.trim())
+    ? canPublishToSelectedPlatform && Boolean(form.caption.trim()) && Boolean(form.scheduledDate && form.scheduledTime)
     : canPublishToSelectedPlatform
       && allTargetsSupportFormat
       && (!anyTargetRequiresMedia || selectedAssetIds.length > 0)
@@ -1016,6 +1244,12 @@ export default function SocialCalendarPage() {
   const goToNextWorkflowStep = () => {
     setWorkflowStep(COMPOSER_WORKFLOW_STEPS[Math.min(COMPOSER_WORKFLOW_STEPS.length - 1, workflowStepIndex + 1)].id);
   };
+
+  useEffect(() => {
+    if (searchParams.get("mode") === "events") {
+      router.replace("/events");
+    }
+  }, [router, searchParams]);
 
   useEffect(() => {
     setSelectedPostId(null);
@@ -1067,7 +1301,7 @@ export default function SocialCalendarPage() {
     }
 
     const data = (await response.json()) as CalendarResponse;
-    setPosts(data.posts || []);
+    setPosts(filterSchedulerPosts(data.posts || []));
     setSummary(data.summary);
   };
 
@@ -1119,6 +1353,30 @@ export default function SocialCalendarPage() {
     }
   };
 
+  const loadPostAnalytics = async () => {
+    if (!user) return;
+
+    const idToken = await user.getIdToken();
+    const response = await fetch("/api/social/post-analytics?limit=200", {
+      headers: { Authorization: `Bearer ${idToken}` },
+    });
+
+    if (!response.ok) return;
+    const data = (await response.json()) as PostAnalyticsResponse;
+    setPostAnalytics(data.analytics || []);
+  };
+
+  const loadPublishingControls = async () => {
+    if (!user) return;
+    const idToken = await user.getIdToken();
+    const response = await fetch("/api/social/publishing-controls", {
+      headers: { Authorization: `Bearer ${idToken}` },
+    });
+    if (!response.ok) return;
+    const data = (await response.json()) as PublishingControlsResponse;
+    setPublishingControls(data.controls);
+  };
+
   useEffect(() => {
     let mounted = true;
 
@@ -1142,7 +1400,7 @@ export default function SocialCalendarPage() {
 
         const data = (await response.json()) as CalendarResponse;
         if (mounted) {
-          setPosts(data.posts || []);
+          setPosts(filterSchedulerPosts(data.posts || []));
           setSummary(data.summary);
         }
         const campaignResponse = await fetch("/api/social/campaigns?limit=24", {
@@ -1173,6 +1431,24 @@ export default function SocialCalendarPage() {
             setStudioAssets(assetsData.assets || []);
           }
         }
+        const analyticsResponse = await fetch("/api/social/post-analytics?limit=200", {
+          headers: { Authorization: `Bearer ${idToken}` },
+        });
+        if (analyticsResponse.ok) {
+          const analyticsData = (await analyticsResponse.json()) as PostAnalyticsResponse;
+          if (mounted) {
+            setPostAnalytics(analyticsData.analytics || []);
+          }
+        }
+        const controlsResponse = await fetch("/api/social/publishing-controls", {
+          headers: { Authorization: `Bearer ${idToken}` },
+        });
+        if (controlsResponse.ok) {
+          const controlsData = (await controlsResponse.json()) as PublishingControlsResponse;
+          if (mounted) {
+            setPublishingControls(controlsData.controls);
+          }
+        }
       } catch (error) {
         if (mounted) {
           toast({
@@ -1200,7 +1476,7 @@ export default function SocialCalendarPage() {
     if (!selectedPost) return;
     setForm(buildFormFromPost(selectedPost));
     setWorkflowStep(isEventsMode ? "platform" : "edit");
-  }, [selectedPost]);
+  }, [isEventsMode, selectedPost]);
 
   useEffect(() => {
     if (!selectedCampaign) return;
@@ -1214,17 +1490,22 @@ export default function SocialCalendarPage() {
       if (!user || !selectedPostId) {
         setPublishAttempts([]);
         setPublishPayload(null);
+        setSelectedPostAnalytics([]);
         return;
       }
 
       try {
         setPublishReadinessLoading(true);
         const idToken = await user.getIdToken();
-        const [attemptsResponse, payloadResponse] = await Promise.all([
+        setSelectedPostPanelTab("readiness");
+        const [attemptsResponse, payloadResponse, analyticsResponse] = await Promise.all([
           fetch(`/api/social/publish-attempts?scheduledPostId=${encodeURIComponent(selectedPostId)}&limit=8`, {
             headers: { Authorization: `Bearer ${idToken}` },
           }),
           fetch(`/api/social/scheduled-posts/${selectedPostId}/publish-payload`, {
+            headers: { Authorization: `Bearer ${idToken}` },
+          }),
+          fetch(`/api/social/post-analytics?scheduledPostId=${encodeURIComponent(selectedPostId)}&limit=8`, {
             headers: { Authorization: `Bearer ${idToken}` },
           }),
         ]);
@@ -1238,6 +1519,12 @@ export default function SocialCalendarPage() {
           if (mounted) setPublishPayload(data.payload);
         } else if (mounted) {
           setPublishPayload(null);
+        }
+        if (analyticsResponse.ok) {
+          const data = (await analyticsResponse.json()) as PostAnalyticsResponse;
+          if (mounted) setSelectedPostAnalytics(data.analytics || []);
+        } else if (mounted) {
+          setSelectedPostAnalytics([]);
         }
       } finally {
         if (mounted) setPublishReadinessLoading(false);
@@ -1314,10 +1601,98 @@ export default function SocialCalendarPage() {
     }));
   };
 
+  const applySchedulerAISuggestion = (data: SchedulerAIResponse) => {
+    const suggestion = data.suggestion || {};
+    setSchedulerAiResult(data);
+
+    setForm((current) => {
+      const nextPlatform = suggestion.platform || current.platform;
+      const nextAccount = nextPlatform !== current.platform
+        ? connectedAccounts.find((account) => account.status === "connected" && account.providerId === nextPlatform)
+        : undefined;
+      return {
+        ...current,
+        platform: nextPlatform,
+        connectedAccountId: nextAccount?.socialAccountId || current.connectedAccountId,
+        destinationAccountIds: nextAccount ? [nextAccount.socialAccountId] : current.destinationAccountIds,
+        contentType: nextPlatform !== current.platform ? getDefaultContentType(nextPlatform) : current.contentType,
+        caption: suggestion.caption !== undefined && suggestion.caption.trim() ? suggestion.caption : current.caption,
+        hashtags: suggestion.hashtags && suggestion.hashtags.length > 0 ? suggestion.hashtags.map((tag) => `#${tag.replace(/^#/, "")}`).join(" ") : current.hashtags,
+        cta: suggestion.cta !== undefined && suggestion.cta.trim() ? suggestion.cta : current.cta,
+        scheduledDate: suggestion.scheduledDate || current.scheduledDate,
+        scheduledTime: suggestion.scheduledTime || current.scheduledTime,
+      };
+    });
+
+    if (suggestion.campaignName || suggestion.campaignGoal) {
+      setCampaignForm((current) => ({
+        ...current,
+        campaignName: suggestion.campaignName || current.campaignName,
+        goal: suggestion.campaignGoal || current.goal,
+        startDate: suggestion.scheduledDate || current.startDate || getTodayDateString(),
+      }));
+    }
+  };
+
+  const runSchedulerAIAction = async (action: string, options: { targetPlatform?: SocialPlatform } = {}) => {
+    if (!user || schedulerAiLoadingAction) return;
+
+    try {
+      setSchedulerAiLoadingAction(action);
+      const idToken = await user.getIdToken();
+      const response = await fetch("/api/social/scheduler-ai", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${idToken}`,
+        },
+        body: JSON.stringify({
+          action,
+          targetPlatform: options.targetPlatform,
+          month: format(currentMonth, "yyyy-MM"),
+          form: {
+            title: form.title,
+            caption: form.caption,
+            platform: form.platform,
+            contentType: form.contentType,
+            scheduledDate: form.scheduledDate,
+            scheduledTime: form.scheduledTime,
+            hashtags: form.hashtags,
+            cta: form.cta,
+            campaignId: form.campaignId,
+            assetIds: form.assetIds,
+          },
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: "Soma AI could not complete this action." }));
+        throw new Error(errorData.error || "Soma AI could not complete this action.");
+      }
+
+      const data = (await response.json()) as SchedulerAIResponse;
+      applySchedulerAISuggestion(data);
+      setWorkflowStep(action === "suggest_best_time" ? "schedule" : action === "create_7_day_campaign" ? "preview" : "edit");
+      toast({
+        title: data.label,
+        description: "Soma AI updated the scheduler draft. Review before publishing.",
+      });
+    } catch (error) {
+      toast({
+        title: "Soma AI action failed",
+        description: error instanceof Error ? error.message : "Could not generate scheduler guidance.",
+        variant: "destructive",
+      });
+    } finally {
+      setSchedulerAiLoadingAction(null);
+    }
+  };
+
   const clearForm = () => {
     setSelectedPostId(null);
     setForm(buildEmptyForm(format(currentMonth, "yyyy-MM-dd")));
     setWorkflowStep("platform");
+    setSchedulerAiResult(null);
   };
 
   const clearCampaignForm = () => {
@@ -1407,7 +1782,7 @@ export default function SocialCalendarPage() {
   const refreshCalendar = async () => {
     try {
       setLoading(true);
-      await Promise.all([loadMonth(), loadConnectedAccounts(), loadStudioAssets()]);
+      await Promise.all([loadMonth(), loadConnectedAccounts(), loadStudioAssets(), loadPostAnalytics(), loadPublishingControls()]);
       toast({
         title: "Calendar refreshed",
         description: "The latest scheduled content is loaded.",
@@ -1442,6 +1817,77 @@ export default function SocialCalendarPage() {
     }
   };
 
+  const setPublishingPaused = async (paused: boolean) => {
+    if (!user || publishingControlLoading) return;
+    try {
+      setPublishingControlLoading(true);
+      const idToken = await user.getIdToken();
+      const response = await fetch("/api/social/publishing-controls", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${idToken}`,
+        },
+        body: JSON.stringify({
+          paused,
+          reason: paused ? "Paused from Scheduler" : "",
+        }),
+      });
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: "Could not update publishing controls." }));
+        throw new Error(errorData.error || "Could not update publishing controls.");
+      }
+      const data = (await response.json()) as PublishingControlsResponse;
+      setPublishingControls(data.controls);
+      toast({
+        title: paused ? "Scheduled publishing paused" : "Scheduled publishing resumed",
+        description: paused ? "The worker will skip your scheduled posts until you resume." : "Eligible scheduled posts can publish again.",
+      });
+    } catch (error) {
+      toast({
+        title: "Publishing controls failed",
+        description: error instanceof Error ? error.message : "Could not update publishing controls.",
+        variant: "destructive",
+      });
+    } finally {
+      setPublishingControlLoading(false);
+    }
+  };
+
+  const runPostControlAction = async (postId: string, action: "retry" | "cancel") => {
+    if (!user || loading) return;
+    try {
+      setLoading(true);
+      const idToken = await user.getIdToken();
+      const response = await fetch(`/api/social/scheduled-posts/${postId}/controls`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${idToken}`,
+        },
+        body: JSON.stringify({ action }),
+      });
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: "Could not update post." }));
+        throw new Error(errorData.error || "Could not update post.");
+      }
+      const data = (await response.json()) as { post: ScheduledPostRecord };
+      setPosts((current) => current.map((post) => post.scheduledPostId === data.post.scheduledPostId ? data.post : post));
+      toast({
+        title: action === "retry" ? "Retry queued" : "Post cancelled",
+        description: action === "retry" ? "The publishing worker will try this post again." : "This post will no longer auto-publish.",
+      });
+    } catch (error) {
+      toast({
+        title: action === "retry" ? "Retry failed" : "Cancel failed",
+        description: error instanceof Error ? error.message : "Could not update the post.",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const savePost = async (nextStatus: ScheduledPostStatus = form.status) => {
     if (!user || loading) return;
 
@@ -1469,7 +1915,7 @@ export default function SocialCalendarPage() {
         campaignId: form.campaignId || undefined,
         notes: form.notes || undefined,
         timezone: form.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone || undefined,
-        metadata: { calendarMode },
+        metadata: { calendarMode: "scheduler" },
       };
 
       const requests = (isEventsMode ? [{ providerId: form.platform, socialAccountId: form.connectedAccountId || undefined }] : targetAccounts).map((account) => {
@@ -1716,6 +2162,9 @@ export default function SocialCalendarPage() {
     const previewUrl = previewAsset?.thumbnail || previewAsset?.downloadUrl;
     const provider = SOCIAL_PROVIDER_REGISTRY.find((item) => item.id === post.platform);
     const platformLabel = provider?.label || post.platform;
+    const account = getPostAccount(post, socialAccountMap);
+    const accountLabel = account ? getAccountDisplayLabel(account) : "No account";
+    const readinessWarning = getPostReadinessWarning(post, socialAccountMap, studioAssetMap);
 
     return (
       <div
@@ -1768,11 +2217,19 @@ export default function SocialCalendarPage() {
                 <span className="truncate normal-case tracking-normal">{platformLabel}</span>
               <span>·</span>
               </div>
-              <Badge variant="outline" className={cn("shrink-0 border px-1.5 py-0 text-[9px] uppercase tracking-[0.12em]", getPostBadgeClass(post.status))}>
-                {STATUS_LABELS[post.status]}
-              </Badge>
+              <div className="flex shrink-0 items-center gap-1">
+                {readinessWarning ? (
+                  <AlertTriangle className="h-3.5 w-3.5 text-amber-300" aria-label={readinessWarning} />
+                ) : null}
+                <Badge variant="outline" className={cn("border px-1.5 py-0 text-[9px] uppercase tracking-[0.12em]", getPostBadgeClass(post.status))}>
+                  {STATUS_LABELS[post.status]}
+                </Badge>
+              </div>
             </div>
             <div className="mt-1 line-clamp-2 font-medium leading-4 text-white">{captionSnippet}</div>
+            <div className="mt-1 truncate text-[10px] text-muted-foreground">
+              {accountLabel}
+            </div>
             <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[10px] text-muted-foreground">
               <span className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-white/[0.04] px-1.5 py-0.5 capitalize">
                 <ContentIcon className="h-3 w-3" />
@@ -1790,6 +2247,9 @@ export default function SocialCalendarPage() {
             <div className="mt-1 truncate text-[10px] text-muted-foreground">
               {getCampaignLabel(campaignMap, post.campaignId)}
             </div>
+            {readinessWarning ? (
+              <div className="mt-1 line-clamp-1 text-[10px] text-amber-200">{readinessWarning}</div>
+            ) : null}
             {compact ? (
               <div className="mt-2 flex items-center gap-1.5 text-[10px] text-muted-foreground">
                 <GripVertical className={cn("h-3.5 w-3.5", canDrag ? "text-white/60" : "text-white/20")} />
@@ -1821,7 +2281,7 @@ export default function SocialCalendarPage() {
 
             <div className="flex flex-wrap items-center gap-2">
               <div className="flex items-center rounded-md border border-white/10 bg-white/5 p-1">
-                {(["month", "week", "agenda"] as const).map((mode) => (
+                {(["month", "week", "agenda", "queue", "analytics"] as const).map((mode) => (
                   <Button
                     key={mode}
                     type="button"
@@ -1830,7 +2290,7 @@ export default function SocialCalendarPage() {
                     onClick={() => setViewMode(mode)}
                     className="h-8 px-3"
                   >
-                    {mode === "month" ? "Month" : mode === "week" ? "Week" : "Agenda"}
+                    {mode === "month" ? "Month" : mode === "week" ? "Week" : mode === "agenda" ? "Agenda" : mode === "queue" ? "Queue" : "Analytics"}
                   </Button>
                 ))}
               </div>
@@ -1860,17 +2320,44 @@ export default function SocialCalendarPage() {
                 {loadingMonth ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
                 Refresh
               </Button>
+              <Button
+                variant={publishingControls?.paused ? "default" : "outline"}
+                size="sm"
+                onClick={() => setPublishingPaused(!(publishingControls?.paused === true))}
+                disabled={publishingControlLoading}
+                className={cn(publishingControls?.paused && "bg-amber-500/20 text-amber-100 hover:bg-amber-500/30")}
+              >
+                {publishingControlLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : publishingControls?.paused ? <Clock3 className="h-4 w-4" /> : <Send className="h-4 w-4" />}
+                {publishingControls?.paused ? "Resume publishing" : "Pause all"}
+              </Button>
             </div>
           </div>
 
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
-            {schedulerAnalyticsCards.map((card) => (
-              <GlassCard key={card.label} className="depth-card-hover p-4">
-                <div className="text-xs uppercase tracking-[0.2em] text-muted-foreground">{card.label}</div>
-                <div className={cn("mt-2 text-2xl font-semibold", card.tone)}>{card.value}</div>
-                <div className="mt-2 min-h-8 text-xs leading-4 text-muted-foreground">{card.helper}</div>
-              </GlassCard>
-            ))}
+          {publishingControls?.paused ? (
+            <div className="rounded-[18px] border border-amber-400/20 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
+              Scheduled publishing is paused. Drafting and scheduling still work, but the worker will skip your queued posts until you resume.
+            </div>
+          ) : null}
+
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-5">
+            {schedulerAnalyticsCards.map((card) => {
+              const Icon = card.icon;
+              return (
+                <GlassCard key={card.label} className="depth-card-hover relative overflow-hidden p-4">
+                  <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/20 to-transparent" />
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="text-xs uppercase tracking-[0.2em] text-muted-foreground">{card.label}</div>
+                      <div className={cn("mt-2 text-2xl font-semibold", card.tone)}>{card.value}</div>
+                    </div>
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[14px] border border-white/10 bg-white/[0.045]">
+                      <Icon className="h-4 w-4 text-primary" />
+                    </div>
+                  </div>
+                  <div className="mt-2 min-h-8 text-xs leading-4 text-muted-foreground">{card.helper}</div>
+                </GlassCard>
+              );
+            })}
           </div>
 
           {!loadingMonth && connectedAccounts.length > 0 && posts.length === 0 ? (
@@ -1942,11 +2429,14 @@ export default function SocialCalendarPage() {
                     <p className="mt-2 text-xs leading-5 text-muted-foreground">
                       Soma AI can create a platform-ready post from today&apos;s gaps, suggested timing, and connected channels.
                     </p>
-                    <Button asChild className="floating-action mt-4 h-11 w-full rounded-[16px] bg-gradient-to-r from-[#5B5FFF] via-[#8B5CF6] to-[#4F9DFF]">
-                      <Link href={buildAiStudioActionHref("generate_todays_content", form)}>
-                        <Sparkles className="h-4 w-4" />
-                        Generate
-                      </Link>
+                    <Button
+                      type="button"
+                      onClick={() => runSchedulerAIAction("generate_todays_content")}
+                      disabled={Boolean(schedulerAiLoadingAction)}
+                      className="floating-action mt-4 h-11 w-full rounded-[16px] bg-gradient-to-r from-[#5B5FFF] via-[#8B5CF6] to-[#4F9DFF]"
+                    >
+                      {schedulerAiLoadingAction === "generate_todays_content" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+                      Generate today&apos;s content
                     </Button>
                     <div className="mt-3 text-[11px] leading-5 text-muted-foreground">
                       Next post: {nextScheduledPost ? `${formatFriendlyTime(nextScheduledPost.scheduledTime)} · ${nextScheduledPost.platform}` : "Nothing scheduled yet"}
@@ -1954,6 +2444,41 @@ export default function SocialCalendarPage() {
                   </div>
                 </div>
               </div>
+            </GlassCard>
+          ) : null}
+
+          {schedulerAiResult && !isEventsMode ? (
+            <GlassCard className="border-primary/20 p-5 shadow-[0_20px_60px_rgba(91,95,255,0.16)]">
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                <div className="min-w-0">
+                  <div className="inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-xs font-medium text-primary">
+                    <Sparkles className="h-3.5 w-3.5" />
+                    Soma AI generated
+                  </div>
+                  <h2 className="mt-3 text-lg font-semibold text-white">{schedulerAiResult.content.title || schedulerAiResult.label}</h2>
+                  <p className="mt-1 text-sm leading-6 text-muted-foreground">{schedulerAiResult.content.summary || "Review the generated draft before scheduling."}</p>
+                </div>
+                <div className="flex shrink-0 gap-2">
+                  <Button type="button" variant="outline" onClick={() => setSchedulerAiResult(null)} className="rounded-[14px]">
+                    Dismiss
+                  </Button>
+                  <Button type="button" onClick={() => setWorkflowStep("preview")} className="rounded-[14px]">
+                    Preview
+                  </Button>
+                </div>
+              </div>
+              <div className="mt-4 rounded-[16px] border border-white/10 bg-white/[0.035] p-4">
+                <p className="whitespace-pre-line text-sm leading-6 text-[#BFC6D4]">{schedulerAiResult.content.generatedContent}</p>
+              </div>
+              {schedulerAiResult.content.strategicTips?.length ? (
+                <div className="mt-4 flex flex-wrap gap-2">
+                  {schedulerAiResult.content.strategicTips.slice(0, 4).map((tip) => (
+                    <span key={tip} className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-xs text-muted-foreground">
+                      {tip}
+                    </span>
+                  ))}
+                </div>
+              ) : null}
             </GlassCard>
           ) : null}
 
@@ -2031,14 +2556,21 @@ export default function SocialCalendarPage() {
                   <div className="depth-panel rounded-[18px] p-4">
                     <div className="text-sm font-medium text-white">Soma AI actions</div>
                     <div className="mt-3 grid gap-2">
-                      <Button asChild size="sm" variant="outline" className="justify-start rounded-[14px]">
-                        <Link href={buildAiStudioActionHref("write_caption", form)}>Write caption</Link>
+                      <Button size="sm" variant="outline" onClick={() => runSchedulerAIAction("generate_todays_content")} disabled={Boolean(schedulerAiLoadingAction)} className="justify-start rounded-[14px]">
+                        {schedulerAiLoadingAction === "generate_todays_content" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+                        Generate today&apos;s content
                       </Button>
-                      <Button asChild size="sm" variant="outline" className="justify-start rounded-[14px]">
-                        <Link href={buildAiStudioActionHref("repurpose_asset", form)}>Repurpose recent asset</Link>
+                      <Button size="sm" variant="outline" onClick={() => runSchedulerAIAction("repurpose_video_captions")} disabled={Boolean(schedulerAiLoadingAction)} className="justify-start rounded-[14px]">
+                        {schedulerAiLoadingAction === "repurpose_video_captions" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Video className="h-4 w-4" />}
+                        Repurpose video into captions
                       </Button>
-                      <Button asChild size="sm" variant="ghost" className="justify-start rounded-[14px]">
-                        <Link href={buildAiStudioActionHref("fill_content_gap", form)}>Fill content gap</Link>
+                      <Button size="sm" variant="ghost" onClick={() => runSchedulerAIAction("fill_content_gap")} disabled={Boolean(schedulerAiLoadingAction) || contentGapDays.length === 0} className="justify-start rounded-[14px]">
+                        {schedulerAiLoadingAction === "fill_content_gap" ? <Loader2 className="h-4 w-4 animate-spin" /> : <CalendarDays className="h-4 w-4" />}
+                        Fill content gap
+                      </Button>
+                      <Button size="sm" variant="ghost" onClick={() => runSchedulerAIAction("create_7_day_campaign")} disabled={Boolean(schedulerAiLoadingAction)} className="justify-start rounded-[14px]">
+                        {schedulerAiLoadingAction === "create_7_day_campaign" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Megaphone className="h-4 w-4" />}
+                        Create a 7-day campaign
                       </Button>
                     </div>
                   </div>
@@ -2113,14 +2645,18 @@ export default function SocialCalendarPage() {
                 <div className="mb-4 flex items-center justify-between gap-4">
                   <div>
                     <h2 className="text-lg font-semibold">
-                      {viewMode === "month" ? format(currentMonth, "MMMM yyyy") : viewMode === "week" ? "Week view" : "Agenda"}
+                      {viewMode === "month" ? format(currentMonth, "MMMM yyyy") : viewMode === "week" ? "Week view" : viewMode === "agenda" ? "Agenda" : viewMode === "queue" ? "Publishing queue" : "Publishing analytics"}
                     </h2>
                     <p className="text-sm text-muted-foreground">
                       {viewMode === "month"
                         ? "Drag posts onto a different day to reschedule them."
                         : viewMode === "week"
                           ? "A denser seven-day view for team coordination."
-                          : "A linear agenda for fast scanning and same-day planning."}
+                          : viewMode === "agenda"
+                            ? "A linear agenda for fast scanning and same-day planning."
+                            : viewMode === "queue"
+                              ? "Everything waiting for auto-publish, provider confirmation, or review."
+                              : "Platform performance and publishing health from synced account data."}
                     </p>
                   </div>
                   <div className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -2253,6 +2789,319 @@ export default function SocialCalendarPage() {
                       );
                     })}
                   </div>
+                ) : viewMode === "queue" ? (
+                  <div className="space-y-4">
+                    <div className="grid gap-3 md:grid-cols-3">
+                      <div className="depth-panel rounded-[18px] p-4">
+                        <div className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Ready to auto-publish</div>
+                        <div className="mt-2 text-2xl font-semibold text-white">{queuePosts.filter((post) => !getPostReadinessWarning(post, socialAccountMap, studioAssetMap) && post.status === "scheduled").length}</div>
+                      </div>
+                      <div className="depth-panel rounded-[18px] p-4">
+                        <div className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Needs attention</div>
+                        <div className={cn("mt-2 text-2xl font-semibold", postsNeedingAttention.length > 0 ? "text-amber-300" : "text-muted-foreground")}>{postsNeedingAttention.length}</div>
+                      </div>
+                      <div className="depth-panel rounded-[18px] p-4">
+                        <div className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Awaiting confirmation</div>
+                        <div className="mt-2 text-2xl font-semibold text-blue-300">{queuePosts.filter((post) => post.status === "publishing").length}</div>
+                      </div>
+                    </div>
+
+                    {queuePosts.length > 0 ? (
+                      <div className="space-y-3">
+                        {queuePosts.map((post) => {
+                          const warning = getPostReadinessWarning(post, socialAccountMap, studioAssetMap);
+                          const account = getPostAccount(post, socialAccountMap);
+                          return (
+                            <button
+                              key={post.scheduledPostId}
+                              type="button"
+                              onClick={() => setSelectedPostId(post.scheduledPostId)}
+                              className="depth-panel depth-card-hover grid w-full gap-4 rounded-[18px] p-4 text-left md:grid-cols-[1fr_auto]"
+                            >
+                              <div className="min-w-0">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <Badge variant="outline" className={cn("border px-2 py-0.5 text-[10px] uppercase tracking-[0.16em]", getPlatformBadgeClass(post.platform))}>
+                                    {SOCIAL_PROVIDER_REGISTRY.find((item) => item.id === post.platform)?.label || post.platform}
+                                  </Badge>
+                                  <Badge variant="outline" className={cn("border px-2 py-0.5 text-[10px] uppercase tracking-[0.16em]", getPostBadgeClass(post.status))}>
+                                    {STATUS_LABELS[post.status]}
+                                  </Badge>
+                                  {warning ? (
+                                    <span className="inline-flex items-center gap-1 text-xs text-amber-200">
+                                      <AlertTriangle className="h-3.5 w-3.5" />
+                                      {warning}
+                                    </span>
+                                  ) : (
+                                    <span className="text-xs text-emerald-300">Publish-ready</span>
+                                  )}
+                                </div>
+                                <div className="mt-2 line-clamp-1 text-sm font-medium text-white">
+                                  {post.title || post.caption || "Scheduled post"}
+                                </div>
+                                <div className="mt-1 text-xs text-muted-foreground">
+                                  {format(parseISO(post.scheduledTime), "EEE, MMM d, h:mm a")} · {account ? getAccountDisplayLabel(account) : "No account"} · {post.contentType || "text"}
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                                <GripVertical className="h-4 w-4" />
+                                Open
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <div className="rounded-[18px] border border-dashed border-white/10 p-8 text-center text-sm text-muted-foreground">
+                        Nothing is queued yet. Create a scheduled post to activate auto-publishing.
+                      </div>
+                    )}
+                  </div>
+                ) : viewMode === "analytics" ? (
+                  <div className="space-y-4">
+                    <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                      {[
+                        { label: "Reach", metric: reachMetric, icon: Eye },
+                        { label: "Engagement", metric: engagementMetric, icon: BarChart3 },
+                        { label: "Likes", metric: likesMetric, icon: Heart },
+                        { label: "Comments", metric: commentsMetric, icon: MessageCircle },
+                        { label: "Clicks", metric: clicksMetric, icon: MousePointerClick },
+                      ].map((item) => {
+                        const Icon = item.icon;
+                        return (
+                          <div key={item.label} className="depth-panel rounded-[18px] p-4">
+                            <div className="flex items-center justify-between gap-3">
+                              <div>
+                                <div className="text-xs uppercase tracking-[0.18em] text-muted-foreground">{item.label}</div>
+                                <div className="mt-2 text-2xl font-semibold text-white">{item.metric.synced ? formatCompactMetric(item.metric.value) : "0"}</div>
+                              </div>
+                              <Icon className="h-5 w-5 text-primary" />
+                            </div>
+                            <div className="mt-2 text-xs text-muted-foreground">{item.metric.synced ? "Synced from connected accounts" : "Analytics not synced"}</div>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    <div className="grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
+                      <div className="depth-panel rounded-[18px] p-5">
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <div className="text-sm font-semibold text-white">Top performing posts</div>
+                            <p className="mt-1 text-xs text-muted-foreground">Ranked by post-level engagement after provider sync.</p>
+                          </div>
+                          <Badge variant="outline" className="border-white/10 text-muted-foreground">{postAnalytics.length} synced</Badge>
+                        </div>
+                        <div className="mt-4 space-y-3">
+                          {topPerformingPosts.length > 0 ? topPerformingPosts.map(({ record, post }, index) => {
+                            const provider = SOCIAL_PROVIDER_REGISTRY.find((item) => item.id === record.platform);
+                            const account = record.socialAccountId ? socialAccountMap[record.socialAccountId] : undefined;
+                            return (
+                              <button
+                                key={record.analyticsId}
+                                type="button"
+                                onClick={() => post && setSelectedPostId(post.scheduledPostId)}
+                                className="depth-card depth-card-hover grid w-full gap-3 rounded-[16px] p-3 text-left sm:grid-cols-[auto_1fr_auto]"
+                              >
+                                <div className="flex h-9 w-9 items-center justify-center rounded-[13px] border border-white/10 bg-white/[0.045] text-sm font-semibold text-white">
+                                  {index + 1}
+                                </div>
+                                <div className="min-w-0">
+                                  <div className="line-clamp-1 text-sm font-medium text-white">{post?.title || post?.caption || "Published post"}</div>
+                                  <div className="mt-1 text-xs text-muted-foreground">
+                                    {provider?.label || record.platform} · {account ? getAccountDisplayLabel(account) : "Synced post"} · {record.lastSyncedAt ? `Synced ${format(parseISO(record.lastSyncedAt), "MMM d")}` : "No sync timestamp"}
+                                  </div>
+                                </div>
+                                <div className="grid grid-cols-3 gap-2 text-right text-xs">
+                                  <div>
+                                    <div className="font-semibold text-white">{formatCompactMetric(record.metrics.views || record.metrics.reach || record.metrics.impressions)}</div>
+                                    <div className="text-muted-foreground">views</div>
+                                  </div>
+                                  <div>
+                                    <div className="font-semibold text-white">{formatCompactMetric((record.metrics.likes || 0) + (record.metrics.comments || 0) + (record.metrics.shares || 0) + (record.metrics.saves || 0) + (record.metrics.clicks || 0))}</div>
+                                    <div className="text-muted-foreground">eng.</div>
+                                  </div>
+                                  <div>
+                                    <div className="font-semibold text-white">{formatEngagementRate(record.metrics.engagementRate || 0)}</div>
+                                    <div className="text-muted-foreground">rate</div>
+                                  </div>
+                                </div>
+                              </button>
+                            );
+                          }) : (
+                            <div className="rounded-[16px] border border-dashed border-white/10 p-5 text-sm leading-6 text-muted-foreground">
+                              Published post analytics will appear here after the sync worker receives provider metrics.
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="grid gap-4">
+                        <div className="depth-panel rounded-[18px] p-5">
+                          <div className="text-sm font-semibold text-white">Best posting time</div>
+                          <div className="mt-4 flex items-end justify-between gap-4">
+                            <div>
+                              <div className="text-3xl font-semibold text-white">{bestPostingTimeFromAnalytics.label}</div>
+                              <p className="mt-1 text-xs text-muted-foreground">{bestPostingTimeFromAnalytics.source}</p>
+                            </div>
+                            <Clock3 className="h-7 w-7 text-primary" />
+                          </div>
+                        </div>
+
+                        <div className="depth-panel rounded-[18px] p-5">
+                          <div className="text-sm font-semibold text-white">Post analytics totals</div>
+                          <div className="mt-4 grid grid-cols-2 gap-2">
+                            {[
+                              ["Views", postAnalyticsTotals.views],
+                              ["Reach", postAnalyticsTotals.reach],
+                              ["Shares", postAnalyticsTotals.shares],
+                              ["Saves", postAnalyticsTotals.saves],
+                              ["Clicks", postAnalyticsTotals.clicks],
+                              ["Impressions", postAnalyticsTotals.impressions],
+                            ].map(([label, value]) => (
+                              <div key={label} className="rounded-[14px] border border-white/10 bg-white/[0.035] p-3">
+                                <div className="text-lg font-semibold text-white">{formatCompactMetric(Number(value))}</div>
+                                <div className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground">{label}</div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="grid gap-4 xl:grid-cols-3">
+                      <div className="depth-panel rounded-[18px] p-5">
+                        <div className="text-sm font-semibold text-white">Platform growth</div>
+                        <div className="mt-4 space-y-3">
+                          {platformAnalytics.length > 0 ? platformAnalytics.map((item) => (
+                            <div key={item.provider.id} className="space-y-2">
+                              <div className="flex items-center justify-between text-xs">
+                                <span className="text-white">{item.provider.label}</span>
+                                <span className="text-muted-foreground">{item.records} post{item.records === 1 ? "" : "s"}</span>
+                              </div>
+                              <div className="grid grid-cols-3 gap-2 text-xs">
+                                <div className="rounded-[12px] bg-white/[0.035] p-2">
+                                  <div className="font-semibold text-white">{formatCompactMetric(item.reach)}</div>
+                                  <div className="text-muted-foreground">reach</div>
+                                </div>
+                                <div className="rounded-[12px] bg-white/[0.035] p-2">
+                                  <div className="font-semibold text-white">{formatCompactMetric(item.views)}</div>
+                                  <div className="text-muted-foreground">views</div>
+                                </div>
+                                <div className="rounded-[12px] bg-white/[0.035] p-2">
+                                  <div className="font-semibold text-white">{formatCompactMetric(item.engagement)}</div>
+                                  <div className="text-muted-foreground">eng.</div>
+                                </div>
+                              </div>
+                            </div>
+                          )) : (
+                            <p className="text-sm leading-6 text-muted-foreground">No platform growth signals yet. Sync post analytics after publishing.</p>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="depth-panel rounded-[18px] p-5">
+                        <div className="text-sm font-semibold text-white">Content gaps</div>
+                        <div className="mt-4 flex flex-wrap gap-2">
+                          {contentGapDays.slice(0, 8).map((day) => (
+                            <button
+                              key={day.toISOString()}
+                              type="button"
+                              onClick={() => {
+                                setSelectedPostId(null);
+                                setForm(buildEmptyForm(format(day, "yyyy-MM-dd")));
+                              }}
+                              className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs text-muted-foreground transition hover:border-primary/40 hover:text-white"
+                            >
+                              {format(day, "MMM d")}
+                            </button>
+                          ))}
+                          {contentGapDays.length === 0 ? <p className="text-sm leading-6 text-muted-foreground">No calendar gaps in this month.</p> : null}
+                        </div>
+                      </div>
+
+                      <div className="depth-panel rounded-[18px] p-5">
+                        <div className="text-sm font-semibold text-white">Needs attention</div>
+                        <div className="mt-4 space-y-2">
+                          {postsNeedingAttention.slice(0, 5).map((post) => {
+                            const warning = getPostReadinessWarning(post, socialAccountMap, studioAssetMap) || "Publish failed";
+                            return (
+                              <button
+                                key={post.scheduledPostId}
+                                type="button"
+                                onClick={() => setSelectedPostId(post.scheduledPostId)}
+                                className="flex w-full items-center justify-between gap-3 rounded-[14px] border border-white/10 bg-white/[0.035] p-3 text-left transition hover:border-amber-400/30"
+                              >
+                                <span className="min-w-0">
+                                  <span className="line-clamp-1 text-sm font-medium text-white">{post.title || post.caption || "Scheduled post"}</span>
+                                  <span className="mt-1 line-clamp-1 text-xs text-amber-200">{warning}</span>
+                                </span>
+                                <AlertTriangle className="h-4 w-4 shrink-0 text-amber-300" />
+                              </button>
+                            );
+                          })}
+                          {postsNeedingAttention.length === 0 ? <p className="text-sm leading-6 text-muted-foreground">No scheduled posts need attention.</p> : null}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="grid gap-4 xl:grid-cols-[0.9fr_1.1fr]">
+                      <div className="depth-panel rounded-[18px] p-5">
+                        <div className="text-sm font-semibold text-white">Publishing health</div>
+                        <div className="mt-4 space-y-3">
+                          <div className="flex items-center justify-between text-sm">
+                            <span className="text-muted-foreground">Consistency score</span>
+                            <span className="font-medium text-white">{consistencyScore}%</span>
+                          </div>
+                          <div className="h-2 overflow-hidden rounded-full bg-white/10">
+                            <div className="h-full rounded-full bg-gradient-to-r from-[#5B5FFF] via-[#8B5CF6] to-[#4F9DFF]" style={{ width: `${consistencyScore}%` }} />
+                          </div>
+                          <div className="grid grid-cols-3 gap-2 text-center">
+                            <div className="rounded-[14px] border border-white/10 bg-white/[0.035] p-3">
+                              <div className="text-lg font-semibold text-white">{visibleSummary.byStatus.published}</div>
+                              <div className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground">Published</div>
+                            </div>
+                            <div className="rounded-[14px] border border-white/10 bg-white/[0.035] p-3">
+                              <div className="text-lg font-semibold text-white">{visibleSummary.byStatus.scheduled}</div>
+                              <div className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground">Scheduled</div>
+                            </div>
+                            <div className="rounded-[14px] border border-white/10 bg-white/[0.035] p-3">
+                              <div className="text-lg font-semibold text-red-300">{visibleSummary.byStatus.failed}</div>
+                              <div className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground">Failed</div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="depth-panel rounded-[18px] p-5">
+                        <div className="flex items-center justify-between gap-3">
+                          <div>
+                            <div className="text-sm font-semibold text-white">Platform mix</div>
+                            <p className="mt-1 text-xs text-muted-foreground">Scheduled and published posts by destination.</p>
+                          </div>
+                          <Button asChild size="sm" variant="outline" className="rounded-[14px]">
+                            <Link href="/social/publish-attempts">Attempts</Link>
+                          </Button>
+                        </div>
+                        <div className="mt-4 space-y-2">
+                          {SOCIAL_PROVIDER_REGISTRY.map((provider) => {
+                            const count = visibleSummary.byPlatform[provider.id] || 0;
+                            const width = visibleSummary.totalPosts > 0 ? Math.max(6, Math.round((count / visibleSummary.totalPosts) * 100)) : 0;
+                            return (
+                              <div key={provider.id} className="space-y-1">
+                                <div className="flex items-center justify-between text-xs">
+                                  <span className="text-muted-foreground">{provider.label}</span>
+                                  <span className="text-white/80">{count}</span>
+                                </div>
+                                <div className="h-2 overflow-hidden rounded-full bg-white/10">
+                                  <div className={cn("h-full rounded-full", getPlatformBadgeClass(provider.id).includes("red") ? "bg-red-400" : "bg-primary")} style={{ width: `${width}%` }} />
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
                 ) : (
                   <div className="space-y-3">
                     {agendaPosts.length > 0 ? agendaPosts.map((post) => {
@@ -2325,7 +3174,7 @@ export default function SocialCalendarPage() {
                   {SCHEDULED_POST_STATUSES.map((status) => (
                     <div key={status} className={cn("rounded-md border p-3", getPostBadgeClass(status))}>
                       <div className="text-xs uppercase tracking-[0.16em]">{STATUS_LABELS[status]}</div>
-                      <div className="mt-1 text-xl font-semibold text-white">{summary.byStatus[status]}</div>
+                      <div className="mt-1 text-xl font-semibold text-white">{visibleSummary.byStatus[status]}</div>
                     </div>
                   ))}
                 </div>
@@ -2450,7 +3299,7 @@ export default function SocialCalendarPage() {
                         </div>
                       </ComposerSection>
 
-                      <ComposerSection title="Platform" description="Choose accounts and the post format." defaultOpen visible={workflowStep === "platform"}>
+                      <ComposerSection title="Destination" description="Choose connected accounts." defaultOpen visible={workflowStep === "platform"}>
                         <div className="space-y-3">
                         <div className="flex items-center justify-between gap-3">
                           <label className="text-sm font-medium">Destination</label>
@@ -2542,6 +3391,34 @@ export default function SocialCalendarPage() {
                         </div>
                       </ComposerSection>
 
+                      {workflowStep === "format" ? (
+                        <ComposerSection title="Format" description="Select the content shape for the selected destinations." defaultOpen>
+                          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                            {selectedCapability.supportedContentTypes.map((contentType) => {
+                              const FormatIcon = getContentTypeIcon(contentType);
+                              const active = form.contentType === contentType;
+                              return (
+                                <button
+                                  key={contentType}
+                                  type="button"
+                                  onClick={() => updateField("contentType", contentType)}
+                                  className={cn(
+                                    "flex items-center gap-2 rounded-[16px] border px-3 py-3 text-left text-sm capitalize transition",
+                                    active ? "border-primary/60 bg-primary/15 text-white shadow-[0_14px_36px_rgba(91,95,255,0.16)]" : "depth-card text-muted-foreground hover:bg-white/[0.06]"
+                                  )}
+                                >
+                                  <FormatIcon className="h-4 w-4" />
+                                  {contentType}
+                                </button>
+                              );
+                            })}
+                          </div>
+                          <p className="text-xs leading-5 text-muted-foreground">
+                            {anyTargetRequiresMedia ? "This format requires media before auto-publishing." : "This format can publish text-first where the platform allows it."}
+                          </p>
+                        </ComposerSection>
+                      ) : null}
+
                       {workflowStep === "ai" ? (
                         <div className="depth-panel rounded-[18px] p-4">
                           <div className="flex items-start justify-between gap-3">
@@ -2584,36 +3461,39 @@ export default function SocialCalendarPage() {
                             <div className="depth-card rounded-[16px] p-3">
                               <div className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">Copy</div>
                               <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                                <Button asChild type="button" variant="outline" className="justify-start rounded-[14px]">
-                                  <Link href={buildAiStudioActionHref("write_caption", form)}>Write caption</Link>
+                                <Button type="button" variant="outline" onClick={() => runSchedulerAIAction("generate_todays_content")} disabled={Boolean(schedulerAiLoadingAction)} className="justify-start rounded-[14px]">
+                                  {schedulerAiLoadingAction === "generate_todays_content" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+                                  Write caption
                                 </Button>
-                                <Button asChild type="button" variant="ghost" className="justify-start rounded-[14px]">
-                                  <Link href={buildAiStudioActionHref("add_hook", form)}>Add hook</Link>
+                                <Button type="button" variant="ghost" onClick={() => runSchedulerAIAction("shorten_x", { targetPlatform: "x" })} disabled={Boolean(schedulerAiLoadingAction)} className="justify-start rounded-[14px]">
+                                  {schedulerAiLoadingAction === "shorten_x" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Hash className="h-4 w-4" />}
+                                  Shorten for X
                                 </Button>
-                                <Button asChild type="button" variant="ghost" className="justify-start rounded-[14px]">
-                                  <Link href={buildAiStudioActionHref("generate_hashtags", form)}>Generate hashtags</Link>
+                                <Button type="button" variant="ghost" onClick={() => runSchedulerAIAction("generate_hashtags")} disabled={Boolean(schedulerAiLoadingAction)} className="justify-start rounded-[14px]">
+                                  {schedulerAiLoadingAction === "generate_hashtags" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Hash className="h-4 w-4" />}
+                                  Generate hashtags
                                 </Button>
-                                <Button asChild type="button" variant="ghost" className="justify-start rounded-[14px]">
-                                  <Link href={buildAiStudioActionHref("adapt_for_platform", form)}>Adapt for platform</Link>
+                                <Button type="button" variant="ghost" onClick={() => runSchedulerAIAction("adapt_instagram", { targetPlatform: "instagram" })} disabled={Boolean(schedulerAiLoadingAction)} className="justify-start rounded-[14px]">
+                                  {schedulerAiLoadingAction === "adapt_instagram" ? <Loader2 className="h-4 w-4 animate-spin" /> : <ImageIcon className="h-4 w-4" />}
+                                  Adapt for Instagram
                                 </Button>
                               </div>
                             </div>
                             <div className="depth-card rounded-[16px] p-3">
                               <div className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">Timing</div>
                               <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                                <Button asChild type="button" variant="outline" className="justify-start rounded-[14px]">
-                                  <Link href={buildAiStudioActionHref("suggest_best_time", form)}>Suggest best time</Link>
+                                <Button type="button" variant="outline" onClick={() => runSchedulerAIAction("suggest_best_time")} disabled={Boolean(schedulerAiLoadingAction)} className="justify-start rounded-[14px]">
+                                  {schedulerAiLoadingAction === "suggest_best_time" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Clock3 className="h-4 w-4" />}
+                                  Suggest best time
                                 </Button>
                                 <Button
                                   type="button"
                                   variant="ghost"
-                                  onClick={() => {
-                                    const firstGap = contentGapDays[0];
-                                    if (firstGap) updateField("scheduledDate", format(firstGap, "yyyy-MM-dd"));
-                                  }}
-                                  disabled={contentGapDays.length === 0}
+                                  onClick={() => runSchedulerAIAction("fill_content_gap")}
+                                  disabled={Boolean(schedulerAiLoadingAction) || contentGapDays.length === 0}
                                   className="justify-start rounded-[14px]"
                                 >
+                                  {schedulerAiLoadingAction === "fill_content_gap" ? <Loader2 className="h-4 w-4 animate-spin" /> : <CalendarDays className="h-4 w-4" />}
                                   Fill content gap
                                 </Button>
                               </div>
@@ -2622,7 +3502,7 @@ export default function SocialCalendarPage() {
                         </div>
                       ) : null}
 
-                      <ComposerSection title="Media" description="Attach, upload, or generate visuals." badge={anyTargetRequiresMedia ? "Required" : "Optional"} defaultOpen={anyTargetRequiresMedia} visible={workflowStep === "edit"}>
+                      <ComposerSection title="Media" description="Attach, upload, or generate visuals." badge={anyTargetRequiresMedia ? "Required" : "Optional"} defaultOpen={anyTargetRequiresMedia} visible={workflowStep === "ai"}>
                         <div className="flex items-center justify-between gap-3">
                           <label className="text-sm font-medium">Selected media</label>
                           {selectedAssets.length > 0 ? <span className="text-xs text-muted-foreground">{selectedAssets.length} attached</span> : null}
@@ -2801,23 +3681,24 @@ export default function SocialCalendarPage() {
                           </div>
                         </div>
                         <div className="flex flex-wrap gap-2">
-                          <Button asChild type="button" size="sm" variant="outline" className="rounded-[14px]">
-                            <Link href={buildAiStudioActionHref("write_caption", form)}>Write caption</Link>
+                          <Button type="button" size="sm" variant="outline" onClick={() => runSchedulerAIAction("generate_todays_content")} disabled={Boolean(schedulerAiLoadingAction)} className="rounded-[14px]">
+                            {schedulerAiLoadingAction === "generate_todays_content" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+                            Write caption
                           </Button>
-                          <Button asChild type="button" size="sm" variant="ghost" className="rounded-[14px]">
-                            <Link href={buildAiStudioActionHref("shorten_caption", form)}>Shorten</Link>
+                          <Button type="button" size="sm" variant="ghost" onClick={() => runSchedulerAIAction("shorten_x", { targetPlatform: "x" })} disabled={Boolean(schedulerAiLoadingAction)} className="rounded-[14px]">
+                            Shorten for X
                           </Button>
-                          <Button asChild type="button" size="sm" variant="ghost" className="rounded-[14px]">
-                            <Link href={buildAiStudioActionHref("add_hook", form)}>Add hook</Link>
+                          <Button type="button" size="sm" variant="ghost" onClick={() => runSchedulerAIAction("adapt_instagram", { targetPlatform: "instagram" })} disabled={Boolean(schedulerAiLoadingAction)} className="rounded-[14px]">
+                            Adapt for Instagram
                           </Button>
-                          <Button asChild type="button" size="sm" variant="ghost" className="rounded-[14px]">
-                            <Link href={buildAiStudioActionHref("add_cta", form)}>Add CTA</Link>
+                          <Button type="button" size="sm" variant="ghost" onClick={() => runSchedulerAIAction("repurpose_video_captions")} disabled={Boolean(schedulerAiLoadingAction)} className="rounded-[14px]">
+                            Repurpose video
                           </Button>
-                          <Button asChild type="button" size="sm" variant="ghost" className="rounded-[14px]">
-                            <Link href={buildAiStudioActionHref("generate_hashtags", form)}>Generate hashtags</Link>
+                          <Button type="button" size="sm" variant="ghost" onClick={() => runSchedulerAIAction("generate_hashtags")} disabled={Boolean(schedulerAiLoadingAction)} className="rounded-[14px]">
+                            Generate hashtags
                           </Button>
-                          <Button asChild type="button" size="sm" variant="ghost" className="rounded-[14px]">
-                            <Link href={buildAiStudioActionHref("adapt_for_platform", form)}>Adapt for platform</Link>
+                          <Button type="button" size="sm" variant="ghost" onClick={() => runSchedulerAIAction("suggest_best_time")} disabled={Boolean(schedulerAiLoadingAction)} className="rounded-[14px]">
+                            Suggest best time
                           </Button>
                         </div>
                         {publishTargetAccounts.length > 1 ? (
@@ -3040,22 +3921,19 @@ export default function SocialCalendarPage() {
                     ) : null}
                     {!isEventsMode ? (
                       <div className="flex flex-wrap gap-2">
-                        <Button asChild type="button" size="sm" variant="outline" className="rounded-[14px]">
-                          <Link href={buildAiStudioActionHref("suggest_best_time", form)}>Suggest best time</Link>
+                        <Button type="button" size="sm" variant="outline" onClick={() => runSchedulerAIAction("suggest_best_time")} disabled={Boolean(schedulerAiLoadingAction)} className="rounded-[14px]">
+                          {schedulerAiLoadingAction === "suggest_best_time" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+                          Suggest best time
                         </Button>
                         <Button
                           type="button"
                           size="sm"
                           variant="ghost"
-                          onClick={() => {
-                            const firstGap = contentGapDays[0];
-                            if (firstGap) {
-                              updateField("scheduledDate", format(firstGap, "yyyy-MM-dd"));
-                            }
-                          }}
-                          disabled={contentGapDays.length === 0}
+                          onClick={() => runSchedulerAIAction("fill_content_gap")}
+                          disabled={Boolean(schedulerAiLoadingAction) || contentGapDays.length === 0}
                           className="rounded-[14px]"
                         >
+                          {schedulerAiLoadingAction === "fill_content_gap" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
                           Fill content gap
                         </Button>
                       </div>
@@ -3089,9 +3967,9 @@ export default function SocialCalendarPage() {
                         <span className="mx-2 text-white/25">/</span>
                         {workflowStepIndex + 1} of {COMPOSER_WORKFLOW_STEPS.length}
                       </div>
-                      {workflowStep === "publish" ? (
-                        <Button type="button" variant="outline" onClick={() => setWorkflowStep("preview")} className="rounded-[14px]">
-                          Review
+                      {workflowStep === "analytics" ? (
+                        <Button type="button" variant="outline" onClick={() => setViewMode("analytics")} className="rounded-[14px]">
+                          Open analytics
                         </Button>
                       ) : (
                         <Button type="button" onClick={goToNextWorkflowStep} className="rounded-[14px]">
@@ -3129,6 +4007,28 @@ export default function SocialCalendarPage() {
                             {form.scheduledDate && form.scheduledTime ? `${form.scheduledDate} · ${form.scheduledTime}` : "Not scheduled"}
                           </div>
                         </div>
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {!isEventsMode && workflowStep === "analytics" ? (
+                    <div className="depth-panel rounded-[18px] p-4">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <div className="text-sm font-medium text-white">Track analytics</div>
+                          <p className="mt-1 text-sm leading-6 text-muted-foreground">
+                            After the scheduled worker publishes this post, analytics sync will surface reach, engagement, likes, comments, and clicks in the Analytics view.
+                          </p>
+                        </div>
+                        <BarChart3 className="h-5 w-5 text-primary" />
+                      </div>
+                      <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                        <Button type="button" variant="outline" onClick={() => setViewMode("queue")} className="rounded-[14px]">
+                          Open queue
+                        </Button>
+                        <Button type="button" onClick={() => setViewMode("analytics")} className="rounded-[14px]">
+                          Open analytics
+                        </Button>
                       </div>
                     </div>
                   ) : null}
@@ -3173,59 +4073,135 @@ export default function SocialCalendarPage() {
                 <GlassCard className="p-5">
                   <div className="flex items-start justify-between gap-3">
                     <div>
-                      <h2 className="text-lg font-semibold text-white">Publishing readiness</h2>
+                      <h2 className="text-lg font-semibold text-white">Post detail</h2>
                       <p className="mt-1 text-sm text-muted-foreground">
-                        Worker-ready payload, provider metadata, and recent publishing attempts for this post.
+                        Worker readiness, publishing attempts, and synced provider analytics for this post.
                       </p>
                     </div>
-                    {publishReadinessLoading ? <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /> : <SquareArrowOutUpRight className="h-5 w-5 text-primary" />}
-                  </div>
-
-                  <div className="mt-4 grid gap-3 md:grid-cols-3">
-                    <div className="depth-card rounded-[16px] p-3">
-                      <div className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Payload</div>
-                      <div className="mt-2 text-sm font-medium text-white">{publishPayload?.payloadVersion || "Not loaded"}</div>
-                      <div className="mt-1 text-xs text-muted-foreground">{publishPayload?.content.mediaItems.length || 0} media item(s)</div>
-                    </div>
-                    <div className="depth-card rounded-[16px] p-3">
-                      <div className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Destination</div>
-                      <div className="mt-2 truncate text-sm font-medium text-white">{publishPayload?.destination.handle || publishPayload?.destination.accountName || "No account"}</div>
-                      <div className="mt-1 text-xs text-muted-foreground">{publishPayload?.platform || selectedPost.platform}</div>
-                    </div>
-                    <div className="depth-card rounded-[16px] p-3">
-                      <div className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Attempts</div>
-                      <div className="mt-2 text-sm font-medium text-white">{publishAttempts.length}</div>
-                      <div className="mt-1 text-xs text-muted-foreground">Recorded publish attempts</div>
+                    <div className="flex items-center gap-2">
+                      {selectedPost.status === "failed" ? (
+                        <Button type="button" size="sm" variant="outline" onClick={() => runPostControlAction(selectedPost.scheduledPostId, "retry")} disabled={loading} className="rounded-[12px]">
+                          {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+                          Retry
+                        </Button>
+                      ) : null}
+                      {!["published", "cancelled"].includes(selectedPost.status) ? (
+                        <Button type="button" size="sm" variant="ghost" onClick={() => runPostControlAction(selectedPost.scheduledPostId, "cancel")} disabled={loading} className="rounded-[12px] text-red-200 hover:text-red-100">
+                          <Trash2 className="h-3.5 w-3.5" />
+                          Cancel
+                        </Button>
+                      ) : null}
+                      {publishReadinessLoading ? <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /> : <SquareArrowOutUpRight className="h-5 w-5 text-primary" />}
                     </div>
                   </div>
 
-                  <div className="mt-4 space-y-2">
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">Recent attempts</div>
-                      <Button asChild size="sm" variant="ghost" className="h-8 rounded-[12px]">
-                        <Link href="/social/publish-attempts">View all attempts</Link>
-                      </Button>
-                    </div>
-                    {publishAttempts.length > 0 ? publishAttempts.map((attempt) => (
-                      <div key={attempt.publishAttemptId} className="depth-card rounded-[14px] p-3">
-                        <div className="flex flex-wrap items-center justify-between gap-2">
-                          <div className="text-sm font-medium text-white">Attempt #{attempt.attemptNumber}</div>
-                          <Badge variant="outline" className={cn("border px-2 py-0 text-[10px] uppercase tracking-[0.16em]", attempt.status === "success" ? "border-emerald-500/25 text-emerald-300" : attempt.status === "failed" ? "border-red-500/25 text-red-300" : "border-white/10 text-muted-foreground")}>
-                            {attempt.status}
-                          </Badge>
-                        </div>
-                        <div className="mt-1 text-xs text-muted-foreground">
-                          {attempt.triggeredAt ? format(parseISO(attempt.triggeredAt), "MMM d, HH:mm") : "No timestamp"} · {attempt.provider || attempt.platform}
-                        </div>
-                        {attempt.errorMessage ? <div className="mt-2 text-xs text-red-200">{attempt.errorMessage}</div> : null}
-                        {attempt.providerPostId ? <div className="mt-2 text-xs text-muted-foreground">Provider post: {attempt.providerPostId}</div> : null}
-                      </div>
-                    )) : (
-                      <div className="rounded-[14px] border border-dashed border-white/10 p-4 text-sm text-muted-foreground">
-                        No publish attempts recorded yet. The native publishing worker will write attempts here.
-                      </div>
-                    )}
+                  <div className="mt-4 flex rounded-[14px] border border-white/10 bg-white/[0.035] p-1">
+                    {(["readiness", "analytics"] as const).map((tab) => (
+                      <button
+                        key={tab}
+                        type="button"
+                        onClick={() => setSelectedPostPanelTab(tab)}
+                        className={cn(
+                          "flex-1 rounded-[11px] px-3 py-2 text-sm transition",
+                          selectedPostPanelTab === tab ? "bg-white/10 text-white shadow-sm" : "text-muted-foreground hover:text-white"
+                        )}
+                      >
+                        {tab === "readiness" ? "Readiness" : "Analytics"}
+                      </button>
+                    ))}
                   </div>
+
+                  {selectedPostPanelTab === "readiness" ? (
+                    <>
+                      <div className="mt-4 grid gap-3 md:grid-cols-3">
+                        <div className="depth-card rounded-[16px] p-3">
+                          <div className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Payload</div>
+                          <div className="mt-2 text-sm font-medium text-white">{publishPayload?.payloadVersion || "Not loaded"}</div>
+                          <div className="mt-1 text-xs text-muted-foreground">{publishPayload?.content.mediaItems.length || 0} media item(s)</div>
+                        </div>
+                        <div className="depth-card rounded-[16px] p-3">
+                          <div className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Destination</div>
+                          <div className="mt-2 truncate text-sm font-medium text-white">{publishPayload?.destination.handle || publishPayload?.destination.accountName || "No account"}</div>
+                          <div className="mt-1 text-xs text-muted-foreground">{publishPayload?.platform || selectedPost.platform}</div>
+                        </div>
+                        <div className="depth-card rounded-[16px] p-3">
+                          <div className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Attempts</div>
+                          <div className="mt-2 text-sm font-medium text-white">{publishAttempts.length}</div>
+                          <div className="mt-1 text-xs text-muted-foreground">Recorded publish attempts</div>
+                        </div>
+                      </div>
+
+                      <div className="mt-4 space-y-2">
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">Recent attempts</div>
+                          <Button asChild size="sm" variant="ghost" className="h-8 rounded-[12px]">
+                            <Link href="/social/publish-attempts">View all attempts</Link>
+                          </Button>
+                        </div>
+                        {publishAttempts.length > 0 ? publishAttempts.map((attempt) => (
+                          <div key={attempt.publishAttemptId} className="depth-card rounded-[14px] p-3">
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <div className="text-sm font-medium text-white">Attempt #{attempt.attemptNumber}</div>
+                              <Badge variant="outline" className={cn("border px-2 py-0 text-[10px] uppercase tracking-[0.16em]", attempt.status === "success" ? "border-emerald-500/25 text-emerald-300" : attempt.status === "failed" ? "border-red-500/25 text-red-300" : attempt.status === "pending_confirmation" ? "border-violet-500/25 text-violet-200" : "border-white/10 text-muted-foreground")}>
+                                {attempt.status}
+                              </Badge>
+                            </div>
+                            <div className="mt-1 text-xs text-muted-foreground">
+                              {attempt.triggeredAt ? format(parseISO(attempt.triggeredAt), "MMM d, HH:mm") : "No timestamp"} · {attempt.provider || attempt.platform}
+                            </div>
+                            {attempt.errorMessage ? <div className="mt-2 text-xs text-red-200">{attempt.errorMessage}</div> : null}
+                            {attempt.providerPostId ? <div className="mt-2 text-xs text-muted-foreground">Provider post: {attempt.providerPostId}</div> : null}
+                          </div>
+                        )) : (
+                          <div className="rounded-[14px] border border-dashed border-white/10 p-4 text-sm text-muted-foreground">
+                            No publish attempts recorded yet. The native publishing worker will write attempts here.
+                          </div>
+                        )}
+                      </div>
+                    </>
+                  ) : (
+                    <div className="mt-4 space-y-4">
+                      {selectedPostLatestAnalytics ? (
+                        <>
+                          <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
+                            {[
+                              ["Likes", selectedPostLatestAnalytics.metrics.likes],
+                              ["Comments", selectedPostLatestAnalytics.metrics.comments],
+                              ["Shares", selectedPostLatestAnalytics.metrics.shares],
+                              ["Saves", selectedPostLatestAnalytics.metrics.saves],
+                              ["Clicks", selectedPostLatestAnalytics.metrics.clicks],
+                              ["Views", selectedPostLatestAnalytics.metrics.views],
+                              ["Reach", selectedPostLatestAnalytics.metrics.reach],
+                              ["Impressions", selectedPostLatestAnalytics.metrics.impressions],
+                              ["Engagement", formatEngagementRate(selectedPostLatestAnalytics.metrics.engagementRate || 0)],
+                            ].map(([label, value]) => (
+                              <div key={label} className="depth-card rounded-[16px] p-3">
+                                <div className="text-xs uppercase tracking-[0.16em] text-muted-foreground">{label}</div>
+                                <div className="mt-2 text-sm font-medium text-white">{typeof value === "number" ? formatCompactMetric(value) : value}</div>
+                              </div>
+                            ))}
+                          </div>
+                          <div className="rounded-[16px] border border-white/10 bg-white/[0.035] p-4">
+                            <div className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Provider permalink</div>
+                            {selectedPostLatestAnalytics.providerPermalink ? (
+                              <Link href={selectedPostLatestAnalytics.providerPermalink} target="_blank" rel="noreferrer" className="mt-2 line-clamp-1 text-sm text-primary hover:underline">
+                                {selectedPostLatestAnalytics.providerPermalink}
+                              </Link>
+                            ) : (
+                              <div className="mt-2 text-sm text-muted-foreground">No provider permalink synced yet.</div>
+                            )}
+                            <div className="mt-3 text-xs text-muted-foreground">
+                              Last synced: {selectedPostLatestAnalytics.lastSyncedAt ? format(parseISO(selectedPostLatestAnalytics.lastSyncedAt), "MMM d, yyyy h:mm a") : "Not synced"}
+                            </div>
+                          </div>
+                        </>
+                      ) : (
+                        <div className="rounded-[16px] border border-dashed border-white/10 p-5 text-sm leading-6 text-muted-foreground">
+                          Post analytics will appear here after the post is published and the analytics sync worker receives provider metrics.
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </GlassCard>
               ) : null}
 

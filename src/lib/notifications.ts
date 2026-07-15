@@ -23,6 +23,7 @@ export type NotificationType =
   | "mission"
   | "mentor"
   | "subscription"
+  | "event"
   | "welcome";
 
 export interface NotificationPayload {

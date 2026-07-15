@@ -33,6 +33,32 @@ service cloud.firestore {
     function isContentManager() {
       return isAdmin() || hasRole('admin') || hasRole('content-manager') || hasRole('contentManager');
     }
+    function currentTier() {
+      return currentUserDoc().data.subscriptionTier == 'elite' || currentUserDoc().data.tier == 'elite'
+        ? 'elite'
+        : currentUserDoc().data.subscriptionTier == 'pro' || currentUserDoc().data.tier == 'pro'
+          ? 'pro'
+          : 'explorer';
+    }
+    function tierRank(tier) {
+      return tier == 'elite' ? 2 : tier == 'pro' ? 1 : 0;
+    }
+    function canReadEvent() {
+      return isAdmin()
+        || (
+          isAuthed()
+          && resource.data.status in ['scheduled', 'live', 'completed']
+          && (
+            resource.data.visibility in ['all', 'explorer']
+            || (resource.data.visibility in ['pro', 'elite'] && tierRank(currentTier()) >= tierRank(resource.data.visibility))
+            || (
+              resource.data.visibility == 'custom'
+              && resource.data.allowedTiers is list
+              && currentTier() in resource.data.allowedTiers
+            )
+          )
+        );
+    }
 
     // String validation helpers
     function isValidString(value, maxLength) {
@@ -370,6 +396,18 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    match /socialAccountSecrets/{accountId} {
+      allow read, write: if false;
+    }
+
+    match /socialOAuthStates/{stateId} {
+      allow read, write: if false;
+    }
+
+    match /socialOAuthHandshakes/{handshakeId} {
+      allow read, write: if false;
+    }
+
     match /aiProviderConnections/{connectionId} {
       allow read, write: if false;
     }
@@ -409,6 +447,163 @@ service cloud.firestore {
     // ── Admin Audit Log ──────────────────────────────────────────────────────
     match /scheduledPosts/{postId} {
       allow read: if isAuthed() && resource.data.ownerId == request.auth.uid;
+      allow write: if false;
+    }
+
+    match /socialPostAnalytics/{analyticsId} {
+      allow read: if isAuthed() && resource.data.ownerId == request.auth.uid;
+      allow write: if false;
+    }
+
+    match /socialAnalyticsSnapshots/{snapshotId} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+
+    match /socialPublishingControls/{ownerId} {
+      allow read: if isAuthed() && ownerId == request.auth.uid;
+      allow write: if false;
+    }
+
+    match /socialAuditLogs/{logId} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+
+    match /socialReliabilityAlerts/{alertId} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+
+    match /socialPublishFingerprints/{fingerprintId} {
+      allow read, write: if false;
+    }
+
+    match /socialPublishUserDailyLimits/{limitId} {
+      allow read, write: if false;
+    }
+
+    match /socialPublishProviderRateLimits/{limitId} {
+      allow read, write: if false;
+    }
+
+    match /events/{eventId} {
+      allow read: if canReadEvent();
+      allow write: if false;
+
+      match /rsvps/{userId} {
+        allow read: if isAdmin() || isUser(userId);
+        allow create, update, delete: if false;
+      }
+
+      match /attendance/{userId} {
+        allow read: if isAdmin() || isUser(userId);
+        allow write: if false;
+      }
+    }
+
+    match /academyCourses/{courseId} {
+      allow read: if isAdmin() || resource.data.status == 'published';
+      allow write: if false;
+    }
+
+    match /academyTopics/{topicId} {
+      allow read: if isAdmin() || isAuthed();
+      allow write: if false;
+    }
+
+    match /academyLessons/{lessonId} {
+      allow read: if isAdmin() || isAuthed();
+      allow write: if false;
+    }
+
+    match /academyActivities/{activityId} {
+      allow read: if isAdmin() || isAuthed();
+      allow write: if false;
+    }
+
+    match /academyActivitySubmissions/{submissionId} {
+      allow read: if isAdmin() || (isAuthed() && resource.data.userId == request.auth.uid);
+      allow write: if false;
+    }
+
+    match /academyQuizzes/{quizId} {
+      allow read: if isAdmin() || isAuthed();
+      allow write: if false;
+    }
+
+    match /academyQuizAttempts/{attemptId} {
+      allow read: if isAdmin() || (isAuthed() && resource.data.userId == request.auth.uid);
+      allow write: if false;
+    }
+
+    match /academyQuizResponses/{responseId} {
+      allow read: if isAdmin() || (isAuthed() && resource.data.userId == request.auth.uid);
+      allow write: if false;
+    }
+
+    match /academyExamAttempts/{attemptId} {
+      allow read: if isAdmin() || (isAuthed() && resource.data.userId == request.auth.uid);
+      allow write: if false;
+    }
+
+    match /academyEnrollments/{enrollmentId} {
+      allow read: if isAdmin() || (isAuthed() && resource.data.userId == request.auth.uid);
+      allow write: if false;
+    }
+
+    match /academyProgress/{progressId} {
+      allow read: if isAdmin() || (isAuthed() && resource.data.userId == request.auth.uid);
+      allow write: if false;
+    }
+
+    match /academyCertificates/{certificateId} {
+      allow read: if resource.data.status == 'active' || isAdmin() || (isAuthed() && resource.data.userId == request.auth.uid);
+      allow write: if false;
+    }
+
+    match /academyRecommendations/{recommendationId} {
+      allow read: if isAdmin() || isAuthed();
+      allow write: if false;
+    }
+
+    match /academyCohorts/{cohortId} {
+      allow read: if isAdmin() || isAuthed();
+      allow write: if false;
+    }
+
+    match /academyLiveSessions/{sessionId} {
+      allow read: if isAdmin() || isAuthed();
+      allow write: if false;
+    }
+
+    match /academyLessonDiscussions/{discussionId} {
+      allow read: if isAdmin() || isAuthed();
+      allow write: if false;
+    }
+
+    match /academyDiscussionReplies/{replyId} {
+      allow read: if isAdmin() || isAuthed();
+      allow write: if false;
+    }
+
+    match /academyDripSchedules/{scheduleId} {
+      allow read: if isAdmin() || isAuthed();
+      allow write: if false;
+    }
+
+    match /academyManualReviews/{reviewId} {
+      allow read: if isAdmin() || (isAuthed() && resource.data.userId == request.auth.uid);
+      allow write: if false;
+    }
+
+    match /academyTutorMessages/{messageId} {
+      allow read: if isAdmin() || (isAuthed() && resource.data.userId == request.auth.uid);
+      allow write: if false;
+    }
+
+    match /academyImports/{importId} {
+      allow read: if isAdmin();
       allow write: if false;
     }
 

@@ -5,6 +5,7 @@ import { defineString } from 'firebase-functions/params';
 type SocialPlatform = 'tiktok' | 'instagram' | 'facebook' | 'linkedin' | 'x' | 'youtube';
 
 type AdapterBody = {
+  analyticsKind?: 'account' | 'post';
   providerId?: SocialPlatform;
   socialAccountId?: string;
   providerAccountId?: string;
@@ -15,6 +16,15 @@ type AdapterBody = {
   period?: {
     since?: string;
     until?: string;
+  };
+  post?: {
+    scheduledPostId?: string;
+    providerPostId?: string;
+    externalPostId?: string;
+    platform?: SocialPlatform;
+    title?: string | null;
+    caption?: string | null;
+    publishedAt?: string | null;
   };
 };
 
@@ -27,6 +37,13 @@ type AdapterMetrics = {
   posts?: number;
   profileViews?: number;
   videoViews?: number;
+  likes?: number;
+  comments?: number;
+  shares?: number;
+  saves?: number;
+  views?: number;
+  engagementRate?: number;
+  providerPermalink?: string;
 };
 
 const socialAnalyticsAdapterSecret = defineString('SOCIAL_ANALYTICS_ADAPTER_SECRET', { default: '' });
@@ -110,7 +127,10 @@ function toUnixSeconds(value?: string): number | undefined {
 
 function cleanMetrics(metrics: AdapterMetrics): AdapterMetrics {
   return Object.fromEntries(
-    Object.entries(metrics).filter(([, value]) => typeof value === 'number' && Number.isFinite(value))
+    Object.entries(metrics).filter(([key, value]) => (
+      (typeof value === 'number' && Number.isFinite(value))
+      || (key === 'providerPermalink' && typeof value === 'string' && value.length > 0)
+    ))
   ) as AdapterMetrics;
 }
 
@@ -314,7 +334,181 @@ async function fetchXAnalytics(token: string): Promise<{ metrics: AdapterMetrics
   };
 }
 
+function calculateEngagementRate(metrics: AdapterMetrics): AdapterMetrics {
+  const interactions = (metrics.likes || 0) + (metrics.comments || 0) + (metrics.shares || 0) + (metrics.saves || 0) + (metrics.clicks || 0);
+  const base = metrics.reach || metrics.impressions || metrics.views || metrics.videoViews || 0;
+  return {
+    ...metrics,
+    engagement: metrics.engagement || interactions || undefined,
+    engagementRate: base > 0 ? Number(((interactions / base) * 100).toFixed(2)) : 0,
+  };
+}
+
+async function fetchTikTokPostAnalytics(token: string, body: AdapterBody): Promise<{ metrics: AdapterMetrics; raw: unknown }> {
+  const videoId = body.post?.providerPostId || body.post?.externalPostId;
+  if (!videoId) throw new Error('TikTok post analytics requires providerPostId.');
+  const baseUrl = tiktokApiBaseUrl.value().replace(/\/$/, '');
+  const response = await axios.post(
+    `${baseUrl}/video/query/`,
+    { filters: { video_ids: [videoId] } },
+    {
+      params: { fields: ['id', 'title', 'share_url', 'view_count', 'like_count', 'comment_count', 'share_count'].join(',') },
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      validateStatus: (status) => status >= 200 && status < 500,
+    }
+  );
+  const videos = (((response.data as Record<string, unknown>).data as Record<string, unknown> | undefined)?.videos || []) as Array<Record<string, unknown>>;
+  const video = videos[0] || {};
+  return {
+    metrics: calculateEngagementRate(cleanMetrics({
+      views: asNumber(video.view_count),
+      impressions: asNumber(video.view_count),
+      reach: asNumber(video.view_count),
+      likes: asNumber(video.like_count),
+      comments: asNumber(video.comment_count),
+      shares: asNumber(video.share_count),
+      providerPermalink: typeof video.share_url === 'string' ? video.share_url : undefined,
+    })),
+    raw: response.data,
+  };
+}
+
+async function fetchMetaPostAnalytics(token: string, body: AdapterBody, provider: 'instagram' | 'facebook'): Promise<{ metrics: AdapterMetrics; raw: unknown }> {
+  const postId = body.post?.providerPostId || body.post?.externalPostId;
+  if (!postId) throw new Error(`${provider} post analytics requires providerPostId.`);
+  const baseUrl = metaGraphBaseUrl.value().replace(/\/$/, '');
+  const fields = provider === 'instagram'
+    ? 'permalink,like_count,comments_count'
+    : 'permalink_url,shares.summary(true),comments.summary(true),reactions.summary(true)';
+  const postResponse = await axios.get(`${baseUrl}/${postId}`, {
+    params: { fields },
+    headers: { Authorization: `Bearer ${token}` },
+    validateStatus: (status) => status >= 200 && status < 500,
+  });
+  const insightMetric = provider === 'instagram'
+    ? 'reach,impressions,saved,likes,comments,shares,views'
+    : 'post_impressions,post_impressions_unique,post_engaged_users,post_clicks';
+  const insightsResponse = await axios.get(`${baseUrl}/${postId}/insights`, {
+    params: { metric: insightMetric },
+    headers: { Authorization: `Bearer ${token}` },
+    validateStatus: (status) => status >= 200 && status < 500,
+  });
+  const post = postResponse.data as Record<string, unknown>;
+  const sharesSummary = (post.shares as Record<string, unknown> | undefined)?.count;
+  const commentsSummary = ((post.comments as Record<string, unknown> | undefined)?.summary as Record<string, unknown> | undefined)?.total_count;
+  const reactionsSummary = ((post.reactions as Record<string, unknown> | undefined)?.summary as Record<string, unknown> | undefined)?.total_count;
+  return {
+    metrics: calculateEngagementRate(cleanMetrics({
+      likes: asNumber(post.like_count) || asNumber(reactionsSummary),
+      comments: asNumber(post.comments_count) || asNumber(commentsSummary),
+      shares: asNumber(sharesSummary) || sumMetricRows(insightsResponse.data, ['shares']),
+      saves: sumMetricRows(insightsResponse.data, ['saved', 'saves']),
+      clicks: sumMetricRows(insightsResponse.data, ['post_clicks', 'clicks']),
+      views: sumMetricRows(insightsResponse.data, ['views', 'video_views']),
+      reach: sumMetricRows(insightsResponse.data, ['reach', 'post_impressions_unique']),
+      impressions: sumMetricRows(insightsResponse.data, ['impressions', 'post_impressions']),
+      providerPermalink: typeof post.permalink === 'string' ? post.permalink : typeof post.permalink_url === 'string' ? post.permalink_url : undefined,
+    })),
+    raw: { post: postResponse.data, insights: insightsResponse.data },
+  };
+}
+
+async function fetchYouTubePostAnalytics(token: string, body: AdapterBody): Promise<{ metrics: AdapterMetrics; raw: unknown }> {
+  const videoId = body.post?.providerPostId || body.post?.externalPostId;
+  if (!videoId) throw new Error('YouTube post analytics requires providerPostId.');
+  const baseUrl = youtubeApiBaseUrl.value().replace(/\/$/, '');
+  const response = await axios.get(`${baseUrl}/videos`, {
+    params: { part: 'statistics,snippet', id: videoId },
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  const item = (((response.data as Record<string, unknown>).items as Array<Record<string, unknown>> | undefined) || [])[0] || {};
+  const statistics = (item.statistics || {}) as Record<string, unknown>;
+  return {
+    metrics: calculateEngagementRate(cleanMetrics({
+      views: asNumber(statistics.viewCount),
+      impressions: asNumber(statistics.viewCount),
+      reach: asNumber(statistics.viewCount),
+      likes: asNumber(statistics.likeCount),
+      comments: asNumber(statistics.commentCount),
+      providerPermalink: `https://www.youtube.com/watch?v=${videoId}`,
+    })),
+    raw: response.data,
+  };
+}
+
+async function fetchXPostAnalytics(token: string, body: AdapterBody): Promise<{ metrics: AdapterMetrics; raw: unknown }> {
+  const tweetId = body.post?.providerPostId || body.post?.externalPostId;
+  if (!tweetId) throw new Error('X post analytics requires providerPostId.');
+  const baseUrl = xApiBaseUrl.value().replace(/\/$/, '');
+  const response = await axios.get(`${baseUrl}/tweets/${tweetId}`, {
+    params: { 'tweet.fields': 'public_metrics,non_public_metrics,organic_metrics' },
+    headers: { Authorization: `Bearer ${token}` },
+    validateStatus: (status) => status >= 200 && status < 500,
+  });
+  const data = ((response.data as Record<string, unknown>).data || {}) as Record<string, unknown>;
+  const publicMetrics = (data.public_metrics || {}) as Record<string, unknown>;
+  const organicMetrics = (data.organic_metrics || {}) as Record<string, unknown>;
+  const nonPublicMetrics = (data.non_public_metrics || {}) as Record<string, unknown>;
+  return {
+    metrics: calculateEngagementRate(cleanMetrics({
+      likes: asNumber(publicMetrics.like_count),
+      comments: asNumber(publicMetrics.reply_count),
+      shares: asNumber(publicMetrics.retweet_count),
+      views: asNumber(publicMetrics.impression_count) || asNumber(nonPublicMetrics.impression_count) || asNumber(organicMetrics.impression_count),
+      impressions: asNumber(publicMetrics.impression_count) || asNumber(nonPublicMetrics.impression_count) || asNumber(organicMetrics.impression_count),
+      clicks: asNumber(nonPublicMetrics.url_link_clicks) || asNumber(organicMetrics.url_link_clicks),
+    })),
+    raw: response.data,
+  };
+}
+
+async function fetchLinkedInPostAnalytics(token: string, body: AdapterBody): Promise<{ metrics: AdapterMetrics; raw: unknown }> {
+  const postUrn = body.post?.providerPostId || body.post?.externalPostId;
+  if (!postUrn) throw new Error('LinkedIn post analytics requires providerPostId.');
+  const baseUrl = linkedinApiBaseUrl.value().replace(/\/$/, '');
+  const encodedPostUrn = encodeURIComponent(postUrn);
+  const socialActionsResponse = await axios.get(`${baseUrl}/socialActions/${encodedPostUrn}`, {
+    headers: { Authorization: `Bearer ${token}` },
+    validateStatus: (status) => status >= 200 && status < 500,
+  });
+  const shareStatsResponse = await axios.get(`${baseUrl}/organizationalEntityShareStatistics`, {
+    params: { q: 'organizationalEntity', shares: `List(${postUrn})` },
+    headers: { Authorization: `Bearer ${token}` },
+    validateStatus: (status) => status >= 200 && status < 500,
+  });
+  return {
+    metrics: calculateEngagementRate(cleanMetrics({
+      likes: sumMetricRows(socialActionsResponse.data, ['likesSummary', 'likeCount']),
+      comments: sumMetricRows(socialActionsResponse.data, ['commentsSummary', 'commentCount']),
+      shares: sumMetricRows(shareStatsResponse.data, ['shareCount']),
+      clicks: sumMetricRows(shareStatsResponse.data, ['clickCount']),
+      impressions: sumMetricRows(shareStatsResponse.data, ['impressionCount']),
+      reach: sumMetricRows(shareStatsResponse.data, ['uniqueImpressionsCount', 'impressionCount']),
+    })),
+    raw: { socialActions: socialActionsResponse.data, shareStatistics: shareStatsResponse.data },
+  };
+}
+
 async function fetchProviderAnalytics(provider: SocialPlatform, token: string, body: AdapterBody) {
+  if (body.analyticsKind === 'post') {
+    switch (provider) {
+      case 'tiktok':
+        return fetchTikTokPostAnalytics(token, body);
+      case 'instagram':
+        return fetchMetaPostAnalytics(token, body, 'instagram');
+      case 'facebook':
+        return fetchMetaPostAnalytics(token, body, 'facebook');
+      case 'linkedin':
+        return fetchLinkedInPostAnalytics(token, body);
+      case 'x':
+        return fetchXPostAnalytics(token, body);
+      case 'youtube':
+        return fetchYouTubePostAnalytics(token, body);
+      default:
+        throw new Error(`Unsupported post analytics provider: ${provider}`);
+    }
+  }
+
   switch (provider) {
     case 'tiktok':
       return fetchTikTokAnalytics(token);

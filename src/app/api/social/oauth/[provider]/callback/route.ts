@@ -6,9 +6,11 @@ import { adminDb } from '@/lib/firebaseAdmin';
 import { sanitizeString } from '@/lib/security';
 import { createSocialAccount, updateSocialAccount } from '@/social/service';
 import { exchangeOAuthCodeForTokens } from '@/social/oauth-client';
+import { syncSocialConnectionReadiness } from '@/social/readiness';
 import { SOCIAL_PLATFORMS, type SocialPlatform } from '@/social/types';
 import {
   getOAuthReturnPath,
+  getSocialOAuthStateHash,
   getSocialOAuthRule,
   verifySocialOAuthState,
 } from '@/social/oauth';
@@ -69,9 +71,49 @@ const handler = createAPIHandler(
 
     const state = verifySocialOAuthState(provider, stateValue);
     const handshakeId = adminDb.collection('socialOAuthHandshakes').doc().id;
-    const stateHash = sanitizeString(stateValue.split('.')[0] || '', 2048);
+    const stateHash = getSocialOAuthStateHash(stateValue);
     const returnTo = getOAuthReturnPath(state);
     const nextStep = code ? 'exchange_code_for_tokens' : 'complete_from_provider_redirect';
+
+    const stateRef = adminDb.collection('socialOAuthStates').doc(stateHash);
+    const stateStatus = await adminDb.runTransaction(async (transaction) => {
+      const snapshot = await transaction.get(stateRef);
+      if (!snapshot.exists) {
+        transaction.set(stateRef, {
+          stateHash,
+          providerId: provider,
+          ownerId: state.ownerId,
+          socialAccountId: state.socialAccountId || null,
+          status: 'callback_received_without_start_record',
+          consumed: true,
+          consumedAt: new Date().toISOString(),
+          createdAt: new Date().toISOString(),
+        });
+        return 'created_from_callback';
+      }
+
+      const data = snapshot.data() as { consumed?: boolean; ownerId?: string; providerId?: string };
+      if (data.consumed) {
+        return 'already_consumed';
+      }
+      if (data.ownerId !== state.ownerId || data.providerId !== provider) {
+        return 'mismatch';
+      }
+      transaction.set(stateRef, {
+        status: 'consumed',
+        consumed: true,
+        consumedAt: new Date().toISOString(),
+        handshakeId,
+      }, { merge: true });
+      return 'consumed';
+    });
+
+    if (stateStatus === 'already_consumed') {
+      return apiError('OAuth state has already been used.', { status: 400, code: 'OAUTH_STATE_REPLAYED' });
+    }
+    if (stateStatus === 'mismatch') {
+      return apiError('OAuth state does not match this provider session.', { status: 400, code: 'OAUTH_STATE_MISMATCH' });
+    }
 
     let resolvedSocialAccountId = state.socialAccountId || '';
     let accountStatus: 'pending' | 'error' | 'connected' = 'pending';
@@ -154,20 +196,33 @@ const handler = createAPIHandler(
         });
 
         accountStatus = 'connected';
+        const grantedScopes = tokenResult.scopes.length > 0 ? tokenResult.scopes : (state.scopes || rule.defaultScopes);
+        const readinessResult = await syncSocialConnectionReadiness({
+          providerId: provider,
+          accessToken: tokenResult.accessToken,
+          refreshToken: tokenResult.refreshToken,
+          scopes: grantedScopes,
+          providerAccountId: tokenResult.providerAccountId || state.providerAccountId,
+          handle: state.handle,
+          accountName: state.accountName,
+        });
+
         await updateSocialAccount(state.ownerId, resolvedSocialAccountId, {
           connectionType: 'oauth',
           status: 'connected',
-          handle: state.handle,
-          providerAccountId: tokenResult.providerAccountId || state.providerAccountId,
-          scopes: tokenResult.scopes.length > 0 ? tokenResult.scopes : state.scopes,
+          accountName: readinessResult.accountName || state.accountName,
+          handle: readinessResult.handle || state.handle,
+          providerAccountId: readinessResult.providerAccountId || tokenResult.providerAccountId || state.providerAccountId,
+          scopes: grantedScopes,
+          connectionReadiness: readinessResult.readiness,
           credentials: {
             connectionType: 'oauth',
             accessToken: tokenResult.accessToken,
             refreshToken: tokenResult.refreshToken,
-            externalAccountId: tokenResult.providerAccountId,
+            externalAccountId: readinessResult.providerAccountId || tokenResult.providerAccountId,
             expiresInSeconds: tokenResult.expiresInSeconds,
             tokenType: tokenResult.tokenType,
-            scopes: tokenResult.scopes.length > 0 ? tokenResult.scopes : state.scopes,
+            scopes: grantedScopes,
             metadata: {
               oauthProviderId: provider,
               oauthHandshakeId: handshakeId,
@@ -177,7 +232,7 @@ const handler = createAPIHandler(
               oauthTokenType: tokenResult.tokenType || null,
               oauthRefreshTokenPresent: Boolean(tokenResult.refreshToken),
               oauthGrantedScopes: tokenResult.scopes,
-              oauthProviderAccountId: tokenResult.providerAccountId || state.providerAccountId || null,
+              oauthProviderAccountId: readinessResult.providerAccountId || tokenResult.providerAccountId || state.providerAccountId || null,
               oauthTokenExchangeCompletedAt: new Date().toISOString(),
             },
           },
@@ -190,8 +245,9 @@ const handler = createAPIHandler(
             oauthRefreshTokenPresent: Boolean(tokenResult.refreshToken),
             oauthGrantedScopes: tokenResult.scopes,
             oauthTokenType: tokenResult.tokenType || null,
-            oauthProviderAccountId: tokenResult.providerAccountId || state.providerAccountId || null,
+            oauthProviderAccountId: readinessResult.providerAccountId || tokenResult.providerAccountId || state.providerAccountId || null,
             oauthRequiresTokenExchange: false,
+            ...readinessResult.metadata,
           },
         });
       } catch (exchangeFailure) {

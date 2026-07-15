@@ -53,9 +53,10 @@ const primaryNav: NavItem[] = [
   { name: "Community", href: "/community", icon: Users },
   { name: "AI Studio", href: "/ai/studio", icon: Sparkles },
   { name: "AI Mentor", href: "/mentor", icon: Bot },
+  { name: "Academy", href: "/academy", icon: LibraryBig },
   { name: "Marketplace", href: "/marketplace", icon: Store },
   { name: "Scheduler", href: "/social/calendar?mode=scheduler", icon: CalendarDays },
-  { name: "Events", href: "/social/calendar?mode=events", icon: CalendarDays },
+  { name: "Events", href: "/events", icon: CalendarDays },
   { name: "Automation", href: "/tools/autopilot", icon: Zap },
   { name: "Resources", href: "/my-courses", icon: LibraryBig },
 ];

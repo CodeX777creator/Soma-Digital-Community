@@ -65,6 +65,35 @@ interface NormalizedSocialAnalytics {
   videoViews: number | null;
 }
 
+interface ScheduledPostDoc {
+  scheduledPostId: string;
+  ownerId: string;
+  platform: SocialPlatform;
+  socialAccountId?: string;
+  connectedAccountId?: string;
+  publicationGroupId?: string;
+  status: string;
+  scheduledTime?: admin.firestore.Timestamp;
+  publishedAt?: admin.firestore.Timestamp | null;
+  providerPostId?: string | null;
+  externalPostId?: string | null;
+  caption?: string;
+  title?: string;
+}
+
+interface NormalizedSocialPostAnalytics {
+  likes: number;
+  comments: number;
+  shares: number;
+  saves: number;
+  clicks: number;
+  views: number;
+  reach: number;
+  impressions: number;
+  engagementRate: number;
+  providerPermalink: string | null;
+}
+
 function decodeMasterKey(rawKey: string): Buffer {
   const trimmed = rawKey.trim();
   if (/^[0-9a-fA-F]{64}$/.test(trimmed)) {
@@ -115,6 +144,28 @@ function decryptCredentials(envelope?: EncryptedPayload | null): DecryptedCreden
     externalAccountId: typeof parsed.externalAccountId === 'string' ? parsed.externalAccountId : undefined,
     tokenType: typeof parsed.tokenType === 'string' ? parsed.tokenType : undefined,
   };
+}
+
+async function readCredentialEnvelope(account: SocialAccountDoc): Promise<EncryptedPayload | null> {
+  const accountId = account.socialAccountId;
+  if (accountId) {
+    const secretSnapshot = await db.collection('socialAccountSecrets').doc(accountId).get();
+    if (secretSnapshot.exists) {
+      const secret = secretSnapshot.data() as { credentialEnvelope?: EncryptedPayload | null; ownerId?: string };
+      if (secret.ownerId && secret.ownerId !== account.ownerId) {
+        throw new Error('Social account secret owner mismatch.');
+      }
+      if (secret.credentialEnvelope) {
+        return secret.credentialEnvelope;
+      }
+    }
+  }
+
+  return account.credentialEnvelope || null;
+}
+
+async function readCredentials(account: SocialAccountDoc): Promise<DecryptedCredentials | null> {
+  return decryptCredentials(await readCredentialEnvelope(account));
 }
 
 function getProviderEndpoint(providerId: SocialPlatform): string {
@@ -217,6 +268,62 @@ function normalizeAnalytics(providerId: SocialPlatform, payload: unknown): Norma
   };
 }
 
+function normalizePostAnalytics(payload: unknown): NormalizedSocialPostAnalytics {
+  const likes = findMetric(payload, ['likes', 'likeCount', 'likesCount', 'like_count', 'favorite_count']) || 0;
+  const comments = findMetric(payload, ['comments', 'commentCount', 'commentsCount', 'comment_count']) || 0;
+  const shares = findMetric(payload, ['shares', 'shareCount', 'sharesCount', 'share_count', 'retweet_count']) || 0;
+  const saves = findMetric(payload, ['saves', 'saveCount', 'saved', 'savedCount']) || 0;
+  const clicks = findMetric(payload, ['clicks', 'clickCount', 'linkClicks', 'url_link_clicks']) || 0;
+  const views = findMetric(payload, ['views', 'viewCount', 'playCount', 'videoViews', 'video_view_count', 'impressions']) || 0;
+  const reach = findMetric(payload, ['reach', 'totalReach']) || 0;
+  const impressions = findMetric(payload, ['impressions', 'impressionCount', 'views', 'viewCount']) || 0;
+  const engagementBase = reach || impressions || views;
+  const engagements = likes + comments + shares + saves + clicks;
+  const engagementRate = engagementBase > 0 ? Number(((engagements / engagementBase) * 100).toFixed(2)) : 0;
+  const permalink = findString(payload, ['providerPermalink', 'permalink', 'permalink_url', 'url', 'webUrl', 'shareUrl']);
+
+  return {
+    likes,
+    comments,
+    shares,
+    saves,
+    clicks,
+    views,
+    reach,
+    impressions,
+    engagementRate,
+    providerPermalink: permalink,
+  };
+}
+
+function findString(payload: unknown, keys: string[], depth = 0): string | null {
+  if (!payload || depth > 5) return null;
+  if (Array.isArray(payload)) {
+    for (const item of payload) {
+      const value = findString(item, keys, depth + 1);
+      if (value) return value;
+    }
+    return null;
+  }
+  if (typeof payload !== 'object') return null;
+  const record = payload as Record<string, unknown>;
+  const lowerKeyMap = Object.keys(record).reduce<Record<string, string>>((acc, key) => {
+    acc[key.toLowerCase()] = key;
+    return acc;
+  }, {});
+  for (const key of keys) {
+    const matched = lowerKeyMap[key.toLowerCase()];
+    if (matched && typeof record[matched] === 'string' && record[matched]) {
+      return record[matched] as string;
+    }
+  }
+  for (const value of Object.values(record)) {
+    const nested = findString(value, keys, depth + 1);
+    if (nested) return nested;
+  }
+  return null;
+}
+
 function buildAnalyticsMetadata(normalized: NormalizedSocialAnalytics, syncedAt: admin.firestore.Timestamp): Record<string, unknown> {
   const metadata: Record<string, unknown> = {
     analyticsLastSyncedAt: syncedAt,
@@ -282,6 +389,57 @@ async function fetchProviderAnalytics(
   return response.data;
 }
 
+async function fetchProviderPostAnalytics(
+  account: SocialAccountDoc,
+  credentials: DecryptedCredentials,
+  endpoint: string,
+  post: ScheduledPostDoc,
+  lookbackDays: number
+): Promise<unknown> {
+  const period = getPeriod(lookbackDays);
+  const response = await axios.post(
+    endpoint,
+    {
+      analyticsKind: 'post',
+      providerId: account.providerId,
+      socialAccountId: account.socialAccountId,
+      providerAccountId: account.providerAccountId,
+      externalAccountId: credentials.externalAccountId,
+      handle: account.handle,
+      accountName: account.accountName,
+      scopes: account.scopes || [],
+      period,
+      post: {
+        scheduledPostId: post.scheduledPostId,
+        providerPostId: post.providerPostId || post.externalPostId,
+        externalPostId: post.externalPostId || post.providerPostId,
+        platform: post.platform,
+        title: post.title || null,
+        caption: post.caption || null,
+        publishedAt: post.publishedAt?.toDate?.().toISOString?.() || null,
+      },
+    },
+    {
+      timeout: 20_000,
+      headers: {
+        Authorization: `Bearer ${credentials.accessToken}`,
+        'Content-Type': 'application/json',
+        'X-SDC-Social-Provider': account.providerId,
+        'X-SDC-Social-Account-Id': account.socialAccountId,
+        'X-SDC-Social-Post-Id': post.scheduledPostId,
+        ...(socialAnalyticsAdapterSecret.value() ? { 'X-SDC-Analytics-Secret': socialAnalyticsAdapterSecret.value() } : {}),
+      },
+      validateStatus: (status) => status >= 200 && status < 500,
+    }
+  );
+
+  if (response.status < 200 || response.status >= 300) {
+    throw new Error(`Post analytics endpoint returned ${response.status}: ${JSON.stringify(response.data).slice(0, 500)}`);
+  }
+
+  return response.data;
+}
+
 async function writeAnalyticsSnapshot(
   account: SocialAccountDoc,
   normalized: NormalizedSocialAnalytics,
@@ -307,6 +465,62 @@ async function writeAnalyticsSnapshot(
   });
 }
 
+async function writePostAnalytics(
+  post: ScheduledPostDoc,
+  account: SocialAccountDoc,
+  normalized: NormalizedSocialPostAnalytics,
+  rawPayload: unknown,
+  syncedAt: admin.firestore.Timestamp
+) {
+  const analyticsId = `post_${post.scheduledPostId}`;
+  await db.collection('socialPostAnalytics').doc(analyticsId).set({
+    analyticsId,
+    ownerId: post.ownerId,
+    scheduledPostId: post.scheduledPostId,
+    socialAccountId: post.connectedAccountId || post.socialAccountId || account.socialAccountId,
+    publicationGroupId: post.publicationGroupId || null,
+    platform: post.platform,
+    providerPostId: post.providerPostId || post.externalPostId || null,
+    externalPostId: post.externalPostId || post.providerPostId || null,
+    providerPermalink: normalized.providerPermalink,
+    metrics: {
+      likes: normalized.likes,
+      comments: normalized.comments,
+      shares: normalized.shares,
+      saves: normalized.saves,
+      clicks: normalized.clicks,
+      views: normalized.views,
+      reach: normalized.reach,
+      impressions: normalized.impressions,
+      engagementRate: normalized.engagementRate,
+    },
+    rawPayload,
+    status: 'synced',
+    lastSyncedAt: syncedAt,
+    updatedAt: syncedAt,
+    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+  }, { merge: true });
+
+  const snapshotRef = db.collection('socialAnalyticsSnapshots').doc();
+  await snapshotRef.set({
+    socialAnalyticsSnapshotId: snapshotRef.id,
+    ownerId: post.ownerId,
+    socialAccountId: post.connectedAccountId || post.socialAccountId || account.socialAccountId,
+    scheduledPostId: post.scheduledPostId,
+    providerId: post.platform,
+    providerAccountId: account.providerAccountId || null,
+    providerPostId: post.providerPostId || post.externalPostId || null,
+    accountName: account.accountName || null,
+    handle: account.handle || null,
+    period: getPeriod(socialAnalyticsLookbackDays.value()),
+    metrics: normalized,
+    rawPayload,
+    status: 'post_synced',
+    syncedAt,
+    createdAt: syncedAt,
+  });
+}
+
 async function syncAccountAnalytics(doc: admin.firestore.QueryDocumentSnapshot): Promise<'synced' | 'skipped' | 'failed'> {
   const account = doc.data() as SocialAccountDoc;
   const accountId = account.socialAccountId || doc.id;
@@ -327,7 +541,7 @@ async function syncAccountAnalytics(doc: admin.firestore.QueryDocumentSnapshot):
   }
 
   try {
-    const credentials = decryptCredentials(account.credentialEnvelope || null);
+    const credentials = await readCredentials({ ...account, socialAccountId: accountId });
     if (!credentials?.accessToken) {
       throw new Error('Connected account has no access token.');
     }
@@ -362,6 +576,138 @@ async function syncAccountAnalytics(doc: admin.firestore.QueryDocumentSnapshot):
   }
 }
 
+async function pickSocialAccount(ownerId: string, platform: SocialPlatform, accountId?: string): Promise<{ id: string; account: SocialAccountDoc } | null> {
+  if (accountId) {
+    const direct = await db.collection('socialAccounts').doc(accountId).get();
+    if (direct.exists) {
+      const account = direct.data() as SocialAccountDoc;
+      if (account.ownerId === ownerId && account.providerId === platform) {
+        return { id: direct.id, account: { ...account, socialAccountId: account.socialAccountId || direct.id } };
+      }
+    }
+  }
+
+  const snapshot = await db
+    .collection('socialAccounts')
+    .where('ownerId', '==', ownerId)
+    .where('providerId', '==', platform)
+    .where('status', '==', 'connected')
+    .limit(1)
+    .get();
+
+  if (snapshot.empty) return null;
+  const doc = snapshot.docs[0];
+  const account = doc.data() as SocialAccountDoc;
+  return { id: doc.id, account: { ...account, socialAccountId: account.socialAccountId || doc.id } };
+}
+
+async function syncPostAnalytics(doc: admin.firestore.QueryDocumentSnapshot): Promise<'synced' | 'skipped' | 'failed'> {
+  const rawPost = doc.data() as ScheduledPostDoc;
+  const post: ScheduledPostDoc = {
+    ...rawPost,
+    scheduledPostId: typeof rawPost.scheduledPostId === 'string' ? rawPost.scheduledPostId : doc.id,
+  };
+  const providerPostId = post.providerPostId || post.externalPostId;
+  const syncedAt = admin.firestore.Timestamp.now();
+
+  if (!providerPostId) {
+    await doc.ref.set({
+      metadata: {
+        ...(rawPost as unknown as { metadata?: Record<string, unknown> }).metadata,
+        postAnalyticsSyncStatus: 'skipped',
+        postAnalyticsLastSkippedAt: syncedAt,
+        postAnalyticsLastError: 'No provider post ID available.',
+      },
+      updatedAt: syncedAt,
+    }, { merge: true });
+    return 'skipped';
+  }
+
+  const endpoint = getProviderEndpoint(post.platform);
+  if (!endpoint) return 'skipped';
+
+  try {
+    const picked = await pickSocialAccount(post.ownerId, post.platform, post.connectedAccountId || post.socialAccountId);
+    if (!picked) throw new Error(`No connected ${post.platform} account found for post analytics.`);
+    const credentials = await readCredentials(picked.account);
+    if (!credentials?.accessToken) throw new Error('Connected account has no access token.');
+
+    const rawPayload = await fetchProviderPostAnalytics(picked.account, credentials, endpoint, post, socialAnalyticsLookbackDays.value());
+    const normalized = normalizePostAnalytics(rawPayload);
+    await writePostAnalytics(post, picked.account, normalized, rawPayload, syncedAt);
+    await doc.ref.set({
+      metadata: {
+        ...(rawPost as unknown as { metadata?: Record<string, unknown> }).metadata,
+        postAnalyticsSyncStatus: 'synced',
+        postAnalyticsLastSyncedAt: syncedAt,
+        postAnalyticsLastError: null,
+      },
+      updatedAt: syncedAt,
+    }, { merge: true });
+    return 'synced';
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    await db.collection('socialPostAnalytics').doc(`post_${post.scheduledPostId}`).set({
+      analyticsId: `post_${post.scheduledPostId}`,
+      ownerId: post.ownerId,
+      scheduledPostId: post.scheduledPostId,
+      socialAccountId: post.connectedAccountId || post.socialAccountId || null,
+      publicationGroupId: post.publicationGroupId || null,
+      platform: post.platform,
+      providerPostId,
+      externalPostId: post.externalPostId || providerPostId,
+      metrics: {
+        likes: 0,
+        comments: 0,
+        shares: 0,
+        saves: 0,
+        clicks: 0,
+        views: 0,
+        reach: 0,
+        impressions: 0,
+        engagementRate: 0,
+      },
+      status: 'failed',
+      rawPayload: { error: message.slice(0, 500) },
+      lastSyncedAt: syncedAt,
+      updatedAt: syncedAt,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    }, { merge: true });
+    await doc.ref.set({
+      metadata: {
+        ...(rawPost as unknown as { metadata?: Record<string, unknown> }).metadata,
+        postAnalyticsSyncStatus: 'failed',
+        postAnalyticsLastFailedAt: syncedAt,
+        postAnalyticsLastError: message.slice(0, 500),
+      },
+      updatedAt: syncedAt,
+    }, { merge: true });
+    return 'failed';
+  }
+}
+
+async function syncPostAnalyticsBatch() {
+  const limit = Math.max(1, Math.min(100, socialAnalyticsBatchSize.value()));
+  const snapshot = await db
+    .collection('scheduledPosts')
+    .where('status', '==', 'published')
+    .limit(limit)
+    .get();
+
+  let synced = 0;
+  let skipped = 0;
+  let failed = 0;
+
+  for (const doc of snapshot.docs) {
+    const result = await syncPostAnalytics(doc);
+    if (result === 'synced') synced += 1;
+    if (result === 'skipped') skipped += 1;
+    if (result === 'failed') failed += 1;
+  }
+
+  return { processed: snapshot.size, synced, skipped, failed };
+}
+
 export async function syncSocialAnalyticsBatch() {
   if (!socialAnalyticsEnabled.value()) {
     return { processed: 0, synced: 0, skipped: 0, failed: 0, enabled: false };
@@ -390,7 +736,9 @@ export async function syncSocialAnalyticsBatch() {
     if (result === 'failed') failed += 1;
   }
 
-  return { processed: snapshot.size, synced, skipped, failed, enabled: true };
+  const posts = await syncPostAnalyticsBatch();
+
+  return { processed: snapshot.size, synced, skipped, failed, postAnalytics: posts, enabled: true };
 }
 
 export const syncSocialAccountAnalytics = onSchedule(

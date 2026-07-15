@@ -106,11 +106,15 @@ type DashboardSummary = {
   }>;
   events: Array<{
     id: string;
-    title: string | null;
-    caption: string;
-    platform: string;
+    eventId?: string;
+    title: string;
+    description: string;
+    eventType: string;
     status: string;
-    scheduledTime: string;
+    startsAt: string;
+    timezone: string;
+    hostName: string | null;
+    viewerRsvp?: string | null;
   }>;
   scheduledContent: Array<{
     id: string;
@@ -617,7 +621,7 @@ function DashboardContent() {
               <div className="flex items-center justify-between">
                 <h2 className="text-lg font-semibold text-white">Upcoming events</h2>
                 <Button asChild variant="ghost" className="rounded-2xl text-[#BFC6D4]">
-                  <Link href="/social/calendar?mode=events">View all</Link>
+                  <Link href="/events">View all</Link>
                 </Button>
               </div>
               <div className="mt-5 space-y-3">
@@ -625,7 +629,7 @@ function DashboardContent() {
                   summary.events.map((event) => (
                     <Link
                       key={event.id}
-                      href="/social/calendar?mode=events"
+                      href={event.eventId ? `/events/${event.eventId}` : "/events"}
                       className="flex items-center gap-3 rounded-[16px] border border-white/[0.08] bg-[#090B13]/55 p-3 transition hover:bg-white/[0.06]"
                     >
                       <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[14px] bg-white/[0.06] text-[#4F9DFF]">
@@ -633,10 +637,11 @@ function DashboardContent() {
                       </span>
                       <span className="min-w-0 flex-1">
                         <span className="block truncate text-sm font-medium text-white">
-                          {event.title || event.caption || "Scheduled event"}
+                          {event.title || "Scheduled event"}
                         </span>
                         <span className="mt-1 block text-xs text-[#BFC6D4]">
-                          {new Date(event.scheduledTime).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}
+                          {new Date(event.startsAt).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}
+                          {event.viewerRsvp === "going" ? " · Going" : ""}
                         </span>
                       </span>
                     </Link>

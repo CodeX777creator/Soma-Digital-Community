@@ -19,6 +19,49 @@ export const SOCIAL_ACCOUNT_STATUSES = [
 
 export type SocialAccountStatus = (typeof SOCIAL_ACCOUNT_STATUSES)[number];
 
+export const SOCIAL_CONNECTION_READINESS_STATUSES = [
+  'connected',
+  'identity_synced',
+  'permissions_verified',
+  'publish_ready',
+  'analytics_ready',
+  'needs_reauth',
+  'permission_missing',
+  'unsupported',
+] as const;
+
+export type SocialConnectionReadinessStatus = (typeof SOCIAL_CONNECTION_READINESS_STATUSES)[number];
+
+export interface SocialConnectionReadiness {
+  status: SocialConnectionReadinessStatus;
+  identitySynced: boolean;
+  permissionsVerified: boolean;
+  publishReady: boolean;
+  analyticsReady: boolean;
+  missingScopes: string[];
+  warnings: string[];
+  checkedAt: string;
+  summary?: string;
+  providerAccountId?: string;
+  handle?: string;
+  accountName?: string;
+}
+
+export type SocialDestinationType = 'profile' | 'page' | 'channel' | 'organization';
+
+export interface SocialProviderDestination {
+  destinationId: string;
+  providerAccountId: string;
+  label: string;
+  handle?: string;
+  type: SocialDestinationType;
+  platform: SocialPlatform;
+  publishSupported: boolean;
+  analyticsSupported: boolean;
+  isDefault?: boolean;
+  metadata?: Record<string, unknown>;
+}
+
 export interface SocialProviderDefinition {
   id: SocialPlatform;
   label: string;
@@ -57,6 +100,9 @@ export interface SocialAccountInput {
   scopes?: string[];
   status?: SocialAccountStatus;
   credentials?: SocialCredentialPayload | null;
+  connectionReadiness?: SocialConnectionReadiness;
+  providerDestinations?: SocialProviderDestination[];
+  selectedDestinationId?: string;
   metadata?: Record<string, unknown>;
   userId?: string;
 }
@@ -71,6 +117,9 @@ export interface SocialAccountUpdateInput {
   scopes?: string[];
   status?: SocialAccountStatus;
   credentials?: SocialCredentialPayload | null;
+  connectionReadiness?: SocialConnectionReadiness;
+  providerDestinations?: SocialProviderDestination[];
+  selectedDestinationId?: string;
   metadata?: Record<string, unknown>;
 }
 
@@ -88,6 +137,9 @@ export interface SocialAccountRecord {
   status: SocialAccountStatus;
   scopes: string[];
   hasCredentials: boolean;
+  connectionReadiness?: SocialConnectionReadiness;
+  providerDestinations?: SocialProviderDestination[];
+  selectedDestinationId?: string;
   expiresAt?: string | null;
   lastSyncedAt?: string | null;
   lastError?: string | null;
@@ -250,6 +302,15 @@ export interface ScheduledPostRecord {
   publishProviderResponse?: string | null;
 }
 
+export interface SocialPublishingPauseRecord {
+  ownerId: string;
+  paused: boolean;
+  reason?: string;
+  pausedAt?: string | null;
+  resumedAt?: string | null;
+  updatedAt?: string | null;
+}
+
 export interface ContentCalendarSummary {
   totalPosts: number;
   byStatus: Record<ScheduledPostStatus, number>;
@@ -259,6 +320,7 @@ export interface ContentCalendarSummary {
 
 export const SOCIAL_PUBLISH_ATTEMPT_STATUSES = [
   'processing',
+  'pending_confirmation',
   'success',
   'failed',
   'skipped',
@@ -292,6 +354,36 @@ export interface SocialPublishAttemptInput {
 
 export interface SocialPublishAttemptRecord extends SocialPublishAttemptInput {
   publishAttemptId: string;
+}
+
+export interface SocialPostAnalyticsMetrics {
+  likes: number;
+  comments: number;
+  shares: number;
+  saves: number;
+  clicks: number;
+  views: number;
+  reach: number;
+  impressions: number;
+  engagementRate: number;
+}
+
+export interface SocialPostAnalyticsRecord {
+  analyticsId: string;
+  ownerId: string;
+  scheduledPostId: string;
+  socialAccountId?: string;
+  publicationGroupId?: string;
+  platform: SocialPlatform;
+  providerPostId?: string | null;
+  externalPostId?: string | null;
+  providerPermalink?: string | null;
+  metrics: SocialPostAnalyticsMetrics;
+  rawPayload?: Record<string, unknown> | null;
+  status: 'synced' | 'failed' | 'skipped';
+  lastSyncedAt?: string | null;
+  createdAt?: string | null;
+  updatedAt?: string | null;
 }
 
 export interface NormalizedSocialMediaItem {

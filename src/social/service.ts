@@ -2,7 +2,7 @@ import { admin, adminDb } from '@/lib/firebaseAdmin';
 import { sanitizeString } from '@/lib/security';
 import { logger } from '@/lib/logger';
 import { getSocialProvider, SOCIAL_PROVIDER_REGISTRY } from './providers';
-import { sealSocialPayload } from './credentials';
+import { openSocialPayload, sealSocialPayload } from './credentials';
 import { getDefaultContentType, getPlatformCapability, isScheduledPostContentType } from './capabilities';
 import type {
   ContentCalendarSummary,
@@ -15,6 +15,8 @@ import type {
   SocialAccountRecord,
   SocialAccountStatus,
   SocialAccountUpdateInput,
+  SocialConnectionReadiness,
+  SocialProviderDestination,
   ScheduledPostInput,
   ScheduledPostRecord,
   ScheduledPostStatus,
@@ -26,6 +28,8 @@ import type {
   SocialPublishAttemptInput,
   SocialPublishAttemptRecord,
   SocialPublishAttemptStatus,
+  SocialPostAnalyticsMetrics,
+  SocialPostAnalyticsRecord,
   NormalizedSocialMediaItem,
   NormalizedSocialPublishPayload,
 } from './types';
@@ -44,6 +48,9 @@ type SocialAccountDoc = {
   status: SocialAccountStatus;
   scopes: string[];
   hasCredentials: boolean;
+  connectionReadiness?: SocialConnectionReadiness;
+  providerDestinations?: SocialProviderDestination[];
+  selectedDestinationId?: string;
   credentialEnvelope?: EncryptedPayload | null;
   expiresAt?: admin.firestore.Timestamp | admin.firestore.FieldValue | null;
   lastSyncedAt?: admin.firestore.Timestamp | admin.firestore.FieldValue | null;
@@ -115,6 +122,31 @@ function normalizeMetadata(metadata?: Record<string, unknown>): Record<string, u
   }, {});
 }
 
+function normalizeProviderDestinations(destinations?: SocialProviderDestination[]): SocialProviderDestination[] {
+  if (!Array.isArray(destinations)) return [];
+  const seen = new Set<string>();
+  return destinations.reduce<SocialProviderDestination[]>((acc, destination) => {
+    const destinationId = sanitizeString(destination.destinationId, 160);
+    const providerAccountId = sanitizeString(destination.providerAccountId, 180);
+    const label = sanitizeString(destination.label, 140);
+    if (!destinationId || !providerAccountId || !label || seen.has(destinationId)) return acc;
+    seen.add(destinationId);
+    acc.push({
+      destinationId,
+      providerAccountId,
+      label,
+      handle: destination.handle ? sanitizeString(destination.handle, 120) : undefined,
+      type: ['profile', 'page', 'channel', 'organization'].includes(destination.type) ? destination.type : 'profile',
+      platform: destination.platform,
+      publishSupported: destination.publishSupported === true,
+      analyticsSupported: destination.analyticsSupported === true,
+      isDefault: destination.isDefault === true,
+      metadata: destination.metadata ? normalizeMetadata(destination.metadata) : undefined,
+    });
+    return acc;
+  }, []);
+}
+
 function resolveCredentialEnvelope(credentials?: SocialCredentialPayload | null): EncryptedPayload | null {
   if (!credentials) return null;
   if (!credentials.accessToken && !credentials.refreshToken && !credentials.externalAccountId) {
@@ -131,6 +163,35 @@ function resolveCredentialEnvelope(credentials?: SocialCredentialPayload | null)
   });
 }
 
+async function fetchProviderJson(url: string, accessToken: string, init?: RequestInit): Promise<Record<string, unknown>> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 8_000);
+  try {
+    const response = await fetch(url, {
+      ...init,
+      headers: {
+        Accept: 'application/json',
+        Authorization: `Bearer ${accessToken}`,
+        ...(init?.headers || {}),
+      },
+      signal: controller.signal,
+    });
+    const text = await response.text();
+    const payload = text ? JSON.parse(text) as Record<string, unknown> : {};
+    if (!response.ok) {
+      const message = typeof payload.error_description === 'string'
+        ? payload.error_description
+        : typeof payload.error === 'string'
+          ? payload.error
+          : `Provider returned HTTP ${response.status}`;
+      throw new Error(message);
+    }
+    return payload;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 function resolveExpiryTimestamp(credentials?: SocialCredentialPayload | null): admin.firestore.Timestamp | null {
   if (!credentials?.expiresInSeconds || !Number.isFinite(credentials.expiresInSeconds)) {
     return null;
@@ -138,6 +199,73 @@ function resolveExpiryTimestamp(credentials?: SocialCredentialPayload | null): a
 
   const expiresInSeconds = Math.max(0, Math.floor(credentials.expiresInSeconds));
   return admin.firestore.Timestamp.fromMillis(Date.now() + expiresInSeconds * 1000);
+}
+
+async function writeSocialAccountSecret(input: {
+  accountId: string;
+  ownerId: string;
+  providerId: SocialPlatform;
+  credentialEnvelope: EncryptedPayload | null;
+}): Promise<void> {
+  const secretRef = adminDb.collection('socialAccountSecrets').doc(input.accountId);
+  if (!input.credentialEnvelope) {
+    await secretRef.delete().catch(() => undefined);
+    return;
+  }
+
+  const existing = await secretRef.get();
+  await secretRef.set({
+    socialAccountId: input.accountId,
+    ownerId: input.ownerId,
+    providerId: input.providerId,
+    credentialEnvelope: input.credentialEnvelope,
+    keyVersion: input.credentialEnvelope.keyVersion,
+    algorithm: input.credentialEnvelope.algorithm,
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    ...(existing.exists ? {} : { createdAt: admin.firestore.FieldValue.serverTimestamp() }),
+  }, { merge: true });
+}
+
+async function migrateLegacySocialAccountSecret(doc: SocialAccountDoc): Promise<SocialAccountDoc> {
+  if (!doc.credentialEnvelope) return doc;
+
+  await writeSocialAccountSecret({
+    accountId: doc.socialAccountId,
+    ownerId: doc.ownerId,
+    providerId: doc.providerId,
+    credentialEnvelope: doc.credentialEnvelope,
+  });
+  await adminDb.collection('socialAccounts').doc(doc.socialAccountId).set({
+    credentialEnvelope: null,
+    hasCredentials: true,
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  }, { merge: true });
+
+  return {
+    ...doc,
+    hasCredentials: true,
+    credentialEnvelope: null,
+  };
+}
+
+async function readSocialAccountCredentialPayload(doc: SocialAccountDoc): Promise<SocialCredentialPayload | null> {
+  let envelope: EncryptedPayload | null = null;
+  const secretSnapshot = await adminDb.collection('socialAccountSecrets').doc(doc.socialAccountId).get();
+  if (secretSnapshot.exists) {
+    const secret = secretSnapshot.data() as { credentialEnvelope?: EncryptedPayload | null; ownerId?: string };
+    if (secret.ownerId && secret.ownerId !== doc.ownerId) {
+      throw new Error('Social account secret owner mismatch.');
+    }
+    envelope = secret.credentialEnvelope || null;
+  }
+
+  if (!envelope && doc.credentialEnvelope) {
+    const migrated = await migrateLegacySocialAccountSecret(doc);
+    envelope = doc.credentialEnvelope || migrated.credentialEnvelope || null;
+  }
+
+  if (!envelope) return null;
+  return openSocialPayload<SocialCredentialPayload & Record<string, unknown>>(envelope);
 }
 
 function serializeAccount(doc: SocialAccountDoc): SocialAccountRecord {
@@ -155,6 +283,9 @@ function serializeAccount(doc: SocialAccountDoc): SocialAccountRecord {
     status: doc.status,
     scopes: doc.scopes || [],
     hasCredentials: doc.hasCredentials === true,
+    connectionReadiness: doc.connectionReadiness,
+    providerDestinations: normalizeProviderDestinations(doc.providerDestinations),
+    selectedDestinationId: doc.selectedDestinationId,
     expiresAt: toIso(doc.expiresAt),
     lastSyncedAt: toIso(doc.lastSyncedAt),
     lastError: doc.lastError || null,
@@ -192,13 +323,14 @@ export async function listSocialAccounts(ownerId: string): Promise<SocialAccount
     .where('ownerId', '==', ownerId)
     .get();
 
-  const records = snapshot.docs.map((doc) => {
+  const records = await Promise.all(snapshot.docs.map(async (doc) => {
     const data = doc.data() as SocialAccountDoc;
-    return serializeAccount({
+    const account = await migrateLegacySocialAccountSecret({
       ...data,
       socialAccountId: typeof data.socialAccountId === 'string' ? data.socialAccountId : doc.id,
     });
-  });
+    return serializeAccount(account);
+  }));
 
   return sortAccounts(records);
 }
@@ -372,7 +504,9 @@ export async function createSocialAccount(input: SocialAccountInput): Promise<So
     status: input.status || (credentialEnvelope ? 'connected' : 'pending'),
     scopes,
     hasCredentials: credentialEnvelope != null,
-    credentialEnvelope,
+    connectionReadiness: input.connectionReadiness,
+    providerDestinations: normalizeProviderDestinations(input.providerDestinations),
+    selectedDestinationId: input.selectedDestinationId ? sanitizeString(input.selectedDestinationId, 160) : undefined,
     expiresAt,
     lastSyncedAt: null,
     lastError: null,
@@ -383,6 +517,12 @@ export async function createSocialAccount(input: SocialAccountInput): Promise<So
   });
 
   await docRef.set(doc);
+  await writeSocialAccountSecret({
+    accountId: docRef.id,
+    ownerId,
+    providerId: provider.id,
+    credentialEnvelope,
+  });
   logger.info('[Social] Created social account', {
     socialAccountId: doc.socialAccountId,
     ownerId,
@@ -405,10 +545,271 @@ async function readSocialAccountOrThrow(ownerId: string, accountId: string): Pro
     throw new Error('Social account not found');
   }
 
-  return {
+  return migrateLegacySocialAccountSecret({
     ...data,
     socialAccountId: typeof data.socialAccountId === 'string' ? data.socialAccountId : snapshot.id,
+  });
+}
+
+function destinationId(providerId: SocialPlatform, providerAccountId: string): string {
+  return `${providerId}_${Buffer.from(providerAccountId, 'utf8').toString('base64url').slice(0, 80)}`;
+}
+
+function destinationFromProfile(input: {
+  providerId: SocialPlatform;
+  providerAccountId: string;
+  label: string;
+  handle?: string;
+  type?: SocialProviderDestination['type'];
+  publishSupported?: boolean;
+  analyticsSupported?: boolean;
+  metadata?: Record<string, unknown>;
+}): SocialProviderDestination {
+  return {
+    destinationId: destinationId(input.providerId, input.providerAccountId),
+    providerAccountId: sanitizeString(input.providerAccountId, 180),
+    label: sanitizeString(input.label, 140),
+    handle: input.handle ? sanitizeString(input.handle, 120) : undefined,
+    type: input.type || 'profile',
+    platform: input.providerId,
+    publishSupported: input.publishSupported !== false,
+    analyticsSupported: input.analyticsSupported !== false,
+    metadata: input.metadata ? normalizeMetadata(input.metadata) : undefined,
   };
+}
+
+async function discoverTikTokDestinations(credentials: SocialCredentialPayload): Promise<SocialProviderDestination[]> {
+  if (!credentials.accessToken) return [];
+  const payload = await fetchProviderJson(
+    'https://open.tiktokapis.com/v2/user/info/?fields=open_id,display_name,profile_deep_link,is_verified',
+    credentials.accessToken
+  );
+  const user = ((payload.data as Record<string, unknown> | undefined)?.user || {}) as Record<string, unknown>;
+  const accountId = typeof user.open_id === 'string' ? user.open_id : credentials.externalAccountId;
+  if (!accountId) return [];
+  const name = typeof user.display_name === 'string' ? user.display_name : 'TikTok profile';
+  return [destinationFromProfile({
+    providerId: 'tiktok',
+    providerAccountId: accountId,
+    label: name,
+    handle: name,
+    type: 'profile',
+    metadata: { profileDeepLink: user.profile_deep_link || null, isVerified: user.is_verified === true },
+  })];
+}
+
+async function discoverFacebookDestinations(credentials: SocialCredentialPayload): Promise<SocialProviderDestination[]> {
+  if (!credentials.accessToken) return [];
+  const payload = await fetchProviderJson(
+    'https://graph.facebook.com/v20.0/me/accounts?fields=id,name,category,tasks,perms',
+    credentials.accessToken
+  );
+  const pages = Array.isArray(payload.data) ? payload.data as Record<string, unknown>[] : [];
+  return pages
+    .filter((page) => typeof page.id === 'string' && typeof page.name === 'string')
+    .map((page) => destinationFromProfile({
+      providerId: 'facebook',
+      providerAccountId: page.id as string,
+      label: page.name as string,
+      handle: page.name as string,
+      type: 'page',
+      metadata: {
+        category: page.category || null,
+        tasks: Array.isArray(page.tasks) ? page.tasks : undefined,
+        perms: Array.isArray(page.perms) ? page.perms : undefined,
+      },
+    }));
+}
+
+async function discoverInstagramDestinations(credentials: SocialCredentialPayload): Promise<SocialProviderDestination[]> {
+  if (!credentials.accessToken) return [];
+  const payload = await fetchProviderJson(
+    'https://graph.facebook.com/v20.0/me/accounts?fields=id,name,instagram_business_account{id,username,name,profile_picture_url}',
+    credentials.accessToken
+  );
+  const pages = Array.isArray(payload.data) ? payload.data as Record<string, unknown>[] : [];
+  return pages.flatMap((page) => {
+    const ig = page.instagram_business_account as Record<string, unknown> | undefined;
+    if (!ig || typeof ig.id !== 'string') return [];
+    const username = typeof ig.username === 'string' ? ig.username : undefined;
+    const label = typeof ig.name === 'string' ? ig.name : username || 'Instagram account';
+    return [destinationFromProfile({
+      providerId: 'instagram',
+      providerAccountId: ig.id,
+      label,
+      handle: username ? `@${username}` : label,
+      type: 'profile',
+      metadata: {
+        facebookPageId: page.id || null,
+        facebookPageName: page.name || null,
+        profilePictureUrl: ig.profile_picture_url || null,
+      },
+    })];
+  });
+}
+
+async function discoverLinkedInDestinations(credentials: SocialCredentialPayload): Promise<SocialProviderDestination[]> {
+  if (!credentials.accessToken) return [];
+  const payload = await fetchProviderJson('https://api.linkedin.com/v2/userinfo', credentials.accessToken);
+  const accountId = typeof payload.sub === 'string' ? payload.sub : credentials.externalAccountId;
+  if (!accountId) return [];
+  const label = typeof payload.name === 'string' ? payload.name : 'LinkedIn member';
+  return [destinationFromProfile({
+    providerId: 'linkedin',
+    providerAccountId: accountId,
+    label,
+    handle: label,
+    type: 'profile',
+    analyticsSupported: false,
+    metadata: { emailVerified: payload.email_verified === true },
+  })];
+}
+
+async function discoverXDestinations(credentials: SocialCredentialPayload): Promise<SocialProviderDestination[]> {
+  if (!credentials.accessToken) return [];
+  const payload = await fetchProviderJson(
+    'https://api.twitter.com/2/users/me?user.fields=username,name,verified',
+    credentials.accessToken
+  );
+  const user = (payload.data || {}) as Record<string, unknown>;
+  const accountId = typeof user.id === 'string' ? user.id : credentials.externalAccountId;
+  if (!accountId) return [];
+  const username = typeof user.username === 'string' ? user.username : undefined;
+  return [destinationFromProfile({
+    providerId: 'x',
+    providerAccountId: accountId,
+    label: typeof user.name === 'string' ? user.name : username || 'X profile',
+    handle: username ? `@${username}` : undefined,
+    type: 'profile',
+    metadata: { verified: user.verified === true },
+  })];
+}
+
+async function discoverYouTubeDestinations(credentials: SocialCredentialPayload): Promise<SocialProviderDestination[]> {
+  if (!credentials.accessToken) return [];
+  const payload = await fetchProviderJson(
+    'https://www.googleapis.com/youtube/v3/channels?part=snippet,statistics&mine=true',
+    credentials.accessToken
+  );
+  const channels = Array.isArray(payload.items) ? payload.items as Record<string, unknown>[] : [];
+  return channels
+    .filter((channel) => typeof channel.id === 'string')
+    .map((channel) => {
+      const snippet = (channel.snippet || {}) as Record<string, unknown>;
+      return destinationFromProfile({
+        providerId: 'youtube',
+        providerAccountId: channel.id as string,
+        label: typeof snippet.title === 'string' ? snippet.title : 'YouTube channel',
+        handle: typeof snippet.customUrl === 'string' ? snippet.customUrl : typeof snippet.title === 'string' ? snippet.title : undefined,
+        type: 'channel',
+        metadata: { thumbnails: snippet.thumbnails || undefined },
+      });
+    });
+}
+
+async function discoverProviderDestinations(account: SocialAccountDoc): Promise<SocialProviderDestination[]> {
+  const credentials = await readSocialAccountCredentialPayload(account);
+  if (!credentials?.accessToken) {
+    throw new Error('This account needs to be reconnected before destinations can be refreshed.');
+  }
+
+  switch (account.providerId) {
+    case 'tiktok':
+      return discoverTikTokDestinations(credentials);
+    case 'facebook':
+      return discoverFacebookDestinations(credentials);
+    case 'instagram':
+      return discoverInstagramDestinations(credentials);
+    case 'linkedin':
+      return discoverLinkedInDestinations(credentials);
+    case 'x':
+      return discoverXDestinations(credentials);
+    case 'youtube':
+      return discoverYouTubeDestinations(credentials);
+    default:
+      return [];
+  }
+}
+
+function applySelectedDestinationToAccount(account: SocialAccountDoc, destination: SocialProviderDestination): Partial<SocialAccountDoc> {
+  return {
+    selectedDestinationId: destination.destinationId,
+    providerAccountId: destination.providerAccountId,
+    handle: destination.handle || destination.label,
+    accountName: destination.label,
+    connectionReadiness: account.connectionReadiness
+      ? {
+        ...account.connectionReadiness,
+        providerAccountId: destination.providerAccountId,
+        handle: destination.handle || destination.label,
+        accountName: destination.label,
+        identitySynced: true,
+        checkedAt: new Date().toISOString(),
+        summary: destination.publishSupported
+          ? 'Destination selected and ready for scheduled publishing.'
+          : account.connectionReadiness.summary,
+      }
+      : account.connectionReadiness,
+    metadata: {
+      ...(account.metadata || {}),
+      selectedDestination: {
+        destinationId: destination.destinationId,
+        providerAccountId: destination.providerAccountId,
+        label: destination.label,
+        handle: destination.handle || null,
+        type: destination.type,
+      },
+      destinationSelectedAt: new Date().toISOString(),
+    },
+  };
+}
+
+export async function refreshSocialAccountDestinations(ownerId: string, accountId: string): Promise<SocialAccountRecord> {
+  const account = await readSocialAccountOrThrow(ownerId, accountId);
+  const destinations = normalizeProviderDestinations(await discoverProviderDestinations(account));
+  const currentSelected = account.selectedDestinationId
+    ? destinations.find((destination) => destination.destinationId === account.selectedDestinationId)
+    : undefined;
+  const selected = currentSelected || destinations[0];
+  const destinationPatch = selected ? applySelectedDestinationToAccount(account, selected) : {};
+
+  await adminDb.collection('socialAccounts').doc(accountId).set(stripUndefined<Partial<SocialAccountDoc>>({
+    ...destinationPatch,
+    providerDestinations: destinations,
+    selectedDestinationId: selected?.destinationId || undefined,
+    metadata: {
+      ...(account.metadata || {}),
+      ...(destinationPatch.metadata || {}),
+      destinationRefreshStatus: destinations.length > 0 ? 'synced' : 'empty',
+      destinationRefreshedAt: new Date().toISOString(),
+    },
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  }), { merge: true });
+
+  const next = await readSocialAccountOrThrow(ownerId, accountId);
+  return serializeAccount(next);
+}
+
+export async function selectSocialAccountDestination(
+  ownerId: string,
+  accountId: string,
+  destinationIdValue: string
+): Promise<SocialAccountRecord> {
+  const account = await readSocialAccountOrThrow(ownerId, accountId);
+  const selectedId = sanitizeString(destinationIdValue, 160);
+  const destinations = normalizeProviderDestinations(account.providerDestinations);
+  const destination = destinations.find((entry) => entry.destinationId === selectedId);
+  if (!destination) {
+    throw new Error('Destination not found. Refresh destinations and try again.');
+  }
+
+  await adminDb.collection('socialAccounts').doc(accountId).set(stripUndefined<Partial<SocialAccountDoc>>({
+    ...applySelectedDestinationToAccount(account, destination),
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  }), { merge: true });
+
+  const next = await readSocialAccountOrThrow(ownerId, accountId);
+  return serializeAccount(next);
 }
 
 export async function updateSocialAccount(
@@ -419,16 +820,19 @@ export async function updateSocialAccount(
   const current = await readSocialAccountOrThrow(ownerId, accountId);
   const provider = getSocialProvider(current.providerId);
   const credentialEnvelope = patch.credentials === undefined
-    ? current.credentialEnvelope || null
+    ? undefined
     : resolveCredentialEnvelope(patch.credentials);
   const expiresAt = patch.credentials === undefined
     ? current.expiresAt || null
     : resolveExpiryTimestamp(patch.credentials);
+  const hasCredentials = patch.credentials === undefined
+    ? current.hasCredentials === true
+    : credentialEnvelope != null;
   const connectionType = patch.connectionType
     || patch.credentials?.connectionType
     || current.connectionType
-    || (credentialEnvelope ? 'oauth' : 'manual');
-  const nextStatus = patch.status || (credentialEnvelope ? 'connected' : current.status);
+    || (hasCredentials ? 'oauth' : 'manual');
+  const nextStatus = patch.status || (hasCredentials ? 'connected' : current.status);
   const updated = stripUndefined<SocialAccountDoc>({
     ...current,
     providerLabel: provider.label,
@@ -440,8 +844,11 @@ export async function updateSocialAccount(
     timezone: patch.timezone !== undefined ? sanitizeString(patch.timezone || '', 80) || undefined : current.timezone,
     scopes: patch.scopes ? normalizeScopes(patch.scopes) : current.scopes,
     status: nextStatus,
-    hasCredentials: credentialEnvelope != null,
-    credentialEnvelope,
+    hasCredentials,
+    connectionReadiness: patch.connectionReadiness !== undefined ? patch.connectionReadiness : current.connectionReadiness,
+    providerDestinations: patch.providerDestinations !== undefined ? normalizeProviderDestinations(patch.providerDestinations) : current.providerDestinations,
+    selectedDestinationId: patch.selectedDestinationId !== undefined ? sanitizeString(patch.selectedDestinationId || '', 160) || undefined : current.selectedDestinationId,
+    credentialEnvelope: null,
     expiresAt,
     metadata: patch.metadata ? normalizeMetadata(patch.metadata) : current.metadata,
     updatedAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -449,6 +856,14 @@ export async function updateSocialAccount(
   });
 
   await adminDb.collection('socialAccounts').doc(accountId).set(updated, { merge: true });
+  if (patch.credentials !== undefined) {
+    await writeSocialAccountSecret({
+      accountId,
+      ownerId,
+      providerId: provider.id,
+      credentialEnvelope: credentialEnvelope || null,
+    });
+  }
   logger.info('[Social] Updated social account', {
     socialAccountId: accountId,
     ownerId,
@@ -563,6 +978,24 @@ type SocialPublishAttemptDoc = {
   updatedAt?: admin.firestore.Timestamp | admin.firestore.FieldValue;
 };
 
+type SocialPostAnalyticsDoc = {
+  analyticsId: string;
+  ownerId: string;
+  scheduledPostId: string;
+  socialAccountId?: string;
+  publicationGroupId?: string;
+  platform: SocialPlatform;
+  providerPostId?: string | null;
+  externalPostId?: string | null;
+  providerPermalink?: string | null;
+  metrics: SocialPostAnalyticsMetrics;
+  rawPayload?: Record<string, unknown> | null;
+  status: 'synced' | 'failed' | 'skipped';
+  lastSyncedAt?: admin.firestore.Timestamp | null;
+  createdAt?: admin.firestore.Timestamp | admin.firestore.FieldValue;
+  updatedAt?: admin.firestore.Timestamp | admin.firestore.FieldValue;
+};
+
 function createValidationError(message: string, code = 'INVALID_SCHEDULED_POST'): Error {
   const error = new Error(message) as Error & { status?: number; code?: string };
   error.status = 400;
@@ -580,6 +1013,10 @@ function normalizeScheduledTime(value: string): admin.firestore.Timestamp {
     throw new Error('Invalid scheduledTime');
   }
   return admin.firestore.Timestamp.fromDate(parsed);
+}
+
+function isCalendarEventDocument(doc: Pick<ScheduledPostDoc, 'metadata'>): boolean {
+  return doc.metadata?.calendarMode === 'events';
 }
 
 function normalizeAssetIds(assetIds?: string[]): string[] {
@@ -670,6 +1107,36 @@ function serializePublishAttempt(doc: SocialPublishAttemptDoc): SocialPublishAtt
     retryable: Boolean(doc.retryable),
     payloadVersion: doc.payloadVersion || 'social-publish-v1',
     metadata: doc.metadata || {},
+  };
+}
+
+function serializePostAnalytics(doc: SocialPostAnalyticsDoc): SocialPostAnalyticsRecord {
+  return {
+    analyticsId: doc.analyticsId,
+    ownerId: doc.ownerId,
+    scheduledPostId: doc.scheduledPostId,
+    socialAccountId: doc.socialAccountId,
+    publicationGroupId: doc.publicationGroupId,
+    platform: doc.platform,
+    providerPostId: doc.providerPostId || null,
+    externalPostId: doc.externalPostId || null,
+    providerPermalink: doc.providerPermalink || null,
+    metrics: {
+      likes: doc.metrics?.likes || 0,
+      comments: doc.metrics?.comments || 0,
+      shares: doc.metrics?.shares || 0,
+      saves: doc.metrics?.saves || 0,
+      clicks: doc.metrics?.clicks || 0,
+      views: doc.metrics?.views || 0,
+      reach: doc.metrics?.reach || 0,
+      impressions: doc.metrics?.impressions || 0,
+      engagementRate: doc.metrics?.engagementRate || 0,
+    },
+    rawPayload: doc.rawPayload || null,
+    status: doc.status,
+    lastSyncedAt: toIso(doc.lastSyncedAt),
+    createdAt: toIso(doc.createdAt),
+    updatedAt: toIso(doc.updatedAt),
   };
 }
 
@@ -780,7 +1247,8 @@ async function validateAssetIds(input: {
 }
 
 async function validateScheduledPostDocument(doc: ScheduledPostDoc): Promise<void> {
-  if (doc.metadata?.calendarMode === 'events') {
+  if (isCalendarEventDocument(doc)) {
+    validateEventCalendarDocument(doc);
     return;
   }
 
@@ -817,6 +1285,29 @@ async function validateScheduledPostDocument(doc: ScheduledPostDoc): Promise<voi
     status: doc.status,
     assetIds: doc.assetIds || [],
   });
+}
+
+function validateEventCalendarDocument(doc: ScheduledPostDoc): void {
+  const publishable = doc.status !== 'draft' && doc.status !== 'editing';
+  const details = (doc.caption || '').trim();
+  const title = (doc.title || '').trim();
+  const scheduledAt = doc.scheduledTime.toDate().getTime();
+
+  if (!details) {
+    throw createValidationError('Event details are required before saving this event.', 'EVENT_DETAILS_REQUIRED');
+  }
+
+  if (title.length > 160) {
+    throw createValidationError('Event titles must be 160 characters or fewer.', 'EVENT_TITLE_TOO_LONG');
+  }
+
+  if (publishable && scheduledAt < Date.now() - 60_000) {
+    throw createValidationError('Events cannot be scheduled in the past. Save it as a draft instead.', 'EVENT_TIME_IN_PAST');
+  }
+
+  if (doc.timezone && doc.timezone.length > 80) {
+    throw createValidationError('Event timezone must be 80 characters or fewer.', 'EVENT_TIMEZONE_INVALID');
+  }
 }
 
 function validatePlatformSettings(platform: SocialPlatform, settings: Record<string, unknown>): void {
@@ -950,6 +1441,23 @@ function readScheduledPostOrThrow(ownerId: string, postId: string): Promise<Sche
       scheduledPostId: typeof data.scheduledPostId === 'string' ? data.scheduledPostId : snapshot.id,
     };
   });
+}
+
+async function recordSocialAuditLog(input: {
+  ownerId: string;
+  action: string;
+  targetType: string;
+  targetId: string;
+  metadata?: Record<string, unknown>;
+}): Promise<void> {
+  await adminDb.collection('socialAuditLogs').doc().set(stripUndefined({
+    ownerId: sanitizeString(input.ownerId, 160),
+    action: sanitizeString(input.action, 120),
+    targetType: sanitizeString(input.targetType, 80),
+    targetId: sanitizeString(input.targetId, 180),
+    metadata: normalizeMetadata(input.metadata || {}),
+    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+  }));
 }
 
 export async function createScheduledPost(input: ScheduledPostInput): Promise<ScheduledPostRecord> {
@@ -1089,6 +1597,114 @@ export async function moveScheduledPost(
   });
 }
 
+export async function retryScheduledPost(ownerId: string, postId: string): Promise<ScheduledPostRecord> {
+  const current = await readScheduledPostOrThrow(ownerId, postId);
+  if (!['failed', 'scheduled'].includes(current.status)) {
+    throw createValidationError('Only failed or scheduled posts can be retried.', 'POST_RETRY_LOCKED');
+  }
+
+  const patch = stripUndefined<Partial<ScheduledPostDoc>>({
+    status: 'scheduled',
+    nextRetryAt: null,
+    publishLeaseId: null,
+    publishLeaseExpiresAt: null,
+    lastError: null,
+    failureCode: null,
+    failureMessage: null,
+    metadata: {
+      ...(current.metadata || {}),
+      manualRetryRequestedAt: new Date().toISOString(),
+    },
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  });
+
+  await adminDb.collection('scheduledPosts').doc(postId).set(patch, { merge: true });
+  await recordSocialAuditLog({
+    ownerId,
+    action: 'manual_retry_requested',
+    targetType: 'scheduledPost',
+    targetId: postId,
+    metadata: { platform: current.platform, previousStatus: current.status },
+  });
+
+  const next = await readScheduledPostOrThrow(ownerId, postId);
+  return serializeScheduledPost(next);
+}
+
+export async function cancelScheduledPost(ownerId: string, postId: string): Promise<ScheduledPostRecord> {
+  const current = await readScheduledPostOrThrow(ownerId, postId);
+  if (['published', 'cancelled'].includes(current.status)) {
+    throw createValidationError('This post can no longer be cancelled.', 'POST_CANCEL_LOCKED');
+  }
+
+  await adminDb.collection('scheduledPosts').doc(postId).set(stripUndefined<Partial<ScheduledPostDoc>>({
+    status: 'cancelled',
+    nextRetryAt: null,
+    publishLeaseId: null,
+    publishLeaseExpiresAt: null,
+    metadata: {
+      ...(current.metadata || {}),
+      cancelledAt: new Date().toISOString(),
+      cancellationSource: 'manual',
+    },
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  }), { merge: true });
+
+  await recordSocialAuditLog({
+    ownerId,
+    action: 'publish_cancelled',
+    targetType: 'scheduledPost',
+    targetId: postId,
+    metadata: { platform: current.platform, previousStatus: current.status },
+  });
+
+  const next = await readScheduledPostOrThrow(ownerId, postId);
+  return serializeScheduledPost(next);
+}
+
+export async function getSocialPublishingPause(ownerId: string): Promise<import('./types').SocialPublishingPauseRecord> {
+  const snap = await adminDb.collection('socialPublishingControls').doc(ownerId).get();
+  const data = snap.exists ? snap.data() as Record<string, unknown> : {};
+  return {
+    ownerId,
+    paused: data.paused === true,
+    reason: typeof data.reason === 'string' ? data.reason : undefined,
+    pausedAt: toIso(data.pausedAt),
+    resumedAt: toIso(data.resumedAt),
+    updatedAt: toIso(data.updatedAt),
+  };
+}
+
+export async function setSocialPublishingPaused(
+  ownerId: string,
+  paused: boolean,
+  reason?: string
+): Promise<import('./types').SocialPublishingPauseRecord> {
+  const nowIso = new Date().toISOString();
+  await adminDb.collection('socialPublishingControls').doc(ownerId).set(stripUndefined({
+    ownerId,
+    paused,
+    reason: paused ? sanitizeString(reason || 'Paused by creator', 300) : null,
+    pausedAt: paused ? admin.firestore.FieldValue.serverTimestamp() : null,
+    resumedAt: paused ? null : admin.firestore.FieldValue.serverTimestamp(),
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    metadata: {
+      source: 'manual',
+      changedAt: nowIso,
+    },
+  }), { merge: true });
+
+  await recordSocialAuditLog({
+    ownerId,
+    action: paused ? 'publishing_paused' : 'publishing_resumed',
+    targetType: 'publishingControls',
+    targetId: ownerId,
+    metadata: { reason: reason || null },
+  });
+
+  return getSocialPublishingPause(ownerId);
+}
+
 export async function deleteScheduledPost(ownerId: string, postId: string): Promise<void> {
   await readScheduledPostOrThrow(ownerId, postId);
   await adminDb.collection('scheduledPosts').doc(postId).delete();
@@ -1186,6 +1802,32 @@ export async function listSocialPublishAttempts(
     ...(doc.data() as SocialPublishAttemptDoc),
     publishAttemptId: typeof doc.data().publishAttemptId === 'string' ? doc.data().publishAttemptId : doc.id,
   }));
+}
+
+export async function listSocialPostAnalytics(
+  ownerId: string,
+  options: { scheduledPostId?: string; limit?: number } = {}
+): Promise<SocialPostAnalyticsRecord[]> {
+  let query: FirebaseFirestore.Query = adminDb
+    .collection('socialPostAnalytics')
+    .where('ownerId', '==', ownerId);
+
+  if (options.scheduledPostId) {
+    query = query.where('scheduledPostId', '==', sanitizeString(options.scheduledPostId, 160));
+  }
+
+  const snapshot = await query
+    .limit(Math.min(Math.max(options.limit || 50, 1), 200))
+    .get();
+
+  return snapshot.docs.map((doc) => serializePostAnalytics({
+    ...(doc.data() as SocialPostAnalyticsDoc),
+    analyticsId: typeof doc.data().analyticsId === 'string' ? doc.data().analyticsId : doc.id,
+  })).sort((a, b) => {
+    const aTime = a.lastSyncedAt ? Date.parse(a.lastSyncedAt) : 0;
+    const bTime = b.lastSyncedAt ? Date.parse(b.lastSyncedAt) : 0;
+    return bTime - aTime;
+  });
 }
 
 export async function recordSocialPublishAttempt(input: SocialPublishAttemptInput): Promise<SocialPublishAttemptRecord> {

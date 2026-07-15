@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { adminDb } from '@/lib/firebaseAdmin';
 import { logger } from '@/lib/logger';
 import { requireUserEntitlements } from '@/lib/serverAuth';
+import { getSubscriptionPlan } from '@/lib/entitlements';
+import { listEvents } from '@/events';
 
 type ProgressStep = {
   id: string;
@@ -21,6 +23,11 @@ type DashboardScheduledPost = {
   scheduledTime?: unknown;
   metadata?: unknown;
 };
+
+function shiftMonth(monthKey: string, delta: number): string {
+  const [year, month] = monthKey.split('-').map(Number);
+  return new Date(Date.UTC(year, month - 1 + delta, 1)).toISOString().slice(0, 7);
+}
 
 function getStageLabel(progress: number): string {
   if (progress >= 100) return 'Operating System Builder';
@@ -65,6 +72,8 @@ export async function GET(req: NextRequest) {
       mentorThreadCount,
       scheduledSnap,
       socialAccountCount,
+      currentMonthEvents,
+      nextMonthEvents,
     ] = await Promise.all([
       adminDb.collection('users').doc(uid).collection('roadmaps').limit(1).get(),
       safeSize(adminDb.collection('posts').where('authorId', '==', uid).limit(1)),
@@ -74,13 +83,38 @@ export async function GET(req: NextRequest) {
         return null;
       }),
       safeSize(adminDb.collection('socialAccounts').where('ownerId', '==', uid).where('status', '==', 'connected').limit(1)),
+      listEvents(
+        {
+          tier: getSubscriptionPlan(entitlements.subscription.subscriptionPlan),
+          isAdmin: entitlements.isAdmin,
+          userId: uid,
+        },
+        { month: new Date().toISOString().slice(0, 7), status: 'all', limit: 80 }
+      ).catch((error) => {
+        logger.warn('[API /dashboard/summary] Current month events query failed', { error: error instanceof Error ? error.message : String(error) });
+        return [];
+      }),
+      listEvents(
+        {
+          tier: getSubscriptionPlan(entitlements.subscription.subscriptionPlan),
+          isAdmin: entitlements.isAdmin,
+          userId: uid,
+        },
+        { month: shiftMonth(new Date().toISOString().slice(0, 7), 1), status: 'all', limit: 80 }
+      ).catch((error) => {
+        logger.warn('[API /dashboard/summary] Next month events query failed', { error: error instanceof Error ? error.message : String(error) });
+        return [];
+      }),
     ]);
 
     const scheduledPosts: DashboardScheduledPost[] = scheduledSnap
       ? scheduledSnap.docs.map((doc) => ({ id: doc.id, ...(doc.data() || {}) }) as DashboardScheduledPost)
       : [];
+    const schedulerPosts = scheduledPosts.filter((post) => {
+      return !(typeof post.metadata === 'object' && post.metadata && (post.metadata as Record<string, unknown>).calendarMode === 'events');
+    });
     const now = Date.now();
-    const upcoming = scheduledPosts
+    const upcoming = schedulerPosts
       .map((post) => ({
         id: String(post.scheduledPostId || post.id),
         title: typeof post.title === 'string' && post.title.trim() ? post.title.trim() : null,
@@ -88,14 +122,28 @@ export async function GET(req: NextRequest) {
         platform: typeof post.platform === 'string' ? post.platform : 'social',
         status: typeof post.status === 'string' ? post.status : 'draft',
         scheduledTime: toIso(post.scheduledTime) || '',
-        mode: typeof post.metadata === 'object' && post.metadata && (post.metadata as Record<string, unknown>).calendarMode === 'events'
-          ? 'events'
-          : 'scheduler',
+        mode: 'scheduler',
       }))
       .filter((post) => post.scheduledTime && new Date(post.scheduledTime).getTime() >= now)
       .sort((a, b) => new Date(a.scheduledTime).getTime() - new Date(b.scheduledTime).getTime());
 
-    const upcomingEvents = upcoming.filter((post) => post.mode === 'events').slice(0, 3);
+    const upcomingEvents = [...currentMonthEvents, ...nextMonthEvents]
+      .filter((event) => ['scheduled', 'live'].includes(event.status))
+      .filter((event) => new Date(event.startsAt).getTime() >= now || event.status === 'live')
+      .sort((a, b) => new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime())
+      .slice(0, 3)
+      .map((event) => ({
+        id: event.eventId,
+        eventId: event.eventId,
+        title: event.title,
+        description: event.description,
+        eventType: event.eventType,
+        status: event.status,
+        startsAt: event.startsAt,
+        timezone: event.timezone,
+        hostName: event.hostName || null,
+        viewerRsvp: event.viewerRsvp || null,
+      }));
     const upcomingContent = upcoming.filter((post) => post.mode !== 'events').slice(0, 3);
 
     const roadmapGenerated = profile.roadmapGenerated === true || !roadmapSnap.empty;
@@ -130,7 +178,7 @@ export async function GET(req: NextRequest) {
         id: 'scheduler',
         label: 'Schedule your first content post',
         href: '/social/calendar?mode=scheduler',
-        completed: upcomingContent.length > 0 || scheduledPosts.some((post) => post.status === 'scheduled' || post.status === 'published'),
+        completed: upcomingContent.length > 0 || schedulerPosts.some((post) => post.status === 'scheduled' || post.status === 'published'),
       },
     ];
     const completedSteps = steps.filter((step) => step.completed).length;
@@ -160,7 +208,7 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    const automationReady = socialAccountCount > 0 && scheduledPosts.some((post) => post.status === 'scheduled');
+    const automationReady = socialAccountCount > 0 && schedulerPosts.some((post) => post.status === 'scheduled');
 
     return NextResponse.json({
       roadmap: {
@@ -188,7 +236,7 @@ export async function GET(req: NextRequest) {
       activity: {
         communityPosts: communityPostCount,
         mentorThreads: mentorThreadCount,
-        scheduledPosts: scheduledPosts.length,
+        scheduledPosts: schedulerPosts.length,
         connectedAccounts: socialAccountCount,
       },
     });

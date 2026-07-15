@@ -20,13 +20,19 @@ import {
   X,
   Bell,
   Activity,
+  CalendarDays,
+  Share2,
+  BookOpen,
 } from "lucide-react";
 import { auth, db } from "@/lib/firebase";
 
 const navItems = [
   { label: "Dashboard", href: "/admin/dashboard", icon: LayoutDashboard },
   { label: "Analytics", href: "/admin/analytics", icon: Activity },
+  { label: "Academy", href: "/admin/academy", icon: BookOpen },
+  { label: "Social Ops", href: "/admin/social-ops", icon: Share2 },
   { label: "Marketplace", href: "/admin/marketplace", icon: Boxes },
+  { label: "Events", href: "/admin/events", icon: CalendarDays },
   { label: "Purchases", href: "/admin/purchases", icon: GraduationCap },
   { label: "Users", href: "/admin/users", icon: Users },
   { label: "Subscriptions", href: "/admin/subscriptions", icon: CreditCard },

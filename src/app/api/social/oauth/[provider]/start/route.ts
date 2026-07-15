@@ -2,7 +2,8 @@ import { NextRequest } from 'next/server';
 import { requireSubscription } from '@/lib/serverAuth';
 import { apiError, apiResponse, createAPIHandler } from '@/lib/api-middleware';
 import { logger } from '@/lib/logger';
-import { createSocialAccount } from '@/social/service';
+import { adminDb } from '@/lib/firebaseAdmin';
+import { createSocialAccount, updateSocialAccount } from '@/social/service';
 import { SOCIAL_PLATFORMS, type SocialPlatform } from '@/social/types';
 import {
   buildSocialOAuthState,
@@ -54,21 +55,12 @@ const handler = createAPIHandler(
       const accountName = typeof body.accountName === 'string' && body.accountName.trim()
         ? sanitizeString(body.accountName, 120)
         : `${rule.providerId} account`;
-
-      stage = 'build_signed_state';
-      const stateData = buildSocialOAuthState({
-        providerId: provider,
-        ownerId: entitlements.uid,
-        socialAccountId: typeof body.socialAccountId === 'string' ? sanitizeString(body.socialAccountId, 160) : undefined,
-        accountName,
-        handle: typeof body.handle === 'string' ? sanitizeString(body.handle, 120) : undefined,
-        providerAccountId: typeof body.providerAccountId === 'string' ? sanitizeString(body.providerAccountId, 160) : undefined,
-        scopes: Array.isArray(body.scopes)
-          ? body.scopes.filter((item: unknown): item is string => typeof item === 'string')
-          : rule.defaultScopes,
-        returnTo: typeof body.returnTo === 'string' ? sanitizeString(body.returnTo, 200) : '/social',
-        usePkce: rule.requiresPkce,
-      });
+      const requestedScopes: string[] = Array.isArray(body.scopes)
+        ? body.scopes.filter((item: unknown): item is string => typeof item === 'string')
+        : rule.defaultScopes;
+      const allowedScopes = new Set(rule.defaultScopes);
+      const scopes = requestedScopes.filter((scope: string) => allowedScopes.has(scope));
+      const stateScopes = scopes.length > 0 ? scopes : rule.defaultScopes;
 
       let socialAccountId = typeof body.socialAccountId === 'string' ? sanitizeString(body.socialAccountId, 160) : '';
       if (!socialAccountId) {
@@ -79,19 +71,57 @@ const handler = createAPIHandler(
           connectionType: 'oauth',
           handle: typeof body.handle === 'string' ? sanitizeString(body.handle, 120) : undefined,
           providerAccountId: typeof body.providerAccountId === 'string' ? sanitizeString(body.providerAccountId, 160) : undefined,
-          scopes: stateData.payload.scopes,
+          scopes: stateScopes,
           status: 'pending',
           userId: entitlements.uid,
           metadata: {
             oauthProviderId: provider,
-            oauthStateHash: stateData.stateHash,
-            oauthCallbackStatus: 'handoff_created',
-            oauthReturnTo: stateData.payload.returnTo,
+            oauthCallbackStatus: 'handoff_initializing',
+            oauthReturnTo: typeof body.returnTo === 'string' ? sanitizeString(body.returnTo, 200) : '/social',
             oauthRequiresTokenExchange: true,
           },
         });
         socialAccountId = socialAccount.socialAccountId;
       }
+
+      stage = 'build_signed_state';
+      const stateData = buildSocialOAuthState({
+        providerId: provider,
+        ownerId: entitlements.uid,
+        socialAccountId,
+        accountName,
+        handle: typeof body.handle === 'string' ? sanitizeString(body.handle, 120) : undefined,
+        providerAccountId: typeof body.providerAccountId === 'string' ? sanitizeString(body.providerAccountId, 160) : undefined,
+        scopes: stateScopes,
+        returnTo: typeof body.returnTo === 'string' ? sanitizeString(body.returnTo, 200) : '/social',
+        usePkce: rule.requiresPkce,
+      });
+
+      stage = 'persist_oauth_state';
+      await adminDb.collection('socialOAuthStates').doc(stateData.stateHash).set({
+        stateHash: stateData.stateHash,
+        providerId: provider,
+        ownerId: entitlements.uid,
+        socialAccountId,
+        status: 'created',
+        consumed: false,
+        createdAt: new Date().toISOString(),
+        expiresAt: new Date(Date.now() + Number(process.env.SOCIAL_OAUTH_STATE_TTL_SECONDS || '900') * 1000).toISOString(),
+        returnTo: stateData.payload.returnTo || '/social',
+      });
+
+      stage = 'update_pending_social_account';
+      await updateSocialAccount(entitlements.uid, socialAccountId, {
+        scopes: stateData.payload.scopes,
+        status: 'pending',
+        metadata: {
+          oauthProviderId: provider,
+          oauthStateHash: stateData.stateHash,
+          oauthCallbackStatus: 'handoff_created',
+          oauthReturnTo: stateData.payload.returnTo,
+          oauthRequiresTokenExchange: true,
+        },
+      });
 
       stage = 'build_authorization_url';
       const callbackUrl = new URL(rule.callbackPath, process.env.NEXT_PUBLIC_APP_URL || process.env.FRONTEND_URL || 'http://localhost:3000').toString();

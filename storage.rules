@@ -125,6 +125,47 @@ service firebase.storage {
       allow delete: if isAdminOrContentManager();
     }
 
+    match /academy/courses/{courseId}/activities/{activityId}/submissions/{userId}/{filename} {
+      allow read: if isAdminOrContentManager() || (isAuthed() && request.auth.uid == userId);
+      allow write: if isAuthed()
+        && request.auth.uid == userId
+        && request.resource != null
+        && request.resource.size <= 25 * 1024 * 1024
+        && (
+          request.resource.contentType.matches('image/.*')
+          || request.resource.contentType.matches('video/.*')
+          || request.resource.contentType in [
+            'application/pdf',
+            'application/zip',
+            'application/x-zip-compressed',
+            'text/markdown',
+            'text/plain'
+          ]
+        )
+        && request.resource.metadata.courseId == courseId
+        && request.resource.metadata.activityId == activityId
+        && request.resource.metadata.uploadedBy == request.auth.uid
+        && isSafeFilename(filename);
+      allow delete: if isAdminOrContentManager() || (isAuthed() && request.auth.uid == userId);
+    }
+
+    match /academy/{allPaths=**} {
+      allow read: if isAuthed();
+      allow write, delete: if isAdminOrContentManager()
+        && request.resource != null
+        && request.resource.size <= 500 * 1024 * 1024
+        && (
+          request.resource.contentType.matches('image/.*')
+          || request.resource.contentType.matches('video/.*')
+          || request.resource.contentType in [
+            'application/pdf',
+            'text/markdown',
+            'text/plain'
+          ]
+        )
+        && isSafeFilename(allPaths);
+    }
+
     match /{allPaths=**} {
       allow read, write: if false;
     }

@@ -19,6 +19,7 @@ type AttemptsResponse = {
 
 const STATUS_STYLES: Record<SocialPublishAttemptStatus, string> = {
   processing: "border-blue-400/30 bg-blue-500/10 text-blue-100",
+  pending_confirmation: "border-violet-400/30 bg-violet-500/10 text-violet-100",
   success: "border-emerald-400/30 bg-emerald-500/10 text-emerald-100",
   failed: "border-red-400/30 bg-red-500/10 text-red-100",
   skipped: "border-amber-400/30 bg-amber-500/10 text-amber-100",
@@ -26,6 +27,7 @@ const STATUS_STYLES: Record<SocialPublishAttemptStatus, string> = {
 
 const STATUS_ICONS: Record<SocialPublishAttemptStatus, typeof Clock3> = {
   processing: Clock3,
+  pending_confirmation: Loader2,
   success: CheckCircle2,
   failed: AlertTriangle,
   skipped: AlertTriangle,
@@ -60,7 +62,7 @@ export default function SocialPublishAttemptsPage() {
     return attempts.reduce<Record<SocialPublishAttemptStatus, number>>((acc, attempt) => {
       acc[attempt.status] += 1;
       return acc;
-    }, { processing: 0, success: 0, failed: 0, skipped: 0 });
+    }, { processing: 0, pending_confirmation: 0, success: 0, failed: 0, skipped: 0 });
   }, [attempts]);
 
   const loadAttempts = async () => {
@@ -152,6 +154,7 @@ export default function SocialPublishAttemptsPage() {
               >
                 <option value="all">All statuses</option>
                 <option value="processing">Processing</option>
+                <option value="pending_confirmation">Pending confirmation</option>
                 <option value="success">Success</option>
                 <option value="failed">Failed</option>
                 <option value="skipped">Skipped</option>
