@@ -66,6 +66,11 @@ function toIso(value: any): string | null {
   return null;
 }
 
+function dateSortValue(value: any): number {
+  const iso = toIso(value);
+  return iso ? Date.parse(iso) || 0 : 0;
+}
+
 function serialize<T extends Record<string, any>>(doc: FirestoreDoc<T>) {
   const copy: Record<string, any> = { ...doc };
   for (const key of ['createdAt', 'updatedAt', 'publishedAt', 'availableAt', 'startDate', 'endDate', 'startsAt', 'endsAt', 'submittedAt', 'reviewedAt', 'startedAt', 'expiresAt', 'issuedAt', 'completedAt', 'moderatedAt', 'lastMessageAt', 'confirmedAt']) {
@@ -176,7 +181,7 @@ export async function listAcademyCourses(options: { includeArchived?: boolean; l
   const snap = await query.get();
   return snap.docs
     .map((doc) => serialize({ courseId: doc.id, ...doc.data() } as AcademyCourseDoc))
-    .sort((a, b) => Date.parse(b.updatedAt || b.createdAt || '') - Date.parse(a.updatedAt || a.createdAt || ''))
+    .sort((a, b) => dateSortValue(b.updatedAt || b.createdAt) - dateSortValue(a.updatedAt || a.createdAt))
     .slice(0, limit);
 }
 
@@ -187,7 +192,7 @@ export async function listPublishedAcademyCourses(options: { limit?: number } = 
     .get();
   return snap.docs
     .map((doc) => serialize({ courseId: doc.id, ...doc.data() } as AcademyCourseDoc))
-    .sort((a, b) => Date.parse(b.publishedAt || b.updatedAt || '') - Date.parse(a.publishedAt || a.updatedAt || ''))
+    .sort((a, b) => dateSortValue(b.publishedAt || b.updatedAt) - dateSortValue(a.publishedAt || a.updatedAt))
     .slice(0, limit);
 }
 
