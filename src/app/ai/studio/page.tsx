@@ -14,6 +14,8 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/providers/AuthProvider";
 import { authFetch } from "@/lib/clientApi";
 import { cn } from "@/lib/utils";
+import { PLATFORM_CAPABILITIES } from "@/social/capabilities";
+import { SOCIAL_PLATFORMS, type SocialAccountRecord, type SocialPlatform } from "@/social/types";
 import {
   STUDIO_CONTENT_TYPES,
   type StudioArtifactRecord,
@@ -25,7 +27,6 @@ import {
 import {
   ArrowRight,
   Bot,
-  ClipboardCopy,
   ImageIcon,
   History,
   Mail,
@@ -43,6 +44,18 @@ import {
   Workflow,
   CalendarDays,
   BarChart3,
+  CheckCircle2,
+  Link2,
+  CreditCard,
+  Copy,
+  Edit3,
+  FolderPlus,
+  ImagePlus,
+  MailPlus,
+  Repeat2,
+  Save,
+  Send,
+  ShieldCheck,
 } from "lucide-react";
 
 type StudioOverviewResponse = {
@@ -64,8 +77,62 @@ type CreditDashboard = {
   };
 };
 
+type SocialAccountsResponse = {
+  accounts: SocialAccountRecord[];
+};
+
 function formatContentType(contentType: string): string {
   return contentType.replace(/_/g, " ");
+}
+
+function formatPlatform(platform: string): string {
+  if (platform === "x") return "X";
+  return platform.charAt(0).toUpperCase() + platform.slice(1);
+}
+
+function formatAccountHandle(account: SocialAccountRecord): string {
+  return account.handle || account.accountName || account.providerAccountId || "Connected account";
+}
+
+function platformRuleSummary(platform: SocialPlatform): string {
+  const capability = PLATFORM_CAPABILITIES[platform];
+  const formats = capability.supportedContentTypes.map(formatContentType).join(", ");
+  const media = capability.mediaRequired ? "Media required" : "Text-first allowed";
+  const limit = capability.maxCaptionLength ? `${capability.maxCaptionLength} chars` : "Platform limit";
+  return `${formats} · ${media} · ${limit}`;
+}
+
+function estimateStudioCredits(contentType: StudioContentType): number {
+  switch (contentType) {
+    case "caption":
+    case "prompt_library":
+      return 5;
+    case "ad_copy":
+    case "email":
+    case "marketing_planner":
+      return contentType === "marketing_planner" ? 15 : 10;
+    case "carousel":
+      return 15;
+    case "script":
+    case "blog":
+    case "sales_funnel":
+      return 20;
+    case "thumbnail":
+      return 10;
+    default:
+      return 10;
+  }
+}
+
+function readNumberMetadata(metadata: Record<string, unknown> | undefined, key: string): number | null {
+  const value = metadata?.[key];
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function toSchedulerContentType(contentType: StudioContentType): string {
+  if (contentType === "thumbnail") return "image";
+  if (contentType === "script") return "video";
+  return "text";
 }
 
 const TONE_OPTIONS: StudioTone[] = ["professional", "casual", "encouraging", "direct", "bold", "playful", "premium"];
@@ -143,6 +210,33 @@ function getSchedulerActionPrefill(searchParams: URLSearchParams): Partial<Studi
       caption ? `Existing draft: ${caption}` : "",
     ].filter(Boolean).join("\n"),
     notes: "Imported from Scheduler. Return to the calendar after generating if you want to attach this to a scheduled post.",
+  };
+}
+
+function getStudioRoutePrefill(searchParams: URLSearchParams): Partial<StudioComposerState> | null {
+  const source = searchParams.get("source");
+  if (source !== "library" && source !== "history" && source !== "brand") return null;
+
+  const requestedContentType = searchParams.get("contentType");
+  const contentType = isStudioContentType(requestedContentType) ? requestedContentType : undefined;
+  const businessContext = searchParams.get("businessContext") || searchParams.get("prompt") || "";
+  const campaignGoal = searchParams.get("goal") || "";
+  const targetAudience = searchParams.get("targetAudience") || "";
+  const brandName = searchParams.get("brandName") || "";
+  const brandVoice = searchParams.get("brandVoice") || "";
+
+  return {
+    ...(contentType ? { contentType } : {}),
+    ...(businessContext ? { businessContext } : {}),
+    ...(campaignGoal ? { campaignGoal } : {}),
+    ...(targetAudience ? { targetAudience } : {}),
+    ...(brandName ? { brandName } : {}),
+    ...(brandVoice ? { brandVoice } : {}),
+    notes: source === "library"
+      ? "Started from a reusable template."
+      : source === "history"
+        ? "Started from a previous Studio artifact."
+        : "Started from saved brand context.",
   };
 }
 
@@ -229,6 +323,159 @@ const STUDIO_WORKFLOWS = [
   },
 ];
 
+const STUDIO_MODE_LINKS = [
+  { label: "Command center", href: "/ai/studio", icon: Sparkles, active: true },
+  { label: "Image Studio", href: "/ai/image-studio", icon: ImageIcon },
+  { label: "Video Studio", href: "/ai/video-studio", icon: Video },
+  { label: "Voice Studio", href: "/ai/audio-studio", icon: Volume2 },
+  { label: "Library", href: "/ai/studio/library", icon: LibraryBig },
+  { label: "Brand", href: "/ai/studio/brand", icon: ShieldCheck },
+  { label: "History", href: "/ai/studio/history", icon: History },
+];
+
+type CreationIntent = {
+  id: string;
+  title: string;
+  description: string;
+  contentType: StudioContentType;
+  icon: typeof Sparkles;
+  platform?: string;
+  goal: string;
+  helper: string;
+};
+
+const CREATION_INTENTS: CreationIntent[] = [
+  {
+    id: "today",
+    title: "Generate today's content",
+    description: "Get a focused post idea, caption, and next action for today.",
+    contentType: "marketing_planner",
+    icon: Sparkles,
+    goal: "Create today's highest-leverage content idea with a caption and publishing recommendation.",
+    helper: "Tell Soma what you are promoting, teaching, or launching today.",
+  },
+  {
+    id: "social",
+    title: "Create a social post",
+    description: "Write a platform-ready caption with hook, CTA, and hashtags.",
+    contentType: "caption",
+    icon: Megaphone,
+    goal: "Create a social post that earns attention and moves the audience to the next step.",
+    helper: "Describe the post idea, offer, lesson, or announcement.",
+  },
+  {
+    id: "email",
+    title: "Write an email",
+    description: "Draft a campaign email, nurture email, subject line, or offer.",
+    contentType: "email",
+    icon: Mail,
+    goal: "Write a clear email that builds trust and drives the reader to act.",
+    helper: "Describe the email purpose and what the reader should do next.",
+  },
+  {
+    id: "blog",
+    title: "Write a blog",
+    description: "Create a structured article outline or draft for your audience.",
+    contentType: "blog",
+    icon: FileText,
+    goal: "Create a useful long-form article that teaches clearly and supports business growth.",
+    helper: "Describe the topic, promise, or question the article should answer.",
+  },
+  {
+    id: "campaign",
+    title: "Build a campaign",
+    description: "Plan a short campaign with content angles, channels, and CTA flow.",
+    contentType: "marketing_planner",
+    icon: CalendarDays,
+    goal: "Build a simple campaign plan with content, channels, cadence, and outcomes.",
+    helper: "Describe the launch, offer, product, course, or community goal.",
+  },
+  {
+    id: "repurpose",
+    title: "Repurpose content",
+    description: "Turn one idea or draft into new posts, emails, or scripts.",
+    contentType: "carousel",
+    icon: Workflow,
+    goal: "Repurpose existing content into reusable assets for multiple channels.",
+    helper: "Paste the original content or summarize what should be reused.",
+  },
+  {
+    id: "improve",
+    title: "Improve writing",
+    description: "Make existing copy sharper, clearer, shorter, or more premium.",
+    contentType: "caption",
+    icon: Wand2,
+    goal: "Improve the writing while preserving the core message and audience intent.",
+    helper: "Paste the draft you want Soma to improve.",
+  },
+  {
+    id: "image",
+    title: "Create an image",
+    description: "Open Image Studio for branded visuals and saved history.",
+    contentType: "thumbnail",
+    icon: ImageIcon,
+    goal: "Create a branded visual concept for this idea.",
+    helper: "Use Image Studio when the output should be visual.",
+  },
+  {
+    id: "video",
+    title: "Generate a video",
+    description: "Open Video Studio for scripts, scenes, and video generation.",
+    contentType: "script",
+    icon: Video,
+    goal: "Create a video concept, script, and scene direction.",
+    helper: "Use Video Studio when the output should become a video.",
+  },
+  {
+    id: "voice",
+    title: "Create voice/audio",
+    description: "Open Voice Studio for narration, audio, and brand voice work.",
+    contentType: "script",
+    icon: Volume2,
+    goal: "Create an audio-ready script or voiceover direction.",
+    helper: "Use Voice Studio when the output should be spoken.",
+  },
+];
+
+const CONTEXTUAL_ACTIONS = [
+  {
+    title: "Write caption",
+    description: "Turn the idea into a clean platform-ready caption.",
+    contentType: "caption" as StudioContentType,
+    goal: "Write a caption with a strong hook, useful body, and clear CTA.",
+  },
+  {
+    title: "Add hook",
+    description: "Create stronger opening lines.",
+    contentType: "caption" as StudioContentType,
+    goal: "Create five strong opening hooks for this idea.",
+  },
+  {
+    title: "Generate hashtags",
+    description: "Add relevant hashtags without clutter.",
+    contentType: "caption" as StudioContentType,
+    goal: "Generate relevant hashtags and explain which ones matter most.",
+  },
+  {
+    title: "Create 7-day campaign",
+    description: "Build a simple weekly content plan.",
+    contentType: "marketing_planner" as StudioContentType,
+    goal: "Create a seven-day campaign with topics, formats, platforms, and CTAs.",
+  },
+  {
+    title: "Adapt for platform",
+    description: "Rewrite this for the chosen channel.",
+    contentType: "caption" as StudioContentType,
+    goal: "Adapt this content for the selected platform using platform-specific best practices.",
+  },
+  {
+    title: "Suggest best time",
+    description: "Create a scheduling recommendation.",
+    contentType: "marketing_planner" as StudioContentType,
+    goal: "Suggest the best posting time and explain the reasoning in simple language.",
+  },
+];
+
 export default function AIStudioPage() {
   const { user } = useAuth();
   const { toast } = useToast();
@@ -240,7 +487,12 @@ export default function AIStudioPage() {
   const [generating, setGenerating] = useState(false);
   const [creditDashboard, setCreditDashboard] = useState<CreditDashboard | null>(null);
   const [creditLoading, setCreditLoading] = useState(true);
+  const [socialAccounts, setSocialAccounts] = useState<SocialAccountRecord[]>([]);
+  const [socialAccountsLoading, setSocialAccountsLoading] = useState(true);
+  const [selectedSocialAccountIds, setSelectedSocialAccountIds] = useState<string[]>([]);
   const [composer, setComposer] = useState<StudioComposerState>(DEFAULT_COMPOSER_STATE);
+  const [activeIntentId, setActiveIntentId] = useState<string>("social");
+  const [showAdvancedComposer, setShowAdvancedComposer] = useState(false);
   const [latestGeneration, setLatestGeneration] = useState<StudioGenerationResult | null>(null);
   const [data, setData] = useState<StudioOverviewResponse>({
     supportedContentTypes: STUDIO_CONTENT_TYPES,
@@ -249,15 +501,15 @@ export default function AIStudioPage() {
   });
 
   useEffect(() => {
-    const prefill = getSchedulerActionPrefill(searchParams);
+    const prefill = getSchedulerActionPrefill(searchParams) || getStudioRoutePrefill(searchParams);
     if (!prefill) return;
 
     setComposer((current) => ({
       ...current,
       ...prefill,
-      brandVoice: current.brandVoice,
-      brandName: current.brandName,
-      targetAudience: current.targetAudience,
+      brandVoice: prefill.brandVoice || current.brandVoice,
+      brandName: prefill.brandName || current.brandName,
+      targetAudience: prefill.targetAudience || current.targetAudience,
       tone: current.tone,
       language: current.language,
     }));
@@ -349,6 +601,46 @@ export default function AIStudioPage() {
     };
   }, [user]);
 
+  useEffect(() => {
+    let mounted = true;
+
+    const loadSocialAccounts = async () => {
+      if (!user) {
+        setSocialAccountsLoading(false);
+        return;
+      }
+
+      try {
+        setSocialAccountsLoading(true);
+        const response = await authFetch("/api/social/accounts?limit=100");
+        if (!response.ok) throw new Error("Unable to load social accounts.");
+        const payload = (await response.json()) as SocialAccountsResponse;
+        if (mounted) {
+          const accounts = payload.accounts || [];
+          setSocialAccounts(accounts);
+          const connected = accounts.filter((account) => account.status === "connected");
+          if (connected.length > 0) {
+            const first = connected[0];
+            setSelectedSocialAccountIds((current) => current.length ? current : [first.socialAccountId]);
+            setComposer((current) => ({
+              ...current,
+              platform: current.platform || formatPlatform(first.providerId),
+            }));
+          }
+        }
+      } catch {
+        if (mounted) setSocialAccounts([]);
+      } finally {
+        if (mounted) setSocialAccountsLoading(false);
+      }
+    };
+
+    void loadSocialAccounts();
+    return () => {
+      mounted = false;
+    };
+  }, [user]);
+
   const creditUsage = useMemo(() => {
     const granted = creditDashboard?.snapshot.monthlyCreditsGranted || 0;
     const used = creditDashboard?.snapshot.monthlyCreditsUsed || 0;
@@ -393,6 +685,54 @@ export default function AIStudioPage() {
     });
   }, [data.artifacts, search, typeFilter]);
 
+  const connectedSocialAccounts = useMemo(
+    () => socialAccounts.filter((account) => account.status === "connected"),
+    [socialAccounts]
+  );
+
+  const accountsByPlatform = useMemo(() => {
+    return SOCIAL_PLATFORMS.reduce<Record<SocialPlatform, SocialAccountRecord[]>>((acc, platform) => {
+      acc[platform] = connectedSocialAccounts.filter((account) => account.providerId === platform);
+      return acc;
+    }, {} as Record<SocialPlatform, SocialAccountRecord[]>);
+  }, [connectedSocialAccounts]);
+
+  const selectedSocialAccounts = useMemo(() => {
+    const ids = new Set(selectedSocialAccountIds);
+    return connectedSocialAccounts.filter((account) => ids.has(account.socialAccountId));
+  }, [connectedSocialAccounts, selectedSocialAccountIds]);
+
+  const selectedPlatforms = useMemo(() => {
+    const platforms = selectedSocialAccounts.map((account) => account.providerId);
+    if (platforms.length > 0) return Array.from(new Set(platforms));
+    const typed = composer.platform.toLowerCase().trim();
+    return SOCIAL_PLATFORMS.filter((platform) => typed.includes(platform));
+  }, [composer.platform, selectedSocialAccounts]);
+
+  const estimatedCredits = useMemo(() => estimateStudioCredits(composer.contentType), [composer.contentType]);
+  const latestGenerationWasCached = Boolean(latestGeneration?.metadata?.cacheHit);
+  const creditSnapshot = creditDashboard?.snapshot;
+  const availableCredits = creditSnapshot?.remainingCredits ?? 0;
+  const byokEnabled = Boolean(creditSnapshot?.byokEnabled);
+  const isCreditBlocked = Boolean(
+    creditDashboard &&
+      !byokEnabled &&
+      availableCredits < estimatedCredits &&
+      !latestGenerationWasCached
+  );
+
+  const latestGenerationCredits = useMemo(() => {
+    if (!latestGeneration) return null;
+    return readNumberMetadata(latestGeneration.metadata, "creditsCharged");
+  }, [latestGeneration]);
+
+  const latestGenerationCostLabel = latestGenerationWasCached
+    ? "Reused content · 0 Creator Credits"
+    : `${latestGenerationCredits ?? estimateStudioCredits(latestGeneration?.contentType || composer.contentType)} Creator Credits`;
+  const selectedDestinationLabel = selectedSocialAccounts.length
+    ? selectedSocialAccounts.map((account) => `${formatPlatform(account.providerId)} ${formatAccountHandle(account)}`).join(", ")
+    : composer.platform || "No destination selected";
+
   const handleRefresh = async () => {
     if (!user || refreshing) return;
     try {
@@ -411,7 +751,7 @@ export default function AIStudioPage() {
       }
       toast({
         title: "Studio refreshed",
-        description: "We pulled in the latest prompt packs and generated artifacts.",
+        description: "We pulled in the latest reusable templates and generated assets.",
       });
     } catch (error) {
       toast({
@@ -426,6 +766,81 @@ export default function AIStudioPage() {
 
   const handleComposerChange = <K extends keyof StudioComposerState>(key: K, value: StudioComposerState[K]) => {
     setComposer((current) => ({ ...current, [key]: value }));
+  };
+
+  const buildGenerationNotes = () => {
+    const destinationNotes = selectedSocialAccounts.length
+      ? `Selected social accounts: ${selectedSocialAccounts.map((account) => `${formatPlatform(account.providerId)} ${formatAccountHandle(account)}`).join("; ")}.`
+      : "";
+    const ruleNotes = selectedPlatforms.length
+      ? `Platform rules: ${selectedPlatforms.map((platform) => `${formatPlatform(platform)} (${platformRuleSummary(platform)})`).join("; ")}.`
+      : "";
+    return [composer.notes, destinationNotes, ruleNotes].filter(Boolean).join("\n");
+  };
+
+  const syncPlatformFromAccounts = (accounts: SocialAccountRecord[]) => {
+    const labels = Array.from(new Set(accounts.map((account) => formatPlatform(account.providerId))));
+    setComposer((current) => ({
+      ...current,
+      platform: labels.length ? labels.join(", ") : current.platform,
+    }));
+  };
+
+  const toggleSocialAccount = (account: SocialAccountRecord) => {
+    setSelectedSocialAccountIds((current) => {
+      const exists = current.includes(account.socialAccountId);
+      const nextIds = exists
+        ? current.filter((id) => id !== account.socialAccountId)
+        : [...current, account.socialAccountId];
+      const nextAccounts = connectedSocialAccounts.filter((item) => nextIds.includes(item.socialAccountId));
+      syncPlatformFromAccounts(nextAccounts);
+      return nextIds;
+    });
+  };
+
+  const choosePlatformWithoutConnection = (platform: SocialPlatform) => {
+    setComposer((current) => ({
+      ...current,
+      platform: formatPlatform(platform),
+      campaignGoal: current.campaignGoal || `Create platform-aware content for ${formatPlatform(platform)}.`,
+      notes: current.notes || `${formatPlatform(platform)} is not connected yet. Generate draft content now, then connect the account before scheduling.`,
+    }));
+  };
+
+  const applyCreationIntent = (intent: CreationIntent) => {
+    setActiveIntentId(intent.id);
+
+    if (intent.id === "image") {
+      window.location.href = "/ai/image-studio";
+      return;
+    }
+
+    if (intent.id === "video") {
+      window.location.href = "/ai/video-studio";
+      return;
+    }
+
+    if (intent.id === "voice") {
+      window.location.href = "/ai/audio-studio";
+      return;
+    }
+
+    setComposer((current) => ({
+      ...current,
+      contentType: intent.contentType,
+      platform: current.platform || intent.platform || "",
+      campaignGoal: intent.goal,
+      notes: current.notes || intent.helper,
+    }));
+  };
+
+  const applyContextualAction = (action: (typeof CONTEXTUAL_ACTIONS)[number]) => {
+    setComposer((current) => ({
+      ...current,
+      contentType: action.contentType,
+      campaignGoal: action.goal,
+      notes: current.notes || action.description,
+    }));
   };
 
   const handleUsePack = (pack: StudioPromptLibraryEntry) => {
@@ -444,6 +859,14 @@ export default function AIStudioPage() {
   const handleGenerate = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!user || generating) return;
+    if (isCreditBlocked) {
+      toast({
+        title: "Creator Credits needed",
+        description: `This generation uses ${estimatedCredits} Creator Credits. Buy credits, upgrade, or enable BYOK to continue.`,
+        variant: "destructive",
+      });
+      return;
+    }
 
     try {
       setGenerating(true);
@@ -468,7 +891,7 @@ export default function AIStudioPage() {
             .split(",")
             .map((value) => value.trim())
             .filter(Boolean),
-          notes: composer.notes,
+          notes: buildGenerationNotes(),
           language: composer.language,
         }),
       });
@@ -486,6 +909,11 @@ export default function AIStudioPage() {
           promptLibrary: payload.promptLibrary || current.promptLibrary,
         }));
       }
+      const refreshedCredits = await authFetch("/api/creator-credits").catch(() => null);
+      if (refreshedCredits?.ok) {
+        const creditPayload = (await refreshedCredits.json()) as CreditDashboard;
+        setCreditDashboard(creditPayload);
+      }
 
       toast({
         title: "Content generated",
@@ -502,10 +930,35 @@ export default function AIStudioPage() {
     }
   };
 
+  const activeIntent = CREATION_INTENTS.find((intent) => intent.id === activeIntentId) || CREATION_INTENTS[1];
+
   return (
     <ProtectedRoute>
       <AppLayout>
         <div className="space-y-8">
+          <section className="rounded-[18px] border border-white/[0.08] bg-[#090B13]/70 p-3 shadow-[0_18px_60px_rgba(0,0,0,0.22)] backdrop-blur-xl">
+            <div className="flex gap-2 overflow-x-auto pb-1">
+              {STUDIO_MODE_LINKS.map((mode) => {
+                const Icon = mode.icon;
+                return (
+                  <Link
+                    key={mode.href}
+                    href={mode.href}
+                    className={cn(
+                      "flex min-w-max items-center gap-2 rounded-2xl border px-4 py-3 text-sm transition-all duration-200",
+                      mode.active
+                        ? "border-[#8B5CF6]/50 bg-[#8B5CF6]/15 text-white shadow-[0_14px_45px_rgba(91,95,255,0.18)]"
+                        : "border-white/[0.06] bg-white/[0.03] text-[#BFC6D4] hover:border-[#4F9DFF]/35 hover:bg-white/[0.06] hover:text-white"
+                    )}
+                  >
+                    <Icon className="h-4 w-4" />
+                    {mode.label}
+                  </Link>
+                );
+              })}
+            </div>
+          </section>
+
           <section className="overflow-hidden rounded-[18px] border border-white/[0.08] bg-[#151A2E]/70 shadow-[0_30px_90px_rgba(0,0,0,0.36)] backdrop-blur-2xl">
             <div className="relative p-6 sm:p-8 lg:p-10">
               <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_72%_12%,rgba(139,92,246,0.38),transparent_34%),radial-gradient(circle_at_12%_10%,rgba(79,157,255,0.24),transparent_36%)]" />
@@ -524,78 +977,201 @@ export default function AIStudioPage() {
                     </div>
                   </div>
 
-                  <form className="rounded-[18px] border border-white/[0.08] bg-[#090B13]/70 p-4 shadow-[0_18px_60px_rgba(0,0,0,0.28)]" onSubmit={handleGenerate}>
-                    <div className="mb-4 grid gap-3 md:grid-cols-[1fr_180px_160px]">
-                      <select
-                        aria-label="Studio content type"
-                        className="h-11 rounded-2xl border border-white/[0.08] bg-[#111827] px-3 text-sm text-white outline-none"
-                        value={composer.contentType}
-                        onChange={(event) => handleComposerChange("contentType", event.target.value as StudioContentType)}
-                      >
-                        {data.supportedContentTypes.map((type) => (
-                          <option key={type} value={type}>
-                            {formatContentType(type)}
-                          </option>
-                        ))}
-                      </select>
-                      <select
-                        aria-label="Studio tone"
-                        className="h-11 rounded-2xl border border-white/[0.08] bg-[#111827] px-3 text-sm text-white outline-none"
-                        value={composer.tone}
-                        onChange={(event) => handleComposerChange("tone", event.target.value as StudioTone)}
-                      >
-                        {TONE_OPTIONS.map((tone) => (
-                          <option key={tone} value={tone}>
-                            {tone}
-                          </option>
-                        ))}
-                      </select>
-                      <Input
-                        value={composer.platform}
-                        onChange={(event) => handleComposerChange("platform", event.target.value)}
-                        placeholder="Platform"
-                        className="h-11 rounded-2xl border-white/[0.08] bg-[#111827] text-white placeholder:text-[#7E8799]"
-                      />
+                  <div className="rounded-[18px] border border-white/[0.08] bg-[#090B13]/70 p-4 shadow-[0_18px_60px_rgba(0,0,0,0.28)]">
+                    <div className="mb-4">
+                      <p className="text-sm font-medium text-white">What do you want to create today?</p>
+                      <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
+                        {CREATION_INTENTS.slice(0, 10).map((intent) => {
+                          const Icon = intent.icon;
+                          const isActive = activeIntentId === intent.id;
+                          return (
+                            <button
+                              key={intent.id}
+                              type="button"
+                              onClick={() => applyCreationIntent(intent)}
+                              className={cn(
+                                "group rounded-2xl border p-3 text-left transition-all duration-200",
+                                isActive
+                                  ? "border-[#8B5CF6]/60 bg-[#151A2E] shadow-[0_16px_50px_rgba(91,95,255,0.18)]"
+                                  : "border-white/[0.08] bg-white/[0.03] hover:-translate-y-0.5 hover:border-[#4F9DFF]/35 hover:bg-white/[0.06]"
+                              )}
+                            >
+                              <div className="flex items-center gap-2">
+                                <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-gradient-to-br from-[#4F9DFF] via-[#5B5FFF] to-[#8B5CF6]">
+                                  <Icon className="h-4 w-4 text-white" />
+                                </span>
+                                <span className="text-sm font-medium text-white">{intent.title}</span>
+                              </div>
+                              <p className="mt-2 line-clamp-2 text-xs leading-5 text-[#BFC6D4]">{intent.description}</p>
+                            </button>
+                          );
+                        })}
+                      </div>
                     </div>
-                    <Textarea
-                      rows={3}
-                      value={composer.businessContext}
-                      onChange={(event) => handleComposerChange("businessContext", event.target.value)}
-                      placeholder="What would you like to create today?"
-                      className="min-h-28 resize-none border-0 bg-transparent px-1 text-base text-white shadow-none outline-none placeholder:text-[#7E8799] focus-visible:ring-0"
-                    />
-                    <div className="mt-4 flex flex-wrap items-center gap-3">
-                      <Button type="button" variant="outline" className="h-10 rounded-2xl border-white/[0.08] bg-white/[0.04]" onClick={() => handleComposerChange("campaignGoal", "Suggest high-potential content ideas")}>
-                        <Sparkles className="h-4 w-4" />
-                        Suggest ideas
-                      </Button>
-                      <Button type="button" variant="outline" className="h-10 rounded-2xl border-white/[0.08] bg-white/[0.04]" onClick={() => handleComposerChange("contentType", "caption")}>
-                        <Wand2 className="h-4 w-4" />
-                        Improve writing
-                      </Button>
-                      <Button asChild variant="outline" className="h-10 rounded-2xl border-white/[0.08] bg-white/[0.04]">
-                        <Link href="/ai/image-studio">
-                          <ImageIcon className="h-4 w-4" />
-                          Create image
-                        </Link>
-                      </Button>
-                      <Button asChild variant="outline" className="h-10 rounded-2xl border-white/[0.08] bg-white/[0.04]">
-                        <Link href="/ai/video-studio">
-                          <Video className="h-4 w-4" />
-                          Generate video
-                        </Link>
-                      </Button>
-                      <Button asChild variant="outline" className="h-10 rounded-2xl border-white/[0.08] bg-white/[0.04]">
-                        <Link href="/ai/audio-studio">
-                          <Volume2 className="h-4 w-4" />
-                          Create voice
-                        </Link>
-                      </Button>
-                      <Button type="submit" disabled={generating || loading} className="ml-auto h-12 w-12 rounded-full bg-gradient-to-br from-[#5B5FFF] via-[#8B5CF6] to-[#4F9DFF] p-0 shadow-[0_18px_45px_rgba(91,95,255,0.35)]">
-                        {generating ? <Loader2 className="h-5 w-5 animate-spin" /> : <ArrowRight className="h-5 w-5" />}
-                      </Button>
-                    </div>
-                  </form>
+
+                    <form onSubmit={handleGenerate} className="rounded-2xl border border-white/[0.08] bg-[#111827]/70 p-4">
+                      <div className="grid gap-4 lg:grid-cols-[1fr_260px]">
+                        <div className="space-y-3">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <Badge variant="outline" className="rounded-full border-[#8B5CF6]/35 bg-[#8B5CF6]/10 text-[#D8CCFF]">
+                              {activeIntent.title}
+                            </Badge>
+                            <span className="text-xs text-[#7E8799]">{formatContentType(composer.contentType)}</span>
+                          </div>
+                          <Textarea
+                            rows={4}
+                            value={composer.businessContext}
+                            onChange={(event) => handleComposerChange("businessContext", event.target.value)}
+                            placeholder={activeIntent.helper}
+                            className="min-h-32 resize-none border-white/[0.08] bg-[#090B13]/70 text-base text-white placeholder:text-[#7E8799]"
+                          />
+                        </div>
+                        <div className="space-y-3">
+                          <label className="text-sm font-medium text-white">Who is this for?</label>
+                          <Textarea
+                            rows={4}
+                            value={composer.targetAudience}
+                            onChange={(event) => handleComposerChange("targetAudience", event.target.value)}
+                            placeholder="Example: beginner entrepreneurs who want more customers online."
+                            className="min-h-32 resize-none border-white/[0.08] bg-[#090B13]/70 text-white placeholder:text-[#7E8799]"
+                          />
+                          <p className="text-xs leading-5 text-[#7E8799]">
+                            Target audience improves the result. If you leave it empty, Soma uses a safe creator-business default.
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="mt-4 rounded-2xl border border-white/[0.08] bg-[#090B13]/60 p-4">
+                        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                          <div>
+                            <p className="text-sm font-medium text-white">Choose destination</p>
+                            <p className="mt-1 text-xs text-[#7E8799]">
+                              Select one or more connected accounts. Soma will adapt the content for each platform.
+                            </p>
+                          </div>
+                          <Button asChild type="button" variant="outline" className="rounded-2xl border-white/[0.08] bg-white/[0.04]">
+                            <Link href="/social">
+                              <Link2 className="h-4 w-4" />
+                              Connect accounts
+                            </Link>
+                          </Button>
+                        </div>
+
+                        <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                          {SOCIAL_PLATFORMS.map((platform) => {
+                            const accounts = accountsByPlatform[platform] || [];
+                            const hasAccounts = accounts.length > 0;
+                            return (
+                              <div key={platform} className="rounded-2xl border border-white/[0.08] bg-white/[0.03] p-3">
+                                <div className="flex items-start justify-between gap-3">
+                                  <div>
+                                    <p className="text-sm font-medium text-white">{formatPlatform(platform)}</p>
+                                    <p className="mt-1 text-xs text-[#7E8799]">{platformRuleSummary(platform)}</p>
+                                  </div>
+                                  {!hasAccounts ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => choosePlatformWithoutConnection(platform)}
+                                      className="rounded-full border border-white/[0.08] px-2.5 py-1 text-xs text-[#BFC6D4] transition hover:border-[#4F9DFF]/35 hover:text-white"
+                                    >
+                                      Draft
+                                    </button>
+                                  ) : null}
+                                </div>
+
+                                <div className="mt-3 space-y-2">
+                                  {socialAccountsLoading ? (
+                                    <div className="rounded-xl border border-dashed border-white/[0.08] px-3 py-2 text-xs text-[#7E8799]">Loading accounts...</div>
+                                  ) : hasAccounts ? (
+                                    accounts.map((account) => {
+                                      const selected = selectedSocialAccountIds.includes(account.socialAccountId);
+                                      return (
+                                        <button
+                                          key={account.socialAccountId}
+                                          type="button"
+                                          onClick={() => toggleSocialAccount(account)}
+                                          className={cn(
+                                            "flex w-full items-center justify-between gap-2 rounded-xl border px-3 py-2 text-left transition",
+                                            selected
+                                              ? "border-[#8B5CF6]/60 bg-[#8B5CF6]/10 text-white"
+                                              : "border-white/[0.08] bg-[#090B13]/70 text-[#BFC6D4] hover:border-[#4F9DFF]/35 hover:text-white"
+                                          )}
+                                        >
+                                          <span>
+                                            <span className="block text-xs font-medium">{formatAccountHandle(account)}</span>
+                                            <span className="mt-0.5 block text-[11px] text-[#7E8799]">{account.accountName}</span>
+                                          </span>
+                                          {selected ? <CheckCircle2 className="h-4 w-4 text-[#22C55E]" /> : null}
+                                        </button>
+                                      );
+                                    })
+                                  ) : (
+                                    <div className="rounded-xl border border-dashed border-white/[0.08] px-3 py-2 text-xs text-[#7E8799]">
+                                      Not connected. Draft now or connect before scheduling.
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      <div className="mt-4 grid gap-3 md:grid-cols-3">
+                        <Input
+                          value={composer.platform}
+                          onChange={(event) => handleComposerChange("platform", event.target.value)}
+                          placeholder="Platform, e.g. TikTok"
+                          className="h-11 rounded-2xl border-white/[0.08] bg-[#090B13]/70 text-white placeholder:text-[#7E8799]"
+                        />
+                        <Input
+                          value={composer.campaignGoal}
+                          onChange={(event) => handleComposerChange("campaignGoal", event.target.value)}
+                          placeholder="Goal, e.g. educate, sell, announce"
+                          className="h-11 rounded-2xl border-white/[0.08] bg-[#090B13]/70 text-white placeholder:text-[#7E8799]"
+                        />
+                        <div className="flex gap-2">
+                          <Button type="submit" disabled={generating || loading || isCreditBlocked} className="h-11 flex-1 rounded-2xl bg-gradient-to-br from-[#5B5FFF] via-[#8B5CF6] to-[#4F9DFF] shadow-[0_18px_45px_rgba(91,95,255,0.35)]">
+                            {generating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+                            {isCreditBlocked ? "Add credits to generate" : "Generate"}
+                          </Button>
+                          <Button type="button" variant="outline" onClick={() => setShowAdvancedComposer((value) => !value)} className="h-11 rounded-2xl border-white/[0.08] bg-white/[0.04]">
+                            Advanced
+                          </Button>
+                        </div>
+                      </div>
+
+                      <div className={cn(
+                        "mt-4 flex flex-col gap-3 rounded-2xl border p-4 text-sm sm:flex-row sm:items-center sm:justify-between",
+                        isCreditBlocked
+                          ? "border-[#F59E0B]/30 bg-[#F59E0B]/10 text-[#FDE7BD]"
+                          : "border-white/[0.08] bg-white/[0.03] text-[#BFC6D4]"
+                      )}>
+                        <div>
+                          <span className="font-medium text-white">This will use {estimatedCredits} Creator Credits.</span>{" "}
+                          {isCreditBlocked
+                            ? "You need Creator Credits, a paid plan, or BYOK before this can run."
+                            : latestGenerationWasCached
+                              ? "Reusing cached work costs 0 credits and still appears in your history."
+                              : "Credits are reserved first and refunded automatically if generation fails."}
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          <Button asChild type="button" variant="outline" size="sm" className="rounded-xl border-white/[0.08] bg-white/[0.04]">
+                            <Link href="/settings/credits">
+                              <CreditCard className="h-4 w-4" />
+                              Buy Credits
+                            </Link>
+                          </Button>
+                          <Button asChild type="button" variant="outline" size="sm" className="rounded-xl border-white/[0.08] bg-white/[0.04]">
+                            <Link href="/settings/billing">Upgrade or Manage</Link>
+                          </Button>
+                          <Button asChild type="button" variant="outline" size="sm" className="rounded-xl border-white/[0.08] bg-white/[0.04]">
+                            <Link href="/settings">Use BYOK</Link>
+                          </Button>
+                        </div>
+                      </div>
+                    </form>
+                  </div>
                 </div>
 
                 <div className="rounded-[18px] border border-white/[0.08] bg-[#090B13]/70 p-5">
@@ -641,11 +1217,89 @@ export default function AIStudioPage() {
             </div>
           </section>
 
+          <section className="grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
+            <div className="rounded-[18px] border border-white/[0.08] bg-[#151A2E]/70 p-5 shadow-[0_18px_60px_rgba(0,0,0,0.24)]">
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <div className="inline-flex items-center gap-2 rounded-full border border-[#4F9DFF]/20 bg-[#4F9DFF]/10 px-3 py-1 text-xs text-[#BFC6D4]">
+                    <Sparkles className="h-3.5 w-3.5 text-[#4F9DFF]" />
+                    Soma AI briefing
+                  </div>
+                  <h2 className="mt-4 text-2xl font-semibold tracking-tight text-white">
+                    Want me to create today's content?
+                  </h2>
+                  <p className="mt-2 max-w-2xl text-sm leading-6 text-[#BFC6D4]">
+                    Soma can turn your current idea into a post, campaign, email, or reusable asset. Add the audience when you know it; that is how the AI writes for the right people.
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  onClick={() => applyCreationIntent(CREATION_INTENTS[0])}
+                  className="rounded-2xl bg-gradient-to-br from-[#5B5FFF] via-[#8B5CF6] to-[#4F9DFF]"
+                >
+                  <Sparkles className="h-4 w-4" />
+                  Generate today's content
+                </Button>
+              </div>
+              <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                {[
+                  "No prompt engineering needed",
+                  composer.platform ? `${composer.platform} context ready` : "Choose any platform",
+                  composer.targetAudience ? "Audience supplied" : "Audience can be added",
+                  creditDashboard ? `${creditDashboard.snapshot.remainingCredits} credits available` : "Credits checked at generation",
+                ].map((item) => (
+                  <div key={item} className="rounded-2xl border border-white/[0.08] bg-white/[0.04] px-4 py-3 text-sm text-[#BFC6D4]">
+                    {item}
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="rounded-[18px] border border-white/[0.08] bg-[#090B13]/70 p-5 shadow-[0_18px_60px_rgba(0,0,0,0.24)]">
+              <p className="text-sm font-medium text-white">Contextual AI actions</p>
+              <div className="mt-4 grid gap-2">
+                {CONTEXTUAL_ACTIONS.map((action) => (
+                  <button
+                    key={action.title}
+                    type="button"
+                    onClick={() => applyContextualAction(action)}
+                    className="flex items-center justify-between rounded-2xl border border-white/[0.08] bg-white/[0.03] px-4 py-3 text-left transition hover:border-[#8B5CF6]/35 hover:bg-white/[0.06]"
+                  >
+                    <span>
+                      <span className="block text-sm font-medium text-white">{action.title}</span>
+                      <span className="mt-0.5 block text-xs text-[#7E8799]">{action.description}</span>
+                    </span>
+                    <ArrowRight className="h-4 w-4 text-[#7E8799]" />
+                  </button>
+                ))}
+              </div>
+              <div className="mt-4 border-t border-white/[0.08] pt-4">
+                <p className="text-xs font-medium uppercase tracking-wide text-[#7E8799]">Adapt for platform</p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {(selectedPlatforms.length ? selectedPlatforms : SOCIAL_PLATFORMS).map((platform) => (
+                    <button
+                      key={platform}
+                      type="button"
+                      onClick={() => {
+                        handleComposerChange("contentType", "caption");
+                        handleComposerChange("platform", formatPlatform(platform));
+                        handleComposerChange("campaignGoal", `Adapt this content for ${formatPlatform(platform)} using the platform's rules and audience expectations.`);
+                      }}
+                      className="rounded-full border border-white/[0.08] bg-white/[0.04] px-3 py-1.5 text-xs text-[#BFC6D4] transition hover:border-[#8B5CF6]/35 hover:text-white"
+                    >
+                      {formatPlatform(platform)}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </section>
+
           <section className="space-y-4">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
               <div>
-                <h2 className="text-xl font-semibold tracking-tight text-white">Explore AI tools</h2>
-                <p className="mt-1 text-sm text-[#BFC6D4]">Move from idea to asset, campaign, and execution without leaving the operating system.</p>
+                <h2 className="text-xl font-semibold tracking-tight text-white">Specialized studios</h2>
+                <p className="mt-1 text-sm text-[#BFC6D4]">Use these when the output needs a dedicated image, video, voice, publishing, or automation workspace.</p>
               </div>
               <Button type="button" variant="outline" onClick={handleRefresh} disabled={loading || refreshing || !user} className="rounded-2xl border-white/[0.08] bg-white/[0.04]">
                 {refreshing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCcw className="h-4 w-4" />}
@@ -714,7 +1368,7 @@ export default function AIStudioPage() {
 
           <div className="grid gap-4 md:grid-cols-4">
             {[
-              { label: "Prompt packs", value: data.promptLibrary.length, detail: "Reusable references for repeatable work." },
+              { label: "Reusable templates", value: data.promptLibrary.length, detail: "Starting points for repeatable work." },
               { label: "Saved artifacts", value: data.artifacts.length, detail: "Generated outputs persist for later reuse." },
               { label: "Supported modes", value: data.supportedContentTypes.length, detail: "Content shapes available today." },
               {
@@ -738,137 +1392,111 @@ export default function AIStudioPage() {
                   <div>
                     <div className="flex items-center gap-2">
                       <FileText className="h-4 w-4 text-primary" />
-                      <h2 className="text-base font-semibold">Create content</h2>
+                      <h2 className="text-base font-semibold">Advanced creation details</h2>
                     </div>
                     <p className="mt-1 text-sm text-muted-foreground">
-                      Choose a content shape and feed the studio the business context it needs.
+                      Fine-tune the guided composer when you want more control over format, tone, brand, CTA, and keywords.
                     </p>
                   </div>
-                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                    <Layers3 className="h-4 w-4" />
-                    <span>Prompt packs remain read-only references</span>
-                  </div>
+                  <Button type="button" variant="outline" onClick={() => setShowAdvancedComposer((value) => !value)}>
+                    {showAdvancedComposer ? "Hide advanced" : "Show advanced"}
+                  </Button>
                 </div>
 
-                <form className="mt-5 space-y-4" onSubmit={handleGenerate}>
-                  <div className="grid gap-4 md:grid-cols-3">
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium">Content type</label>
-                      <select
-                        aria-label="Composer content type"
-                        className={cn("h-10 w-full rounded-md border border-input bg-background px-3 text-sm")}
-                        value={composer.contentType}
-                        onChange={(event) => handleComposerChange("contentType", event.target.value as StudioContentType)}
-                      >
-                        {data.supportedContentTypes.map((type) => (
-                          <option key={type} value={type}>
-                            {formatContentType(type)}
-                          </option>
-                        ))}
-                      </select>
+                {showAdvancedComposer ? (
+                  <form className="mt-5 space-y-4" onSubmit={handleGenerate}>
+                    <div className="grid gap-4 md:grid-cols-3">
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium">Output format</label>
+                        <select
+                          aria-label="Composer content type"
+                          className={cn("h-10 w-full rounded-md border border-input bg-background px-3 text-sm")}
+                          value={composer.contentType}
+                          onChange={(event) => handleComposerChange("contentType", event.target.value as StudioContentType)}
+                        >
+                          {data.supportedContentTypes.map((type) => (
+                            <option key={type} value={type}>
+                              {formatContentType(type)}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium">Tone</label>
+                        <select
+                          aria-label="Composer tone"
+                          className={cn("h-10 w-full rounded-md border border-input bg-background px-3 text-sm")}
+                          value={composer.tone}
+                          onChange={(event) => handleComposerChange("tone", event.target.value as StudioTone)}
+                        >
+                          {TONE_OPTIONS.map((tone) => (
+                            <option key={tone} value={tone}>
+                              {tone}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium">Platform</label>
+                        <Input value={composer.platform} onChange={(event) => handleComposerChange("platform", event.target.value)} placeholder="Instagram, YouTube, email..." />
+                      </div>
                     </div>
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium">Tone</label>
-                      <select
-                        aria-label="Composer tone"
-                        className={cn("h-10 w-full rounded-md border border-input bg-background px-3 text-sm")}
-                        value={composer.tone}
-                        onChange={(event) => handleComposerChange("tone", event.target.value as StudioTone)}
-                      >
-                        {TONE_OPTIONS.map((tone) => (
-                          <option key={tone} value={tone}>
-                            {tone}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium">Platform</label>
-                      <Input value={composer.platform} onChange={(event) => handleComposerChange("platform", event.target.value)} placeholder="Instagram, YouTube, email..." />
-                    </div>
-                  </div>
 
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium">Business context</label>
-                      <Textarea
-                        rows={4}
-                        value={composer.businessContext}
-                        onChange={(event) => handleComposerChange("businessContext", event.target.value)}
-                        placeholder="Describe the offer, audience, and business goal."
-                      />
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium">Brand name</label>
+                        <Input value={composer.brandName} onChange={(event) => handleComposerChange("brandName", event.target.value)} placeholder="Soma Digital Community" />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium">Brand voice</label>
+                        <Input value={composer.brandVoice} onChange={(event) => handleComposerChange("brandVoice", event.target.value)} placeholder="Premium, direct, helpful..." />
+                      </div>
                     </div>
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium">Target audience</label>
-                      <Textarea
-                        rows={4}
-                        value={composer.targetAudience}
-                        onChange={(event) => handleComposerChange("targetAudience", event.target.value)}
-                        placeholder="Who this is for and what matters to them."
-                      />
-                    </div>
-                  </div>
 
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium">Brand name</label>
-                      <Input value={composer.brandName} onChange={(event) => handleComposerChange("brandName", event.target.value)} placeholder="Soma Digital Community" />
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium">Call to action</label>
+                        <Input value={composer.callToAction} onChange={(event) => handleComposerChange("callToAction", event.target.value)} placeholder="Book a call, buy now, subscribe..." />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium">Keywords</label>
+                        <Input value={composer.keywords} onChange={(event) => handleComposerChange("keywords", event.target.value)} placeholder="Founder, AI, content, growth" />
+                      </div>
                     </div>
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium">Brand voice</label>
-                      <Input value={composer.brandVoice} onChange={(event) => handleComposerChange("brandVoice", event.target.value)} placeholder="Premium, direct, helpful..." />
-                    </div>
-                  </div>
 
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium">Campaign goal</label>
-                      <Input value={composer.campaignGoal} onChange={(event) => handleComposerChange("campaignGoal", event.target.value)} placeholder="Drive signups, teach value, launch a product..." />
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium">Language</label>
+                        <Input value={composer.language} onChange={(event) => handleComposerChange("language", event.target.value)} placeholder="English" />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium">Extra notes</label>
+                        <Input value={composer.notes} onChange={(event) => handleComposerChange("notes", event.target.value)} placeholder="Brand rules, examples, or constraints." />
+                      </div>
                     </div>
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium">Call to action</label>
-                      <Input value={composer.callToAction} onChange={(event) => handleComposerChange("callToAction", event.target.value)} placeholder="Book a call, buy now, subscribe..." />
-                    </div>
-                  </div>
 
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium">Keywords</label>
-                      <Input value={composer.keywords} onChange={(event) => handleComposerChange("keywords", event.target.value)} placeholder="Founder, AI, content, growth" />
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Button type="submit" disabled={generating || loading || isCreditBlocked}>
+                        {generating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+                        {isCreditBlocked ? "Add credits to generate" : "Generate with details"}
+                      </Button>
+                      <Button type="button" variant="outline" onClick={() => setComposer(DEFAULT_COMPOSER_STATE)} disabled={generating}>
+                        Reset details
+                      </Button>
                     </div>
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium">Language</label>
-                      <Input value={composer.language} onChange={(event) => handleComposerChange("language", event.target.value)} placeholder="English" />
-                    </div>
+                  </form>
+                ) : (
+                  <div className="mt-5 rounded-2xl border border-dashed border-white/[0.08] bg-white/[0.03] p-5 text-sm leading-6 text-muted-foreground">
+                    Advanced details are hidden to keep creation simple. Use the guided composer above for most work, or open this panel when you need exact tone, CTA, brand voice, keywords, or language control.
                   </div>
-
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">Notes</label>
-                    <Textarea
-                      rows={3}
-                      value={composer.notes}
-                      onChange={(event) => handleComposerChange("notes", event.target.value)}
-                      placeholder="Any extra instructions, brand rules, or context."
-                    />
-                  </div>
-
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Button type="submit" disabled={generating || loading}>
-                      {generating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-                      Generate content
-                    </Button>
-                    <Button type="button" variant="outline" onClick={() => setComposer(DEFAULT_COMPOSER_STATE)} disabled={generating}>
-                      Reset
-                    </Button>
-                  </div>
-                </form>
+                )}
               </GlassCard>
 
               <GlassCard className="p-5">
                 <div className="flex items-center justify-between gap-3">
                   <div className="flex items-center gap-2">
                     <LibraryBig className="h-4 w-4 text-primary" />
-                    <h2 className="text-base font-semibold">Prompt library</h2>
+                    <h2 className="text-base font-semibold">Reusable templates</h2>
                   </div>
                   <div className="flex items-center gap-2">
                     <div className="relative">
@@ -876,12 +1504,12 @@ export default function AIStudioPage() {
                       <Input
                         value={search}
                         onChange={(event) => setSearch(event.target.value)}
-                        placeholder="Search packs"
+                        placeholder="Search templates"
                         className="pl-9"
                       />
                     </div>
                     <select
-                      aria-label="Prompt library content type filter"
+                      aria-label="Reusable templates content type filter"
                       className={cn("h-10 rounded-md border border-input bg-background px-3 text-sm")}
                       value={typeFilter}
                       onChange={(event) => setTypeFilter(event.target.value as StudioContentType | "all")}
@@ -916,12 +1544,8 @@ export default function AIStudioPage() {
                         </div>
 
                         <div className="flex flex-wrap gap-2 md:justify-end">
-                          <Button type="button" variant="outline" size="sm" onClick={() => navigator.clipboard.writeText(entry.title)}>
-                            <ClipboardCopy className="h-4 w-4" />
-                            Copy title
-                          </Button>
                           <Button type="button" size="sm" onClick={() => handleUsePack(entry)}>
-                            Use in studio
+                            Start from this
                             <ArrowRight className="h-4 w-4" />
                           </Button>
                         </div>
@@ -945,7 +1569,7 @@ export default function AIStudioPage() {
 
                   {!loading && filteredPrompts.length === 0 ? (
                     <div className="rounded-md border border-dashed border-border p-6 text-sm text-muted-foreground">
-                      No prompt packs match this search yet.
+                      No reusable templates match this search yet.
                     </div>
                   ) : null}
                 </div>
@@ -953,38 +1577,215 @@ export default function AIStudioPage() {
             </section>
 
             <aside className="space-y-6">
-              <GlassCard className="p-5">
-                <div className="flex items-center gap-2">
-                  <Sparkles className="h-4 w-4 text-primary" />
-                  <h2 className="text-sm font-semibold uppercase tracking-wide">Generation preview</h2>
+              <GlassCard className="p-5 lg:sticky lg:top-24">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="flex items-center gap-2">
+                    <Sparkles className="h-4 w-4 text-primary" />
+                    <h2 className="text-sm font-semibold uppercase tracking-wide">Output workspace</h2>
+                  </div>
+                  <Badge variant="outline" className="w-fit rounded-full border-[#4F9DFF]/25 bg-[#4F9DFF]/10 text-[#BFC6D4]">
+                    Gateway enforced
+                  </Badge>
                 </div>
                 {latestGeneration ? (
                   <div className="mt-4 space-y-4">
-                    <div className="rounded-md border border-border p-4">
+                    <div className="rounded-[18px] border border-white/[0.08] bg-[#090B13]/70 p-4 shadow-[0_18px_60px_rgba(0,0,0,0.22)]">
                       <div className="flex items-start justify-between gap-3">
                         <div>
-                          <p className="text-xs uppercase tracking-wide text-muted-foreground">{formatContentType(latestGeneration.contentType)}</p>
+                          <p className="text-xs uppercase tracking-wide text-[#7E8799]">{formatContentType(latestGeneration.contentType)}</p>
                           <h3 className="mt-1 text-lg font-semibold">{latestGeneration.title}</h3>
-                          <p className="mt-1 text-sm text-muted-foreground">{latestGeneration.summary}</p>
+                          <p className="mt-1 text-sm leading-6 text-[#BFC6D4]">{latestGeneration.summary}</p>
                         </div>
-                        <Badge variant="outline" className="rounded-md">
-                          {latestGeneration.promptVersion}
-                        </Badge>
+                        <div className="flex flex-wrap justify-end gap-2">
+                          <Badge variant="outline" className="rounded-full border-white/[0.08] bg-white/[0.04]">
+                            {latestGenerationCostLabel}
+                          </Badge>
+                          <Badge variant="outline" className="rounded-full border-white/[0.08] bg-white/[0.04]">
+                            {latestGeneration.metadata?.saved === false ? "Not saved" : "Saved"}
+                          </Badge>
+                        </div>
                       </div>
 
-                      <div className="mt-4 rounded-md border border-border/70 bg-background/60 p-4">
-                        <pre className="whitespace-pre-wrap text-sm leading-6 text-muted-foreground">
+                      <div className="mt-4 grid gap-2 sm:grid-cols-2">
+                        {[
+                          ["Content type", formatContentType(latestGeneration.contentType)],
+                          ["Destination", selectedDestinationLabel],
+                          ["Prompt version", latestGeneration.promptVersion],
+                          ["Provider", `${latestGeneration.providerId} · ${latestGeneration.modelId}`],
+                        ].map(([label, value]) => (
+                          <div key={label} className="rounded-2xl border border-white/[0.08] bg-white/[0.03] px-3 py-2">
+                            <p className="text-[11px] uppercase tracking-wide text-[#7E8799]">{label}</p>
+                            <p className="mt-1 truncate text-sm text-white">{value}</p>
+                          </div>
+                        ))}
+                      </div>
+
+                      <div className="mt-4 rounded-2xl border border-white/[0.08] bg-[#111827]/70 p-4">
+                        <pre className="whitespace-pre-wrap text-sm leading-6 text-[#DDE4F0]">
                           {latestGeneration.generatedContent}
                         </pre>
                       </div>
+
+                      <div className="mt-4 grid gap-2 sm:grid-cols-2">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="justify-start rounded-xl border-white/[0.08] bg-white/[0.04]"
+                          onClick={() => {
+                            setComposer((current) => ({
+                              ...current,
+                              contentType: latestGeneration.contentType,
+                              businessContext: latestGeneration.generatedContent,
+                              campaignGoal: "Edit and improve this generated draft.",
+                            }));
+                            setShowAdvancedComposer(true);
+                          }}
+                        >
+                          <Edit3 className="h-4 w-4" />
+                          Edit
+                        </Button>
+                        <Button type="button" variant="outline" size="sm" className="justify-start rounded-xl border-white/[0.08] bg-white/[0.04]" onClick={() => navigator.clipboard.writeText(latestGeneration.generatedContent)}>
+                          <Copy className="h-4 w-4" />
+                          Copy
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="justify-start rounded-xl border-white/[0.08] bg-white/[0.04]"
+                          onClick={() => toast({ title: "Saved", description: "This output is stored in your Studio history." })}
+                        >
+                          <Save className="h-4 w-4" />
+                          Save
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="justify-start rounded-xl border-white/[0.08] bg-white/[0.04]"
+                          onClick={() => {
+                            setComposer((current) => ({
+                              ...current,
+                              businessContext: latestGeneration.generatedContent,
+                              campaignGoal: "Regenerate this with stronger clarity, structure, and audience fit.",
+                            }));
+                          }}
+                        >
+                          <Repeat2 className="h-4 w-4" />
+                          Regenerate
+                        </Button>
+                        <Button asChild size="sm" className="justify-start rounded-xl bg-gradient-to-br from-[#5B5FFF] via-[#8B5CF6] to-[#4F9DFF]">
+                          <Link
+                            href={`/social/calendar?${new URLSearchParams({
+                              mode: "scheduler",
+                              source: "ai-studio",
+                              platform: selectedPlatforms[0] || composer.platform || "",
+                              caption: latestGeneration.generatedContent.slice(0, 900),
+                              contentType: toSchedulerContentType(latestGeneration.contentType),
+                            }).toString()}`}
+                          >
+                            <Send className="h-4 w-4" />
+                            Send to Scheduler
+                          </Link>
+                        </Button>
+                        <Button asChild variant="outline" size="sm" className="justify-start rounded-xl border-white/[0.08] bg-white/[0.04]">
+                          <Link href={`/ai/image-studio?${new URLSearchParams({
+                            source: "ai-studio",
+                            prompt: latestGeneration.summary || latestGeneration.title,
+                            title: latestGeneration.title,
+                          }).toString()}`}>
+                            <ImagePlus className="h-4 w-4" />
+                            Turn into image
+                          </Link>
+                        </Button>
+                        <Button asChild variant="outline" size="sm" className="justify-start rounded-xl border-white/[0.08] bg-white/[0.04]">
+                          <Link href={`/ai/video-studio?${new URLSearchParams({
+                            source: "ai-studio",
+                            prompt: latestGeneration.generatedContent.slice(0, 900),
+                            title: latestGeneration.title,
+                          }).toString()}`}>
+                            <Video className="h-4 w-4" />
+                            Turn into video
+                          </Link>
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="justify-start rounded-xl border-white/[0.08] bg-white/[0.04]"
+                          onClick={() => {
+                            setComposer((current) => ({
+                              ...current,
+                              contentType: "email",
+                              businessContext: latestGeneration.generatedContent,
+                              campaignGoal: "Turn this content into a campaign email.",
+                            }));
+                          }}
+                        >
+                          <MailPlus className="h-4 w-4" />
+                          Create email
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="justify-start rounded-xl border-white/[0.08] bg-white/[0.04]"
+                          onClick={() => {
+                            setComposer((current) => ({
+                              ...current,
+                              contentType: "marketing_planner",
+                              businessContext: latestGeneration.generatedContent,
+                              campaignGoal: "Add this asset to a larger campaign plan.",
+                            }));
+                          }}
+                        >
+                          <FolderPlus className="h-4 w-4" />
+                          Add to campaign
+                        </Button>
+                      </div>
                     </div>
+
+                    {(selectedPlatforms.length > 0 || selectedSocialAccounts.length > 0) ? (
+                      <div className="space-y-2">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Platform previews</p>
+                        <div className="grid gap-2">
+                          {(selectedSocialAccounts.length
+                            ? selectedSocialAccounts
+                            : selectedPlatforms.map((platform) => ({
+                                socialAccountId: platform,
+                                providerId: platform,
+                                accountName: `${formatPlatform(platform)} draft`,
+                                handle: undefined,
+                              } as SocialAccountRecord))
+                          ).map((account) => (
+                            <div key={account.socialAccountId} className="rounded-2xl border border-white/[0.08] bg-white/[0.03] p-3">
+                              <div className="flex items-start justify-between gap-3">
+                                <div>
+                                  <p className="text-sm font-medium text-white">
+                                    {formatPlatform(account.providerId)} · {formatAccountHandle(account)}
+                                  </p>
+                                  <p className="mt-1 text-xs text-[#7E8799]">{platformRuleSummary(account.providerId)}</p>
+                                </div>
+                                <Badge variant="outline" className="rounded-full border-white/[0.08] bg-white/[0.04]">
+                                  {account.status === "connected" ? "Connected" : "Draft"}
+                                </Badge>
+                              </div>
+                              <p className="mt-3 line-clamp-4 text-sm leading-6 text-[#BFC6D4]">
+                                {latestGeneration.generatedContent}
+                              </p>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
 
                     {latestGeneration.strategicTips?.length ? (
                       <div className="space-y-2">
                         <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Strategic tips</p>
                         <div className="grid gap-2">
                           {latestGeneration.strategicTips.map((tip) => (
-                            <div key={tip} className="rounded-md border border-border/70 bg-background/40 px-3 py-2 text-sm text-muted-foreground">
+                            <div key={tip} className="rounded-2xl border border-white/[0.08] bg-white/[0.03] px-3 py-2 text-sm text-[#BFC6D4]">
                               {tip}
                             </div>
                           ))}
@@ -997,8 +1798,22 @@ export default function AIStudioPage() {
                         <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Variants</p>
                         <div className="grid gap-2">
                           {latestGeneration.variants.map((variant) => (
-                            <div key={variant} className="rounded-md border border-border/70 bg-background/40 px-3 py-2 text-sm text-muted-foreground">
+                            <div key={variant} className="rounded-2xl border border-white/[0.08] bg-white/[0.03] px-3 py-2 text-sm text-[#BFC6D4]">
                               {variant}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
+
+                    {latestGeneration.sections?.length ? (
+                      <div className="space-y-2">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Structured sections</p>
+                        <div className="grid gap-2">
+                          {latestGeneration.sections.map((section) => (
+                            <div key={`${section.heading}-${section.body.slice(0, 20)}`} className="rounded-2xl border border-white/[0.08] bg-white/[0.03] p-3">
+                              <p className="text-sm font-medium text-white">{section.heading}</p>
+                              <p className="mt-1 text-sm leading-6 text-[#BFC6D4]">{section.body}</p>
                             </div>
                           ))}
                         </div>
@@ -1006,8 +1821,11 @@ export default function AIStudioPage() {
                     ) : null}
                   </div>
                 ) : (
-                  <div className="mt-4 rounded-md border border-dashed border-border p-6 text-sm text-muted-foreground">
-                    Generate something from the studio form and the output will render here.
+                  <div className="mt-4 rounded-[18px] border border-dashed border-white/[0.1] bg-[#090B13]/60 p-6 text-sm leading-6 text-[#BFC6D4]">
+                    <p className="font-medium text-white">Your generated asset will appear here.</p>
+                    <p className="mt-2">
+                      You will see the result, content type, platform context, credit cost, prompt version, saved status, and the next workflow actions.
+                    </p>
                   </div>
                 )}
               </GlassCard>

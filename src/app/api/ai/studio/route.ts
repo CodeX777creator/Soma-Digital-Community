@@ -41,15 +41,15 @@ const handler = createAPIHandler(
       return apiError(businessContextError, { status: 400, code: 'INVALID_INPUT' });
     }
 
-    const targetAudienceError = validateTextField(body.targetAudience, 'targetAudience', 2000);
-    if (targetAudienceError) {
-      return apiError(targetAudienceError, { status: 400, code: 'INVALID_INPUT' });
-    }
+    const targetAudience =
+      typeof body.targetAudience === 'string' && body.targetAudience.trim()
+        ? sanitizeString(body.targetAudience, 2000)
+        : 'digital entrepreneurs, creators, and online business owners';
 
     const generated = await generateStudioContent({
       contentType: resolveStudioContentType(String(body.contentType)),
       businessContext: sanitizeString(body.businessContext, 4000),
-      targetAudience: sanitizeString(body.targetAudience, 2000),
+      targetAudience,
       tone: typeof body.tone === 'string' ? body.tone : undefined,
       platform: typeof body.platform === 'string' ? body.platform : undefined,
       brandName: typeof body.brandName === 'string' ? body.brandName : undefined,

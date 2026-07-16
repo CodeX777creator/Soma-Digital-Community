@@ -186,6 +186,14 @@ async function generateStudioContentInternal(
       });
       return {
         ...cachedOutput,
+        metadata: {
+          ...cachedOutput.metadata,
+          cacheHit: true,
+          saved: true,
+          creditsCharged: 0,
+          creditsWouldHaveCharged: cachedCreditPolicy.credits,
+          promptVersion: cachedPromptVersion,
+        },
         providerId: cachedModel.includes('moonshot') ? 'moonshot' : 'vercel-ai-gateway',
         modelId: cachedModel,
         durationMs: Date.now() - startedAt,
@@ -294,6 +302,14 @@ async function generateStudioContentInternal(
 
   return {
     ...normalized,
+    metadata: {
+      ...normalized.metadata,
+      cacheHit: false,
+      saved: Boolean(options.userId || input.userId),
+      creditsCharged: creditPolicy.credits,
+      promptVersion,
+      promptKey: prompt.metadata.template,
+    },
     providerId: result.plan.providerId,
     modelId: result.plan.modelId,
     durationMs: result.durationMs,
