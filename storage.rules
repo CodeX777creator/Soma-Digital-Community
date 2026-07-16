@@ -149,6 +149,66 @@ service firebase.storage {
       allow delete: if isAdminOrContentManager() || (isAuthed() && request.auth.uid == userId);
     }
 
+    match /academy/courses/{courseId}/{folder}/{filename} {
+      allow read: if isAuthed();
+      allow write, delete: if isAdminOrContentManager()
+        && request.resource != null
+        && folder in ['thumbnail', 'promo']
+        && request.resource.metadata.courseId == courseId
+        && request.resource.size <= (folder == 'thumbnail' ? 10 * 1024 * 1024 : 500 * 1024 * 1024)
+        && (
+          (folder == 'thumbnail' && request.resource.contentType.matches('image/.*'))
+          || (folder == 'promo' && request.resource.contentType.matches('video/.*'))
+        )
+        && isSafeFilename(filename);
+    }
+
+    match /academy/courses/{courseId}/lessons/{lessonId}/{kind}/{filename} {
+      allow read: if isAuthed();
+      allow write, delete: if isAdminOrContentManager()
+        && request.resource != null
+        && kind in ['videos', 'images']
+        && request.resource.metadata.courseId == courseId
+        && request.resource.size <= (kind == 'images' ? 10 * 1024 * 1024 : 500 * 1024 * 1024)
+        && (
+          (kind == 'images' && request.resource.contentType.matches('image/.*'))
+          || (kind == 'videos' && request.resource.contentType.matches('video/.*'))
+        )
+        && isSafeFilename(filename);
+    }
+
+    match /academy/courses/{courseId}/live-sessions/{kind}/{filename} {
+      allow read: if isAuthed();
+      allow write, delete: if isAdminOrContentManager()
+        && request.resource != null
+        && kind in ['replays', 'materials']
+        && request.resource.metadata.courseId == courseId
+        && request.resource.size <= (kind == 'materials' ? 50 * 1024 * 1024 : 500 * 1024 * 1024)
+        && (
+          (kind == 'replays' && request.resource.contentType.matches('video/.*'))
+          || (kind == 'materials' && (
+            request.resource.contentType.matches('image/.*')
+            || request.resource.contentType in [
+              'application/pdf',
+              'application/zip',
+              'application/x-zip-compressed',
+              'text/markdown',
+              'text/plain'
+            ]
+          ))
+        )
+        && isSafeFilename(filename);
+    }
+
+    match /academy/certificates/{certificateId}/{filename} {
+      allow read: if isAuthed();
+      allow write, delete: if isAdminOrContentManager()
+        && request.resource != null
+        && request.resource.size <= 10 * 1024 * 1024
+        && request.resource.contentType == 'application/pdf'
+        && isSafeFilename(filename);
+    }
+
     match /academy/{allPaths=**} {
       allow read: if isAuthed();
       allow write, delete: if isAdminOrContentManager()

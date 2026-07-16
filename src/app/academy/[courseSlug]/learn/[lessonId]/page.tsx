@@ -8,7 +8,7 @@ import { ArrowLeft, BookOpen, Bot, CheckCircle2, Image as ImageIcon, Loader2, Me
 import { AppLayout } from "@/components/layout/AppLayout";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import { auth, storage } from "@/lib/firebase";
-import type { AcademyActivityDoc, AcademyCourseDoc, AcademyEnrollmentDoc, AcademyLessonDoc, AcademyProgressDoc, AcademyTopicDoc } from "@/academy";
+import type { AcademyActivityDoc, AcademyCourseDoc, AcademyDiscussionReplyDoc, AcademyEnrollmentDoc, AcademyLessonDiscussionDoc, AcademyLessonDoc, AcademyProgressDoc, AcademyTopicDoc, AcademyTutorMessageDoc } from "@/academy";
 
 type Bundle = {
   course: AcademyCourseDoc;
@@ -21,6 +21,7 @@ type Bundle = {
 
 type ActivityResponse = string | string[];
 type ActivityAttachment = { name: string; url: string; storagePath?: string; mimeType?: string };
+type DiscussionThread = AcademyLessonDiscussionDoc & { replies?: AcademyDiscussionReplyDoc[] };
 
 async function academyFetch(path: string, options: RequestInit = {}) {
   const token = await auth?.currentUser?.getIdToken();
@@ -46,6 +47,9 @@ export default function AcademyLessonPage() {
   const [activitySaving, setActivitySaving] = useState<string | null>(null);
   const [discussionBody, setDiscussionBody] = useState("");
   const [tutorPrompt, setTutorPrompt] = useState("");
+  const [discussions, setDiscussions] = useState<DiscussionThread[]>([]);
+  const [tutorMessages, setTutorMessages] = useState<AcademyTutorMessageDoc[]>([]);
+  const [replyBodies, setReplyBodies] = useState<Record<string, string>>({});
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [activityResponses, setActivityResponses] = useState<Record<string, ActivityResponse>>({});
@@ -64,6 +68,21 @@ export default function AcademyLessonPage() {
   };
 
   useEffect(() => { void load(); }, [courseSlug]);
+
+  const loadInteractions = async () => {
+    try {
+      const [discussionPayload, tutorPayload] = await Promise.all([
+        academyFetch(`/api/academy/${courseSlug}/lessons/${lessonId}/discussions`),
+        academyFetch(`/api/academy/${courseSlug}/lessons/${lessonId}/tutor`),
+      ]);
+      setDiscussions(discussionPayload.discussions || []);
+      setTutorMessages(tutorPayload.messages || []);
+    } catch {
+      // Lesson content should remain usable even if collaboration surfaces are temporarily unavailable.
+    }
+  };
+
+  useEffect(() => { void loadInteractions(); }, [courseSlug, lessonId]);
 
   const lesson = bundle?.lessons.find((item) => item.lessonId === lessonId) || null;
   const topic = lesson ? bundle?.topics.find((item) => item.topicId === lesson.topicId) : null;
@@ -153,23 +172,52 @@ export default function AcademyLessonPage() {
       });
       setDiscussionBody("");
       setMessage("Discussion posted.");
+      await loadInteractions();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to post discussion.");
     }
   };
 
-  const askTutor = async () => {
-    if (!tutorPrompt.trim()) return;
+  const askTutor = async (prompt = tutorPrompt) => {
+    if (!prompt.trim()) return;
     try {
       setMessage("");
       await academyFetch(`/api/academy/${courseSlug}/lessons/${lessonId}/tutor`, {
         method: "POST",
-        body: JSON.stringify({ topicId: lesson?.topicId, content: tutorPrompt }),
+        body: JSON.stringify({ topicId: lesson?.topicId, content: prompt }),
       });
       setTutorPrompt("");
-      setMessage("Tutor question saved.");
+      setMessage("Tutor answered.");
+      await loadInteractions();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to ask tutor.");
+    }
+  };
+
+  const postReply = async (discussionId: string) => {
+    const body = replyBodies[discussionId]?.trim();
+    if (!body) return;
+    try {
+      await academyFetch(`/api/academy/${courseSlug}/discussions/${discussionId}/replies`, {
+        method: "POST",
+        body: JSON.stringify({ lessonId, body }),
+      });
+      setReplyBodies((current) => ({ ...current, [discussionId]: "" }));
+      await loadInteractions();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to post reply.");
+    }
+  };
+
+  const reactToDiscussion = async (discussionId: string, reactionType: "helpful" | "report", replyId?: string) => {
+    try {
+      await academyFetch(`/api/academy/${courseSlug}/discussions/${discussionId}/reactions`, {
+        method: "POST",
+        body: JSON.stringify({ lessonId, replyId: replyId || null, reactionType }),
+      });
+      await loadInteractions();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to update discussion.");
     }
   };
 
@@ -279,8 +327,23 @@ export default function AcademyLessonPage() {
               <Bot className="h-5 w-5 text-[#4F9DFF]" />
               <h3 className="mt-4 font-semibold text-white">AI Tutor</h3>
               <p className="mt-2 text-sm leading-6 text-[#BFC6D4]">Ask for examples, summaries, explanations, or help applying the lesson.</p>
+              <div className="mt-4 flex flex-wrap gap-2">
+                {["Explain this lesson", "Give me an example", "Quiz me", "Summarize key points", "Help me complete the activity", "Give me a practical business example"].map((prompt) => (
+                  <button key={prompt} onClick={() => askTutor(prompt)} className="rounded-full border border-white/[0.08] bg-white/[0.04] px-3 py-1.5 text-xs text-white/70 hover:bg-white/[0.08]">{prompt}</button>
+                ))}
+              </div>
+              {tutorMessages.length ? (
+                <div className="mt-4 max-h-72 space-y-3 overflow-y-auto pr-1">
+                  {tutorMessages.map((item) => (
+                    <div key={item.tutorMessageId} className={`rounded-[16px] border border-white/[0.08] p-3 text-sm leading-6 ${item.role === "assistant" ? "bg-cyan-400/10 text-cyan-50" : "bg-black/20 text-[#D8DEEA]"}`}>
+                      <p className="mb-1 text-[10px] uppercase tracking-[0.16em] text-white/40">{item.role === "assistant" ? "Soma Tutor" : "You"}</p>
+                      {item.content}
+                    </div>
+                  ))}
+                </div>
+              ) : null}
               <textarea value={tutorPrompt} onChange={(event) => setTutorPrompt(event.target.value)} rows={3} placeholder="Ask about this lesson..." className="mt-4 w-full rounded-[14px] border border-white/[0.08] bg-black/20 p-3 text-sm text-white outline-none focus:border-[#5B5FFF]/60" />
-              <button onClick={askTutor} disabled={!tutorPrompt.trim()} className="mt-3 h-10 rounded-[14px] border border-white/[0.08] bg-white/[0.04] px-4 text-sm text-white/75 hover:bg-white/[0.08] disabled:text-white/35">Ask Tutor</button>
+              <button onClick={() => askTutor()} disabled={!tutorPrompt.trim()} className="mt-3 h-10 rounded-[14px] border border-white/[0.08] bg-white/[0.04] px-4 text-sm text-white/75 hover:bg-white/[0.08] disabled:text-white/35">Ask Tutor</button>
             </section>
             <section className="rounded-[20px] border border-white/[0.08] bg-[#151A2E]/72 p-5">
               <MessageSquare className="h-5 w-5 text-[#4F9DFF]" />
@@ -288,6 +351,38 @@ export default function AcademyLessonPage() {
               <p className="mt-2 text-sm leading-6 text-[#BFC6D4]">Ask questions and learn with other students.</p>
               <textarea value={discussionBody} onChange={(event) => setDiscussionBody(event.target.value)} rows={3} placeholder="Share a question or reflection..." className="mt-4 w-full rounded-[14px] border border-white/[0.08] bg-black/20 p-3 text-sm text-white outline-none focus:border-[#5B5FFF]/60" />
               <button onClick={postDiscussion} disabled={!discussionBody.trim()} className="mt-3 h-10 rounded-[14px] border border-white/[0.08] bg-white/[0.04] px-4 text-sm text-white/75 hover:bg-white/[0.08] disabled:text-white/35">Post Discussion</button>
+              <div className="mt-5 space-y-4">
+                {discussions.length ? discussions.map((discussion) => (
+                  <div key={discussion.discussionId} className="rounded-[16px] border border-white/[0.08] bg-black/20 p-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <p className="text-sm leading-6 text-[#D8DEEA]">{discussion.body}</p>
+                      {discussion.pinned ? <span className="rounded-full border border-[#8B5CF6]/20 bg-[#8B5CF6]/10 px-2 py-1 text-[10px] text-violet-100">Pinned</span> : null}
+                    </div>
+                    <div className="mt-3 flex gap-2">
+                      <button onClick={() => reactToDiscussion(discussion.discussionId, "helpful")} className="text-xs text-cyan-100 hover:text-white">Helpful {discussion.helpfulCount || 0}</button>
+                      <button onClick={() => reactToDiscussion(discussion.discussionId, "report")} className="text-xs text-white/35 hover:text-amber-100">Report</button>
+                    </div>
+                    {discussion.replies?.length ? (
+                      <div className="mt-3 space-y-2 border-l border-white/10 pl-3">
+                        {discussion.replies.map((reply) => (
+                          <div key={reply.replyId} className="rounded-[12px] bg-white/[0.03] p-2 text-xs leading-5 text-[#BFC6D4]">
+                            {reply.pinned ? <span className="mb-1 block text-[10px] uppercase tracking-[0.14em] text-violet-100">Instructor pinned</span> : null}
+                            {reply.body}
+                            <div className="mt-2 flex gap-2">
+                              <button onClick={() => reactToDiscussion(discussion.discussionId, "helpful", reply.replyId)} className="text-[11px] text-cyan-100 hover:text-white">Helpful {reply.helpfulCount || 0}</button>
+                              <button onClick={() => reactToDiscussion(discussion.discussionId, "report", reply.replyId)} className="text-[11px] text-white/35 hover:text-amber-100">Report</button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : null}
+                    <div className="mt-3 flex gap-2">
+                      <input value={replyBodies[discussion.discussionId] || ""} onChange={(event) => setReplyBodies((current) => ({ ...current, [discussion.discussionId]: event.target.value }))} placeholder="Reply..." className="min-w-0 flex-1 rounded-[12px] border border-white/[0.08] bg-black/20 px-3 py-2 text-xs text-white outline-none focus:border-[#5B5FFF]/60" />
+                      <button onClick={() => postReply(discussion.discussionId)} disabled={!replyBodies[discussion.discussionId]?.trim()} className="rounded-[12px] border border-white/[0.08] bg-white/[0.04] px-3 text-xs text-white/70 disabled:text-white/30">Reply</button>
+                    </div>
+                  </div>
+                )) : <p className="rounded-[14px] border border-dashed border-white/[0.08] p-3 text-xs text-white/45">No lesson discussion yet. Start the first thread.</p>}
+              </div>
             </section>
             <ToolCard icon={GraduationIcon} title="Certification Path" description={`${bundle.enrollment?.progressPercent || 0}% complete. Finish topics, quizzes, and final exam to earn your certificate.`} action="View Progress" />
           </aside>

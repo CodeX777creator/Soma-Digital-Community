@@ -59,6 +59,21 @@ service cloud.firestore {
           )
         );
     }
+    function academyEnrollmentId(courseId) {
+      return request.auth.uid + '_' + courseId;
+    }
+    function isAcademyEnrolled(courseId) {
+      return isAuthed()
+        && exists(/databases/$(database)/documents/academyEnrollments/$(academyEnrollmentId(courseId)))
+        && get(/databases/$(database)/documents/academyEnrollments/$(academyEnrollmentId(courseId))).data.status in ['active', 'completed'];
+    }
+    function isPublishedAcademyCourse(courseId) {
+      return exists(/databases/$(database)/documents/academyCourses/$(courseId))
+        && get(/databases/$(database)/documents/academyCourses/$(courseId)).data.status == 'published';
+    }
+    function canReadAcademyContent(courseId) {
+      return isAdmin() || (isPublishedAcademyCourse(courseId) && isAcademyEnrolled(courseId));
+    }
 
     // String validation helpers
     function isValidString(value, maxLength) {
@@ -508,17 +523,17 @@ service cloud.firestore {
     }
 
     match /academyTopics/{topicId} {
-      allow read: if isAdmin() || isAuthed();
+      allow read: if canReadAcademyContent(resource.data.courseId);
       allow write: if false;
     }
 
     match /academyLessons/{lessonId} {
-      allow read: if isAdmin() || isAuthed();
+      allow read: if canReadAcademyContent(resource.data.courseId);
       allow write: if false;
     }
 
     match /academyActivities/{activityId} {
-      allow read: if isAdmin() || isAuthed();
+      allow read: if canReadAcademyContent(resource.data.courseId);
       allow write: if false;
     }
 
@@ -528,7 +543,7 @@ service cloud.firestore {
     }
 
     match /academyQuizzes/{quizId} {
-      allow read: if isAdmin() || isAuthed();
+      allow read: if canReadAcademyContent(resource.data.courseId);
       allow write: if false;
     }
 
@@ -563,32 +578,42 @@ service cloud.firestore {
     }
 
     match /academyRecommendations/{recommendationId} {
-      allow read: if isAdmin() || isAuthed();
+      allow read: if isAdmin() || (isAuthed() && isPublishedAcademyCourse(resource.data.courseId));
       allow write: if false;
     }
 
     match /academyCohorts/{cohortId} {
-      allow read: if isAdmin() || isAuthed();
+      allow read: if canReadAcademyContent(resource.data.courseId);
       allow write: if false;
     }
 
     match /academyLiveSessions/{sessionId} {
-      allow read: if isAdmin() || isAuthed();
+      allow read: if canReadAcademyContent(resource.data.courseId);
       allow write: if false;
     }
 
+    match /academySessionAttendance/{attendanceId} {
+      allow read: if isAdmin() || (isAuthed() && resource.data.userId == request.auth.uid);
+      allow write: if false;
+    }
+  
     match /academyLessonDiscussions/{discussionId} {
-      allow read: if isAdmin() || isAuthed();
+      allow read: if canReadAcademyContent(resource.data.courseId);
       allow write: if false;
     }
 
     match /academyDiscussionReplies/{replyId} {
-      allow read: if isAdmin() || isAuthed();
+      allow read: if canReadAcademyContent(resource.data.courseId);
+      allow write: if false;
+    }
+
+    match /academyDiscussionReactions/{reactionId} {
+      allow read: if isAdmin() || (isAuthed() && resource.data.userId == request.auth.uid);
       allow write: if false;
     }
 
     match /academyDripSchedules/{scheduleId} {
-      allow read: if isAdmin() || isAuthed();
+      allow read: if canReadAcademyContent(resource.data.courseId);
       allow write: if false;
     }
 
@@ -598,6 +623,11 @@ service cloud.firestore {
     }
 
     match /academyTutorMessages/{messageId} {
+      allow read: if isAdmin() || (isAuthed() && resource.data.userId == request.auth.uid);
+      allow write: if false;
+    }
+
+    match /academyTutorSessions/{sessionId} {
       allow read: if isAdmin() || (isAuthed() && resource.data.userId == request.auth.uid);
       allow write: if false;
     }

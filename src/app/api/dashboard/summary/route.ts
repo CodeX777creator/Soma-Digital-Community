@@ -4,6 +4,7 @@ import { logger } from '@/lib/logger';
 import { requireUserEntitlements } from '@/lib/serverAuth';
 import { getSubscriptionPlan } from '@/lib/entitlements';
 import { listEvents } from '@/events';
+import { getAcademyDashboardIntegration } from '@/academy';
 
 type ProgressStep = {
   id: string;
@@ -74,6 +75,7 @@ export async function GET(req: NextRequest) {
       socialAccountCount,
       currentMonthEvents,
       nextMonthEvents,
+      academy,
     ] = await Promise.all([
       adminDb.collection('users').doc(uid).collection('roadmaps').limit(1).get(),
       safeSize(adminDb.collection('posts').where('authorId', '==', uid).limit(1)),
@@ -104,6 +106,10 @@ export async function GET(req: NextRequest) {
       ).catch((error) => {
         logger.warn('[API /dashboard/summary] Next month events query failed', { error: error instanceof Error ? error.message : String(error) });
         return [];
+      }),
+      getAcademyDashboardIntegration(uid).catch((error) => {
+        logger.warn('[API /dashboard/summary] Academy integration query failed', { error: error instanceof Error ? error.message : String(error) });
+        return null;
       }),
     ]);
 
@@ -233,6 +239,7 @@ export async function GET(req: NextRequest) {
             ? 'Add scheduled posts to activate your publishing workflow.'
             : 'Connect a social account before enabling publishing workflows.',
       },
+      academy,
       activity: {
         communityPosts: communityPostCount,
         mentorThreads: mentorThreadCount,

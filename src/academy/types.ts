@@ -14,13 +14,18 @@ export const ACADEMY_COLLECTIONS = {
   recommendations: 'academyRecommendations',
   cohorts: 'academyCohorts',
   liveSessions: 'academyLiveSessions',
+  sessionAttendance: 'academySessionAttendance',
   lessonDiscussions: 'academyLessonDiscussions',
   discussionReplies: 'academyDiscussionReplies',
+  discussionReactions: 'academyDiscussionReactions',
   dripSchedules: 'academyDripSchedules',
   manualReviews: 'academyManualReviews',
+  tutorSessions: 'academyTutorSessions',
   tutorMessages: 'academyTutorMessages',
   imports: 'academyImports',
 } as const;
+
+export const ACADEMY_FINAL_EXAM_TOPIC_ID = '__final_exam__';
 
 export type AcademyCollectionKey = keyof typeof ACADEMY_COLLECTIONS;
 export type AcademyCollectionName = (typeof ACADEMY_COLLECTIONS)[AcademyCollectionKey];
@@ -359,27 +364,58 @@ export interface AcademyLiveSessionDoc extends AcademyBaseDoc {
   status: AcademyLiveSessionStatus;
 }
 
+export interface AcademySessionAttendanceDoc extends AcademyBaseDoc {
+  attendanceId: string;
+  courseId: string;
+  liveSessionId: string;
+  userId: string;
+  cohortId?: string | null;
+  status: 'registered' | 'joined' | 'attended' | 'missed';
+  joinedAt?: AcademyTimestamp;
+  lastSeenAt?: AcademyTimestamp;
+  replayWatchedAt?: AcademyTimestamp;
+  metadata?: Record<string, unknown>;
+}
+
 export interface AcademyLessonDiscussionDoc extends AcademyBaseDoc {
   discussionId: string;
   courseId: string;
   topicId: string;
-  lessonId: string;
+  lessonId?: string | null;
   userId: string;
   body: string;
   pinned: boolean;
   helpfulCount: number;
+  reportCount?: number;
   status: 'active' | 'hidden' | 'reported';
+  discussionType?: 'lesson_comment' | 'course_discussion' | 'announcement';
+  moderatedBy?: string | null;
+  moderatedAt?: AcademyTimestamp;
 }
 
 export interface AcademyDiscussionReplyDoc extends AcademyBaseDoc {
   replyId: string;
   discussionId: string;
   courseId: string;
-  lessonId: string;
+  lessonId?: string | null;
   userId: string;
   body: string;
   helpfulCount: number;
+  reportCount?: number;
+  pinned?: boolean;
   status: 'active' | 'hidden' | 'reported';
+  moderatedBy?: string | null;
+  moderatedAt?: AcademyTimestamp;
+}
+
+export interface AcademyDiscussionReactionDoc extends AcademyBaseDoc {
+  reactionId: string;
+  discussionId?: string | null;
+  replyId?: string | null;
+  courseId: string;
+  lessonId?: string | null;
+  userId: string;
+  reactionType: 'helpful' | 'report';
 }
 
 export interface AcademyDripScheduleDoc extends AcademyBaseDoc {
@@ -420,6 +456,17 @@ export interface AcademyTutorMessageDoc extends AcademyBaseDoc {
   metadata?: Record<string, unknown>;
 }
 
+export interface AcademyTutorSessionDoc extends AcademyBaseDoc {
+  tutorSessionId: string;
+  userId: string;
+  courseId: string;
+  topicId?: string | null;
+  lessonId?: string | null;
+  status: 'active' | 'archived';
+  lastMessageAt?: AcademyTimestamp;
+  metadata?: Record<string, unknown>;
+}
+
 export interface AcademyImportDoc extends AcademyBaseDoc {
   importId: string;
   createdBy: string;
@@ -429,4 +476,6 @@ export interface AcademyImportDoc extends AcademyBaseDoc {
   preview?: Record<string, unknown>;
   createdCourseId?: string | null;
   error?: string | null;
+  validationErrors?: string[];
+  confirmedAt?: AcademyTimestamp;
 }

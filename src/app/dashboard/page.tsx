@@ -130,6 +130,24 @@ type DashboardSummary = {
     label: string;
     description: string;
   };
+  academy: {
+    coursesEnrolled: number;
+    lessonsCompleted: number;
+    topicsCompleted: number;
+    activitySubmissions: number;
+    certificatesEarned: number;
+    cohortParticipation: number;
+    liveSessionAttendance: number;
+    pendingActivityReviews: number;
+    currentCertificationProgress: number;
+    learningStreak: number;
+    continueLearning: null | {
+      courseTitle: string;
+      progressPercent: number;
+      nextLessonTitle: string | null;
+      href: string;
+    };
+  } | null;
   activity: {
     communityPosts: number;
     mentorThreads: number;
@@ -458,6 +476,39 @@ function DashboardContent() {
                       </p>
                     )}
                   </div>
+                </div>
+              </div>
+
+              <div className="rounded-[18px] border border-white/[0.08] bg-[#151A2E]/72 p-5 shadow-[0_18px_60px_rgba(0,0,0,0.22)]">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h2 className="text-lg font-semibold text-white">Academy progress</h2>
+                    <p className="mt-1 text-sm text-[#BFC6D4]">Continue learning and certification work.</p>
+                  </div>
+                  <Button asChild variant="ghost" className="rounded-2xl text-[#BFC6D4]">
+                    <Link href="/academy">Academy</Link>
+                  </Button>
+                </div>
+                <div className="mt-5 rounded-[18px] border border-white/[0.08] bg-[#090B13]/55 p-5">
+                  {summary?.academy?.continueLearning ? (
+                    <Link href={summary.academy.continueLearning.href} className="block rounded-[16px] border border-cyan-400/20 bg-cyan-400/10 p-4 transition hover:bg-cyan-400/15">
+                      <p className="text-xs uppercase tracking-[0.18em] text-cyan-100">Continue learning</p>
+                      <h3 className="mt-2 font-semibold text-white">{summary.academy.continueLearning.courseTitle}</h3>
+                      <p className="mt-1 text-sm text-[#BFC6D4]">{summary.academy.continueLearning.nextLessonTitle || "Open course"}</p>
+                      <Progress value={summary.academy.continueLearning.progressPercent} className="mt-4 h-2" />
+                    </Link>
+                  ) : (
+                    <Link href="/academy" className="block rounded-[16px] border border-dashed border-white/[0.08] p-4 text-sm text-[#BFC6D4] hover:bg-white/[0.04]">
+                      Enroll in your first SDC Academy course.
+                    </Link>
+                  )}
+                  <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
+                    <div className="rounded-[14px] bg-white/[0.035] p-3"><p className="text-[#7E8799]">Lessons</p><p className="mt-1 text-lg font-semibold text-white">{summary?.academy?.lessonsCompleted ?? 0}</p></div>
+                    <div className="rounded-[14px] bg-white/[0.035] p-3"><p className="text-[#7E8799]">Certificates</p><p className="mt-1 text-lg font-semibold text-white">{summary?.academy?.certificatesEarned ?? 0}</p></div>
+                    <div className="rounded-[14px] bg-white/[0.035] p-3"><p className="text-[#7E8799]">Live sessions</p><p className="mt-1 text-lg font-semibold text-white">{summary?.academy?.liveSessionAttendance ?? 0}</p></div>
+                    <div className="rounded-[14px] bg-white/[0.035] p-3"><p className="text-[#7E8799]">Streak</p><p className="mt-1 text-lg font-semibold text-white">{summary?.academy?.learningStreak ?? 0}d</p></div>
+                  </div>
+                  {(summary?.academy?.pendingActivityReviews || 0) > 0 ? <p className="mt-3 rounded-[14px] border border-amber-400/20 bg-amber-400/10 p-3 text-sm text-amber-100">{summary?.academy?.pendingActivityReviews} activity review pending.</p> : null}
                 </div>
               </div>
 

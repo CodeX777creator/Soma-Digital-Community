@@ -5,7 +5,15 @@ export type XPActionKey =
   | "community_post_created"
   | "community_comment_created"
   | "community_reply_created"
-  | "mission_completed";
+  | "mission_completed"
+  | "academy_lesson_completed"
+  | "academy_activity_submitted"
+  | "academy_activity_approved"
+  | "academy_topic_completed"
+  | "academy_quiz_passed"
+  | "academy_live_session_attended"
+  | "academy_course_completed"
+  | "academy_certificate_earned";
 
 export type XPEventType =
   | "mission"
@@ -13,6 +21,7 @@ export type XPEventType =
   | "comment"
   | "reply"
   | "mentor"
+  | "academy"
   | "profile"
   | "login"
   | "streak"
@@ -88,6 +97,83 @@ export const XP_POLICY: Record<XPActionKey, XPPolicyRule> = {
       title: "Mission completed",
       body: (xp) => `You earned ${xp} XP for completing a mission.`,
       linkUrl: "/dashboard",
+    },
+  },
+  academy_lesson_completed: {
+    action: "academy_lesson_completed",
+    eventType: "academy",
+    xp: 10,
+    idempotency: "resource",
+    dailyCap: 120,
+  },
+  academy_activity_submitted: {
+    action: "academy_activity_submitted",
+    eventType: "academy",
+    xp: 10,
+    idempotency: "resource",
+    dailyCap: 120,
+  },
+  academy_activity_approved: {
+    action: "academy_activity_approved",
+    eventType: "academy",
+    xp: 20,
+    idempotency: "resource",
+    dailyCap: 160,
+    notification: {
+      type: "mission",
+      title: "Academy activity approved",
+      body: (xp) => `Your activity was approved and you earned ${xp} XP.`,
+      linkUrl: "/academy",
+    },
+  },
+  academy_topic_completed: {
+    action: "academy_topic_completed",
+    eventType: "academy",
+    xp: 25,
+    idempotency: "resource",
+    dailyCap: 150,
+  },
+  academy_quiz_passed: {
+    action: "academy_quiz_passed",
+    eventType: "academy",
+    xp: 30,
+    idempotency: "resource",
+    notification: {
+      type: "mission",
+      title: "Academy quiz passed",
+      body: (xp) => `Great work. You passed a topic quiz and earned ${xp} XP.`,
+      linkUrl: "/academy",
+    },
+  },
+  academy_live_session_attended: {
+    action: "academy_live_session_attended",
+    eventType: "academy",
+    xp: 20,
+    idempotency: "resource",
+    dailyCap: 100,
+  },
+  academy_course_completed: {
+    action: "academy_course_completed",
+    eventType: "academy",
+    xp: 100,
+    idempotency: "resource",
+    notification: {
+      type: "mission",
+      title: "Academy course completed",
+      body: (xp) => `You completed an Academy course and earned ${xp} XP.`,
+      linkUrl: "/academy",
+    },
+  },
+  academy_certificate_earned: {
+    action: "academy_certificate_earned",
+    eventType: "academy",
+    xp: 150,
+    idempotency: "resource",
+    notification: {
+      type: "mission",
+      title: "Certificate earned",
+      body: (xp) => `Your certificate is ready. You earned ${xp} XP.`,
+      linkUrl: "/academy/certificates",
     },
   },
 };

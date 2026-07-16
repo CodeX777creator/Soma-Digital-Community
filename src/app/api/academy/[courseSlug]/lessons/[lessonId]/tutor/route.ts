@@ -1,12 +1,18 @@
 import { apiError, apiResponse, createAPIHandler } from '@/lib/api-middleware';
 import { requireAuth } from '@/lib/serverAuth';
-import { createAcademyTutorTurn, getPublishedAcademyCourseBySlug } from '@/academy';
+import { createAcademyTutorTurn, getPublishedAcademyCourseBySlug, listAcademyTutorMessages } from '@/academy';
 
 const handler = createAPIHandler(async (req, context) => {
   const { uid } = await requireAuth(req as any);
   const { courseSlug, lessonId } = await context.params;
   const course = await getPublishedAcademyCourseBySlug(courseSlug);
   if (!course) return apiError('Academy course not found.', { status: 404, code: 'ACADEMY_COURSE_NOT_FOUND' });
+
+  if (req.method === 'GET') {
+    const messages = await listAcademyTutorMessages({ userId: uid, courseId: course.courseId, lessonId });
+    return apiResponse({ messages });
+  }
+
   const body = await req.json();
   try {
     const messages = await createAcademyTutorTurn({
@@ -22,4 +28,5 @@ const handler = createAPIHandler(async (req, context) => {
   }
 });
 
+export const GET = handler;
 export const POST = handler;

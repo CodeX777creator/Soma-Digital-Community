@@ -18,14 +18,18 @@ import {
 } from "lucide-react";
 import { auth } from "@/lib/firebase";
 import { storage } from "@/lib/firebase";
+import { ACADEMY_FINAL_EXAM_TOPIC_ID } from "@/academy/types";
 import type {
   AcademyCohortDoc,
   AcademyActivityDoc,
   AcademyActivityType,
   AcademyCourseDoc,
+  AcademyDripScheduleDoc,
   AcademyLessonDoc,
   AcademyLessonType,
   AcademyLiveSessionDoc,
+  AcademyQuestionType,
+  AcademyQuizDoc,
   AcademyTopicDoc,
 } from "@/academy";
 
@@ -34,8 +38,10 @@ type Bundle = {
   topics: AcademyTopicDoc[];
   lessons: AcademyLessonDoc[];
   activities: AcademyActivityDoc[];
+  quizzes: AcademyQuizDoc[];
   cohorts: AcademyCohortDoc[];
   liveSessions: AcademyLiveSessionDoc[];
+  dripSchedules: AcademyDripScheduleDoc[];
 };
 
 async function adminFetch(path: string, options: RequestInit = {}) {
@@ -111,11 +117,42 @@ export default function AcademyCourseBuilderPage() {
     manualReviewRequired: false,
     sortOrder: "0",
   });
+  const [quizForm, setQuizForm] = useState({
+    topicId: "",
+    title: "",
+    description: "",
+    passingScore: "70",
+    maxAttempts: "3",
+    instantFeedbackEnabled: true,
+    status: "draft",
+    questions: "",
+  });
   const [cohortForm, setCohortForm] = useState({ title: "", description: "", startDate: "", endDate: "", capacity: "", status: "draft" });
-  const [sessionForm, setSessionForm] = useState({ title: "", description: "", cohortId: "", topicId: "", provider: "custom", meetingUrl: "", startsAt: "", endsAt: "", status: "scheduled" });
+  const [sessionForm, setSessionForm] = useState({
+    title: "",
+    description: "",
+    cohortId: "",
+    topicId: "",
+    provider: "custom",
+    meetingUrl: "",
+    startsAt: "",
+    endsAt: "",
+    recordingUrl: "",
+    materials: "",
+    status: "scheduled",
+  });
+  const [dripForm, setDripForm] = useState({
+    topicId: "",
+    lessonId: "",
+    cohortId: "",
+    unlockCondition: "immediate",
+    availableAt: "",
+    delayDays: "",
+  });
 
   const uploadAcademyFile = async (file: File, folder: string) => {
     if (!storage) throw new Error("Firebase Storage is not configured.");
+    assertAcademyFileSize(file, folder);
     const safeName = file.name.replace(/[^a-zA-Z0-9._-]+/g, "-").slice(0, 120);
     const path = `academy/courses/${courseId}/${folder}/${Date.now()}-${safeName}`;
     const fileRef = ref(storage, path);
@@ -129,17 +166,29 @@ export default function AcademyCourseBuilderPage() {
     return getDownloadURL(fileRef);
   };
 
-  const handleUpload = async (file: File | null, target: "thumbnail" | "promo" | "lessonVideo" | "lessonImage") => {
+  const handleUpload = async (file: File | null, target: "thumbnail" | "promo" | "lessonVideo" | "lessonImage" | "sessionReplay" | "sessionMaterial") => {
     if (!file) return;
     try {
       setUploading(target);
       setError(null);
-      const folder = target === "thumbnail" ? "thumbnail" : target === "promo" ? "promo" : target === "lessonVideo" ? "lessons/videos" : "lessons/images";
+      const folder = target === "thumbnail"
+        ? "thumbnail"
+        : target === "promo"
+          ? "promo"
+          : target === "lessonVideo"
+            ? "lessons/videos"
+            : target === "lessonImage"
+              ? "lessons/images"
+              : target === "sessionReplay"
+                ? "live-sessions/replays"
+                : "live-sessions/materials";
       const url = await uploadAcademyFile(file, folder);
       if (target === "thumbnail") setCourseForm((current) => ({ ...current, thumbnailUrl: url }));
       if (target === "promo") setCourseForm((current) => ({ ...current, promoVideoUrl: url }));
       if (target === "lessonVideo") setLessonForm((current) => ({ ...current, videoUrl: url }));
       if (target === "lessonImage") setLessonForm((current) => ({ ...current, imageUrls: [current.imageUrls, url].filter(Boolean).join("\n") }));
+      if (target === "sessionReplay") setSessionForm((current) => ({ ...current, recordingUrl: url }));
+      if (target === "sessionMaterial") setSessionForm((current) => ({ ...current, materials: [current.materials, `${file.name}|${url}`].filter(Boolean).join("\n") }));
       setMessage("Media uploaded.");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to upload media.");
@@ -179,6 +228,7 @@ export default function AcademyCourseBuilderPage() {
       const firstLesson = payload.lessons?.[0]?.lessonId || "";
       setLessonForm((current) => ({ ...current, topicId: current.topicId || firstTopic }));
       setActivityForm((current) => ({ ...current, lessonId: current.lessonId || firstLesson }));
+      setQuizForm((current) => ({ ...current, topicId: current.topicId || firstTopic }));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to load Academy course.");
     } finally {
@@ -312,6 +362,34 @@ export default function AcademyCourseBuilderPage() {
     }
   };
 
+  const createQuiz = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    try {
+      setSaving(true);
+      setError(null);
+      await adminFetch(`/api/admin/academy/${courseId}/quizzes`, {
+        method: "POST",
+        body: JSON.stringify({
+          topicId: quizForm.topicId,
+          title: quizForm.title,
+          description: quizForm.description,
+          passingScore: Number(quizForm.passingScore || 70),
+          maxAttempts: quizForm.maxAttempts ? Number(quizForm.maxAttempts) : null,
+          instantFeedbackEnabled: quizForm.instantFeedbackEnabled,
+          status: quizForm.status,
+          questions: parseQuizQuestions(quizForm.questions),
+        }),
+      });
+      setQuizForm((current) => ({ ...current, title: "", description: "", questions: "" }));
+      setMessage("Quiz saved.");
+      await loadBundle();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to create quiz.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const createCohort = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     try {
@@ -336,13 +414,45 @@ export default function AcademyCourseBuilderPage() {
       setSaving(true);
       await adminFetch(`/api/admin/academy/${courseId}/live-sessions`, {
         method: "POST",
-        body: JSON.stringify(sessionForm),
+        body: JSON.stringify({
+          ...sessionForm,
+          cohortId: sessionForm.cohortId || null,
+          topicId: sessionForm.topicId || null,
+          recordingUrl: sessionForm.recordingUrl || null,
+          materials: parseMaterials(sessionForm.materials),
+        }),
       });
-      setSessionForm({ title: "", description: "", cohortId: "", topicId: "", provider: "custom", meetingUrl: "", startsAt: "", endsAt: "", status: "scheduled" });
+      setSessionForm({ title: "", description: "", cohortId: "", topicId: "", provider: "custom", meetingUrl: "", startsAt: "", endsAt: "", recordingUrl: "", materials: "", status: "scheduled" });
       setMessage("Live session scheduled.");
       await loadBundle();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to schedule live session.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const createDripSchedule = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    try {
+      setSaving(true);
+      setError(null);
+      await adminFetch(`/api/admin/academy/${courseId}/drip-schedules`, {
+        method: "POST",
+        body: JSON.stringify({
+          topicId: dripForm.topicId || null,
+          lessonId: dripForm.lessonId || null,
+          cohortId: dripForm.cohortId || null,
+          unlockCondition: dripForm.unlockCondition,
+          availableAt: dripForm.availableAt || null,
+          delayDays: dripForm.delayDays ? Number(dripForm.delayDays) : null,
+        }),
+      });
+      setDripForm({ topicId: "", lessonId: "", cohortId: "", unlockCondition: "immediate", availableAt: "", delayDays: "" });
+      setMessage("Drip schedule saved.");
+      await loadBundle();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to save drip schedule.");
     } finally {
       setSaving(false);
     }
@@ -491,9 +601,19 @@ export default function AcademyCourseBuilderPage() {
                         ) : null}
                       </div>
                     ))}
+                    {bundle.quizzes.some((quiz) => quiz.topicId === topic.topicId) ? (
+                      <div className="rounded-2xl border border-violet-400/20 bg-violet-400/10 p-3 text-sm text-violet-100">
+                        Quiz Yourself configured - {bundle.quizzes.find((quiz) => quiz.topicId === topic.topicId)?.passingScore || 70}% passing score
+                      </div>
+                    ) : null}
                   </div>
                 </div>
               ))}
+              {bundle.quizzes.some((quiz) => quiz.topicId === ACADEMY_FINAL_EXAM_TOPIC_ID) ? (
+                <div className="rounded-3xl border border-emerald-400/20 bg-emerald-400/10 p-4 text-sm text-emerald-100">
+                  Final certification exam configured.
+                </div>
+              ) : null}
               {!bundle.topics.length ? <p className="rounded-2xl border border-dashed border-white/10 p-6 text-center text-sm text-white/45">No topics yet. Add your first module from the right panel.</p> : null}
             </div>
           </Panel>
@@ -611,6 +731,74 @@ export default function AcademyCourseBuilderPage() {
             </form>
           </Panel>
 
+          <Panel title="Add Quiz or Final Exam" icon={CheckCircle2}>
+            <form onSubmit={createQuiz} className="space-y-3">
+              <Field label="Assessment">
+                <select required className="academy-input" value={quizForm.topicId} onChange={(event) => setQuizForm({ ...quizForm, topicId: event.target.value })}>
+                  <option value="">Select topic</option>
+                  {bundle.topics.map((topic) => <option key={topic.topicId} value={topic.topicId}>Quiz: {topic.title}</option>)}
+                  <option value={ACADEMY_FINAL_EXAM_TOPIC_ID}>Final 3-hour certification exam</option>
+                </select>
+              </Field>
+              <Field label="Title"><input required className="academy-input" value={quizForm.title} onChange={(event) => setQuizForm({ ...quizForm, title: event.target.value })} /></Field>
+              <Field label="Description"><textarea rows={3} className="academy-input resize-none" value={quizForm.description} onChange={(event) => setQuizForm({ ...quizForm, description: event.target.value })} /></Field>
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="Passing score"><input type="number" min={0} max={100} className="academy-input" value={quizForm.passingScore} onChange={(event) => setQuizForm({ ...quizForm, passingScore: event.target.value })} /></Field>
+                <Field label="Max attempts"><input type="number" min={1} className="academy-input" value={quizForm.maxAttempts} onChange={(event) => setQuizForm({ ...quizForm, maxAttempts: event.target.value })} /></Field>
+              </div>
+              <Field label="Status"><select className="academy-input" value={quizForm.status} onChange={(event) => setQuizForm({ ...quizForm, status: event.target.value })}><option value="draft">Draft</option><option value="published">Published</option><option value="archived">Archived</option></select></Field>
+              <Field label="Questions">
+                <textarea rows={8} className="academy-input resize-none" value={quizForm.questions} onChange={(event) => setQuizForm({ ...quizForm, questions: event.target.value })} placeholder={"Format per block:\nQuestion text\nA) Option one\nB) *Correct option\nC) Option three\nExplanation: Why this is correct"} />
+              </Field>
+              <Check label="Instant feedback" checked={quizForm.instantFeedbackEnabled} onChange={(checked) => setQuizForm({ ...quizForm, instantFeedbackEnabled: checked })} />
+              <SubmitButton saving={saving}>Save Assessment</SubmitButton>
+            </form>
+          </Panel>
+
+          <Panel title="Drip & Unlock Rules" icon={Layers3}>
+            <form onSubmit={createDripSchedule} className="space-y-3">
+              <Field label="Topic">
+                <select className="academy-input" value={dripForm.topicId} onChange={(event) => setDripForm({ ...dripForm, topicId: event.target.value, lessonId: "" })}>
+                  <option value="">Course-wide</option>
+                  {bundle.topics.map((topic) => <option key={topic.topicId} value={topic.topicId}>{topic.title}</option>)}
+                </select>
+              </Field>
+              <Field label="Lesson">
+                <select className="academy-input" value={dripForm.lessonId} onChange={(event) => setDripForm({ ...dripForm, lessonId: event.target.value })}>
+                  <option value="">Whole topic or course</option>
+                  {bundle.lessons.filter((lesson) => !dripForm.topicId || lesson.topicId === dripForm.topicId).map((lesson) => <option key={lesson.lessonId} value={lesson.lessonId}>{lesson.title}</option>)}
+                </select>
+              </Field>
+              <Field label="Cohort">
+                <select className="academy-input" value={dripForm.cohortId} onChange={(event) => setDripForm({ ...dripForm, cohortId: event.target.value })}>
+                  <option value="">All learners</option>
+                  {bundle.cohorts.map((cohort) => <option key={cohort.cohortId} value={cohort.cohortId}>{cohort.title}</option>)}
+                </select>
+              </Field>
+              <Field label="Unlock condition">
+                <select className="academy-input" value={dripForm.unlockCondition} onChange={(event) => setDripForm({ ...dripForm, unlockCondition: event.target.value })}>
+                  <option value="immediate">Available immediately</option>
+                  <option value="lesson_completion">Complete previous lesson</option>
+                  <option value="topic_quiz_passed">Pass previous topic quiz</option>
+                  <option value="manual_approval">Wait for manual approval</option>
+                  <option value="date_based">Specific date</option>
+                  <option value="cohort_schedule">Cohort schedule</option>
+                </select>
+              </Field>
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="Available at"><input type="datetime-local" className="academy-input" value={dripForm.availableAt} onChange={(event) => setDripForm({ ...dripForm, availableAt: event.target.value })} /></Field>
+                <Field label="Delay days"><input type="number" min={0} className="academy-input" value={dripForm.delayDays} onChange={(event) => setDripForm({ ...dripForm, delayDays: event.target.value })} /></Field>
+              </div>
+              <SubmitButton saving={saving}>Save Unlock Rule</SubmitButton>
+            </form>
+            <div className="mt-5 space-y-2">
+              {(bundle.dripSchedules || []).slice(0, 8).map((schedule) => (
+                <Compact key={schedule.dripScheduleId} title={schedule.unlockCondition.replace(/_/g, " ")} meta={`${schedule.topicId ? "Topic rule" : "Course rule"}${schedule.cohortId ? " - cohort" : ""}`} />
+              ))}
+              {!(bundle.dripSchedules || []).length ? <p className="text-sm text-white/40">No drip rules yet. Immediate access applies unless topic rules say otherwise.</p> : null}
+            </div>
+          </Panel>
+
           <Panel title="Create Cohort" icon={CalendarDays}>
             <form onSubmit={createCohort} className="space-y-3">
               <Field label="Cohort title"><input required className="academy-input" value={cohortForm.title} onChange={(event) => setCohortForm({ ...cohortForm, title: event.target.value })} /></Field>
@@ -627,11 +815,36 @@ export default function AcademyCourseBuilderPage() {
           <Panel title="Schedule Live Class" icon={CalendarDays}>
             <form onSubmit={createLiveSession} className="space-y-3">
               <Field label="Session title"><input required className="academy-input" value={sessionForm.title} onChange={(event) => setSessionForm({ ...sessionForm, title: event.target.value })} /></Field>
+              <Field label="Description"><textarea rows={3} className="academy-input resize-none" value={sessionForm.description} onChange={(event) => setSessionForm({ ...sessionForm, description: event.target.value })} /></Field>
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="Provider"><select className="academy-input" value={sessionForm.provider} onChange={(event) => setSessionForm({ ...sessionForm, provider: event.target.value })}><option value="zoom">Zoom</option><option value="google_meet">Google Meet</option><option value="custom">Custom</option></select></Field>
+                <Field label="Status"><select className="academy-input" value={sessionForm.status} onChange={(event) => setSessionForm({ ...sessionForm, status: event.target.value })}><option value="scheduled">Scheduled</option><option value="live">Live</option><option value="completed">Completed</option><option value="cancelled">Cancelled</option></select></Field>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="Topic"><select className="academy-input" value={sessionForm.topicId} onChange={(event) => setSessionForm({ ...sessionForm, topicId: event.target.value })}><option value="">Course-wide</option>{bundle.topics.map((topic) => <option key={topic.topicId} value={topic.topicId}>{topic.title}</option>)}</select></Field>
+                <Field label="Cohort"><select className="academy-input" value={sessionForm.cohortId} onChange={(event) => setSessionForm({ ...sessionForm, cohortId: event.target.value })}><option value="">All enrolled learners</option>{bundle.cohorts.map((cohort) => <option key={cohort.cohortId} value={cohort.cohortId}>{cohort.title}</option>)}</select></Field>
+              </div>
               <Field label="Meeting URL"><input required className="academy-input" value={sessionForm.meetingUrl} onChange={(event) => setSessionForm({ ...sessionForm, meetingUrl: event.target.value })} /></Field>
               <div className="grid grid-cols-2 gap-3">
                 <Field label="Starts"><input type="datetime-local" className="academy-input" value={sessionForm.startsAt} onChange={(event) => setSessionForm({ ...sessionForm, startsAt: event.target.value })} /></Field>
                 <Field label="Ends"><input type="datetime-local" className="academy-input" value={sessionForm.endsAt} onChange={(event) => setSessionForm({ ...sessionForm, endsAt: event.target.value })} /></Field>
               </div>
+              <Field label="Replay video">
+                <UploadRow
+                  value={sessionForm.recordingUrl}
+                  uploading={uploading === "sessionReplay"}
+                  accept="video/*"
+                  onChange={(value) => setSessionForm({ ...sessionForm, recordingUrl: value })}
+                  onUpload={(file) => handleUpload(file, "sessionReplay")}
+                />
+              </Field>
+              <Field label="Materials">
+                <textarea rows={4} className="academy-input resize-none" value={sessionForm.materials} onChange={(event) => setSessionForm({ ...sessionForm, materials: event.target.value })} placeholder="Title|URL, one resource per line" />
+                <div className="mt-2 rounded-2xl border border-white/10 bg-white/[0.025] p-3">
+                  <input type="file" disabled={uploading === "sessionMaterial"} onChange={(event) => handleUpload(event.target.files?.[0] || null, "sessionMaterial")} className="w-full text-sm text-white/50 file:mr-3 file:rounded-xl file:border-0 file:bg-white/[0.08] file:px-3 file:py-2 file:text-sm file:text-white" />
+                  {uploading === "sessionMaterial" ? <p className="mt-2 text-xs text-cyan-200">Uploading resource...</p> : null}
+                </div>
+              </Field>
               <SubmitButton saving={saving}>Schedule Class</SubmitButton>
             </form>
           </Panel>
@@ -665,6 +878,61 @@ function parseActivityOptions(value: string) {
       return label ? { optionId: `option_${index + 1}`, label, isCorrect } : null;
     })
     .filter(Boolean);
+}
+
+function parseQuizQuestions(value: string) {
+  return value
+    .split(/\n\s*\n/g)
+    .map((block, index) => {
+      const lines = block.split("\n").map((line) => line.trim()).filter(Boolean);
+      const prompt = lines[0] || "";
+      const explanationLine = lines.find((line) => line.toLowerCase().startsWith("explanation:"));
+      const optionLines = lines.slice(1).filter((line) => !line.toLowerCase().startsWith("explanation:"));
+      const options = optionLines.map((line, optionIndex) => {
+        const withoutPrefix = line.replace(/^[A-Z]\)\s*/i, "");
+        const isCorrect = withoutPrefix.startsWith("*");
+        const label = (isCorrect ? withoutPrefix.slice(1) : withoutPrefix).trim();
+        return { optionId: `option_${optionIndex + 1}`, label, isCorrect };
+      }).filter((option) => option.label);
+      const questionType: AcademyQuestionType = options.length ? (options.filter((option) => option.isCorrect).length > 1 ? "multi_select" : "multiple_choice") : "short_answer";
+      return {
+        questionId: `question_${index + 1}`,
+        type: questionType,
+        prompt,
+        options,
+        points: 1,
+        explanation: explanationLine ? explanationLine.replace(/^explanation:\s*/i, "") : "",
+        sortOrder: index,
+      };
+    })
+    .filter((question) => question.prompt);
+}
+
+function parseMaterials(value: string) {
+  return value
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const [title, ...urlParts] = line.split("|");
+      const url = urlParts.join("|").trim();
+      return {
+        title: (title || url).trim(),
+        url: url || title.trim(),
+      };
+    })
+    .filter((item) => item.title && item.url);
+}
+
+function assertAcademyFileSize(file: File, folder: string) {
+  const imageLimit = 10 * 1024 * 1024;
+  const documentLimit = 50 * 1024 * 1024;
+  const videoLimit = 500 * 1024 * 1024;
+  const limit = folder.includes("materials") ? documentLimit : folder.includes("thumbnail") || folder.includes("images") ? imageLimit : videoLimit;
+  if (file.size > limit) {
+    const mb = Math.round(limit / 1024 / 1024);
+    throw new Error(`File is too large. Limit for this upload is ${mb}MB.`);
+  }
 }
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
