@@ -362,6 +362,50 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    match /promoCampaigns/{promoId} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+
+    match /promoRedemptions/{redemptionId} {
+      allow read: if isAdmin() || (isAuthed() && resource.data.userId == request.auth.uid);
+      allow write: if false;
+    }
+
+    match /promoRedemptionEmailLocks/{lockId} {
+      allow read, write: if false;
+    }
+
+    match /promoAuditLogs/{logId} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+
+    match /academyCourseEntitlements/{entitlementId} {
+      allow read: if isAdmin() || (isAuthed() && resource.data.userId == request.auth.uid);
+      allow write: if false;
+    }
+
+    match /academyMrrEligibility/{eligibilityId} {
+      allow read: if isAdmin() || (isAuthed() && resource.data.userId == request.auth.uid);
+      allow write: if false;
+    }
+
+    match /academyMrrPurchases/{purchaseId} {
+      allow read: if isAdmin() || (isAuthed() && resource.data.userId == request.auth.uid);
+      allow write: if false;
+    }
+
+    match /marketplaceEntitlements/{entitlementId} {
+      allow read: if isAdmin() || (isAuthed() && resource.data.userId == request.auth.uid);
+      allow write: if false;
+    }
+
+    match /subscriptionDiscountEntitlements/{entitlementId} {
+      allow read: if isAdmin() || (isAuthed() && resource.data.userId == request.auth.uid);
+      allow write: if false;
+    }
+
     match /config/{configId} {
       allow read: if true;
       allow write: if isAdmin();

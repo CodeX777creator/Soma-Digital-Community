@@ -424,6 +424,68 @@ async function processCreditPurchaseWebhook(eventId: string, eventType: string, 
   return { handled: true, response: { success: true, flow: 'creator_credit_purchase' } };
 }
 
+async function processAcademyMrrPurchaseWebhook(eventId: string, eventType: string, data: any) {
+  if (data?.metadata?.kind !== 'academy_mrr_purchase') {
+    return { handled: false };
+  }
+
+  const purchaseId = typeof data.metadata.purchaseId === 'string' ? data.metadata.purchaseId : '';
+  const userId = typeof data.metadata.userId === 'string' ? data.metadata.userId : '';
+  const courseId = typeof data.metadata.courseId === 'string' ? data.metadata.courseId : '';
+  if (!purchaseId || !userId || !courseId) {
+    return { handled: true, response: { success: true, ignored: true, reason: 'missing_mrr_purchase_metadata' } };
+  }
+
+  const purchaseRef = db.collection('academyMrrPurchases').doc(purchaseId);
+  const eligibilityRef = db.collection('academyMrrEligibility').doc(`${userId}_${courseId}`);
+  const purchaseSnap = await purchaseRef.get();
+  if (!purchaseSnap.exists) {
+    return { handled: true, response: { success: true, ignored: true, reason: 'academy_mrr_purchase_not_found' } };
+  }
+  const purchase = purchaseSnap.data() || {};
+  if (purchase.status === 'paid') {
+    return { handled: true, response: { success: true, duplicate: true } };
+  }
+
+  if (eventType !== 'charge.success') {
+    await purchaseRef.set({
+      status: eventType === 'charge.failed' ? 'failed' : 'ignored',
+      eventType,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    }, { merge: true });
+    return { handled: true, response: { success: true, ignored: true, reason: 'non_success_mrr_event' } };
+  }
+
+  await db.runTransaction(async (transaction) => {
+    const freshPurchase = await transaction.get(purchaseRef);
+    if (freshPurchase.data()?.status === 'paid') return;
+    transaction.set(purchaseRef, {
+      status: 'paid',
+      paidAt: admin.firestore.FieldValue.serverTimestamp(),
+      eventId,
+      paystackReference: data.reference || purchase.paystackReference || null,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    }, { merge: true });
+    transaction.set(eligibilityRef, {
+      status: 'purchased',
+      purchasedAt: admin.firestore.FieldValue.serverTimestamp(),
+      purchaseId,
+      paystackReference: data.reference || purchase.paystackReference || null,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    }, { merge: true });
+  });
+
+  await createNotification(
+    userId,
+    'success',
+    'Master Resell Rights active',
+    'Your reseller-rights license is active. Your reseller package is ready.',
+    `/academy/certificates`
+  );
+
+  return { handled: true, response: { success: true, flow: 'academy_mrr_purchase' } };
+}
+
 async function processAssetPurchaseWebhook(
   eventId: string,
   eventType: string,
@@ -1202,6 +1264,13 @@ export const paystackWebhook = onRequest(
         if (creditPurchaseResult.handled) {
           await eventRef.update({ status: 'success', flow: 'creator_credit_purchase' });
           res.status(200).json(creditPurchaseResult.response || { success: true });
+          return;
+        }
+
+        const academyMrrResult = await processAcademyMrrPurchaseWebhook(eventId, eventType, data);
+        if (academyMrrResult.handled) {
+          await eventRef.update({ status: 'success', flow: 'academy_mrr_purchase' });
+          res.status(200).json(academyMrrResult.response || { success: true });
           return;
         }
 

@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { useAuth } from "@/providers/AuthProvider";
+import { PromoRedeemCard } from "@/components/promos/PromoRedeemCard";
 import { authFetch } from "@/lib/clientApi";
 import {
   ArrowLeft,
@@ -116,6 +117,13 @@ export default function CreditsPage() {
 
           {dashboard && (
             <>
+              <PromoRedeemCard
+                source="creator_credits"
+                title="Have a Creator Credits or founder code?"
+                description="Unlock eligible Creator Credit bonuses or founder campaign benefits without exposing provider pricing."
+                onRedeemed={() => void loadDashboard()}
+              />
+
               <div className="grid gap-4 md:grid-cols-4">
                 <GlassCard className="p-5">
                   <p className="text-xs uppercase tracking-widest text-muted-foreground">Remaining</p>

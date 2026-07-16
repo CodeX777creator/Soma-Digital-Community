@@ -19,7 +19,7 @@ import { validatePassword, cn } from "@/lib/utils";
 import { awardXPAction } from "@/lib/xp";
 
 export function AccountCreationStep() {
-  const { roadmap, nextStep, prevStep, identities, goal, skillLevel, plan, budget, availableTime, reset } = useOnboardingStore();
+  const { roadmap, nextStep, prevStep, identities, goal, skillLevel, plan, budget, availableTime, promoCode, reset } = useOnboardingStore();
   const [name, setName] = useState("");
 
   useEffect(() => {
@@ -99,6 +99,37 @@ export function AccountCreationStep() {
       await dbService.saveRoadmap(user.uid, roadmap).catch((roadmapError) => {
         console.error("Non-critical roadmap save failed:", roadmapError);
       });
+    }
+
+    if (promoCode?.trim()) {
+      try {
+        const token = await user.getIdToken();
+        const response = await fetch("/api/promos/redeem", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            code: promoCode.trim(),
+            source: "onboarding",
+            path: "/open",
+          }),
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(payload.error || "Promo code could not be applied.");
+        toast({
+          title: "Founder Member Bonus unlocked",
+          description: "Eligible Academy, credits, or reseller-rights benefits have been reserved for your account.",
+        });
+      } catch (promoError) {
+        console.error("Non-critical promo redemption failed:", promoError);
+        toast({
+          title: "Promo code needs attention",
+          description: promoError instanceof Error ? promoError.message : "You can retry this code from your dashboard.",
+          variant: "destructive",
+        });
+      }
     }
   };
 

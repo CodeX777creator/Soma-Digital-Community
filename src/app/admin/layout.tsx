@@ -24,6 +24,7 @@ import {
   Share2,
   BookOpen,
   Route,
+  TicketPercent,
 } from "lucide-react";
 import { auth, db } from "@/lib/firebase";
 
@@ -31,6 +32,7 @@ const navItems = [
   { label: "Dashboard", href: "/admin/dashboard", icon: LayoutDashboard },
   { label: "Analytics", href: "/admin/analytics", icon: Activity },
   { label: "Onboarding", href: "/admin/onboarding", icon: Route },
+  { label: "Promos", href: "/admin/promos", icon: TicketPercent },
   { label: "Academy", href: "/admin/academy", icon: BookOpen },
   { label: "Social Ops", href: "/admin/social-ops", icon: Share2 },
   { label: "Marketplace", href: "/admin/marketplace", icon: Boxes },

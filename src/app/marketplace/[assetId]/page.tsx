@@ -10,6 +10,7 @@ import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { GlassCard } from "@/components/ui/glass-card";
+import { PromoRedeemCard } from "@/components/promos/PromoRedeemCard";
 import { app } from "@/lib/firebase";
 import { getAssetById, type MarketplaceAsset } from "@/lib/marketplace";
 import { useAuth } from "@/providers/AuthProvider";
@@ -44,7 +45,7 @@ export default function MarketplaceAssetDetailPage() {
         const nextAsset = await getAssetById(assetId);
         if (!cancelled) setAsset(nextAsset);
       } catch (error) {
-        console.error("Unable to load course:", error);
+        console.error("Unable to load marketplace product:", error);
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -74,7 +75,7 @@ export default function MarketplaceAssetDetailPage() {
   }, [assetId, resellerSlug]);
 
   const included = useMemo(() => {
-    const items = ["Protected SDC purchase record", "Course access after verified payment"];
+    const items = ["Protected SDC purchase record", "Product access after verified payment"];
     if (asset?.externalPlatform) items.push(`${asset.externalPlatform} access instructions`);
     if (asset?.websiteOnboardingInstructions) items.push("Website onboarding instructions");
     if (isMrr) items.push("Personal SDC reseller link", "Reseller dashboard and commission tracking");
@@ -127,7 +128,7 @@ export default function MarketplaceAssetDetailPage() {
         <AppLayout>
           <GlassCard className="p-10 text-center text-muted-foreground">
             <Loader2 className="mx-auto mb-3 h-5 w-5 animate-spin text-primary" />
-            Loading course
+            Loading product
           </GlassCard>
         </AppLayout>
       </ProtectedRoute>
@@ -139,7 +140,7 @@ export default function MarketplaceAssetDetailPage() {
       <ProtectedRoute>
         <AppLayout>
           <GlassCard className="p-10 text-center">
-            <p className="font-semibold">Course not found.</p>
+            <p className="font-semibold">Product not found.</p>
             <Button asChild className="mt-5"><Link href="/marketplace">Back to Marketplace</Link></Button>
           </GlassCard>
         </AppLayout>
@@ -192,7 +193,7 @@ export default function MarketplaceAssetDetailPage() {
               <GlassCard className="p-6">
                 <h2 className="text-xl font-bold">MRR Benefits</h2>
                 <div className="mt-4 grid gap-3 md:grid-cols-2">
-                  {["Resell through your SDC link", "Track buyers and sales", "Earn configured commissions", "Keep course delivery centralized in SDC"].map((item) => (
+                  {["Resell through your SDC link", "Track buyers and sales", "Earn configured commissions", "Keep product delivery centralized in SDC"].map((item) => (
                     <div key={item} className="flex items-start gap-3 text-sm text-white/75">
                       <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-cyan-300" />
                       {item}
@@ -206,7 +207,7 @@ export default function MarketplaceAssetDetailPage() {
               <h2 className="text-xl font-bold">License Terms Summary</h2>
               <ul className="mt-4 space-y-2 text-sm text-muted-foreground">
                 <li>Products may only be resold through SDC.</li>
-                <li>Redistribution of raw course files is prohibited.</li>
+                <li>Redistribution of raw product files is prohibited.</li>
                 <li>Buyers may not claim authorship or ownership of the original content.</li>
                 <li>All resale activity must comply with platform licensing terms.</li>
               </ul>
@@ -214,11 +215,18 @@ export default function MarketplaceAssetDetailPage() {
           </section>
 
           <aside className="lg:sticky lg:top-28 lg:self-start">
+            <PromoRedeemCard
+              compact
+              source="marketplace_checkout"
+              title="Have a product unlock code?"
+              description="Apply eligible launch, product, or marketplace campaign benefits before checkout."
+              className="mb-4"
+            />
             <GlassCard className="p-6">
               <p className="text-sm uppercase tracking-wider text-muted-foreground">Price</p>
               <p className="mt-2 font-headline text-4xl font-bold">{money(asset.price)}</p>
               {asset.commissionBase === "course_price" && (
-                <p className="mt-2 text-xs text-muted-foreground">Commission is calculated on course value: {money(asset.courseValue)}</p>
+                <p className="mt-2 text-xs text-muted-foreground">Commission is calculated on product value: {money(asset.courseValue)}</p>
               )}
               {asset.websiteOnboardingInstructions && (
                 <p className="mt-3 rounded-md bg-white/5 p-3 text-sm text-white/70">Includes website setup/onboarding as part of the bundle.</p>
@@ -248,9 +256,9 @@ export default function MarketplaceAssetDetailPage() {
                 Copy Page Link
               </Button>
               <Button asChild variant="link" className="mt-2 w-full text-cyan-300">
-                <Link href="/my-courses">
+                <Link href={`/marketplace/success?assetId=${encodeURIComponent(asset.id)}`}>
                   <ExternalLink className="h-4 w-4" />
-                  Already purchased? Open My Courses
+                  Already purchased? Open purchases
                 </Link>
               </Button>
             </GlassCard>

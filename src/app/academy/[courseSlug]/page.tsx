@@ -6,6 +6,7 @@ import { useParams } from "next/navigation";
 import { ArrowRight, BookOpen, CalendarDays, CheckCircle2, Clock3, Download, ExternalLink, GraduationCap, Loader2, Lock, PlayCircle, Sparkles, Video } from "lucide-react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
+import { PromoRedeemCard } from "@/components/promos/PromoRedeemCard";
 import { auth } from "@/lib/firebase";
 import type { AcademyCertificateDoc, AcademyCourseDoc, AcademyDripScheduleDoc, AcademyEnrollmentDoc, AcademyLessonDoc, AcademyLiveSessionDoc, AcademyProgressDoc, AcademyQuizAttemptDoc, AcademySessionAttendanceDoc, AcademyTopicDoc } from "@/academy";
 
@@ -162,6 +163,15 @@ export default function AcademyCoursePage() {
             <Metric icon={Clock3} label="Duration" value={`${Math.max(1, Math.round((course.estimatedDuration || 0) / 60))}h`} />
             <Metric icon={CheckCircle2} label="Progress" value={`${enrollment?.progressPercent || 0}%`} />
           </div>
+
+          {!enrollment ? (
+            <PromoRedeemCard
+              source="academy_course"
+              title="Have an Academy unlock code?"
+              description="Founder and launch campaigns can include Academy course access and future reseller-rights eligibility after certification."
+              onRedeemed={() => void load()}
+            />
+          ) : null}
 
           {enrollment && liveSessions.length ? (
             <section className="rounded-[22px] border border-white/[0.08] bg-[#151A2E]/72 p-6">

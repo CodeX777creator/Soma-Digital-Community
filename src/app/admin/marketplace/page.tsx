@@ -86,11 +86,11 @@ type AssetFormState = {
   published: boolean;
 };
 
-const ASSET_TYPES: AssetType[] = ["pdf", "video", "template", "notion", "link", "code", "course"];
+const ASSET_TYPES: AssetType[] = ["pdf", "video", "template", "notion", "link", "code"];
 const ASSET_TIERS: AssetTier[] = ["free", "pro", "elite"];
 const LICENSE_TYPES: LicenseType[] = ["standard", "mrr"];
 const COMMISSION_TYPES: CommissionType[] = ["percentage", "fixed"];
-const COMMISSION_BASES: CommissionBase[] = ["full_price", "course_price"];
+const COMMISSION_BASES: CommissionBase[] = ["full_price"];
 const MAX_FILE_SIZE = 50 * 1024 * 1024;
 const COLLECTION = "marketplaceAssets";
 
@@ -436,9 +436,9 @@ export default function AdminMarketplacePage() {
         throw new Error("MRR assets need a purchase price.");
       }
       const courseValue = Number(form.courseValue || form.price);
-      if (Number.isNaN(courseValue) || courseValue < 0) throw new Error("Course value must be 0 or higher.");
+      if (Number.isNaN(courseValue) || courseValue < 0) throw new Error("Product value must be 0 or higher.");
       if (form.commissionBase === "course_price" && courseValue <= 0) {
-        throw new Error("Course value is required when commission is based on course price.");
+        throw new Error("Product value is required when commission uses a value override.");
       }
 
       const payload = {
@@ -865,7 +865,7 @@ export default function AdminMarketplacePage() {
                 >
                   {COMMISSION_BASES.map((commissionBase) => (
                     <option key={commissionBase} value={commissionBase}>
-                      {commissionBase === "course_price" ? "Course value only" : "Full bundle price"}
+                      {commissionBase === "course_price" ? "Product value only" : "Full bundle price"}
                     </option>
                   ))}
                 </select>

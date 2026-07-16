@@ -52,6 +52,10 @@ export interface MarketplaceAssetFilters {
 
 const COLLECTION = "marketplaceAssets";
 
+function isLegacyCourseAsset(asset: MarketplaceAsset) {
+  return asset.type === "course" || asset.category.toLowerCase() === "course" || asset.category.toLowerCase() === "courses";
+}
+
 function normalizeAsset(id: string, data: Record<string, any>): MarketplaceAsset {
   const rawTier = data.tier || "free";
   const tier: MarketplaceAssetTier =
@@ -108,6 +112,7 @@ export async function getMarketplaceAssets(filters: MarketplaceAssetFilters = {}
   return snapshot.docs
     .map((assetDoc) => normalizeAsset(assetDoc.id, assetDoc.data()))
     .filter((asset) => filters.includeUnpublished || asset.published)
+    .filter((asset) => !isLegacyCourseAsset(asset))
     .sort((a, b) => {
       const left = a.createdAt?.toMillis?.() ?? 0;
       const right = b.createdAt?.toMillis?.() ?? 0;
@@ -120,13 +125,15 @@ export async function getAssetById(assetId: string): Promise<MarketplaceAsset | 
     const { adminDb } = await import("@/lib/firebaseAdmin");
     const assetDoc = await adminDb.collection(COLLECTION).doc(assetId).get();
     if (!assetDoc.exists) return null;
-    return normalizeAsset(assetDoc.id, assetDoc.data() || {});
+    const asset = normalizeAsset(assetDoc.id, assetDoc.data() || {});
+    return isLegacyCourseAsset(asset) ? null : asset;
   }
 
   if (!db) throw new Error('Database not initialized');
   const assetDoc = await getDoc(doc(db, COLLECTION, assetId));
   if (!assetDoc.exists()) return null;
-  return normalizeAsset(assetDoc.id, assetDoc.data());
+  const asset = normalizeAsset(assetDoc.id, assetDoc.data());
+  return isLegacyCourseAsset(asset) ? null : asset;
 }
 
 export function assetTierToSubscriptionPlan(tier: MarketplaceAssetTier): SubscriptionPlan {

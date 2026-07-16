@@ -7,6 +7,7 @@ import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import { GlassCard } from "@/components/ui/glass-card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { PromoRedeemCard } from "@/components/promos/PromoRedeemCard";
 import { useAuth } from "@/providers/AuthProvider";
 import { useSubscription } from "@/hooks/useSubscription";
 import { useUserStore, type UserTier } from "@/store/useUserStore";
@@ -209,6 +210,12 @@ export default function BillingSettingsPage() {
               </div>
             </div>
           </GlassCard>
+
+          <PromoRedeemCard
+            source="billing"
+            title="Have a plan or founder code?"
+            description="Unlock eligible subscription benefits, founder access, Creator Credits, or Academy bonuses before checkout."
+          />
 
           {/* Payment Method */}
           {currentPlan !== "explorer" && (

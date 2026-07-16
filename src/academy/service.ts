@@ -147,6 +147,26 @@ async function createAcademyUserNotification(userId: string, input: {
   }));
 }
 
+async function activateReservedMrrEligibility(userId: string, courseId: string, certificateId: string) {
+  const eligibilityId = `${userId}_${courseId}`;
+  const ref = adminDb.collection('academyMrrEligibility').doc(eligibilityId);
+  const snap = await ref.get();
+  if (!snap.exists) return;
+  await ref.set(stripUndefined({
+    status: 'eligible',
+    certificateId,
+    certificateEarnedAt: now(),
+    updatedAt: now(),
+  }), { merge: true });
+  await createAcademyUserNotification(userId, {
+    type: 'academy_mrr',
+    title: 'Master Resell Rights unlocked',
+    body: 'Your certification is complete. You can now purchase eligible reseller rights for this course.',
+    linkUrl: `/academy/certificates`,
+    metadata: { courseId, certificateId },
+  });
+}
+
 async function notifyAcademyAudience(input: {
   courseId?: string;
   title: string;
@@ -1036,6 +1056,7 @@ export async function submitAcademyFinalExam(input: {
       metadata: { courseId: input.courseId, score: result.score },
     });
     if (certificate) {
+      await activateReservedMrrEligibility(input.userId, input.courseId, certificate.certificateId);
       await awardAcademyXP({
         userId: input.userId,
         action: 'academy_certificate_earned',
@@ -1106,6 +1127,7 @@ export async function issueAcademyCertificate(userId: string, courseId: string) 
   const score = Number(passedExamSnap.docs[0].data().score || 0);
   const certificate = await buildCertificateDoc(userId, course, score);
   await collection('certificates').doc(certificate.certificateId).set(certificate, { merge: true });
+  await activateReservedMrrEligibility(userId, courseId, certificate.certificateId);
   await awardAcademyXP({
     userId,
     action: 'academy_certificate_earned',

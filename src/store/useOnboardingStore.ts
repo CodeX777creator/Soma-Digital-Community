@@ -13,6 +13,7 @@ interface OnboardingState {
   interests: string[];
   budget: string | null;
   availableTime: string | null;
+  promoCode: string | null;
   roadmap: any | null;
   
   // Actions
@@ -27,6 +28,7 @@ interface OnboardingState {
   setSkillLevel: (skill: string) => void;
   setBudget: (budget: string) => void;
   setAvailableTime: (time: string) => void;
+  setPromoCode: (code: string | null) => void;
   toggleInterest: (interest: string) => void;
   setRoadmap: (roadmap: any) => void;
   reset: () => void;
@@ -44,6 +46,7 @@ export const useOnboardingStore = create<OnboardingState>()(
       interests: [],
       budget: null,
       availableTime: null,
+      promoCode: null,
       roadmap: null,
 
       setStep: (step) => set({ currentStep: step }),
@@ -61,6 +64,7 @@ export const useOnboardingStore = create<OnboardingState>()(
       setSkillLevel: (skillLevel) => set({ skillLevel }),
       setBudget: (budget) => set({ budget }),
       setAvailableTime: (availableTime) => set({ availableTime }),
+      setPromoCode: (promoCode) => set({ promoCode }),
       toggleInterest: (interest) => set((state) => ({
         interests: state.interests.includes(interest)
           ? state.interests.filter(i => i !== interest)
@@ -77,6 +81,7 @@ export const useOnboardingStore = create<OnboardingState>()(
         interests: [],
         budget: null,
         availableTime: null,
+        promoCode: null,
         roadmap: null
       }),
     }),

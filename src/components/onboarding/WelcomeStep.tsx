@@ -4,7 +4,7 @@ import { useOnboardingStore } from "@/store/useOnboardingStore";
 import { useRouter } from "next/navigation";
 
 export function WelcomeStep() {
-  const { nextStep, plan } = useOnboardingStore();
+  const { nextStep, plan, promoCode, setPromoCode } = useOnboardingStore();
   const router = useRouter();
   const planLabel = plan === "elite" ? "Elite" : plan === "pro" ? "Pro" : "Explorer";
 
@@ -41,6 +41,21 @@ export function WelcomeStep() {
               {item.label}
             </div>
           ))}
+        </div>
+        <div className="mt-6 rounded-2xl border border-white/10 bg-[#090B13]/45 p-4">
+          <label className="text-xs font-semibold uppercase tracking-[0.22em] text-[#7E8799]" htmlFor="founder-code">
+            Founder or launch code
+          </label>
+          <input
+            id="founder-code"
+            value={promoCode || ""}
+            onChange={(event) => setPromoCode(event.target.value.toUpperCase())}
+            placeholder="FOUNDER100"
+            className="mt-3 h-12 w-full rounded-2xl border border-white/10 bg-white/[0.045] px-4 text-sm font-semibold uppercase tracking-[0.08em] text-white outline-none transition focus:border-[#8B5CF6]/60"
+          />
+          <p className="mt-2 text-xs leading-5 text-[#BFC6D4]">
+            If you have a founder code, we will unlock eligible bonuses after your account is created.
+          </p>
         </div>
         <Button
           onClick={nextStep}

@@ -51,7 +51,7 @@ export default function MarketplaceSuccessPage() {
         const nextPurchase: Purchase = {
           id: purchaseId,
           assetId,
-          assetTitle: purchaseData.assetTitle || "Course purchase",
+          assetTitle: purchaseData.assetTitle || "Marketplace purchase",
           status: purchaseData.status || "pending",
           licenseType: purchaseData.licenseType || "standard",
           resaleRights: purchaseData.resaleRights === true,
@@ -98,7 +98,7 @@ export default function MarketplaceSuccessPage() {
     toast({ title: "Reseller link copied", description: resellerUrl });
   };
 
-  const openCourse = () => {
+  const openProduct = () => {
     if (access?.assetUrl) window.open(access.assetUrl, "_blank", "noopener,noreferrer");
   };
 
@@ -130,7 +130,7 @@ export default function MarketplaceSuccessPage() {
               <GlassCard className="p-6">
                 <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
                   <div>
-                    <p className="text-sm uppercase tracking-wider text-muted-foreground">Course</p>
+                    <p className="text-sm uppercase tracking-wider text-muted-foreground">Product</p>
                     <h2 className="mt-1 text-2xl font-bold">{purchase.assetTitle}</h2>
                     <p className="mt-2 text-sm text-muted-foreground">Status: {purchase.status}</p>
                     {purchase.paystackReference && <p className="mt-1 text-sm text-muted-foreground">Paystack reference: {purchase.paystackReference}</p>}
@@ -147,19 +147,19 @@ export default function MarketplaceSuccessPage() {
               {purchase.status !== "paid" ? (
                 <GlassCard className="p-6">
                   <p className="font-semibold">Payment confirmation is still pending.</p>
-                  <p className="mt-2 text-sm text-muted-foreground">Your course will unlock automatically after Paystack sends the successful payment event.</p>
+                  <p className="mt-2 text-sm text-muted-foreground">Your product will unlock automatically after Paystack sends the successful payment event.</p>
                 </GlassCard>
               ) : (
                 <div className="grid gap-4 md:grid-cols-2">
                   <GlassCard className="p-6">
-                    <h3 className="text-lg font-bold">Course Access</h3>
+                    <h3 className="text-lg font-bold">Product Access</h3>
                     {access?.asset?.accessInstructions && <p className="mt-3 whitespace-pre-line text-sm text-muted-foreground">{access.asset.accessInstructions}</p>}
                     {access?.asset?.websiteOnboardingInstructions && (
                       <p className="mt-3 whitespace-pre-line rounded-md bg-white/5 p-3 text-sm text-white/75">{access.asset.websiteOnboardingInstructions}</p>
                     )}
-                    <Button onClick={openCourse} className="mt-5 w-full">
+                    <Button onClick={openProduct} className="mt-5 w-full">
                       <ExternalLink className="h-4 w-4" />
-                      Open Course
+                      Open Product
                     </Button>
                   </GlassCard>
 

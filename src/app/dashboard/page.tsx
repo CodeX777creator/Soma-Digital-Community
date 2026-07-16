@@ -28,6 +28,7 @@ import { Progress } from "@/components/ui/progress";
 import { UserAvatar } from "@/components/ui/user-avatar";
 import { UpgradeModal } from "@/components/premium/UpgradeModal";
 import { CreditPurchase } from "@/components/billing/CreditPurchase";
+import { PromoRedeemCard } from "@/components/promos/PromoRedeemCard";
 import { useAuth } from "@/providers/AuthProvider";
 import { useSubscription } from "@/hooks/useSubscription";
 import {
@@ -439,6 +440,15 @@ function DashboardContent() {
                 />
               </div>
             </section>
+
+            <PromoRedeemCard
+              source="dashboard"
+              title="Have a founder or launch code?"
+              description="Unlock eligible Academy access, Creator Credits, product benefits, or future reseller-rights eligibility from your SDC dashboard."
+              onRedeemed={() => {
+                router.refresh();
+              }}
+            />
 
             <div className="grid gap-6 lg:grid-cols-2">
               <div className="rounded-[18px] border border-white/[0.08] bg-[#151A2E]/72 p-5 shadow-[0_18px_60px_rgba(0,0,0,0.22)]">

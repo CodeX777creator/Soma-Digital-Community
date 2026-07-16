@@ -32,6 +32,7 @@ async function saveGoogleOnboardingData(user: User) {
     budget,
     availableTime,
     roadmap,
+    promoCode,
   } = useOnboardingStore.getState();
 
   await bootstrapAuthenticatedUser({
@@ -49,6 +50,24 @@ async function saveGoogleOnboardingData(user: User) {
 
   if (roadmap) {
     await dbService.saveRoadmap(user.uid, roadmap);
+  }
+
+  if (promoCode?.trim()) {
+    const token = await user.getIdToken();
+    await fetch("/api/promos/redeem", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        code: promoCode.trim(),
+        source: "google_redirect_onboarding",
+        path: "/open",
+      }),
+    }).catch((error) => {
+      console.error("[Google Signup] Non-critical promo redemption failed:", error);
+    });
   }
 
   try {
