@@ -44,7 +44,7 @@ const UNDO_TIMEOUT = 5000; // 5 seconds
 interface PostOptionsMenuProps {
   post: Post;
   onEdit?: () => void;
-  onDelete?: (postId: string, post: Post) => void;
+  onDelete?: (postId: string) => void;
   onHide?: (postId: string) => void;
   onPin?: () => void;
   isAdmin?: boolean;
@@ -172,10 +172,22 @@ export function PostOptionsMenu({
           <Button
             variant="secondary"
             size="sm"
-            onClick={() => {
+            onClick={async () => {
               dismiss(toastObj.id);
-              // Trigger undo through parent
-              onDelete?.(post.id, post);
+              try {
+                await postService.restorePost(post.id, post.content);
+                toast({
+                  title: "Post restored",
+                  description: "Your post is back in the community feed.",
+                });
+              } catch (error) {
+                console.error("Failed to restore post:", error);
+                toast({
+                  title: "Restore failed",
+                  description: "Please refresh and try again.",
+                  variant: "destructive",
+                });
+              }
             }}
             className="h-7 px-3"
           >
@@ -183,10 +195,8 @@ export function PostOptionsMenu({
           </Button>
         ),
       });
-      const undoId = toastObj.id;
-      
       // Notify parent that post was deleted (for optimistic UI update)
-      onDelete?.(post.id, post);
+      onDelete?.(post.id);
     } catch (error) {
       console.error('Failed to delete post:', error);
       toast({

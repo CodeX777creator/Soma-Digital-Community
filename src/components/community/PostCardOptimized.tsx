@@ -193,7 +193,7 @@ export const PostCardOptimized = memo(function PostCardOptimized({ post, onEdit,
           <PostOptionsMenu 
             post={post}
             onEdit={() => onEdit?.(post)}
-            onDelete={(postId, postObj) => onDelete?.(postId, postObj)}
+            onDelete={(postId) => onDelete?.(postId)}
             onHide={onHide}
             onPin={async () => {
               try {
