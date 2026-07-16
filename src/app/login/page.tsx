@@ -11,13 +11,11 @@ import {
   getRedirectResult, 
   GoogleAuthProvider, 
   sendPasswordResetEmail, 
-  sendEmailVerification,
   getAdditionalUserInfo, 
   onAuthStateChanged
 } from "firebase/auth";
 import { auth } from "@/lib/firebase";
 import { getSafeRedirectPath, isStandaloneApp, requiresEmailVerification } from "@/lib/auth";
-import { getAuthActionCodeSettings } from "@/lib/firebase-auth-actions";
 import { bootstrapAuthenticatedUser } from "@/lib/auth-bootstrap";
 import { resolvePostAuthDestination } from "@/lib/auth-routing";
 import { useToast } from "@/hooks/use-toast";
@@ -119,10 +117,9 @@ function LoginPageContent() {
 
       const currentUser = auth.currentUser;
       if (requiresEmailVerification(currentUser) && currentUser) {
-        await sendEmailVerification(currentUser, getAuthActionCodeSettings());
         toast({
-          title: "Verification link sent",
-          description: "You can continue now. Please verify your email when you have a moment.",
+          title: "Email verification pending",
+          description: "You can continue now. Use the verification reminder in SDC if you need a new link.",
         });
       }
 

@@ -96,7 +96,9 @@ export function AccountCreationStep() {
     }
 
     if (roadmap) {
-      await dbService.saveRoadmap(user.uid, roadmap);
+      await dbService.saveRoadmap(user.uid, roadmap).catch((roadmapError) => {
+        console.error("Non-critical roadmap save failed:", roadmapError);
+      });
     }
   };
 
