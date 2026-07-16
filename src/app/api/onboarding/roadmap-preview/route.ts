@@ -36,7 +36,7 @@ export const POST = createAPIHandler(
     return apiResponse({ roadmap }, { cache: { maxAge: 0, private: true } });
   },
   {
-    rateLimit: { windowMs: 60 * 60 * 1000, maxRequests: 2 },
+    rateLimit: { windowMs: 60 * 60 * 1000, maxRequests: 8 },
     timeout: 45000,
   }
 );

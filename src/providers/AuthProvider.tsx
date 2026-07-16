@@ -1,10 +1,9 @@
 "use client";
 
 import React, { createContext, useContext, useEffect, useState, useRef, useCallback } from "react";
-import { onAuthStateChanged, signOut, User } from "firebase/auth";
+import { onAuthStateChanged, User } from "firebase/auth";
 import { doc, onSnapshot, FirestoreError } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
-import { requiresEmailVerification } from "@/lib/auth";
 import { dbService, UserProfile } from "@/lib/db";
 import { useUserStore } from "@/store/useUserStore";
 import { logger, logFirestoreError } from "@/lib/logger";
@@ -139,8 +138,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
       return;
     }
-    const authInstance = auth;
-
     // Clean up any existing listener
     if (authUnsubscribeRef.current) {
       authUnsubscribeRef.current();
@@ -148,17 +145,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       if (!isMounted.current) return;
-
-      if (requiresEmailVerification(firebaseUser)) {
-        if (authInstance.currentUser) {
-          await signOut(authInstance);
-        }
-        setUser(null);
-        setUserData(null);
-        clearState();
-        setLoading(false);
-        return;
-      }
       
       setUser(firebaseUser);
       

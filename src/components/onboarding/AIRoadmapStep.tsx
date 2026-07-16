@@ -3,8 +3,47 @@ import { useOnboardingStore } from "@/store/useOnboardingStore";
 import { BrainCircuit, ChevronLeft } from "lucide-react";
 import { trackOnboardingEvent } from "@/lib/onboarding-events";
 
+const ROADMAP_CACHE_PREFIX = "sdc-onboarding-roadmap:";
+
+function getRoadmapCacheKey(input: string) {
+  let hash = 0;
+  for (let i = 0; i < input.length; i += 1) {
+    hash = Math.imul(31, hash) + input.charCodeAt(i) | 0;
+  }
+  return `${ROADMAP_CACHE_PREFIX}${Math.abs(hash)}`;
+}
+
+function buildFallbackRoadmap(goalsText: string) {
+  const focus = goalsText.includes("creator")
+    ? "content-led growth"
+    : goalsText.includes("agency")
+      ? "service packaging and client acquisition"
+      : "a focused digital business foundation";
+
+  return {
+    roadmapTitle: "Your SDC Business Launch Roadmap",
+    primaryOpportunity: `Build momentum through ${focus}, then use Soma AI to turn that focus into repeatable weekly execution.`,
+    fastestRevenuePath: "Start with one clear offer, publish useful content around the problem it solves, and invite interested people into a simple call, checkout, or community path.",
+    recommendedContentStrategy: "Create practical content that teaches, proves, and invites. Use AI Studio for captions, scripts, emails, and repurposing so consistency does not depend on daily willpower.",
+    monetizationStrategy: "Package your knowledge or service into a clear offer, validate it with your first audience, then use Marketplace, Scheduler, and community touchpoints to keep demand moving.",
+    aiGrowthForecast: "Over the next 12 months, AI should reduce content production time, sharpen your roadmap, improve follow-up, and help you test offers faster.",
+    thirtyDayExecutionPlan: [
+      { day: "Days 1-7", task: "Clarify your niche, audience, and first offer.", outcome: "A simple business direction and message you can publish around." },
+      { day: "Days 8-14", task: "Create your first content system in AI Studio.", outcome: "A repeatable weekly publishing rhythm." },
+      { day: "Days 15-21", task: "Start conversations and collect feedback.", outcome: "Real market signals from prospects or community members." },
+      { day: "Days 22-30", task: "Refine the offer and prepare a simple launch path.", outcome: "A practical route to first revenue or next revenue." },
+    ],
+    steps: [
+      { title: "Define the business lane", description: "Choose the audience, problem, and outcome you want SDC to help you build around.", timeframe: "Today", resources: ["AI Mentor", "Business roadmap"] },
+      { title: "Create the first content engine", description: "Use AI Studio to generate platform-specific content ideas, scripts, captions, and emails.", timeframe: "This week", resources: ["AI Studio", "Scheduler"] },
+      { title: "Publish and learn", description: "Schedule content, watch engagement, and use feedback to adjust your offer and message.", timeframe: "Weeks 2-3", resources: ["Social Hub", "Scheduler analytics"] },
+      { title: "Monetize the validated path", description: "Turn the strongest signal into a product, service, course, or marketplace offer.", timeframe: "Weeks 3-4", resources: ["Marketplace", "Academy", "Community"] },
+    ],
+  };
+}
+
 export function AIRoadmapStep() {
-  const { identities, goal, skillLevel, interests, plan, setRoadmap, nextStep, prevStep } = useOnboardingStore();
+  const { identities, goal, skillLevel, interests, plan, roadmap, setRoadmap, nextStep, prevStep } = useOnboardingStore();
   const [isSynthesizing, setIsSynthesizing] = useState(true);
   const hasStarted = useRef(false);
 
@@ -27,6 +66,28 @@ export function AIRoadmapStep() {
       `;
 
       try {
+        if (roadmap) {
+          timeoutId = setTimeout(() => {
+            if (!isActive) return;
+            setIsSynthesizing(false);
+            nextStep();
+          }, 900);
+          return;
+        }
+
+        const cacheKey = getRoadmapCacheKey(goalsText);
+        const cached = typeof window !== "undefined" ? window.localStorage.getItem(cacheKey) : null;
+        if (cached) {
+          const parsed = JSON.parse(cached);
+          setRoadmap(parsed);
+          timeoutId = setTimeout(() => {
+            if (!isActive) return;
+            setIsSynthesizing(false);
+            nextStep();
+          }, 900);
+          return;
+        }
+
         const response = await fetch("/api/onboarding/roadmap-preview", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -35,6 +96,19 @@ export function AIRoadmapStep() {
         });
 
         if (!response.ok) {
+          if (response.status === 429) {
+            const fallback = buildFallbackRoadmap(goalsText);
+            setRoadmap(fallback);
+            if (typeof window !== "undefined") {
+              window.localStorage.setItem(cacheKey, JSON.stringify(fallback));
+            }
+            timeoutId = setTimeout(() => {
+              if (!isActive) return;
+              setIsSynthesizing(false);
+              nextStep();
+            }, 1200);
+            return;
+          }
           throw new Error("Unable to generate onboarding roadmap preview");
         }
 
@@ -43,6 +117,9 @@ export function AIRoadmapStep() {
         if (!isActive) return;
 
         setRoadmap(res);
+        if (typeof window !== "undefined") {
+          window.localStorage.setItem(cacheKey, JSON.stringify(res));
+        }
         await trackOnboardingEvent("onboarding_roadmap_generated", {
           source: "onboarding_preview",
           intendedPlan: plan || "explorer",
@@ -68,7 +145,7 @@ export function AIRoadmapStep() {
       isActive = false;
       if (timeoutId) clearTimeout(timeoutId);
     };
-  }, [identities, goal, skillLevel, interests, plan, setRoadmap, nextStep]);
+  }, [identities, goal, skillLevel, interests, plan, roadmap, setRoadmap, nextStep]);
 
   return (
     <div className="flex flex-col items-center justify-center py-20 gap-8 h-[400px]">

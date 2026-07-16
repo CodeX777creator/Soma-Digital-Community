@@ -1,6 +1,13 @@
 import { initializeApp, getApps, getApp, FirebaseApp } from "firebase/app";
 import { getAuth, Auth, connectAuthEmulator } from "firebase/auth";
-import { getFirestore, Firestore, connectFirestoreEmulator } from "firebase/firestore";
+import {
+  getFirestore,
+  initializeFirestore,
+  persistentLocalCache,
+  persistentMultipleTabManager,
+  Firestore,
+  connectFirestoreEmulator
+} from "firebase/firestore";
 import { getStorage, FirebaseStorage, connectStorageEmulator } from "firebase/storage";
 import { logger } from "./logger";
 
@@ -38,23 +45,20 @@ if (hasConfig) {
     });
     
     auth = getAuth(app);
-    db = getFirestore(app);
-    storage = getStorage(app);
-    
-    // Enable offline persistence for Firestore in browser
-    if (typeof window !== 'undefined' && db) {
-      import('firebase/firestore').then(({ enableIndexedDbPersistence }) => {
-        enableIndexedDbPersistence(db!).catch((err) => {
-          if (err.code === 'failed-precondition') {
-            // Multiple tabs open, persistence can only be enabled in one tab at a time
-            logger.warn('Firestore persistence failed: Multiple tabs open');
-          } else if (err.code === 'unimplemented') {
-            // Browser doesn't support persistence
-            logger.warn('Firestore persistence not supported in this browser');
-          }
+    if (typeof window !== "undefined") {
+      try {
+        db = initializeFirestore(app, {
+          localCache: persistentLocalCache({
+            tabManager: persistentMultipleTabManager(),
+          }),
         });
-      });
+      } catch {
+        db = getFirestore(app);
+      }
+    } else {
+      db = getFirestore(app);
     }
+    storage = getStorage(app);
     
     // Connect to emulators in development if configured
     if (isDevelopment && typeof window !== 'undefined') {
