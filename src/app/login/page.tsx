@@ -16,6 +16,7 @@ import {
 } from "firebase/auth";
 import { auth } from "@/lib/firebase";
 import { getSafeRedirectPath, isStandaloneApp, requiresEmailVerification } from "@/lib/auth";
+import { getAuthActionCodeSettings } from "@/lib/firebase-auth-actions";
 import { bootstrapAuthenticatedUser } from "@/lib/auth-bootstrap";
 import { resolvePostAuthDestination } from "@/lib/auth-routing";
 import { useToast } from "@/hooks/use-toast";
