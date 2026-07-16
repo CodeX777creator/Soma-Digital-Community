@@ -53,25 +53,6 @@ const nextConfig: NextConfig = {
 
   // Headers for security and caching
   async headers() {
-    const isDev = process.env.NODE_ENV === 'development';
-    
-    // Content Security Policy
-    const cspHeader = `
-      default-src 'self';
-      script-src 'self' 'unsafe-eval' 'unsafe-inline' ${isDev ? "'unsafe-inline'" : ''} https://*.paypal.com https://*.paystack.co https://js.stripe.com https://www.gstatic.com https://apis.google.com https://accounts.google.com;
-      style-src 'self' 'unsafe-inline';
-      img-src 'self' blob: data: https:;
-      font-src 'self';
-      connect-src 'self' https://*.googleapis.com https://*.firebaseio.com https://*.firebaseapp.com https://securetoken.googleapis.com https://identitytoolkit.googleapis.com https://*.cloudfunctions.net https://*.paypal.com https://api.paystack.co https://api.moonshot.cn https://api.moonshot.ai wss://*.firebaseio.com;
-      frame-src 'self' https://*.firebaseapp.com https://*.web.app https://accounts.google.com https://apis.google.com https://*.paypal.com https://*.paystack.co https://js.stripe.com;
-      media-src 'self' https://*.firebasestorage.app https://firebasestorage.googleapis.com;
-      object-src 'none';
-      base-uri 'self';
-      form-action 'self';
-      frame-ancestors 'none';
-      upgrade-insecure-requests;
-    `.replace(/\s{2,}/g, ' ').trim();
-    
     return [
       {
         source: '/:path*',
@@ -99,10 +80,6 @@ const nextConfig: NextConfig = {
           {
             key: 'Referrer-Policy',
             value: 'strict-origin-when-cross-origin',
-          },
-          {
-            key: 'Content-Security-Policy',
-            value: cspHeader,
           },
           {
             key: 'Permissions-Policy',

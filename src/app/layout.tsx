@@ -1,4 +1,5 @@
 import type {Metadata, Viewport} from 'next';
+import { headers } from 'next/headers';
 import './globals.css';
 import { SpeedInsights } from "@vercel/speed-insights/next";
 
@@ -37,11 +38,13 @@ import { ServiceWorkerRegistration } from '@/components/ServiceWorkerRegistratio
 import { PwaInstallPrompt } from '@/components/PwaInstallPrompt';
 import { SystemUpdatePrompt } from '@/components/SystemUpdatePrompt';
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const nonce = (await headers()).get('x-nonce') ?? undefined;
+
   return (
     <html lang="en" className="dark" suppressHydrationWarning>
       <head>
@@ -49,7 +52,7 @@ export default function RootLayout({
       </head>
       <body className="font-body antialiased bg-background text-foreground overflow-x-hidden min-h-screen">
         <AuthProvider>
-          <PayPalProvider>
+          <PayPalProvider nonce={nonce}>
             <NetworkStatusIndicator />
             {children}
             <Toaster />

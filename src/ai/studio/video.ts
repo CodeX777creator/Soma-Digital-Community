@@ -281,6 +281,7 @@ export async function generateVideoStudioAsset(
   const aspectRatio = normalizeAspectRatio(input.aspectRatio);
   const stylePreset = normalizeStylePreset(input.stylePreset);
   const durationSeconds = Math.max(6, Math.min(180, Math.floor(input.durationSeconds || 30)));
+  const generationMode = input.generationMode === 'render' ? 'render' : 'draft';
   const assetId = `vid_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
   const providedScenes = normalizeInputScenes(input.scenes, durationSeconds);
 
@@ -327,69 +328,80 @@ export async function generateVideoStudioAsset(
   let queue = 'video-studio';
   let jobId = `job_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
 
-  try {
-    renderOutcome = await renderVideoAsset({
-      title: blueprint.title,
-      prompt: normalizedPrompt,
-      renderPrompt: blueprint.renderPrompt,
-      scenes: blueprint.scenes,
-      stylePreset,
-      aspectRatio,
-      durationSeconds,
-      captionsEnabled: input.captionsEnabled ?? true,
-      voiceoverScript: blueprint.voiceoverScript,
-      thumbnailPrompt: blueprint.thumbnailPrompt,
-      renderNotes: blueprint.renderNotes,
-      brandName: normalizedBrandName,
-      brandTemplateName: input.brandTemplate?.name,
-      voiceoverTone: input.voiceoverTone,
-    });
-    renderState = renderOutcome.status;
-    jobStatus = renderOutcome.status;
-    rawPlan = {
-      ...rawPlan,
-      renderer: renderOutcome.renderer,
-      renderStatus: renderOutcome.status,
-      renderNotes: renderOutcome.notes || blueprint.renderNotes,
-      raw: renderOutcome.raw || null,
-    };
+  if (generationMode === 'render') {
+    try {
+      renderOutcome = await renderVideoAsset({
+        title: blueprint.title,
+        prompt: normalizedPrompt,
+        renderPrompt: blueprint.renderPrompt,
+        scenes: blueprint.scenes,
+        stylePreset,
+        aspectRatio,
+        durationSeconds,
+        captionsEnabled: input.captionsEnabled ?? true,
+        voiceoverScript: blueprint.voiceoverScript,
+        thumbnailPrompt: blueprint.thumbnailPrompt,
+        renderNotes: blueprint.renderNotes,
+        brandName: normalizedBrandName,
+        brandTemplateName: input.brandTemplate?.name,
+        voiceoverTone: input.voiceoverTone,
+      });
+      renderState = renderOutcome.status;
+      jobStatus = renderOutcome.status;
+      rawPlan = {
+        ...rawPlan,
+        generationMode,
+        renderer: renderOutcome.renderer,
+        renderStatus: renderOutcome.status,
+        renderNotes: renderOutcome.notes || blueprint.renderNotes,
+        raw: renderOutcome.raw || null,
+      };
 
-    if (renderOutcome.status === 'completed') {
-      if (renderOutcome.videoBuffer) {
-        videoBuffer = renderOutcome.videoBuffer;
-        mimeType = renderOutcome.mimeType || 'video/mp4';
-        actualStoragePath = buildStoragePath(ownerId, assetId);
-        downloadUrl = await saveBufferToStorage(videoBuffer, actualStoragePath, mimeType, ownerId);
-        if (renderOutcome.posterFrameBuffer) {
-          posterFrameUrl = await savePosterFrame(renderOutcome.posterFrameBuffer, buildPosterPath(ownerId, assetId), ownerId);
-        }
-      } else if (renderOutcome.sourceUrl) {
-        const response = await fetch(renderOutcome.sourceUrl);
-        if (response.ok) {
-          const arrayBuffer = await response.arrayBuffer();
-          videoBuffer = Buffer.from(arrayBuffer);
-          mimeType = response.headers.get('content-type') || renderOutcome.mimeType || 'video/mp4';
+      if (renderOutcome.status === 'completed') {
+        if (renderOutcome.videoBuffer) {
+          videoBuffer = renderOutcome.videoBuffer;
+          mimeType = renderOutcome.mimeType || 'video/mp4';
           actualStoragePath = buildStoragePath(ownerId, assetId);
           downloadUrl = await saveBufferToStorage(videoBuffer, actualStoragePath, mimeType, ownerId);
           if (renderOutcome.posterFrameBuffer) {
             posterFrameUrl = await savePosterFrame(renderOutcome.posterFrameBuffer, buildPosterPath(ownerId, assetId), ownerId);
           }
-        } else {
-          renderState = 'queued';
-          jobStatus = 'queued';
+        } else if (renderOutcome.sourceUrl) {
+          const response = await fetch(renderOutcome.sourceUrl);
+          if (response.ok) {
+            const arrayBuffer = await response.arrayBuffer();
+            videoBuffer = Buffer.from(arrayBuffer);
+            mimeType = response.headers.get('content-type') || renderOutcome.mimeType || 'video/mp4';
+            actualStoragePath = buildStoragePath(ownerId, assetId);
+            downloadUrl = await saveBufferToStorage(videoBuffer, actualStoragePath, mimeType, ownerId);
+            if (renderOutcome.posterFrameBuffer) {
+              posterFrameUrl = await savePosterFrame(renderOutcome.posterFrameBuffer, buildPosterPath(ownerId, assetId), ownerId);
+            }
+          } else {
+            renderState = 'queued';
+            jobStatus = 'queued';
+          }
         }
+      } else if (renderOutcome.status === 'queued') {
+        renderState = 'queued';
+        jobStatus = 'queued';
       }
-    } else if (renderOutcome.status === 'queued') {
+    } catch (error) {
+      logger.warn('[VideoStudio] Video renderer unavailable or failed; saving blueprint bundle', {
+        ownerId,
+        error: error instanceof Error ? error.message : String(error),
+      });
       renderState = 'queued';
       jobStatus = 'queued';
     }
-  } catch (error) {
-    logger.warn('[VideoStudio] Video renderer unavailable or failed; saving blueprint bundle', {
-      ownerId,
-      error: error instanceof Error ? error.message : String(error),
-    });
-    renderState = 'queued';
-    jobStatus = 'queued';
+  } else {
+    rawPlan = {
+      ...rawPlan,
+      generationMode,
+      renderer: renderOutcome.renderer,
+      renderStatus: renderOutcome.status,
+      renderNotes: 'Saved as a video draft. Full rendering starts only when the creator chooses Render full video.',
+    };
   }
 
   if (!actualStoragePath) {
@@ -420,6 +432,7 @@ export async function generateVideoStudioAsset(
       renderState,
       productRules: input.productRules || null,
       renderer: renderOutcome.renderer,
+      generationMode,
     });
     downloadUrl = bundleDownloadUrl;
     mimeType = 'application/json';
@@ -445,6 +458,7 @@ export async function generateVideoStudioAsset(
       schemaVariant: 'video-generation-v1',
       renderer: renderOutcome.renderer,
       renderStatus: renderOutcome.status,
+      generationMode,
       creditPolicy: submittedRealRender ? 'video_generation_render' : 'content_generation_blueprint',
     },
   }, {
@@ -458,6 +472,7 @@ export async function generateVideoStudioAsset(
       assetId,
       renderer: renderOutcome.renderer,
       renderStatus: renderOutcome.status,
+      generationMode,
     },
   });
 

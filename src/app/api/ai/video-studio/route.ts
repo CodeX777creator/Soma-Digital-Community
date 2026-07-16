@@ -116,8 +116,12 @@ const handler = createAPIHandler(
     if (body.durationSeconds && typeof body.durationSeconds !== 'number') {
       return apiError('durationSeconds must be a number', { status: 400, code: 'INVALID_INPUT' });
     }
+    if (body.generationMode && body.generationMode !== 'draft' && body.generationMode !== 'render') {
+      return apiError('generationMode must be draft or render', { status: 400, code: 'INVALID_INPUT' });
+    }
 
     const video = await generateVideoStudioAsset({
+      generationMode: body.generationMode === 'render' ? 'render' : 'draft',
       prompt: sanitizeString(body.prompt, 4000),
       promptEdits: typeof body.promptEdits === 'string' ? sanitizeString(body.promptEdits, 2000) : undefined,
       negativePrompt: typeof body.negativePrompt === 'string' ? sanitizeString(body.negativePrompt, 1000) : undefined,

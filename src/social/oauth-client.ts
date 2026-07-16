@@ -1,7 +1,7 @@
 import { sanitizeString } from '@/lib/security';
 import type { SocialPlatform } from './types';
 import { getSocialOAuthRule } from './oauth';
-import { createSocialOAuthError } from '@/lib/errors/domain';
+import { createSocialOAuthProviderError } from './oauth-errors';
 
 export interface SocialOAuthTokenResult {
   providerId: SocialPlatform;
@@ -62,7 +62,11 @@ async function postTokenRequest(input: {
 }): Promise<Record<string, unknown>> {
   const rule = getSocialOAuthRule(input.providerId);
   if (!rule.tokenUrl) {
-    throw createSocialOAuthError('SOCIAL_PROVIDER_NOT_CONFIGURED', { message: `OAuth token endpoint is not configured for ${input.providerId}` });
+    throw createSocialOAuthProviderError({
+      providerId: input.providerId,
+      phase: 'configuration',
+      error: 'missing_token_endpoint',
+    });
   }
 
   const headers: Record<string, string> = {
@@ -102,12 +106,14 @@ async function postTokenRequest(input: {
   }
 
   if (!response.ok) {
-    const message = typeof parsed.error_description === 'string'
-      ? parsed.error_description
-      : typeof parsed.error === 'string'
-        ? parsed.error
-        : `Token endpoint returned HTTP ${response.status}`;
-    throw createSocialOAuthError('SOCIAL_OAUTH_TOKEN_EXCHANGE_FAILED', { message, status: response.status });
+    throw createSocialOAuthProviderError({
+      providerId: input.providerId,
+      phase: input.body.get('grant_type') === 'refresh_token' ? 'token_refresh' : 'token_exchange',
+      status: response.status,
+      error: parsed.error,
+      errorDescription: parsed.error_description || parsed.errorMessage || parsed.message,
+      raw: parsed,
+    });
   }
 
   return parsed;
@@ -136,7 +142,12 @@ export async function exchangeOAuthCodeForTokens(input: {
       : '';
 
   if (!accessToken) {
-    throw createSocialOAuthError('SOCIAL_OAUTH_TOKEN_EXCHANGE_FAILED', { message: 'OAuth token response did not include an access token' });
+    throw createSocialOAuthProviderError({
+      providerId: input.providerId,
+      phase: 'token_exchange',
+      error: 'missing_access_token',
+      raw: payload,
+    });
   }
 
   const expiresIn = typeof payload.expires_in === 'number'
@@ -185,7 +196,12 @@ export async function refreshOAuthTokens(input: {
       : '';
 
   if (!accessToken) {
-    throw createSocialOAuthError('SOCIAL_OAUTH_TOKEN_EXCHANGE_FAILED', { message: 'OAuth refresh response did not include an access token' });
+    throw createSocialOAuthProviderError({
+      providerId: input.providerId,
+      phase: 'token_refresh',
+      error: 'missing_access_token',
+      raw: payload,
+    });
   }
 
   const expiresIn = typeof payload.expires_in === 'number'

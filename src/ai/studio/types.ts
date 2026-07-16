@@ -248,6 +248,7 @@ export interface VideoScene {
 
 export interface VideoGenerationInput {
   schemaVariant?: VideoGenerationSchemaVariant;
+  generationMode?: 'draft' | 'render';
   prompt: string;
   promptEdits?: string;
   negativePrompt?: string;

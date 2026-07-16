@@ -5,11 +5,12 @@ import { ReactNode } from 'react';
 
 interface PayPalProviderProps {
   children: ReactNode;
+  nonce?: string;
 }
 
 const PAYPAL_CLIENT_ID = process.env.NEXT_PUBLIC_PAYPAL_CLIENT_ID;
 
-export function PayPalProvider({ children }: PayPalProviderProps) {
+export function PayPalProvider({ children, nonce }: PayPalProviderProps) {
   return (
     <PayPalScriptProvider
       options={{
@@ -17,6 +18,7 @@ export function PayPalProvider({ children }: PayPalProviderProps) {
         components: 'buttons',
         vault: true,
         intent: 'subscription',
+        dataCspNonce: nonce,
       }}
     >
       {children}

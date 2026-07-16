@@ -11,6 +11,7 @@ import {
   getSocialOAuthRule,
 } from '@/social/oauth';
 import { sanitizeString } from '@/lib/security';
+import { toAppError } from '@/lib/errors';
 
 function isAllowedProvider(value: unknown): value is SocialPlatform {
   return typeof value === 'string' && (SOCIAL_PLATFORMS as readonly string[]).includes(value);
@@ -153,8 +154,13 @@ const handler = createAPIHandler(
         nextStep: authorizationUrl ? 'redirect_to_provider' : 'attach_provider_authorization_url',
       }, { status: 201 });
     } catch (error) {
-      const httpError = getHttpError(error);
-      const message = httpError.message || getErrorMessage(error);
+      const appError = toAppError(error, {
+        status: 500,
+        code: 'SOCIAL_OAUTH_FAILED',
+        message: getErrorMessage(error),
+      });
+      const httpError = getHttpError(appError);
+      const message = httpError.message || appError.userMessage;
 
       logger.error('[Social OAuth] Start handoff failed', error instanceof Error ? error : new Error(message), {
         stage,
@@ -163,16 +169,16 @@ const handler = createAPIHandler(
       });
 
       if (httpError.status) {
-        return apiError(message, {
+        return apiError(appError.userMessage || message, {
           status: httpError.status,
-          code: httpError.code || 'SOCIAL_OAUTH_START_AUTH_FAILED',
+          code: httpError.code || String(appError.code || 'SOCIAL_OAUTH_FAILED'),
         });
       }
 
-      return apiError(`OAuth handoff failed during ${stage}.`, {
+      return apiError(appError.userMessage, {
         status: 500,
-        code: 'SOCIAL_OAUTH_START_FAILED',
-        details: message,
+        code: String(appError.code || 'SOCIAL_OAUTH_FAILED'),
+        details: { stage, message },
       });
     }
   },

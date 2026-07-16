@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 import { apiError, createAPIHandler } from '@/lib/api-middleware';
+import { toAppError } from '@/lib/errors';
 import { logger } from '@/lib/logger';
 import { adminDb } from '@/lib/firebaseAdmin';
 import { sanitizeString } from '@/lib/security';
@@ -14,6 +15,7 @@ import {
   getSocialOAuthRule,
   verifySocialOAuthState,
 } from '@/social/oauth';
+import { createSocialOAuthProviderError } from '@/social/oauth-errors';
 
 function isAllowedProvider(value: unknown): value is SocialPlatform {
   return typeof value === 'string' && (SOCIAL_PLATFORMS as readonly string[]).includes(value);
@@ -118,6 +120,7 @@ const handler = createAPIHandler(
     let resolvedSocialAccountId = state.socialAccountId || '';
     let accountStatus: 'pending' | 'error' | 'connected' = 'pending';
     let exchangeError: string | null = null;
+    let exchangeErrorCode: string | null = null;
 
     if (!resolvedSocialAccountId) {
       const created = await createSocialAccount({
@@ -159,29 +162,44 @@ const handler = createAPIHandler(
 
     if (error) {
       accountStatus = 'error';
-      exchangeError = errorDescription || error;
+      const providerError = createSocialOAuthProviderError({
+        providerId: provider,
+        phase: 'callback',
+        error,
+        errorDescription,
+      });
+      exchangeError = providerError.userMessage;
+      exchangeErrorCode = String(providerError.code);
       await updateSocialAccount(state.ownerId, resolvedSocialAccountId, {
         status: 'error',
         metadata: {
           oauthProviderId: provider,
           oauthHandshakeId: handshakeId,
           oauthCallbackStatus: 'failed',
-          oauthError: error,
+          oauthError: exchangeErrorCode,
           oauthErrorDescription: errorDescription || undefined,
+          oauthUserMessage: exchangeError,
           oauthStateHash: stateHash,
           oauthCallbackAt: new Date().toISOString(),
         },
       });
     } else if (!code) {
       accountStatus = 'error';
-      exchangeError = 'Missing OAuth authorization code';
+      const providerError = createSocialOAuthProviderError({
+        providerId: provider,
+        phase: 'callback',
+        error: 'missing_authorization_code',
+      });
+      exchangeError = providerError.userMessage;
+      exchangeErrorCode = String(providerError.code);
       await updateSocialAccount(state.ownerId, resolvedSocialAccountId, {
         status: 'error',
         metadata: {
           oauthProviderId: provider,
           oauthHandshakeId: handshakeId,
           oauthCallbackStatus: 'failed',
-          oauthError: 'missing_code',
+          oauthError: exchangeErrorCode,
+          oauthUserMessage: exchangeError,
           oauthStateHash: stateHash,
           oauthCallbackAt: new Date().toISOString(),
         },
@@ -252,7 +270,12 @@ const handler = createAPIHandler(
         });
       } catch (exchangeFailure) {
         accountStatus = 'error';
-        exchangeError = exchangeFailure instanceof Error ? exchangeFailure.message : String(exchangeFailure);
+        const appError = toAppError(exchangeFailure, {
+          status: 400,
+          code: 'SOCIAL_OAUTH_TOKEN_EXCHANGE_FAILED',
+        });
+        exchangeError = appError.userMessage;
+        exchangeErrorCode = String(appError.code);
         await updateSocialAccount(state.ownerId, resolvedSocialAccountId, {
           status: 'error',
           metadata: {
@@ -260,7 +283,8 @@ const handler = createAPIHandler(
             oauthHandshakeId: handshakeId,
             oauthCallbackStatus: 'failed',
             oauthStateHash: stateHash,
-            oauthError: exchangeError,
+            oauthError: exchangeErrorCode,
+            oauthUserMessage: exchangeError,
             oauthCallbackAt: new Date().toISOString(),
             oauthRequiresTokenExchange: true,
           },
@@ -277,8 +301,9 @@ const handler = createAPIHandler(
       callbackMode: rule.flowMode,
       codeReceived: Boolean(code),
       stateHash,
-      error: exchangeError ? sanitizeString(exchangeError, 120) : null,
+      error: exchangeErrorCode ? sanitizeString(exchangeErrorCode, 120) : exchangeError ? sanitizeString(exchangeError, 120) : null,
       errorDescription: errorDescription ? sanitizeString(errorDescription, 500) : null,
+      userMessage: exchangeError ? sanitizeString(exchangeError, 300) : null,
       returnTo,
       nextStep,
       accountStatus,
@@ -302,7 +327,8 @@ const handler = createAPIHandler(
       oauth_status: accountStatus,
       oauth_handshake: handshakeId,
       oauth_account: resolvedSocialAccountId || undefined,
-      oauth_error: accountStatus === 'connected' ? undefined : sanitizeString(exchangeError || errorDescription || error || 'oauth_failed', 120),
+      oauth_error: accountStatus === 'connected' ? undefined : sanitizeString(exchangeError || 'We could not connect this social account.', 180),
+      oauth_error_code: accountStatus === 'connected' ? undefined : sanitizeString(exchangeErrorCode || 'SOCIAL_OAUTH_FAILED', 120),
     });
   },
   {
