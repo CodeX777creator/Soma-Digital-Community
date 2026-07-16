@@ -1,10 +1,12 @@
 import Link from "next/link";
 import { ArrowLeft, ClipboardCheck, Clock3, GraduationCap, Users } from "lucide-react";
 
-export default function AcademyCourseStudentsPage({ params }: { params: { courseId: string } }) {
+export default async function AcademyCourseStudentsPage({ params }: { params: Promise<{ courseId: string }> }) {
+  const { courseId } = await params;
+
   return (
     <div className="space-y-6">
-      <Link href={`/admin/academy/courses/${params.courseId}/builder`} className="inline-flex items-center gap-2 text-sm text-white/50 hover:text-white">
+      <Link href={`/admin/academy/courses/${courseId}/builder`} className="inline-flex items-center gap-2 text-sm text-white/50 hover:text-white">
         <ArrowLeft className="h-4 w-4" />
         Back to builder
       </Link>

@@ -1,10 +1,12 @@
 import Link from "next/link";
 import { ArrowLeft, CalendarDays, Radio, Users } from "lucide-react";
 
-export default function AcademyCourseCohortsPage({ params }: { params: { courseId: string } }) {
+export default async function AcademyCourseCohortsPage({ params }: { params: Promise<{ courseId: string }> }) {
+  const { courseId } = await params;
+
   return (
     <div className="space-y-6">
-      <Link href={`/admin/academy/courses/${params.courseId}/builder`} className="inline-flex items-center gap-2 text-sm text-white/50 hover:text-white"><ArrowLeft className="h-4 w-4" />Back to builder</Link>
+      <Link href={`/admin/academy/courses/${courseId}/builder`} className="inline-flex items-center gap-2 text-sm text-white/50 hover:text-white"><ArrowLeft className="h-4 w-4" />Back to builder</Link>
       <section className="rounded-3xl border border-white/10 bg-gradient-to-br from-indigo-500/15 via-white/[0.055] to-cyan-500/10 p-6">
         <p className="text-xs font-semibold uppercase tracking-[0.22em] text-cyan-200">Cohorts</p>
         <h1 className="mt-3 text-3xl font-semibold tracking-tight">Live cohort operations</h1>
