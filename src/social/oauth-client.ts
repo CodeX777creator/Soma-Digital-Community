@@ -1,6 +1,7 @@
 import { sanitizeString } from '@/lib/security';
 import type { SocialPlatform } from './types';
 import { getSocialOAuthRule } from './oauth';
+import { createSocialOAuthError } from '@/lib/errors/domain';
 
 export interface SocialOAuthTokenResult {
   providerId: SocialPlatform;
@@ -61,7 +62,7 @@ async function postTokenRequest(input: {
 }): Promise<Record<string, unknown>> {
   const rule = getSocialOAuthRule(input.providerId);
   if (!rule.tokenUrl) {
-    throw new Error(`OAuth token endpoint is not configured for ${input.providerId}`);
+    throw createSocialOAuthError('SOCIAL_PROVIDER_NOT_CONFIGURED', { message: `OAuth token endpoint is not configured for ${input.providerId}` });
   }
 
   const headers: Record<string, string> = {
@@ -106,7 +107,7 @@ async function postTokenRequest(input: {
       : typeof parsed.error === 'string'
         ? parsed.error
         : `Token endpoint returned HTTP ${response.status}`;
-    throw new Error(message);
+    throw createSocialOAuthError('SOCIAL_OAUTH_TOKEN_EXCHANGE_FAILED', { message, status: response.status });
   }
 
   return parsed;
@@ -135,7 +136,7 @@ export async function exchangeOAuthCodeForTokens(input: {
       : '';
 
   if (!accessToken) {
-    throw new Error('OAuth token response did not include an access token');
+    throw createSocialOAuthError('SOCIAL_OAUTH_TOKEN_EXCHANGE_FAILED', { message: 'OAuth token response did not include an access token' });
   }
 
   const expiresIn = typeof payload.expires_in === 'number'
@@ -184,7 +185,7 @@ export async function refreshOAuthTokens(input: {
       : '';
 
   if (!accessToken) {
-    throw new Error('OAuth refresh response did not include an access token');
+    throw createSocialOAuthError('SOCIAL_OAUTH_TOKEN_EXCHANGE_FAILED', { message: 'OAuth refresh response did not include an access token' });
   }
 
   const expiresIn = typeof payload.expires_in === 'number'

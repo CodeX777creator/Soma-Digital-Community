@@ -13,6 +13,7 @@ import { useNotifications } from "@/hooks/useNotifications";
 import { useToast } from "@/hooks/use-toast";
 import { formatDistanceToNow } from "date-fns";
 import { NotificationType } from "@/lib/notifications";
+import { normalizeDate } from "@/lib/date-utils";
 
 // Helper to get a meaningful URL for a notification
 // Returns null if there's no specific actionable URL
@@ -49,7 +50,7 @@ export default function NotificationsPage() {
   const { toast } = useToast();
 
   const sortedNotifications = useMemo(
-    () => [...notifications].sort((a, b) => (b.createdAt?.toDate?.()?.getTime() || 0) - (a.createdAt?.toDate?.()?.getTime() || 0)),
+    () => [...notifications].sort((a, b) => (normalizeDate(b.createdAt)?.getTime() || 0) - (normalizeDate(a.createdAt)?.getTime() || 0)),
     [notifications]
   );
 
@@ -116,9 +117,8 @@ export default function NotificationsPage() {
           ) : (
             <div className="flex flex-col gap-3">
               {sortedNotifications.map((item) => {
-                const timestampLabel = item.createdAt?.toDate
-                  ? formatDistanceToNow(item.createdAt.toDate(), { addSuffix: true })
-                  : "just now";
+                const timestamp = normalizeDate(item.createdAt);
+                const timestampLabel = timestamp ? formatDistanceToNow(timestamp, { addSuffix: true }) : "just now";
 
                 const actionUrl = getNotificationActionUrl(item.linkUrl, item.type, item.id);
 

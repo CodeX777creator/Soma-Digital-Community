@@ -70,6 +70,8 @@ type SocialOpsResponse = {
     retryableFailures: number;
     reliabilityAlerts: number;
     scheduledPostCollectionCount: number | null;
+    appErrors: number;
+    routeBoundaryHits: number;
   };
   connectedAccountsByProvider: Record<string, number>;
   accountStatusCounts: Record<string, number>;
@@ -80,7 +82,10 @@ type SocialOpsResponse = {
     tokenRefresh: FailureItem[];
     providerApi: FailureItem[];
     analyticsSync: FailureItem[];
+    appErrors: FailureItem[];
   };
+  appErrorCounts?: Record<string, number>;
+  appErrorCategoryCounts?: Record<string, number>;
   setupDocExists: boolean;
 };
 
@@ -270,6 +275,7 @@ export default function AdminSocialOpsPage() {
         <StatCard label="Publish queue" value={data.summary.publishQueueSize} note={`${data.summary.needsAttentionQueue} need attention`} icon={Clock3} tone={data.summary.needsAttentionQueue > 0 ? "warn" : "neutral"} />
         <StatCard label="Failed publishes" value={data.summary.failedPublishes} note={`${data.summary.retryableFailures} retryable failures`} icon={ShieldAlert} tone={data.summary.failedPublishes > 0 ? "bad" : "good"} />
         <StatCard label="Provider errors" value={data.summary.providerApiErrors} note={`${data.summary.reliabilityAlerts} reliability alerts`} icon={AlertTriangle} tone={data.summary.providerApiErrors > 0 ? "warn" : "good"} />
+        <StatCard label="App errors" value={data.summary.appErrors} note={`${data.summary.routeBoundaryHits} route boundary hits`} icon={XCircle} tone={data.summary.appErrors > 0 ? "warn" : "good"} />
       </div>
 
       <div className="grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
@@ -300,6 +306,7 @@ export default function AdminSocialOpsPage() {
               ["Token refresh", data.summary.tokenRefreshFailures],
               ["Analytics failures", data.summary.analyticsSyncFailures],
               ["Retry volume", data.summary.retryVolume],
+              ["Route errors", data.summary.routeBoundaryHits],
             ].map(([label, value]) => (
               <div key={label} className="rounded-lg border border-white/10 bg-black/20 p-3">
                 <p className="text-2xl font-semibold">{value}</p>
@@ -376,6 +383,9 @@ export default function AdminSocialOpsPage() {
               <FailureList items={data.failures.analyticsSync} empty="No analytics sync failures." />
             </div>
           </div>
+        </Panel>
+        <Panel title="Application errors">
+          <FailureList items={data.failures.appErrors || []} empty="No app errors recorded in the current sample." />
         </Panel>
       </div>
     </div>

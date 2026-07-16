@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { motion, AnimatePresence } from "framer-motion";
+import { normalizeDate } from "@/lib/date-utils";
 
 export function GrowthEngine() {
   const { user, userData } = useAuth();
@@ -52,9 +53,7 @@ export function GrowthEngine() {
   const joinedDays = (() => {
     if (simulatedDays > 0) return simulatedDays;
     if (!userData?.createdAt) return 0;
-    const createdTime = userData.createdAt.toDate 
-      ? userData.createdAt.toDate().getTime() 
-      : new Date(userData.createdAt).getTime();
+    const createdTime = normalizeDate(userData.createdAt)?.getTime() || Date.now();
     return Math.floor((Date.now() - createdTime) / (1000 * 60 * 60 * 24));
   })();
 

@@ -7,6 +7,7 @@ import {
 } from './catalog';
 import { orchestrateAIRequest, type AIQualityMode } from './orchestrator';
 import { aiPlatformConfig } from './config';
+import { createAIError } from '@/lib/errors/domain';
 
 export interface PlatformMessage {
   role: 'system' | 'user' | 'assistant';
@@ -160,12 +161,12 @@ function getProviderClient(providerId: AIProviderId): OpenAI {
 
   const provider = PROVIDER_CATALOG[providerId];
   if (provider.kind !== 'openai-compatible' || !provider.baseURL) {
-    throw new Error(`Provider ${provider.label} is not configured for direct text execution`);
+    throw createAIError('AI_PROVIDER_UNAVAILABLE', { message: `Provider ${provider.label} is not configured for direct text execution` });
   }
 
   const apiKey = getApiKey(providerId);
   if (!apiKey) {
-    throw new Error(`Missing API key for ${provider.label}`);
+    throw createAIError('AI_PROVIDER_KEY_INVALID', { message: `Missing API key for ${provider.label}` });
   }
 
   const client = new OpenAI({
@@ -229,7 +230,7 @@ export async function executeTextCompletion(request: AITextRequest): Promise<AIT
 
   const text = completion.choices[0]?.message?.content || '';
   if (!text) {
-    throw new Error('AI Gateway returned an empty response');
+    throw createAIError('AI_MALFORMED_RESPONSE', { message: 'AI Gateway returned an empty response' });
   }
 
   return {
@@ -318,7 +319,7 @@ async function readImagePayload(response: any): Promise<{ buffer: Buffer; mimeTy
   if (sourceUrl) {
     const downloaded = await fetch(sourceUrl);
     if (!downloaded.ok) {
-      throw new Error(`Failed to download generated image (${downloaded.status})`);
+      throw createAIError('AI_RENDER_FAILED', { message: `Failed to download generated image (${downloaded.status})` });
     }
 
     const arrayBuffer = await downloaded.arrayBuffer();
@@ -330,7 +331,7 @@ async function readImagePayload(response: any): Promise<{ buffer: Buffer; mimeTy
     };
   }
 
-  throw new Error('AI image generation returned no image payload');
+  throw createAIError('AI_MALFORMED_RESPONSE', { message: 'AI image generation returned no image payload' });
 }
 
 export async function executeImageGeneration(request: AIImageRequest): Promise<AIImageResponse> {
@@ -502,7 +503,7 @@ async function postToElevenLabsAudioEndpoint(
   const baseURL = process.env.ELEVENLABS_BASE_URL || 'https://api.elevenlabs.io/v1';
   const apiKey = getApiKey('elevenlabs');
   if (!apiKey) {
-    throw new Error('Missing API key for ElevenLabs');
+    throw createAIError('AI_PROVIDER_KEY_INVALID', { message: 'Missing API key for ElevenLabs' });
   }
 
   const url = `${baseURL.replace(/\/$/, '')}/text-to-speech/${encodeURIComponent(voiceId)}?output_format=mp3_44100_128`;
@@ -544,7 +545,7 @@ export async function executeAudioGeneration(request: AIAudioRequest): Promise<A
   const response = await postToElevenLabsAudioEndpoint(voiceId, requestBody);
   if (!response.ok) {
     const bodyText = await response.text().catch(() => '');
-    throw new Error(`Audio generation failed (${response.status}): ${bodyText || response.statusText}`);
+    throw createAIError('AI_RENDER_FAILED', { message: `Audio generation failed (${response.status}): ${bodyText || response.statusText}` });
   }
 
   const payload = await readAudioPayload(response);
@@ -568,12 +569,12 @@ async function postToProviderVideoEndpoint(
 ): Promise<Response> {
   const provider = PROVIDER_CATALOG[providerId];
   if (provider.kind !== 'openai-compatible' || !provider.baseURL) {
-    throw new Error(`Provider ${provider.label} does not support direct video generation`);
+    throw createAIError('AI_PROVIDER_UNAVAILABLE', { message: `Provider ${provider.label} does not support direct video generation` });
   }
 
   const apiKey = getApiKey(providerId);
   if (!apiKey) {
-    throw new Error(`Missing API key for ${provider.label}`);
+    throw createAIError('AI_PROVIDER_KEY_INVALID', { message: `Missing API key for ${provider.label}` });
   }
 
   const baseURL = provider.baseURL.endsWith('/') ? provider.baseURL : `${provider.baseURL}/`;
@@ -642,5 +643,5 @@ export async function executeVideoGeneration(request: AIVideoRequest): Promise<A
     }
   }
 
-  throw lastError || new Error('Video generation failed');
+  throw lastError || createAIError('AI_RENDER_FAILED', { message: 'Video generation failed' });
 }

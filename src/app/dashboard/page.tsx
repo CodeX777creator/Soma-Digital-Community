@@ -38,6 +38,7 @@ import {
   useWeeklyPerformance,
 } from "@/hooks/useDashboardData";
 import { authFetch } from "@/lib/clientApi";
+import { formatDateTimeSafe } from "@/lib/date-utils";
 import { UserProfile } from "@/lib/db";
 import { cn } from "@/lib/utils";
 import { getPlanLabel, getUpgradeLabel, getUpgradeTarget } from "@/lib/plan-ui";
@@ -701,7 +702,7 @@ function DashboardContent() {
                           {event.title || "Scheduled event"}
                         </span>
                         <span className="mt-1 block text-xs text-[#BFC6D4]">
-                          {new Date(event.startsAt).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}
+                          {formatDateTimeSafe(event.startsAt, "Time unavailable")}
                           {event.viewerRsvp === "going" ? " · Going" : ""}
                         </span>
                       </span>

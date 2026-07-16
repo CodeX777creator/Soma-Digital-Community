@@ -22,6 +22,7 @@ import { AppLayout } from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
 import { GlassCard } from "@/components/ui/glass-card";
 import { authFetch } from "@/lib/clientApi";
+import { normalizeDate } from "@/lib/date-utils";
 import { cn } from "@/lib/utils";
 import type { EventRecord, EventStatus, EventType } from "@/events/types";
 
@@ -97,8 +98,8 @@ function formatEventTime(value: string, timezone: string) {
 
 function getDurationLabel(event: EventRecord) {
   if (!event.endsAt) return "Session time";
-  const start = new Date(event.startsAt).getTime();
-  const end = new Date(event.endsAt).getTime();
+  const start = normalizeDate(event.startsAt)?.getTime() || 0;
+  const end = normalizeDate(event.endsAt)?.getTime() || 0;
   const minutes = Math.max(0, Math.round((end - start) / 60000));
   if (!minutes) return "Session time";
   if (minutes < 60) return `${minutes} min`;
@@ -108,12 +109,13 @@ function getDurationLabel(event: EventRecord) {
 }
 
 function toCalendarDate(value: string) {
-  return new Date(value).toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z");
+  return (normalizeDate(value) || new Date()).toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z");
 }
 
 function buildGoogleCalendarUrl(event: EventRecord) {
   const start = toCalendarDate(event.startsAt);
-  const end = toCalendarDate(event.endsAt || new Date(new Date(event.startsAt).getTime() + 60 * 60 * 1000).toISOString());
+  const startDate = normalizeDate(event.startsAt) || new Date();
+  const end = toCalendarDate(event.endsAt || new Date(startDate.getTime() + 60 * 60 * 1000).toISOString());
   const params = new URLSearchParams({
     action: "TEMPLATE",
     text: event.title,
@@ -306,7 +308,7 @@ function EventsPageContent() {
     return events
       .filter((event) => eventMatchesTab(event, tab))
       .filter((event) => !normalizedQuery || `${event.title} ${event.description} ${event.hostName || ""}`.toLowerCase().includes(normalizedQuery))
-      .sort((a, b) => new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime());
+      .sort((a, b) => (normalizeDate(a.startsAt)?.getTime() || 0) - (normalizeDate(b.startsAt)?.getTime() || 0));
   }, [events, query, tab]);
 
   const upcoming = events.filter((event) => event.status === "scheduled" || event.status === "live").length;

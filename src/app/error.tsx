@@ -5,7 +5,8 @@ import { GlassCard } from "@/components/ui/glass-card";
 import { Button } from "@/components/ui/button";
 import { AlertCircle, RefreshCw, Home } from "lucide-react";
 import Link from "next/link";
-import { logger } from "@/lib/logger";
+import { toAppError } from "@/lib/errors";
+import { logAppError, trackErrorEvent } from "@/lib/error-observability";
 
 interface ErrorBoundaryProps {
   error: Error & { digest?: string };
@@ -13,11 +14,23 @@ interface ErrorBoundaryProps {
 }
 
 export default function GlobalError({ error, reset }: ErrorBoundaryProps) {
+  const appError = toAppError(error);
+
   useEffect(() => {
-    // Log to error tracking service
-    logger.error("Global error boundary caught error", error, {
+    logAppError(error, {
+      feature: "global",
+      action: "route_error_boundary",
+      metadata: {
+        digest: error.digest,
+        stack: error.stack,
+      },
+    });
+    trackErrorEvent("route_error_boundary_triggered", error, {
+      feature: "global",
+      action: "route_error_boundary",
+      metadata: {
       digest: error.digest,
-      stack: error.stack,
+      },
     });
   }, [error]);
 
@@ -32,8 +45,9 @@ export default function GlobalError({ error, reset }: ErrorBoundaryProps) {
         
         <h1 className="text-2xl font-bold mb-2">Something went wrong</h1>
         <p className="text-muted-foreground text-sm mb-6">
-          We&apos;ve encountered an unexpected error. Our team has been notified and we&apos;re working to fix it.
+          {appError.userMessage}
         </p>
+        {appError.requestId ? <p className="mb-4 text-xs text-muted-foreground">Reference: {appError.requestId}</p> : null}
 
         {process.env.NODE_ENV === "development" && (
           <div className="mb-6 p-4 bg-red-500/5 rounded-lg border border-red-500/10 text-left overflow-auto max-h-48">

@@ -23,10 +23,14 @@ import { cn } from "@/lib/utils";
 import { useAuth } from "@/providers/AuthProvider";
 import { CommentThread } from "./CommentThread";
 import { ReactionPicker, REACTIONS } from "./ReactionPicker";
+import { normalizeDate } from "@/lib/date-utils";
+import { showErrorToast } from "@/lib/error-toast";
+import { logger } from "@/lib/logger";
 
 function timeAgo(ts: any): string {
-  if (!ts?.toDate) return "just now";
-  const diff = Date.now() - ts.toDate().getTime();
+  const date = normalizeDate(ts);
+  if (!date) return "just now";
+  const diff = Date.now() - date.getTime();
   const m = Math.floor(diff / 60000);
   if (m < 1) return "just now";
   if (m < 60) return `${m}m ago`;
@@ -93,8 +97,8 @@ export const PostCardOptimized = memo(function PostCardOptimized({ post, onEdit,
     try {
       await postService.setReaction(post.id, user.uid, reaction);
     } catch (error) {
-      console.error("Failed to update reaction:", error);
-      toast({ title: "Reaction failed", description: "Please try again.", variant: "destructive" });
+      logger.warn("Failed to update reaction", { error: error instanceof Error ? error.message : String(error), postId: post.id });
+      showErrorToast(toast, error, { title: "Reaction failed", fallback: "Please try again." });
     } finally {
       setIsReacting(false);
       setShowReactionPicker(false);
@@ -202,12 +206,8 @@ export const PostCardOptimized = memo(function PostCardOptimized({ post, onEdit,
                   title: post.isPinned ? "Post unpinned" : "Post pinned",
                   description: "The community feed will update shortly.",
                 });
-              } catch (error: any) {
-                toast({
-                  title: "Pin failed",
-                  description: error?.message || "Please try again.",
-                  variant: "destructive",
-                });
+              } catch (error) {
+                showErrorToast(toast, error, { title: "Pin failed", fallback: "Please try again." });
               }
             }}
             isAdmin={userData?.role === 'admin'}

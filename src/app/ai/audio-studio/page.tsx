@@ -10,6 +10,8 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/providers/AuthProvider";
+import { parseApiError } from "@/lib/clientApi";
+import { showErrorToast } from "@/lib/error-toast";
 import { cn } from "@/lib/utils";
 import {
   AUDIO_LANGUAGES,
@@ -279,7 +281,7 @@ export default function AudioStudioPage() {
     });
 
     if (!response.ok) {
-      throw new Error("Could not load audio history.");
+      throw await parseApiError(response, "Could not load audio history.");
     }
 
     const data = (await response.json()) as AudioStudioHistoryResponse;
@@ -302,7 +304,7 @@ export default function AudioStudioPage() {
         });
 
         if (!response.ok) {
-          throw new Error("Could not load audio history.");
+          throw await parseApiError(response, "Could not load audio history.");
         }
 
         const data = (await response.json()) as AudioStudioHistoryResponse;
@@ -311,10 +313,9 @@ export default function AudioStudioPage() {
         }
       } catch (error) {
         if (mounted) {
-          toast({
+          showErrorToast(toast, error, {
             title: "History unavailable",
-            description: error instanceof Error ? error.message : "Could not load the audio library.",
-            variant: "destructive",
+            fallback: "Could not load the audio library.",
           });
         }
       } finally {
@@ -388,8 +389,7 @@ export default function AudioStudioPage() {
       });
 
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ error: "Unknown error" }));
-        throw new Error(errorData.error || "Audio generation failed.");
+        throw await parseApiError(response, "Audio generation failed.");
       }
 
       const data = (await response.json()) as AudioStudioResponse;
@@ -400,10 +400,9 @@ export default function AudioStudioPage() {
         description: "Your voice asset is ready and saved to the library.",
       });
     } catch (error) {
-      toast({
+      showErrorToast(toast, error, {
         title: "Generation failed",
-        description: error instanceof Error ? error.message : "The audio studio could not complete this request.",
-        variant: "destructive",
+        fallback: "The audio studio could not complete this request.",
       });
     } finally {
       setLoading(false);

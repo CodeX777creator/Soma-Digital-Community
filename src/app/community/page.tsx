@@ -21,6 +21,7 @@ import { useAuth } from "@/providers/AuthProvider";
 import { db } from "@/lib/firebase";
 import { authFetch } from "@/lib/clientApi";
 import { collection, onSnapshot } from "firebase/firestore";
+import { normalizeDate } from "@/lib/date-utils";
 
 // ─── Static AI Intel Sections ─────────────────────────────────────────────────
 
@@ -47,9 +48,7 @@ function normalizeValue(value: string) {
 }
 
 function postTimestamp(post: Post) {
-  if (post.createdAt?.toDate) return post.createdAt.toDate().getTime();
-  if (post.createdAt?.seconds) return post.createdAt.seconds * 1000;
-  return 0;
+  return normalizeDate(post.createdAt)?.getTime() || 0;
 }
 
 function matchesChannel(post: Post, channel: CommunityChannel) {

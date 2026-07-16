@@ -17,7 +17,7 @@ import {
   DocumentData
 } from "firebase/firestore";
 import { db } from "./firebase";
-import { authFetch } from "@/lib/clientApi";
+import { authFetch, requireOk } from "@/lib/clientApi";
 
 // ─── Community Feed Types ─────────────────────────────────────────────────────
 
@@ -165,10 +165,7 @@ export const postService = {
       method: 'PATCH',
       body: JSON.stringify({ reaction: newReaction }),
     });
-    if (!response.ok) {
-      const body = await response.json().catch(() => null);
-      throw new Error(body?.error || body?.message || 'Unable to update reaction');
-    }
+    await requireOk(response, 'Unable to update reaction');
   },
 
   // Add a comment
@@ -183,10 +180,7 @@ export const postService = {
       method: 'POST',
       body: JSON.stringify({ content, parentId: parentId || null }),
     });
-    const body = await response.json().catch(() => null);
-    if (!response.ok) {
-      throw new Error(body?.error || body?.message || 'Unable to add comment');
-    }
+    const body = await (await requireOk(response, 'Unable to add comment')).json();
     return body.id;
   },
 
@@ -240,10 +234,7 @@ export const postService = {
       method: 'PATCH',
       body: JSON.stringify({ action: 'pin', isPinned: pinned }),
     });
-    if (!response.ok) {
-      const body = await response.json().catch(() => null);
-      throw new Error(body?.error || body?.message || 'Unable to update pin status');
-    }
+    await requireOk(response, 'Unable to update pin status');
   },
 
   // Update a post (author only)
@@ -252,31 +243,22 @@ export const postService = {
       method: 'PATCH',
       body: JSON.stringify(updates),
     });
-    if (!response.ok) {
-      const body = await response.json().catch(() => null);
-      throw new Error(body?.error || body?.message || 'Unable to update post');
-    }
+    await requireOk(response, 'Unable to update post');
   },
 
   // Delete a post (author or admin)
   async deletePost(postId: string): Promise<void> {
     const response = await authFetch(`/api/community/posts/${postId}`, { method: 'DELETE' });
-    if (!response.ok) {
-      const body = await response.json().catch(() => null);
-      throw new Error(body?.error || body?.message || 'Unable to delete post');
-    }
+    await requireOk(response, 'Unable to delete post');
   },
 
   // Restore a deleted post (undo delete)
   async restorePost(postId: string, originalContent: string): Promise<void> {
-    const response = await authFetch(`/api/community/posts/${postId}`, {
-      method: 'PATCH',
-      body: JSON.stringify({ action: 'restore', content: originalContent }),
+    const response = await authFetch(`/api/community/posts/${postId}/restore`, {
+      method: 'POST',
+      body: JSON.stringify({ content: originalContent }),
     });
-    if (!response.ok) {
-      const body = await response.json().catch(() => null);
-      throw new Error(body?.error || body?.message || 'Unable to restore post');
-    }
+    await requireOk(response, 'Unable to restore post');
   },
 
   // Update mission progress

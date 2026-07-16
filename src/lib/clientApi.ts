@@ -1,4 +1,52 @@
 import { auth } from '@/lib/firebase';
+import { ApiError, toAppError, type AppErrorShape } from '@/lib/errors';
+import { trackErrorEvent } from '@/lib/error-observability';
+
+export type ApiErrorPayload = {
+  error?: string;
+  code?: string;
+  requestId?: string;
+  retryable?: boolean;
+  timestamp?: string;
+  details?: unknown;
+};
+
+export async function parseApiError(response: Response, fallback = 'Request failed'): Promise<ApiError> {
+  const payload = await response.json().catch(() => null) as ApiErrorPayload | null;
+  const appError = toAppError({
+    status: response.status,
+    code: payload?.code,
+    error: payload?.error || fallback,
+    requestId: payload?.requestId,
+    retryable: payload?.retryable,
+    details: payload?.details,
+  }, {
+    status: response.status,
+    message: fallback,
+  });
+  trackErrorEvent(
+    appError.code === 'CREATOR_CREDITS_EXHAUSTED' || appError.code === 'BYOK_REQUIRED'
+      ? 'credit_blocked'
+      : response.status === 403
+        ? 'permission_denied'
+        : 'api_error',
+    appError,
+    { route: response.url, action: 'api_fetch' }
+  );
+  return new ApiError(appError as AppErrorShape);
+}
+
+export async function requireOk(response: Response, fallback = 'Request failed'): Promise<Response> {
+  if (!response.ok) {
+    throw await parseApiError(response, fallback);
+  }
+  return response;
+}
+
+export async function parseJsonResponse<T>(response: Response, fallback = 'Request failed'): Promise<T> {
+  await requireOk(response, fallback);
+  return response.json() as Promise<T>;
+}
 
 export async function authFetch(input: RequestInfo, init?: RequestInit) {
   if (!auth) {
@@ -35,4 +83,9 @@ export async function authFetch(input: RequestInfo, init?: RequestInit) {
   }
 
   return response;
+}
+
+export async function authJsonFetch<T>(input: RequestInfo, init?: RequestInit, fallback = 'Request failed'): Promise<T> {
+  const response = await authFetch(input, init);
+  return parseJsonResponse<T>(response, fallback);
 }

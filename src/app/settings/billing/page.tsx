@@ -12,6 +12,7 @@ import { useAuth } from "@/providers/AuthProvider";
 import { useSubscription } from "@/hooks/useSubscription";
 import { useUserStore, type UserTier } from "@/store/useUserStore";
 import { useToast } from "@/hooks/use-toast";
+import { normalizeDate } from "@/lib/date-utils";
 import {
   CreditCard,
   Shield,
@@ -41,11 +42,7 @@ export default function BillingSettingsPage() {
     if (!userData?.subscription) return null;
     const end = userData.subscription.expiresAt;
     if (!end) return null;
-    // Handle Firestore timestamp or string
-    if (typeof end === 'object' && end.toDate) {
-      return end.toDate().toISOString();
-    }
-    return typeof end === 'string' ? end : null;
+    return normalizeDate(end)?.toISOString() || null;
   }, [userData]);
 
   const handleCancel = async () => {

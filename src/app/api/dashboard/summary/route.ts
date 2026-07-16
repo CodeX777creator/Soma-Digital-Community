@@ -3,6 +3,7 @@ import { adminDb } from '@/lib/firebaseAdmin';
 import { logger } from '@/lib/logger';
 import { requireUserEntitlements } from '@/lib/serverAuth';
 import { getSubscriptionPlan } from '@/lib/entitlements';
+import { normalizeDate } from '@/lib/date-utils';
 import { listEvents } from '@/events';
 import { getAcademyDashboardIntegration } from '@/academy';
 
@@ -130,13 +131,13 @@ export async function GET(req: NextRequest) {
         scheduledTime: toIso(post.scheduledTime) || '',
         mode: 'scheduler',
       }))
-      .filter((post) => post.scheduledTime && new Date(post.scheduledTime).getTime() >= now)
-      .sort((a, b) => new Date(a.scheduledTime).getTime() - new Date(b.scheduledTime).getTime());
+      .filter((post) => post.scheduledTime && (normalizeDate(post.scheduledTime)?.getTime() || 0) >= now)
+      .sort((a, b) => (normalizeDate(a.scheduledTime)?.getTime() || 0) - (normalizeDate(b.scheduledTime)?.getTime() || 0));
 
     const upcomingEvents = [...currentMonthEvents, ...nextMonthEvents]
       .filter((event) => ['scheduled', 'live'].includes(event.status))
-      .filter((event) => new Date(event.startsAt).getTime() >= now || event.status === 'live')
-      .sort((a, b) => new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime())
+      .filter((event) => (normalizeDate(event.startsAt)?.getTime() || 0) >= now || event.status === 'live')
+      .sort((a, b) => (normalizeDate(a.startsAt)?.getTime() || 0) - (normalizeDate(b.startsAt)?.getTime() || 0))
       .slice(0, 3)
       .map((event) => ({
         id: event.eventId,

@@ -86,6 +86,7 @@ export async function GET(req: Request) {
       queueCount,
       retryCounterDocs,
       reliabilityDocs,
+      appErrorDocs,
       setupSnap,
     ] = await Promise.all([
       safeDocs('socialAccounts', 1000),
@@ -96,6 +97,7 @@ export async function GET(req: Request) {
       safeCount('scheduledPosts'),
       safeDocs('socialPublishUserDailyLimits', 200),
       safeDocs('socialReliabilityAlerts', 300),
+      safeDocs('appErrorEvents', 500),
       adminDb.collection('config').doc('socialProviderSetup').get().catch(() => null),
     ]);
 
@@ -197,6 +199,24 @@ export async function GET(req: Request) {
         time: toIso(doc.data.syncedAt || doc.data.createdAt),
       })), 20);
 
+    const errorCounts: Record<string, number> = {};
+    const errorCategoryCounts: Record<string, number> = {};
+    appErrorDocs.forEach((doc) => {
+      increment(errorCounts, String(doc.data.code || 'UNKNOWN_ERROR'));
+      increment(errorCategoryCounts, String(doc.data.category || 'unknown'));
+    });
+
+    const recentAppErrors = latestByDate(appErrorDocs
+      .map((doc) => ({
+        id: doc.id,
+        providerId: doc.data.feature || doc.data.category || 'app',
+        failureCode: doc.data.code || 'UNKNOWN_ERROR',
+        status: doc.data.severity || 'error',
+        error: doc.data.userMessage || doc.data.debugMessage || 'Application error',
+        retryable: doc.data.retryable === true,
+        time: toIso(doc.data.createdAt),
+      })), 30);
+
     const retryVolume = attemptDocs.filter((doc) => Number(doc.data.attemptNumber || 1) > 1).length;
     const retryableFailures = failedPublishes.filter((item) => item.retryable).length;
     const queuedPosts = accountDocs.length >= 0 ? null : queueCount;
@@ -222,6 +242,8 @@ export async function GET(req: Request) {
         dailyPublishCounterVolume: retryCounters,
         reliabilityAlerts: reliabilityDocs.length,
         scheduledPostCollectionCount: queueCount,
+        appErrors: appErrorDocs.length,
+        routeBoundaryHits: appErrorDocs.filter((doc) => doc.data.event === 'route_error_boundary_triggered').length,
       },
       connectedAccountsByProvider: providerCounts,
       accountStatusCounts: statusCounts,
@@ -232,7 +254,10 @@ export async function GET(req: Request) {
         tokenRefresh: tokenRefreshFailures,
         providerApi: providerApiErrors,
         analyticsSync: analyticsFailures,
+        appErrors: recentAppErrors,
       },
+      appErrorCounts: errorCounts,
+      appErrorCategoryCounts: errorCategoryCounts,
       setupDocExists: setupSnap?.exists === true,
     });
   } catch (error) {

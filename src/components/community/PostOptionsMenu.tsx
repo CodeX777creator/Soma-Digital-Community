@@ -35,7 +35,10 @@ import { useAuth } from "@/providers/AuthProvider";
 import { Post, postService } from "@/lib/db";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
-import { authFetch } from "@/lib/clientApi";
+import { authFetch, parseApiError } from "@/lib/clientApi";
+import { normalizeDate } from "@/lib/date-utils";
+import { showErrorToast } from "@/lib/error-toast";
+import { logger } from "@/lib/logger";
 
 // Time limit for editing posts (30 minutes in milliseconds)
 const EDIT_TIME_LIMIT = 60 * 60 * 1000;
@@ -70,7 +73,7 @@ export function PostOptionsMenu({
     if (!isAuthor) return false;
     if (isAdmin) return true; // Admins can always edit
     
-    const createdAt = post.createdAt?.toDate?.() || new Date(post.createdAt);
+    const createdAt = normalizeDate(post.createdAt) || new Date();
     const timeElapsed = Date.now() - createdAt.getTime();
     return timeElapsed <= EDIT_TIME_LIMIT;
   };
@@ -82,7 +85,7 @@ export function PostOptionsMenu({
   // Calculate remaining edit time for display
   const getRemainingEditTime = () => {
     if (!isAuthor || isAdmin) return null;
-    const createdAt = post.createdAt?.toDate?.() || new Date(post.createdAt);
+    const createdAt = normalizeDate(post.createdAt) || new Date();
     const timeElapsed = Date.now() - createdAt.getTime();
     const remaining = EDIT_TIME_LIMIT - timeElapsed;
     if (remaining <= 0) return null;
@@ -116,18 +119,16 @@ export function PostOptionsMenu({
         body: JSON.stringify({ postId: post.id, reason: "other" }),
       });
       if (!response.ok) {
-        const body = await response.json().catch(() => null);
-        throw new Error(body?.error || body?.message || "Unable to report post");
+        throw await parseApiError(response, "Unable to report post");
       }
       toast({
         title: "Report submitted",
         description: "Thanks for helping keep the community safe. Our team will review it.",
       });
-    } catch (error: any) {
-      toast({
+    } catch (error) {
+      showErrorToast(toast, error, {
         title: "Report failed",
-        description: error?.message || "Please try again.",
-        variant: "destructive",
+        fallback: "Please try again.",
       });
     }
   };
@@ -139,19 +140,17 @@ export function PostOptionsMenu({
         body: JSON.stringify({ postId: post.id }),
       });
       if (!response.ok) {
-        const body = await response.json().catch(() => null);
-        throw new Error(body?.error || body?.message || "Unable to hide post");
+        throw await parseApiError(response, "Unable to hide post");
       }
       onHide?.(post.id);
       toast({
         title: "Post hidden",
         description: "You won't see this post in your feed.",
       });
-    } catch (error: any) {
-      toast({
+    } catch (error) {
+      showErrorToast(toast, error, {
         title: "Hide failed",
-        description: error?.message || "Please try again.",
-        variant: "destructive",
+        fallback: "Please try again.",
       });
     }
   };
@@ -181,11 +180,10 @@ export function PostOptionsMenu({
                   description: "Your post is back in the community feed.",
                 });
               } catch (error) {
-                console.error("Failed to restore post:", error);
-                toast({
+                logger.warn("Failed to restore community post", { postId: post.id, error: error instanceof Error ? error.message : String(error) });
+                showErrorToast(toast, error, {
                   title: "Restore failed",
-                  description: "Please refresh and try again.",
-                  variant: "destructive",
+                  fallback: "We could not restore this post. Please try again.",
                 });
               }
             }}
@@ -198,11 +196,10 @@ export function PostOptionsMenu({
       // Notify parent that post was deleted (for optimistic UI update)
       onDelete?.(post.id);
     } catch (error) {
-      console.error('Failed to delete post:', error);
-      toast({
-        title: "Error",
-        description: "Failed to delete post. Please try again.",
-        variant: "destructive",
+      logger.warn("Failed to delete community post", { postId: post.id, error: error instanceof Error ? error.message : String(error) });
+      showErrorToast(toast, error, {
+        title: "Delete failed",
+        fallback: "We could not delete this post. Please try again.",
       });
     } finally {
       setIsDeleting(false);

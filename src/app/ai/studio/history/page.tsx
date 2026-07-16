@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { GlassCard } from "@/components/ui/glass-card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import { authFetch } from "@/lib/clientApi";
+import { authFetch, parseApiError } from "@/lib/clientApi";
 import { STUDIO_CONTENT_TYPES, type StudioArtifactRecord, type StudioContentType } from "@/ai/studio/types";
 import { ArrowRight, History, Search, Sparkles } from "lucide-react";
 
@@ -35,7 +35,7 @@ export default function StudioHistoryPage() {
       try {
         setLoading(true);
         const response = await authFetch("/api/ai/studio?limit=50");
-        if (!response.ok) throw new Error("Could not load Studio history.");
+        if (!response.ok) throw await parseApiError(response, "Could not load Studio history.");
         const payload = (await response.json()) as HistoryResponse;
         if (mounted) setData({ supportedContentTypes: payload.supportedContentTypes || STUDIO_CONTENT_TYPES, artifacts: payload.artifacts || [] });
       } finally {

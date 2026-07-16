@@ -1,4 +1,5 @@
 import crypto from 'crypto';
+import { createSocialOAuthError } from '@/lib/errors/domain';
 import { sanitizeString } from '@/lib/security';
 import { SOCIAL_PLATFORMS, type SocialPlatform } from './types';
 
@@ -135,7 +136,7 @@ const SOCIAL_OAUTH_PROVIDER_RULES: SocialOAuthProviderRule[] = [
 function getStateSecret(): Buffer {
   const raw = process.env.SOCIAL_OAUTH_STATE_SECRET;
   if (!raw || !raw.trim()) {
-    throw new Error('Missing SOCIAL_OAUTH_STATE_SECRET');
+    throw createSocialOAuthError('SOCIAL_OAUTH_CONFIG_MISSING', { message: 'Missing SOCIAL_OAUTH_STATE_SECRET' });
   }
 
   const trimmed = raw.trim();
@@ -153,13 +154,13 @@ function getStateSecret(): Buffer {
     return utf8;
   }
 
-  throw new Error('SOCIAL_OAUTH_STATE_SECRET must decode to 32 bytes');
+  throw createSocialOAuthError('SOCIAL_OAUTH_CONFIG_MISSING', { message: 'SOCIAL_OAUTH_STATE_SECRET must decode to 32 bytes' });
 }
 
 export function getSocialOAuthRule(providerId: SocialPlatform): SocialOAuthProviderRule {
   const rule = SOCIAL_OAUTH_PROVIDER_RULES.find((entry) => entry.providerId === providerId);
   if (!rule) {
-    throw new Error(`Unsupported social provider: ${providerId}`);
+    throw createSocialOAuthError('SOCIAL_PROVIDER_NOT_CONFIGURED', { message: `Unsupported social provider: ${providerId}` });
   }
   return rule;
 }

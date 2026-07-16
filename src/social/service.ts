@@ -83,6 +83,29 @@ function toIso(value: unknown): string | null {
   return null;
 }
 
+function toDateValue(value: unknown): Date | null {
+  if (!value) return null;
+  if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value;
+  if (value instanceof admin.firestore.Timestamp) return value.toDate();
+  if (typeof value === 'object' && value && 'toDate' in value && typeof (value as { toDate?: unknown }).toDate === 'function') {
+    try {
+      const date = (value as { toDate: () => Date }).toDate();
+      return date instanceof Date && !Number.isNaN(date.getTime()) ? date : null;
+    } catch {
+      return null;
+    }
+  }
+  if (typeof value === 'string' || typeof value === 'number') {
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? null : date;
+  }
+  return null;
+}
+
+function toMillis(value: unknown): number {
+  return toDateValue(value)?.getTime() || 0;
+}
+
 function normalizeScopes(scopes?: string[]): string[] {
   return Array.from(
     new Set((scopes || []).map((scope) => sanitizeString(scope, 120)).filter(Boolean))
@@ -1255,7 +1278,7 @@ async function validateScheduledPostDocument(doc: ScheduledPostDoc): Promise<voi
   const capability = getPlatformCapability(doc.platform);
   const publishable = doc.status !== 'draft' && doc.status !== 'editing';
   const caption = (doc.caption || '').trim();
-  const scheduledAt = doc.scheduledTime.toDate().getTime();
+  const scheduledAt = toMillis(doc.scheduledTime);
 
   if (publishable && scheduledAt < Date.now() - 60_000) {
     throw createValidationError('Scheduled posts cannot be placed in the past. Save it as a draft instead.', 'SCHEDULED_TIME_IN_PAST');
@@ -1291,7 +1314,7 @@ function validateEventCalendarDocument(doc: ScheduledPostDoc): void {
   const publishable = doc.status !== 'draft' && doc.status !== 'editing';
   const details = (doc.caption || '').trim();
   const title = (doc.title || '').trim();
-  const scheduledAt = doc.scheduledTime.toDate().getTime();
+  const scheduledAt = toMillis(doc.scheduledTime);
 
   if (!details) {
     throw createValidationError('Event details are required before saving this event.', 'EVENT_DETAILS_REQUIRED');
@@ -1357,7 +1380,7 @@ function serializeScheduledPost(doc: ScheduledPostDoc): ScheduledPostRecord {
     publicationGroupId: doc.publicationGroupId,
     contentType: doc.contentType || getDefaultContentType(doc.platform),
     status: doc.status,
-    scheduledTime: doc.scheduledTime.toDate().toISOString(),
+    scheduledTime: toDateValue(doc.scheduledTime)?.toISOString() || new Date().toISOString(),
     title: doc.title,
     caption: doc.caption,
     hashtags: doc.hashtags || [],
@@ -1767,7 +1790,7 @@ export async function buildNormalizedPublishPayload(
       mediaItems,
     },
     scheduling: {
-      scheduledTime: post.scheduledTime.toDate().toISOString(),
+      scheduledTime: toDateValue(post.scheduledTime)?.toISOString() || new Date().toISOString(),
       timezone: post.timezone,
       status: post.status,
     },
@@ -1980,7 +2003,7 @@ export async function getContentCalendarSummary(
     summary.byStatus[post.status] += 1;
     summary.byPlatform[post.platform] += 1;
 
-    const scheduledAt = new Date(post.scheduledTime).getTime();
+    const scheduledAt = toMillis(post.scheduledTime);
     if (scheduledAt >= now && post.status !== 'published') {
       summary.upcomingPosts += 1;
     }

@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 import { requireSubscription } from '@/lib/serverAuth';
 import { apiError, apiResponse, createAPIHandler } from '@/lib/api-middleware';
 import { adminDb } from '@/lib/firebaseAdmin';
+import { normalizeDate } from '@/lib/date-utils';
 import { sanitizeString } from '@/lib/security';
 import { generateStudioContent } from '@/ai/studio';
 import {
@@ -126,8 +127,8 @@ function bestTimeFromPosts(posts: ScheduledPostRecord[]): string {
   const hours = new Map<number, number>();
   posts.forEach((post) => {
     if (!post.scheduledTime) return;
-    const date = new Date(post.scheduledTime);
-    if (Number.isNaN(date.getTime())) return;
+    const date = normalizeDate(post.scheduledTime);
+    if (!date) return;
     hours.set(date.getHours(), (hours.get(date.getHours()) || 0) + 1);
   });
   const best = [...hours.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? 19;

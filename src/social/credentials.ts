@@ -1,4 +1,5 @@
 import crypto from 'crypto';
+import { createSocialOAuthError } from '@/lib/errors/domain';
 import type { EncryptedPayload, SocialCredentialPayload } from './types';
 
 const KEY_VERSION: EncryptedPayload['keyVersion'] = 'v1';
@@ -22,13 +23,13 @@ function decodeMasterKey(rawKey: string): Buffer {
     return fromUtf8;
   }
 
-  throw new Error('SOCIAL_CREDENTIALS_MASTER_KEY must decode to 32 bytes');
+  throw createSocialOAuthError('SOCIAL_CREDENTIALS_MASTER_KEY_MISSING', { message: 'SOCIAL_CREDENTIALS_MASTER_KEY must decode to 32 bytes' });
 }
 
 function getMasterKey(): Buffer {
   const rawKey = process.env.SOCIAL_CREDENTIALS_MASTER_KEY;
   if (!rawKey || !rawKey.trim()) {
-    throw new Error('Missing SOCIAL_CREDENTIALS_MASTER_KEY');
+    throw createSocialOAuthError('SOCIAL_CREDENTIALS_MASTER_KEY_MISSING', { message: 'Missing SOCIAL_CREDENTIALS_MASTER_KEY' });
   }
 
   return decodeMasterKey(rawKey);
@@ -66,4 +67,3 @@ export function openSocialPayload<T extends Record<string, unknown>>(payload: En
 
   return JSON.parse(plaintext.toString('utf8')) as T;
 }
-

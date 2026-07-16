@@ -10,6 +10,9 @@ import { useAuth } from "@/providers/AuthProvider";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import { POST_CHANNELS, getChannelLabel, PostChannel } from "@/lib/communityChannels";
+import { normalizeDate } from "@/lib/date-utils";
+import { showErrorToast } from "@/lib/error-toast";
+import { logger } from "@/lib/logger";
 
 const POST_TYPES: { type: PostType; label: string; icon: string }[] = [
   { type: "insight", label: "Insight", icon: "💡" },
@@ -30,7 +33,8 @@ interface EditPostModalProps {
 
 function canEditPost(post: Post, isAdmin: boolean): boolean {
   if (isAdmin) return true;
-  const createdAt = post.createdAt?.toDate?.() || new Date(post.createdAt);
+  const createdAt = normalizeDate(post.createdAt);
+  if (!createdAt) return false;
   return Date.now() - createdAt.getTime() <= EDIT_TIME_LIMIT;
 }
 
@@ -120,12 +124,8 @@ export function EditPostModal({ post, isOpen, onClose, onUpdate }: EditPostModal
       onUpdate({ ...post, ...updates });
       onClose();
     } catch (error) {
-      console.error('Failed to update post:', error);
-      toast({
-        title: "Error",
-        description: "Failed to update post. Please try again.",
-        variant: "destructive",
-      });
+      logger.warn('Failed to update post', { error: error instanceof Error ? error.message : String(error), postId: post.id });
+      showErrorToast(toast, error, { title: "Update failed", fallback: "Failed to update post. Please try again." });
     } finally {
       setIsSubmitting(false);
     }

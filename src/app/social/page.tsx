@@ -37,6 +37,8 @@ import { Button } from "@/components/ui/button";
 import { GlassCard } from "@/components/ui/glass-card";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/providers/AuthProvider";
+import { parseApiError } from "@/lib/clientApi";
+import { showErrorToast } from "@/lib/error-toast";
 import { cn } from "@/lib/utils";
 import { SOCIAL_PROVIDER_REGISTRY } from "@/lib/social-data";
 import type { SocialAccountRecord, SocialPlatform } from "@/social/types";
@@ -209,7 +211,7 @@ export default function SocialHubPage() {
     });
 
     if (!response.ok) {
-      throw new Error("Could not load social accounts.");
+      throw await parseApiError(response, "Could not load social accounts.");
     }
 
     const data = (await response.json()) as SocialHubResponse;
@@ -234,7 +236,7 @@ export default function SocialHubPage() {
         });
 
         if (!response.ok) {
-          throw new Error("Could not load social accounts.");
+          throw await parseApiError(response, "Could not load social accounts.");
         }
 
         const data = (await response.json()) as SocialHubResponse;
@@ -245,10 +247,9 @@ export default function SocialHubPage() {
         }
       } catch (error) {
         if (mounted) {
-          toast({
+          showErrorToast(toast, error, {
             title: "Social hub unavailable",
-            description: error instanceof Error ? error.message : "Could not load connected accounts.",
-            variant: "destructive",
+            fallback: "Could not load connected accounts.",
           });
         }
       } finally {
@@ -306,8 +307,7 @@ export default function SocialHubPage() {
       });
 
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ error: "Unknown error" }));
-        throw new Error(errorData.error || "OAuth handoff could not be prepared.");
+        throw await parseApiError(response, "OAuth handoff could not be prepared.");
       }
 
       const data = (await response.json()) as OAuthStartResponse;
@@ -324,10 +324,9 @@ export default function SocialHubPage() {
           : "This provider still needs its authorization URL configured before customers can connect it.",
       });
     } catch (error) {
-      toast({
+      showErrorToast(toast, error, {
         title: "Connection failed",
-        description: error instanceof Error ? error.message : "Could not prepare the OAuth connection.",
-        variant: "destructive",
+        fallback: "Could not prepare the OAuth connection.",
       });
     } finally {
       setLoading(false);
@@ -347,8 +346,7 @@ export default function SocialHubPage() {
       });
 
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ error: "Unknown error" }));
-        throw new Error(errorData.error || "Disconnect failed.");
+        throw await parseApiError(response, "Disconnect failed.");
       }
 
       await loadAccounts();
@@ -357,10 +355,9 @@ export default function SocialHubPage() {
         description: "Credentials were cleared and the connection was archived.",
       });
     } catch (error) {
-      toast({
+      showErrorToast(toast, error, {
         title: "Disconnect failed",
-        description: error instanceof Error ? error.message : "The social connection could not be updated.",
-        variant: "destructive",
+        fallback: "The social connection could not be updated.",
       });
     } finally {
       setLoading(false);
@@ -379,8 +376,7 @@ export default function SocialHubPage() {
       });
 
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ error: "Unknown error" }));
-        throw new Error(errorData.error || "Could not refresh destinations.");
+        throw await parseApiError(response, "Could not refresh destinations.");
       }
 
       await loadAccounts();
@@ -389,10 +385,9 @@ export default function SocialHubPage() {
         description: "Available publishing destinations were synced from the provider.",
       });
     } catch (error) {
-      toast({
+      showErrorToast(toast, error, {
         title: "Destination refresh failed",
-        description: error instanceof Error ? error.message : "Could not refresh this account.",
-        variant: "destructive",
+        fallback: "Could not refresh this account.",
       });
     } finally {
       setDestinationActionAccountId(null);
@@ -415,8 +410,7 @@ export default function SocialHubPage() {
       });
 
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ error: "Unknown error" }));
-        throw new Error(errorData.error || "Could not select destination.");
+        throw await parseApiError(response, "Could not select destination.");
       }
 
       await loadAccounts();
@@ -425,10 +419,9 @@ export default function SocialHubPage() {
         description: "Scheduled posts will use the selected publishing destination.",
       });
     } catch (error) {
-      toast({
+      showErrorToast(toast, error, {
         title: "Destination update failed",
-        description: error instanceof Error ? error.message : "Could not update this account.",
-        variant: "destructive",
+        fallback: "Could not update this account.",
       });
     } finally {
       setDestinationActionAccountId(null);

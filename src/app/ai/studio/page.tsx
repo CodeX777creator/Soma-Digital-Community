@@ -12,7 +12,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/providers/AuthProvider";
-import { authFetch } from "@/lib/clientApi";
+import { authFetch, parseApiError } from "@/lib/clientApi";
+import { showErrorToast } from "@/lib/error-toast";
 import { cn } from "@/lib/utils";
 import { PLATFORM_CAPABILITIES } from "@/social/capabilities";
 import { SOCIAL_PLATFORMS, type SocialAccountRecord, type SocialPlatform } from "@/social/types";
@@ -525,9 +526,8 @@ export default function AIStudioPage() {
       },
     });
 
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({ error: "Unknown error" }));
-      throw new Error(errorData.error || "Could not load the studio library.");
+  if (!response.ok) {
+      throw await parseApiError(response, "Could not load the studio library.");
     }
 
     return response.json() as Promise<StudioOverviewResponse>;
@@ -554,10 +554,9 @@ export default function AIStudioPage() {
         }
       } catch (error) {
         if (mounted) {
-          toast({
+          showErrorToast(toast, error, {
             title: "Studio library unavailable",
-            description: error instanceof Error ? error.message : "We could not load the prompt library right now.",
-            variant: "destructive",
+            fallback: "We could not load the prompt library right now.",
           });
         }
       } finally {
@@ -585,7 +584,7 @@ export default function AIStudioPage() {
       try {
         setCreditLoading(true);
         const response = await authFetch("/api/creator-credits");
-        if (!response.ok) throw new Error("Unable to load credits.");
+        if (!response.ok) throw await parseApiError(response, "Unable to load credits.");
         const payload = await response.json();
         if (mounted) setCreditDashboard(payload);
       } catch {
@@ -613,7 +612,7 @@ export default function AIStudioPage() {
       try {
         setSocialAccountsLoading(true);
         const response = await authFetch("/api/social/accounts?limit=100");
-        if (!response.ok) throw new Error("Unable to load social accounts.");
+        if (!response.ok) throw await parseApiError(response, "Unable to load social accounts.");
         const payload = (await response.json()) as SocialAccountsResponse;
         if (mounted) {
           const accounts = payload.accounts || [];
@@ -754,10 +753,9 @@ export default function AIStudioPage() {
         description: "We pulled in the latest reusable templates and generated assets.",
       });
     } catch (error) {
-      toast({
+      showErrorToast(toast, error, {
         title: "Refresh failed",
-        description: error instanceof Error ? error.message : "The studio workspace could not be refreshed.",
-        variant: "destructive",
+        fallback: "The studio workspace could not be refreshed.",
       });
     } finally {
       setRefreshing(false);
@@ -896,10 +894,10 @@ export default function AIStudioPage() {
         }),
       });
 
-      const payload = await response.json().catch(() => ({}));
       if (!response.ok) {
-        throw new Error(payload?.error || "Could not generate studio content.");
+        throw await parseApiError(response, "Could not generate studio content.");
       }
+      const payload = await response.json().catch(() => ({}));
 
       setLatestGeneration(payload.content || null);
       if (payload.artifacts) {
@@ -920,10 +918,9 @@ export default function AIStudioPage() {
         description: payload.content?.title || "Your studio draft is ready.",
       });
     } catch (error) {
-      toast({
+      showErrorToast(toast, error, {
         title: "Generation failed",
-        description: error instanceof Error ? error.message : "We could not generate content right now.",
-        variant: "destructive",
+        fallback: "We could not generate content right now.",
       });
     } finally {
       setGenerating(false);
@@ -1121,7 +1118,7 @@ export default function AIStudioPage() {
                         <Input
                           value={composer.platform}
                           onChange={(event) => handleComposerChange("platform", event.target.value)}
-                          placeholder="Platform, e.g. TikTok"
+                          placeholder="Platform or channel"
                           className="h-11 rounded-2xl border-white/[0.08] bg-[#090B13]/70 text-white placeholder:text-[#7E8799]"
                         />
                         <Input

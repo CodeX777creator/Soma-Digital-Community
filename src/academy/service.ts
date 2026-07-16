@@ -71,6 +71,13 @@ function dateSortValue(value: any): number {
   return iso ? Date.parse(iso) || 0 : 0;
 }
 
+function parseDate(value: any): Date | null {
+  const iso = toIso(value);
+  if (!iso) return null;
+  const date = new Date(iso);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
 function serialize<T extends Record<string, any>>(doc: FirestoreDoc<T>) {
   const copy: Record<string, any> = { ...doc };
   for (const key of ['createdAt', 'updatedAt', 'publishedAt', 'availableAt', 'startDate', 'endDate', 'startsAt', 'endsAt', 'submittedAt', 'reviewedAt', 'startedAt', 'expiresAt', 'issuedAt', 'completedAt', 'moderatedAt', 'lastMessageAt', 'confirmedAt']) {
@@ -1015,7 +1022,7 @@ export async function submitAcademyFinalExam(input: {
   const attempt = { examAttemptId: attemptSnap.id, ...attemptSnap.data() } as AcademyExamAttemptDoc;
   if (attempt.userId !== input.userId || attempt.courseId !== input.courseId) throw new Error('Exam attempt mismatch');
   if (attempt.status !== 'in_progress') throw new Error('Exam attempt already submitted');
-  const expiry = attempt.expiresAt && typeof (attempt.expiresAt as any).toDate === 'function' ? (attempt.expiresAt as any).toDate() : new Date(String(attempt.expiresAt));
+  const expiry = parseDate(attempt.expiresAt) || new Date();
   const expired = expiry.getTime() < Date.now();
   const result = expired ? { score: 0 } : scoreQuestions(exam.questions, input.answers);
   const passed = !expired && result.score >= exam.passingScore;

@@ -9,6 +9,8 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/providers/AuthProvider";
+import { parseApiError } from "@/lib/clientApi";
+import { showErrorToast } from "@/lib/error-toast";
 import { cn } from "@/lib/utils";
 import {
   IMAGE_ASPECT_RATIOS,
@@ -215,7 +217,7 @@ export default function ImageStudioPage() {
     });
 
     if (!response.ok) {
-      throw new Error("Could not load image history.");
+      throw await parseApiError(response, "Could not load image history.");
     }
 
     const data = (await response.json()) as ImageStudioHistoryResponse;
@@ -241,7 +243,7 @@ export default function ImageStudioPage() {
         });
 
         if (!response.ok) {
-          throw new Error("Could not load image history.");
+          throw await parseApiError(response, "Could not load image history.");
         }
 
         const data = (await response.json()) as ImageStudioHistoryResponse;
@@ -251,10 +253,9 @@ export default function ImageStudioPage() {
         }
       } catch (error) {
         if (mounted) {
-          toast({
+          showErrorToast(toast, error, {
             title: "History unavailable",
-            description: error instanceof Error ? error.message : "Could not load the image library.",
-            variant: "destructive",
+            fallback: "Could not load the image library.",
           });
         }
       } finally {
@@ -314,8 +315,7 @@ export default function ImageStudioPage() {
       });
 
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ error: "Unknown error" }));
-        throw new Error(errorData.error || "Image regeneration failed.");
+        throw await parseApiError(response, "Image regeneration failed.");
       }
 
       const data = (await response.json()) as ImageStudioResponse;
@@ -326,10 +326,9 @@ export default function ImageStudioPage() {
         description: "We created a fresh version from the saved history item.",
       });
     } catch (error) {
-      toast({
+      showErrorToast(toast, error, {
         title: "Regeneration failed",
-        description: error instanceof Error ? error.message : "The image studio could not regenerate this asset.",
-        variant: "destructive",
+        fallback: "The image studio could not regenerate this asset.",
       });
     } finally {
       setLoading(false);
@@ -364,8 +363,7 @@ export default function ImageStudioPage() {
       });
 
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ error: "Unknown error" }));
-        throw new Error(errorData.error || "Image generation failed.");
+        throw await parseApiError(response, "Image generation failed.");
       }
 
       const data = (await response.json()) as ImageStudioResponse;
@@ -377,10 +375,9 @@ export default function ImageStudioPage() {
         description: "Your asset is ready and saved to the library.",
       });
     } catch (error) {
-      toast({
+      showErrorToast(toast, error, {
         title: "Generation failed",
-        description: error instanceof Error ? error.message : "The image studio could not complete this request.",
-        variant: "destructive",
+        fallback: "The image studio could not complete this request.",
       });
     } finally {
       setLoading(false);

@@ -18,44 +18,10 @@ import {
 } from "lucide-react";
 import { useAuth } from "@/providers/AuthProvider";
 import { useUserStore } from "@/store/useUserStore";
+import { formatDateSafe } from "@/lib/date-utils";
 
 function formatProfileDate(value: unknown) {
-  if (!value) return "N/A";
-
-  if (value instanceof Date) {
-    return Number.isNaN(value.getTime()) ? "N/A" : value.toLocaleDateString();
-  }
-
-  if (typeof value === "string" || typeof value === "number") {
-    const date = new Date(value);
-    return Number.isNaN(date.getTime()) ? "N/A" : date.toLocaleDateString();
-  }
-
-  if (typeof value === "object") {
-    const maybeTimestamp = value as { toDate?: unknown; seconds?: unknown; _seconds?: unknown };
-
-    if (typeof maybeTimestamp.toDate === "function") {
-      try {
-        const date = maybeTimestamp.toDate();
-        return date instanceof Date && !Number.isNaN(date.getTime()) ? date.toLocaleDateString() : "N/A";
-      } catch {
-        return "N/A";
-      }
-    }
-
-    const seconds = typeof maybeTimestamp.seconds === "number"
-      ? maybeTimestamp.seconds
-      : typeof maybeTimestamp._seconds === "number"
-        ? maybeTimestamp._seconds
-        : null;
-
-    if (seconds !== null) {
-      const date = new Date(seconds * 1000);
-      return Number.isNaN(date.getTime()) ? "N/A" : date.toLocaleDateString();
-    }
-  }
-
-  return "N/A";
+  return formatDateSafe(value, "N/A");
 }
 
 export default function SettingsPage() {

@@ -7,6 +7,8 @@ import { Comment, postService } from "@/lib/db";
 import { useAuth } from "@/providers/AuthProvider";
 import { cn } from "@/lib/utils";
 import { awardXPAction } from "@/lib/xp";
+import { normalizeDate } from "@/lib/date-utils";
+import { logger } from "@/lib/logger";
 
 const TIER_COLORS: Record<string, string> = {
   explorer: "border-white/20",
@@ -15,8 +17,9 @@ const TIER_COLORS: Record<string, string> = {
 };
 
 function timeAgo(timestamp: any): string {
-  if (!timestamp?.toDate) return "just now";
-  const diff = Date.now() - timestamp.toDate().getTime();
+  const date = normalizeDate(timestamp);
+  if (!date) return "just now";
+  const diff = Date.now() - date.getTime();
   const mins = Math.floor(diff / 60000);
   if (mins < 1) return "just now";
   if (mins < 60) return `${mins}m ago`;
@@ -170,7 +173,7 @@ function CommentItem({
         metadata: { postId, parentCommentId: comment.id },
       });
     } catch (err) {
-      console.error('Failed to add reply:', err);
+      logger.warn('Failed to add reply', { error: err instanceof Error ? err.message : String(err), postId });
     } finally {
       setSubmitting(false);
     }
@@ -322,7 +325,7 @@ export function CommentThread({ postId, initialCount }: CommentThreadProps) {
         metadata: { postId },
       });
     } catch (err) {
-      console.error('[CommentThread] Failed to add comment:', err);
+      logger.warn('[CommentThread] Failed to add comment', { error: err instanceof Error ? err.message : String(err), postId });
       // Revert optimistic comment
       setComments(prev => prev.filter(c => c.id !== optimisticComment.id));
       setInput(optimisticComment.content);

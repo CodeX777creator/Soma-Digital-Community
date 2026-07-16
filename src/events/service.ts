@@ -110,6 +110,25 @@ function toIso(value: unknown): string | null {
   return null;
 }
 
+function toDateValue(value: unknown): Date | null {
+  if (!value) return null;
+  if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value;
+  if (value instanceof Timestamp) return value.toDate();
+  if (typeof value === 'object' && value && 'toDate' in value && typeof (value as { toDate?: unknown }).toDate === 'function') {
+    try {
+      const date = (value as { toDate: () => Date }).toDate();
+      return date instanceof Date && !Number.isNaN(date.getTime()) ? date : null;
+    } catch {
+      return null;
+    }
+  }
+  if (typeof value === 'string' || typeof value === 'number') {
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? null : date;
+  }
+  return null;
+}
+
 function stripUndefined<T extends Record<string, unknown>>(value: T): T {
   return Object.fromEntries(Object.entries(value).filter(([, entry]) => entry !== undefined)) as T;
 }
@@ -127,7 +146,7 @@ function formatEventNotificationTime(value: Timestamp, timezone: string): string
     hour: 'numeric',
     minute: '2-digit',
     timeZone: timezone || 'UTC',
-  }).format(value.toDate());
+  }).format(toDateValue(value) || new Date());
 }
 
 async function getActiveRsvpUserIds(eventId: string): Promise<string[]> {
@@ -361,7 +380,7 @@ export async function updateEvent(eventId: string, input: EventUpdateInput, acto
     description: input.description ?? current.description,
     eventType: input.eventType ?? current.eventType,
     status: input.status ?? current.status,
-    startsAt: input.startsAt ?? current.startsAt.toDate().toISOString(),
+    startsAt: input.startsAt ?? toIso(current.startsAt) ?? new Date().toISOString(),
     endsAt: input.endsAt !== undefined ? input.endsAt : toIso(current.endsAt),
     timezone: input.timezone ?? current.timezone,
     hostId: input.hostId ?? current.hostId,
@@ -825,7 +844,7 @@ export async function migrateLegacyEventModeScheduledPosts(options: { actorId: s
       eventId: eventRef.id,
       action: 'migrated',
       title,
-      startsAt: startsAt.toDate().toISOString(),
+      startsAt: toIso(startsAt) ?? new Date().toISOString(),
     });
 
     if (!dryRun) {

@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { GlassCard } from "@/components/ui/glass-card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { authFetch } from "@/lib/clientApi";
+import { authFetch, parseApiError } from "@/lib/clientApi";
 import { STUDIO_CONTENT_TYPES, type StudioContentType, type StudioPromptLibraryEntry } from "@/ai/studio/types";
 import { ArrowRight, FileText, LibraryBig, Search, Sparkles } from "lucide-react";
 
@@ -36,7 +36,7 @@ export default function StudioLibraryPage() {
       try {
         setLoading(true);
         const response = await authFetch("/api/ai/studio?limit=1");
-        if (!response.ok) throw new Error("Could not load reusable templates.");
+        if (!response.ok) throw await parseApiError(response, "Could not load reusable templates.");
         const payload = (await response.json()) as LibraryResponse;
         if (mounted) {
           setLibrary({

@@ -10,7 +10,9 @@ import { PostType } from "@/lib/db";
 import { useAuth } from "@/providers/AuthProvider";
 import { cn } from "@/lib/utils";
 import { UserAvatar } from "@/components/ui/user-avatar";
-import { authFetch } from "@/lib/clientApi";
+import { authFetch, parseApiError } from "@/lib/clientApi";
+import { toAppError } from "@/lib/errors";
+import { logger } from "@/lib/logger";
 import { awardXPAction } from "@/lib/xp";
 import { CommunityChannel, DEFAULT_POST_CHANNEL, getChannelLabel, POST_CHANNELS, PostChannel } from "@/lib/communityChannels";
 import { getDownloadURL, ref, uploadBytes, uploadBytesResumable } from "firebase/storage";
@@ -75,7 +77,7 @@ export function CreatePostBox({ selectedChannel = "all" }: CreatePostBoxProps) {
       
       if (!user) throw new Error('User must be signed in to upload an image');
       if (!storage) {
-        console.error('[CreatePostBox] Storage not initialized');
+        logger.error('[CreatePostBox] Storage not initialized');
         throw new Error('Storage not initialized - please check Firebase configuration');
       }
       if (!file.type.startsWith('image/')) {
@@ -109,9 +111,10 @@ export function CreatePostBox({ selectedChannel = "all" }: CreatePostBoxProps) {
       const snapshot = await uploadBytes(imageRef, fileToUpload, { contentType: fileToUpload.type });
       const url = await getDownloadURL(snapshot.ref);
       setImageUrl(url);
-    } catch (err: any) {
-      console.error('[CreatePostBox] Image upload failed:', err);
-      setImageError(err?.message || 'Upload failed');
+    } catch (err) {
+      const appError = toAppError(err, { userMessage: "Upload failed. Try a smaller image or a different file." });
+      logger.warn('[CreatePostBox] Image upload failed', { error: appError.debugMessage || appError.message });
+      setImageError(appError.userMessage);
     } finally {
       setImageUploading(false);
     }
@@ -151,10 +154,7 @@ export function CreatePostBox({ selectedChannel = "all" }: CreatePostBoxProps) {
       });
 
       if (!response.ok) {
-        const body = await response.json().catch(() => null);
-        console.error('[CreatePostBox] Post failed:', body);
-        const message = body?.error || body?.message || 'Unable to post';
-        throw new Error(message);
+        throw await parseApiError(response, 'Unable to post');
       }
 
       const result = await response.json();
@@ -171,9 +171,10 @@ export function CreatePostBox({ selectedChannel = "all" }: CreatePostBoxProps) {
       setLinkUrl("");
       setShowLinkInput(false);
       setExpanded(false);
-    } catch (err: any) {
-      console.error("[CreatePostBox] Failed to create post:", err);
-      setPostError(err?.message || 'Unable to create post');
+    } catch (err) {
+      const appError = toAppError(err, { userMessage: "Unable to create post. Please try again." });
+      logger.warn("[CreatePostBox] Failed to create post", { error: appError.debugMessage || appError.message });
+      setPostError(appError.userMessage);
     } finally {
       setSubmitting(false);
     }

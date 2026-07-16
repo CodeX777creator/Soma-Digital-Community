@@ -3,7 +3,7 @@
 import { FormEvent, useState } from "react";
 import { CheckCircle2, Gift, Loader2, Sparkles, TicketPercent } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { authFetch } from "@/lib/clientApi";
+import { authFetch, parseApiError } from "@/lib/clientApi";
 import { cn } from "@/lib/utils";
 
 type PromoRedeemCardProps = {
@@ -75,19 +75,14 @@ export function PromoRedeemCard({
           path: typeof window !== "undefined" ? window.location.pathname : undefined,
         }),
       });
+      if (!response.ok) throw await parseApiError(response, "Could not apply that code.");
       const payload = await response.json();
-      if (!response.ok) throw new Error(JSON.stringify(payload));
       const granted = payload.redemption?.benefitsGranted || [];
       setBenefits(granted);
       onRedeemed?.({ benefitsGranted: granted, code: payload.redemption?.code || code });
     } catch (err) {
-      let parsed: any = null;
-      try {
-        parsed = JSON.parse(err instanceof Error ? err.message : "");
-      } catch {
-        parsed = null;
-      }
-      setError(friendlyError(parsed?.code, parsed?.error));
+      const parsed = err as { code?: string; userMessage?: string; message?: string };
+      setError(friendlyError(parsed?.code, parsed?.userMessage || parsed?.message));
     } finally {
       setLoading(false);
     }

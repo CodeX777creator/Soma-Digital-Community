@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { logger } from "./logger";
+import { AppError, createAppError, getUserSafeMessage, toAppError } from "./errors";
+import { logAppError } from "./error-observability";
 
 // API rate limiting map (in production, use Redis)
 const rateLimitMap = new Map<string, { count: number; resetTime: number }>();
@@ -100,11 +102,21 @@ export function apiError(
     code?: string;
     details?: unknown;
     retryAfter?: number;
+    requestId?: string;
+    retryable?: boolean;
   } = {}
 ) {
-  const { status = 500, code, details, retryAfter } = options;
+  const { status = 500, code, details, retryAfter, requestId, retryable } = options;
+  const appError = createAppError({
+    status,
+    code,
+    message,
+    details,
+    requestId,
+    retryable,
+  });
 
-  logger.error("API Error", new Error(message), { status, code, details });
+  logAppError(appError, { requestId, action: "api_response", metadata: { status, code: appError.code, details } });
 
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
@@ -119,8 +131,10 @@ export function apiError(
 
   return NextResponse.json(
     {
-      error: message,
-      code,
+      error: appError.userMessage,
+      code: appError.code,
+      requestId,
+      retryable: appError.retryable,
       // SECURITY: Only include details in development to prevent information leakage
       details: process.env.NODE_ENV === "development" ? details : undefined,
       timestamp: new Date().toISOString(),
@@ -337,31 +351,50 @@ export function createAPIHandler<T>(
       const knownMessage = typeof errorRecord?.message === 'string' ? errorRecord.message : undefined;
       
       // Handle known error types
-      if (error instanceof APIRequestError || knownStatus) {
-        logger.warn(`API request error: ${req.url}`, {
-          status: error instanceof APIRequestError ? error.status : knownStatus,
-          code: error instanceof APIRequestError ? error.code : knownCode,
-          duration: `${duration}ms`,
+      if (error instanceof APIRequestError || knownStatus || error instanceof AppError) {
+        const appError = error instanceof AppError
+          ? error
+          : createAppError({
+              status: error instanceof APIRequestError ? error.status : knownStatus || 500,
+              code: error instanceof APIRequestError ? error.code : knownCode,
+              message: error instanceof APIRequestError ? error.message : knownMessage || 'Request failed',
+              requestId,
+              retryable: error instanceof APIRequestError ? error.retryable : undefined,
+            });
+        logAppError(appError, {
           requestId,
+          route: req.url,
+          action: "api_handler",
+          metadata: { status: appError.status, code: appError.code, duration: `${duration}ms` },
         });
         
-        return apiError(error instanceof APIRequestError ? error.message : knownMessage || 'Request failed', {
-          status: error instanceof APIRequestError ? error.status : knownStatus || 500,
-          code: error instanceof APIRequestError ? error.code : knownCode,
+        return apiError(appError.userMessage, {
+          status: appError.status,
+          code: appError.code,
           retryAfter: error instanceof RateLimitError ? error.retryAfter : typeof errorRecord?.retryAfter === 'number' ? errorRecord.retryAfter : undefined,
+          requestId,
+          retryable: appError.retryable,
         });
       }
 
-      // Log unexpected errors
-      logger.error("API handler error", error instanceof Error ? error : new Error(String(error)), {
-        url: req.url,
-        duration: `${duration}ms`,
-        requestId,
-      });
-
-      return apiError("Internal server error", {
+      const appError = toAppError(error, {
         status: 500,
         code: "INTERNAL_ERROR",
+        requestId,
+        message: error instanceof Error ? error.message : String(error),
+      });
+      logAppError(appError, {
+        requestId,
+        route: req.url,
+        action: "api_handler",
+        metadata: { duration: `${duration}ms`, method: req.method },
+      });
+
+      return apiError(getUserSafeMessage(appError), {
+        status: 500,
+        code: appError.code,
+        requestId,
+        retryable: appError.retryable,
         details: process.env.NODE_ENV === "development" 
           ? error instanceof Error ? error.message : String(error)
           : undefined,

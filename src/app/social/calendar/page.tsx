@@ -54,7 +54,10 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/providers/AuthProvider";
-import { authFetch } from "@/lib/clientApi";
+import { authFetch, parseApiError } from "@/lib/clientApi";
+import { normalizeDate } from "@/lib/date-utils";
+import { showErrorToast } from "@/lib/error-toast";
+import { logger } from "@/lib/logger";
 import { cn } from "@/lib/utils";
 import { SOCIAL_PROVIDER_REGISTRY } from "@/lib/social-data";
 import {
@@ -168,6 +171,8 @@ type SchedulerAIResponse = {
     campaignGoal?: string;
   };
 };
+
+const SOCIAL_PROVIDER_LIST_LABEL = SOCIAL_PROVIDER_REGISTRY.map((provider) => provider.label).join(", ").replace(/, ([^,]*)$/, ", or $1");
 
 type PublishingControlsResponse = {
   controls: {
@@ -919,7 +924,7 @@ export default function SocialCalendarPage() {
       totalPosts: filteredPosts.length,
       byStatus: summaryByStatus,
       byPlatform: summaryByPlatform,
-      upcomingPosts: filteredPosts.filter((post) => post.status !== "published" && new Date(post.scheduledTime).getTime() >= Date.now()).length,
+      upcomingPosts: filteredPosts.filter((post) => post.status !== "published" && (normalizeDate(post.scheduledTime)?.getTime() || 0) >= Date.now()).length,
     };
   }, [filteredPosts]);
 
@@ -938,12 +943,12 @@ export default function SocialCalendarPage() {
   }, [currentMonth]);
 
   const agendaPosts = useMemo(() => {
-    return [...filteredPosts].sort((a, b) => new Date(a.scheduledTime).getTime() - new Date(b.scheduledTime).getTime());
+    return [...filteredPosts].sort((a, b) => (normalizeDate(a.scheduledTime)?.getTime() || 0) - (normalizeDate(b.scheduledTime)?.getTime() || 0));
   }, [filteredPosts]);
 
   const upcomingAgendaPosts = useMemo(() => {
     const now = Date.now();
-    return agendaPosts.filter((post) => new Date(post.scheduledTime).getTime() >= now && post.status !== "published" && post.status !== "cancelled");
+    return agendaPosts.filter((post) => (normalizeDate(post.scheduledTime)?.getTime() || 0) >= now && post.status !== "published" && post.status !== "cancelled");
   }, [agendaPosts]);
 
   const queuePosts = useMemo(() => {
@@ -1270,11 +1275,11 @@ export default function SocialCalendarPage() {
       setCreditLoading(true);
       try {
         const response = await authFetch("/api/creator-credits");
-        if (!response.ok) throw new Error("Unable to load Creator Credits.");
+        if (!response.ok) throw await parseApiError(response, "Unable to load Creator Credits.");
         const data = (await response.json()) as CreditDashboard;
         if (mounted) setCreditDashboard(data);
       } catch (error) {
-        console.error("Unable to load scheduler credit summary", error);
+        logger.warn("Unable to load scheduler credit summary", { error: error instanceof Error ? error.message : String(error) });
         if (mounted) setCreditDashboard(null);
       } finally {
         if (mounted) setCreditLoading(false);
@@ -1297,7 +1302,7 @@ export default function SocialCalendarPage() {
     });
 
     if (!response.ok) {
-      throw new Error("Could not load calendar data.");
+      throw await parseApiError(response, "Could not load calendar data.");
     }
 
     const data = (await response.json()) as CalendarResponse;
@@ -1314,7 +1319,7 @@ export default function SocialCalendarPage() {
     });
 
     if (!response.ok) {
-      throw new Error("Could not load campaigns.");
+      throw await parseApiError(response, "Could not load campaigns.");
     }
 
     const data = (await response.json()) as CalendarCampaignListResponse;
@@ -1395,7 +1400,7 @@ export default function SocialCalendarPage() {
         });
 
         if (!response.ok) {
-          throw new Error("Could not load calendar data.");
+          throw await parseApiError(response, "Could not load calendar data.");
         }
 
         const data = (await response.json()) as CalendarResponse;
@@ -1453,7 +1458,7 @@ export default function SocialCalendarPage() {
         if (mounted) {
           toast({
             title: "Calendar unavailable",
-            description: error instanceof Error ? error.message : "Could not load scheduled posts.",
+            description: "Could not load scheduled posts.",
             variant: "destructive",
           });
         }
@@ -1666,8 +1671,7 @@ export default function SocialCalendarPage() {
       });
 
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ error: "Soma AI could not complete this action." }));
-        throw new Error(errorData.error || "Soma AI could not complete this action.");
+        throw await parseApiError(response, "Soma AI could not complete this action.");
       }
 
       const data = (await response.json()) as SchedulerAIResponse;
@@ -1678,10 +1682,9 @@ export default function SocialCalendarPage() {
         description: "Soma AI updated the scheduler draft. Review before publishing.",
       });
     } catch (error) {
-      toast({
+      showErrorToast(toast, error, {
         title: "Soma AI action failed",
-        description: error instanceof Error ? error.message : "Could not generate scheduler guidance.",
-        variant: "destructive",
+        fallback: "Could not generate scheduler guidance.",
       });
     } finally {
       setSchedulerAiLoadingAction(null);
@@ -1749,8 +1752,7 @@ export default function SocialCalendarPage() {
       });
 
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ error: "Upload failed" }));
-        throw new Error(errorData.error || "Upload failed.");
+        throw await parseApiError(response, "Upload failed.");
       }
 
       const data = (await response.json()) as StudioAssetUploadResponse;
@@ -1769,10 +1771,9 @@ export default function SocialCalendarPage() {
         description: "The asset has been attached to this scheduled post.",
       });
     } catch (error) {
-      toast({
+      showErrorToast(toast, error, {
         title: "Upload failed",
-        description: error instanceof Error ? error.message : "Could not upload media.",
-        variant: "destructive",
+        fallback: "Could not upload media.",
       });
     } finally {
       setMediaUploading(false);
@@ -1788,10 +1789,9 @@ export default function SocialCalendarPage() {
         description: "The latest scheduled content is loaded.",
       });
     } catch (error) {
-      toast({
+      showErrorToast(toast, error, {
         title: "Refresh failed",
-        description: error instanceof Error ? error.message : "Could not refresh the calendar.",
-        variant: "destructive",
+        fallback: "Could not refresh the calendar.",
       });
     } finally {
       setLoading(false);
@@ -1807,10 +1807,9 @@ export default function SocialCalendarPage() {
         description: "The latest campaign list is loaded.",
       });
     } catch (error) {
-      toast({
+      showErrorToast(toast, error, {
         title: "Campaign refresh failed",
-        description: error instanceof Error ? error.message : "Could not refresh campaigns.",
-        variant: "destructive",
+        fallback: "Could not refresh campaigns.",
       });
     } finally {
       setCampaignLoading(false);
@@ -1834,8 +1833,7 @@ export default function SocialCalendarPage() {
         }),
       });
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ error: "Could not update publishing controls." }));
-        throw new Error(errorData.error || "Could not update publishing controls.");
+        throw await parseApiError(response, "Could not update publishing controls.");
       }
       const data = (await response.json()) as PublishingControlsResponse;
       setPublishingControls(data.controls);
@@ -1844,10 +1842,9 @@ export default function SocialCalendarPage() {
         description: paused ? "The worker will skip your scheduled posts until you resume." : "Eligible scheduled posts can publish again.",
       });
     } catch (error) {
-      toast({
+      showErrorToast(toast, error, {
         title: "Publishing controls failed",
-        description: error instanceof Error ? error.message : "Could not update publishing controls.",
-        variant: "destructive",
+        fallback: "Could not update publishing controls.",
       });
     } finally {
       setPublishingControlLoading(false);
@@ -1868,8 +1865,7 @@ export default function SocialCalendarPage() {
         body: JSON.stringify({ action }),
       });
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ error: "Could not update post." }));
-        throw new Error(errorData.error || "Could not update post.");
+        throw await parseApiError(response, "Could not update post.");
       }
       const data = (await response.json()) as { post: ScheduledPostRecord };
       setPosts((current) => current.map((post) => post.scheduledPostId === data.post.scheduledPostId ? data.post : post));
@@ -1878,10 +1874,9 @@ export default function SocialCalendarPage() {
         description: action === "retry" ? "The publishing worker will try this post again." : "This post will no longer auto-publish.",
       });
     } catch (error) {
-      toast({
+      showErrorToast(toast, error, {
         title: action === "retry" ? "Retry failed" : "Cancel failed",
-        description: error instanceof Error ? error.message : "Could not update the post.",
-        variant: "destructive",
+        fallback: "Could not update the post.",
       });
     } finally {
       setLoading(false);
@@ -1947,8 +1942,7 @@ export default function SocialCalendarPage() {
       const responses = await Promise.all(requests);
       const failedResponse = responses.find((response) => !response.ok);
       if (failedResponse) {
-        const errorData = await failedResponse.json().catch(() => ({ error: "Unknown error" }));
-        throw new Error(errorData.error || "Could not save scheduled post.");
+        throw await parseApiError(failedResponse, "Could not save scheduled post.");
       }
 
       const data = (await responses[0].json()) as CalendarPostResponse;
@@ -1963,10 +1957,9 @@ export default function SocialCalendarPage() {
           : "Your draft is saved in the calendar.",
       });
     } catch (error) {
-      toast({
+      showErrorToast(toast, error, {
         title: "Save failed",
-        description: error instanceof Error ? error.message : "Could not save the calendar entry.",
-        variant: "destructive",
+        fallback: "Could not save the calendar entry.",
       });
     } finally {
       setLoading(false);
@@ -2006,8 +1999,7 @@ export default function SocialCalendarPage() {
       });
 
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ error: "Unknown error" }));
-        throw new Error(errorData.error || "Could not save campaign.");
+        throw await parseApiError(response, "Could not save campaign.");
       }
 
       const data = (await response.json()) as CalendarCampaignResponse;
@@ -2018,10 +2010,9 @@ export default function SocialCalendarPage() {
         description: "The campaign editor has been updated.",
       });
     } catch (error) {
-      toast({
+      showErrorToast(toast, error, {
         title: "Campaign save failed",
-        description: error instanceof Error ? error.message : "Could not save the campaign.",
-        variant: "destructive",
+        fallback: "Could not save the campaign.",
       });
     } finally {
       setCampaignLoading(false);
@@ -2040,8 +2031,7 @@ export default function SocialCalendarPage() {
       });
 
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ error: "Unknown error" }));
-        throw new Error(errorData.error || "Could not delete campaign.");
+        throw await parseApiError(response, "Could not delete campaign.");
       }
 
       clearCampaignForm();
@@ -2051,10 +2041,9 @@ export default function SocialCalendarPage() {
         description: "The campaign has been deleted.",
       });
     } catch (error) {
-      toast({
+      showErrorToast(toast, error, {
         title: "Campaign delete failed",
-        description: error instanceof Error ? error.message : "Could not remove the campaign.",
-        variant: "destructive",
+        fallback: "Could not remove the campaign.",
       });
     } finally {
       setCampaignLoading(false);
@@ -2073,8 +2062,7 @@ export default function SocialCalendarPage() {
       });
 
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ error: "Unknown error" }));
-        throw new Error(errorData.error || "Could not delete scheduled post.");
+        throw await parseApiError(response, "Could not delete scheduled post.");
       }
 
       clearForm();
@@ -2084,10 +2072,9 @@ export default function SocialCalendarPage() {
         description: "The calendar entry has been deleted.",
       });
     } catch (error) {
-      toast({
+      showErrorToast(toast, error, {
         title: "Delete failed",
-        description: error instanceof Error ? error.message : "Could not remove the calendar entry.",
-        variant: "destructive",
+        fallback: "Could not remove the calendar entry.",
       });
     } finally {
       setLoading(false);
@@ -2123,8 +2110,7 @@ export default function SocialCalendarPage() {
 
       if (!response.ok) {
         setPosts(previousPosts);
-        const errorData = await response.json().catch(() => ({ error: "Unknown error" }));
-        throw new Error(errorData.error || "Could not move scheduled post.");
+        throw await parseApiError(response, "Could not move scheduled post.");
       }
 
       await loadMonth();
@@ -2134,10 +2120,9 @@ export default function SocialCalendarPage() {
       });
     } catch (error) {
       setPosts(previousPosts);
-      toast({
+      showErrorToast(toast, error, {
         title: "Move failed",
-        description: error instanceof Error ? error.message : "Could not move the post.",
-        variant: "destructive",
+        fallback: "Could not move the post.",
       });
     } finally {
       setLoading(false);
@@ -3203,7 +3188,7 @@ export default function SocialCalendarPage() {
                   <div className="m-5 rounded-[18px] border border-dashed border-white/15 bg-white/[0.045] p-5 shadow-[0_16px_45px_rgba(0,0,0,0.22)]">
                     <h3 className="text-sm font-semibold text-white">Connect an account first</h3>
                     <p className="mt-2 text-sm leading-6 text-muted-foreground">
-                      Connect Instagram, TikTok, YouTube, Facebook, LinkedIn, or X before scheduling live posts.
+                      Connect {SOCIAL_PROVIDER_LIST_LABEL} before scheduling live posts.
                     </p>
                     <Button asChild className="mt-4 rounded-[16px]">
                       <Link href="/social">Connect social account</Link>

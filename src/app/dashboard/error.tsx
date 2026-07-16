@@ -5,7 +5,8 @@ import { GlassCard } from "@/components/ui/glass-card";
 import { Button } from "@/components/ui/button";
 import { AlertCircle, RefreshCw, LayoutDashboard } from "lucide-react";
 import Link from "next/link";
-import { logger } from "@/lib/logger";
+import { toAppError } from "@/lib/errors";
+import { logAppError, trackErrorEvent } from "@/lib/error-observability";
 
 interface DashboardErrorProps {
   error: Error & { digest?: string };
@@ -13,10 +14,11 @@ interface DashboardErrorProps {
 }
 
 export default function DashboardError({ error, reset }: DashboardErrorProps) {
+  const appError = toAppError(error);
+
   useEffect(() => {
-    logger.error("Dashboard error boundary caught error", error, {
-      digest: error.digest,
-    });
+    logAppError(error, { feature: "dashboard", action: "route_error_boundary", metadata: { digest: error.digest } });
+    trackErrorEvent("route_error_boundary_triggered", error, { feature: "dashboard", action: "route_error_boundary", metadata: { digest: error.digest } });
   }, [error]);
 
   return (
@@ -30,8 +32,9 @@ export default function DashboardError({ error, reset }: DashboardErrorProps) {
         
         <h1 className="text-xl font-bold mb-2">Dashboard Unavailable</h1>
         <p className="text-muted-foreground text-sm mb-6">
-          We&apos;re having trouble loading your dashboard. This might be due to a network issue or temporary service disruption.
+          {appError.userMessage || "We are having trouble loading your dashboard. This might be due to a network issue or temporary service disruption."}
         </p>
+        {appError.requestId ? <p className="mb-4 text-xs text-muted-foreground">Reference: {appError.requestId}</p> : null}
         
         <div className="flex flex-col sm:flex-row gap-3 justify-center">
           <Button
@@ -41,6 +44,15 @@ export default function DashboardError({ error, reset }: DashboardErrorProps) {
           >
             <RefreshCw className="w-4 h-4 mr-2" />
             Try Again
+          </Button>
+          <Button
+            asChild
+            variant="outline"
+            className="border-white/10"
+          >
+            <Link href="/settings">
+              Settings
+            </Link>
           </Button>
           <Button
             asChild

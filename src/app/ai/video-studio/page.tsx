@@ -10,6 +10,8 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/providers/AuthProvider";
+import { parseApiError } from "@/lib/clientApi";
+import { showErrorToast } from "@/lib/error-toast";
 import { cn } from "@/lib/utils";
 import {
   VIDEO_ASPECT_RATIOS,
@@ -224,7 +226,7 @@ export default function VideoStudioPage() {
     });
 
     if (!response.ok) {
-      throw new Error("Could not load video history.");
+      throw await parseApiError(response, "Could not load video history.");
     }
 
     const data = (await response.json()) as VideoStudioHistoryResponse;
@@ -247,7 +249,7 @@ export default function VideoStudioPage() {
         });
 
         if (!response.ok) {
-          throw new Error("Could not load video history.");
+          throw await parseApiError(response, "Could not load video history.");
         }
 
         const data = (await response.json()) as VideoStudioHistoryResponse;
@@ -256,10 +258,9 @@ export default function VideoStudioPage() {
         }
       } catch (error) {
         if (mounted) {
-          toast({
+          showErrorToast(toast, error, {
             title: "History unavailable",
-            description: error instanceof Error ? error.message : "Could not load the video library.",
-            variant: "destructive",
+            fallback: "Could not load the video library.",
           });
         }
       } finally {
@@ -418,8 +419,7 @@ export default function VideoStudioPage() {
       });
 
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ error: "Unknown error" }));
-        throw new Error(errorData.error || "Video generation failed.");
+        throw await parseApiError(response, "Video generation failed.");
       }
 
       const data = (await response.json()) as VideoStudioResponse;
@@ -433,10 +433,9 @@ export default function VideoStudioPage() {
         description: "Your video asset is ready and saved to the library.",
       });
     } catch (error) {
-      toast({
+      showErrorToast(toast, error, {
         title: "Generation failed",
-        description: error instanceof Error ? error.message : "The video studio could not complete this request.",
-        variant: "destructive",
+        fallback: "The video studio could not complete this request.",
       });
     } finally {
       setLoading(false);

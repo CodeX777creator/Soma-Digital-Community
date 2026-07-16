@@ -6,6 +6,8 @@ import {
   type UploadTaskSnapshot,
 } from "firebase/storage";
 import { storage } from "@/lib/firebase";
+import { createUploadError } from "@/lib/errors/domain";
+import { logger } from "@/lib/logger";
 
 const MAX_ASSET_SIZE = 50 * 1024 * 1024;
 const MAX_AVATAR_SIZE = 5 * 1024 * 1024; // 5MB for avatars
@@ -20,11 +22,11 @@ export async function uploadAvatar(
   file: File,
   userId: string
 ): Promise<string> {
-  if (!storage) throw new Error('Storage not initialized');
+  if (!storage) throw createUploadError("UPLOAD_STORAGE_UNAVAILABLE", { message: "Storage not initialized", status: 503 });
   
   // Validate file size
   if (file.size > MAX_AVATAR_SIZE) {
-    throw new Error(`Avatar must be smaller than 5MB (current: ${(file.size / 1024 / 1024).toFixed(2)}MB)`);
+    throw createUploadError("UPLOAD_TOO_LARGE", { message: `Avatar must be smaller than 5MB (current: ${(file.size / 1024 / 1024).toFixed(2)}MB)` });
   }
   
   const filename = `avatars/${userId}/${Date.now()}-${file.name.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
@@ -47,8 +49,8 @@ export async function uploadAvatar(
         // Progress handling can be added here if needed
       },
       (error) => {
-        console.error('Avatar upload error:', error);
-        reject(error);
+        logger.warn("Avatar upload failed", { error: error instanceof Error ? error.message : String(error), userId });
+        reject(createUploadError("UPLOAD_INTERRUPTED", { message: error instanceof Error ? error.message : "Avatar upload interrupted" }));
       },
       () => resolve()
     );
@@ -102,11 +104,11 @@ function validateAssetFile(file: File) {
   const hasAllowedExtension = ALLOWED_EXTENSIONS.has(extension);
 
   if (!hasAllowedType && !hasAllowedExtension) {
-    throw new Error("Only PDF, MP4, ZIP, and Markdown files are supported.");
+    throw createUploadError("UPLOAD_UNSUPPORTED_TYPE", { message: "Only PDF, MP4, ZIP, and Markdown files are supported." });
   }
 
   if (file.size > MAX_ASSET_SIZE) {
-    throw new Error("Asset files must be smaller than 50MB.");
+    throw createUploadError("UPLOAD_TOO_LARGE", { message: "Asset files must be smaller than 50MB." });
   }
 }
 
@@ -116,13 +118,13 @@ export async function uploadAsset(
   metadata: AssetUploadMetadata,
   options: UploadAssetOptions = {}
 ): Promise<string> {
-  if (!storage) throw new Error('Storage not initialized');
+  if (!storage) throw createUploadError("UPLOAD_STORAGE_UNAVAILABLE", { message: "Storage not initialized", status: 503 });
   if (!assetId || assetId !== metadata.assetId) {
-    throw new Error("A valid assetId is required before upload.");
+    throw createUploadError("UPLOAD_STORAGE_PERMISSION_DENIED", { message: "A valid assetId is required before upload.", status: 403 });
   }
 
   if (!metadata.uploadedBy) {
-    throw new Error("uploadedBy metadata is required.");
+    throw createUploadError("UPLOAD_STORAGE_PERMISSION_DENIED", { message: "uploadedBy metadata is required.", status: 403 });
   }
 
   validateAssetFile(file);
@@ -146,7 +148,7 @@ export async function uploadAsset(
         const progress = Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 100);
         options.onProgress?.(progress, snapshot);
       },
-      reject,
+      (error) => reject(createUploadError("UPLOAD_INTERRUPTED", { message: error instanceof Error ? error.message : "Upload interrupted" })),
       () => resolve()
     );
   });

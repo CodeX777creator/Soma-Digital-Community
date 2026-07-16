@@ -10,6 +10,8 @@ import { GlassCard } from "@/components/ui/glass-card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useAuth } from "@/providers/AuthProvider";
+import { parseApiError } from "@/lib/clientApi";
+import { toAppError } from "@/lib/errors";
 import { cn } from "@/lib/utils";
 import type { SocialPublishAttemptRecord, SocialPublishAttemptStatus } from "@/social/types";
 
@@ -75,13 +77,12 @@ export default function SocialPublishAttemptsPage() {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (!response.ok) {
-        const data = await response.json().catch(() => ({ error: "Could not load publish attempts." }));
-        throw new Error(data.error || "Could not load publish attempts.");
+        throw await parseApiError(response, "Could not load publish attempts.");
       }
       const data = (await response.json()) as AttemptsResponse;
       setAttempts(data.attempts || []);
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : "Could not load publish attempts.");
+      setError(toAppError(loadError, { userMessage: "Could not load publish attempts." }).userMessage);
     } finally {
       setLoading(false);
     }
