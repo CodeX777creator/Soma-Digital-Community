@@ -10,6 +10,8 @@ import { auth } from "@/lib/firebase";
 import { GOOGLE_REDIRECT_PENDING_KEY, GOOGLE_REDIRECT_STORAGE_KEY, getSafeRedirectPath, isStandaloneApp } from "@/lib/auth";
 import { getAuthActionCodeSettings } from "@/lib/firebase-auth-actions";
 import { bootstrapAuthenticatedUser } from "@/lib/auth-bootstrap";
+import { resolvePostOnboardingDestination } from "@/lib/auth-routing";
+import { trackOnboardingEvent } from "@/lib/onboarding-events";
 import { dbService } from "@/lib/db";
 import { useToast } from "@/hooks/use-toast";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -17,7 +19,7 @@ import { validatePassword, cn } from "@/lib/utils";
 import { awardXPAction } from "@/lib/xp";
 
 export function AccountCreationStep() {
-  const { roadmap, nextStep, prevStep, identities, goal, skillLevel, plan, budget, availableTime } = useOnboardingStore();
+  const { roadmap, nextStep, prevStep, identities, goal, skillLevel, plan, budget, availableTime, reset } = useOnboardingStore();
   const [name, setName] = useState("");
 
   useEffect(() => {
@@ -27,7 +29,7 @@ export function AccountCreationStep() {
       if (currentUser) {
         setIsLoading(true);
         try {
-          await saveUserData(currentUser, currentUser.displayName || "Explorer", currentUser.emailVerified);
+          await saveUserData(currentUser, currentUser.displayName || "Explorer");
           toast({
             title: "Strategy Secured",
             description: "Your custom onboarding roadmap has been linked to your account.",
@@ -57,25 +59,24 @@ export function AccountCreationStep() {
   const handlePostSignup = () => {
     toast({
       title: "Account Created!",
-      description: "Your digital wealth strategy is now secured.",
+      description: "Your SDC operating system is ready.",
     });
 
     const safeRedirect = getSafeRedirectPath(redirectUrl);
 
-    if (safeRedirect) {
-      router.push(safeRedirect);
-    } else if (plan === "pro" || plan === "elite") {
-      router.push(`/dashboard?upgrade=${plan}`);
-    } else {
-      // If we are at the end of onboarding or on a standalone signup page, go to dashboard
-      router.push("/dashboard");
-    }
+    const destination = resolvePostOnboardingDestination(plan, safeRedirect);
+    trackOnboardingEvent("onboarding_completed", {
+      intendedPlan: plan || "explorer",
+      destination,
+    });
+    reset();
+    router.push(destination);
   };
 
-  const saveUserData = async (user: any, nameToSave: string, emailVerified = user.emailVerified === true) => {
+  const saveUserData = async (user: any, nameToSave: string) => {
     await bootstrapAuthenticatedUser({
       displayName: nameToSave || user.displayName || "Explorer",
-      onboardingComplete: emailVerified,
+      onboardingComplete: true,
       onboarding: {
         identities,
         goal: goal || null,
@@ -86,14 +87,12 @@ export function AccountCreationStep() {
       },
     });
 
-    if (emailVerified) {
-      try {
-        await awardXPAction('onboarding_complete', {
-          metadata: { onboardingComplete: true, goal: goal || null, skillLevel: skillLevel || null },
-        });
-      } catch (setupError) {
-        console.error("Non-critical signup setup failed:", setupError);
-      }
+    try {
+      await awardXPAction('onboarding_complete', {
+        metadata: { onboardingComplete: true, goal: goal || null, skillLevel: skillLevel || null },
+      });
+    } catch (setupError) {
+      console.error("Non-critical signup setup failed:", setupError);
     }
 
     if (roadmap) {
@@ -145,7 +144,11 @@ export function AccountCreationStep() {
       const userCredential = await createUserWithEmailAndPassword(auth, trimmedEmail, password);
       const user = userCredential.user;
       await updateProfile(user, { displayName: name });
-      await saveUserData(user, name, false);
+      await saveUserData(user, name);
+      await trackOnboardingEvent("onboarding_account_created", {
+        method: "email",
+        intendedPlan: plan || "explorer",
+      });
       
       // Send verification email
       await sendEmailVerification(user, getAuthActionCodeSettings());
@@ -200,7 +203,11 @@ export function AccountCreationStep() {
       const result = await signInWithPopup(currentAuth, provider);
       const user = result.user;
       
-      await saveUserData(user, user.displayName || "Explorer", true);
+      await saveUserData(user, user.displayName || "Explorer");
+      await trackOnboardingEvent("onboarding_account_created", {
+        method: "google_popup",
+        intendedPlan: plan || "explorer",
+      });
       handlePostSignup();
     } catch (error: any) {
       console.error("Google sign-up error:", error);
@@ -231,27 +238,10 @@ export function AccountCreationStep() {
     try {
       await user.reload();
       if (auth.currentUser?.emailVerified) {
-        await bootstrapAuthenticatedUser({
-          displayName: user.displayName || name || "Explorer",
-          onboardingComplete: true,
-          onboarding: {
-            identities,
-            goal: goal || null,
-            skillLevel: skillLevel || null,
-            intendedPlan: plan || null,
-            budget: budget || null,
-            availableTime: availableTime || null,
-          },
+        await trackOnboardingEvent("onboarding_completed", {
+          method: "email_verified",
+          intendedPlan: plan || "explorer",
         });
-        
-        try {
-          await awardXPAction('onboarding_complete', {
-            metadata: { onboardingComplete: true, goal: goal || null, skillLevel: skillLevel || null },
-          });
-        } catch (setupError) {
-          console.error("Non-critical signup setup failed:", setupError);
-        }
-        
         handlePostSignup();
       } else {
         toast({
@@ -275,13 +265,21 @@ export function AccountCreationStep() {
           <h2 className="text-3xl font-bold tracking-tight text-white font-headline">Verify Your Email</h2>
           <p className="text-white/60 text-lg leading-relaxed max-w-md mx-auto">
             We've sent a secure verification link to <span className="text-primary font-medium">{email}</span>. 
-            Please click the link to activate your access.
+            You can continue into SDC now. Sensitive account actions may ask you to verify first.
           </p>
           <div className="pt-8 flex flex-col gap-4">
+            <Button
+              onClick={handlePostSignup}
+              className="h-14 rounded-xl bg-gradient-to-r from-[#5B5FFF] via-[#8B5CF6] to-[#4F9DFF] text-white font-bold text-lg"
+            >
+              Continue to SDC
+              <ArrowRight className="ml-2 h-5 w-5" />
+            </Button>
             <Button 
               onClick={handleVerificationComplete}
               disabled={isLoading}
-              className="h-14 rounded-xl bg-primary hover:bg-primary/90 text-black font-bold text-lg"
+              variant="outline"
+              className="h-14 rounded-xl border-white/10 bg-white/5 text-white hover:bg-white/10 font-bold text-lg"
             >
               {isLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : "I've Verified My Email"}
             </Button>

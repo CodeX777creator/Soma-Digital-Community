@@ -372,6 +372,16 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    match /onboardingEvents/{eventId} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+
+    match /auditLogs/{logId} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+
     match /marketplaceAssets/{assetId} {
       // Allow authenticated users to query marketplace assets
       // List/get operations: allow query to execute, filtering happens at query level

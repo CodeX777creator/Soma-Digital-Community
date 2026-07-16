@@ -134,6 +134,7 @@ export const POST = createAPIHandler(
       subscriptionPlan: subscription.subscriptionPlan,
       subscriptionStatus: subscription.subscriptionStatus,
       onboardingComplete: existing?.onboardingComplete === true || body.onboardingComplete === true,
+      profileCompleted: existing?.profileCompleted === true || body.onboardingComplete === true,
       xp: typeof existing?.xp === "number" ? existing.xp : 0,
       level: typeof existing?.level === "number" ? existing.level : 1,
       streak: typeof existing?.streak === "number" ? existing.streak : 0,
@@ -178,6 +179,32 @@ export const POST = createAPIHandler(
       createdAt: existing?.createdAt || now,
       updatedAt: now,
     }, { merge: true });
+
+    batch.set(adminDb.collection("auditLogs").doc(), {
+      actorId: uid,
+      action: body.onboardingComplete === true ? "onboarding_completed" : "auth_bootstrap",
+      resourceType: "user",
+      resourceId: uid,
+      metadata: {
+        intendedPlan: intendedPlan || null,
+        subscriptionPlan: subscription.subscriptionPlan,
+        emailVerified: firebaseUser.emailVerified === true,
+      },
+      createdAt: now,
+    });
+
+    if (body.onboardingComplete === true) {
+      batch.set(adminDb.collection("onboardingEvents").doc(), {
+        event: "onboarding_completed",
+        userId: uid,
+        metadata: {
+          intendedPlan: intendedPlan || null,
+          subscriptionPlan: subscription.subscriptionPlan,
+          source: "auth_bootstrap",
+        },
+        createdAt: now,
+      });
+    }
     await batch.commit();
 
     const updatedSnap = await userRef.get();

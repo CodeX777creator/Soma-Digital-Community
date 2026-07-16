@@ -5,6 +5,7 @@ export type PlanType = 'explorer' | 'pro' | 'elite' | null;
 
 interface OnboardingState {
   currentStep: number;
+  lastUserId: string | null;
   plan: PlanType;
   identities: string[];
   goal: string | null;
@@ -16,6 +17,7 @@ interface OnboardingState {
   
   // Actions
   setStep: (step: number) => void;
+  setLastUserId: (userId: string | null) => void;
   nextStep: () => void;
   prevStep: () => void;
   setPlan: (plan: PlanType) => void;
@@ -34,6 +36,7 @@ export const useOnboardingStore = create<OnboardingState>()(
   persist(
     (set) => ({
       currentStep: 1,
+      lastUserId: null,
       plan: null,
       identities: [],
       goal: null,
@@ -44,6 +47,7 @@ export const useOnboardingStore = create<OnboardingState>()(
       roadmap: null,
 
       setStep: (step) => set({ currentStep: step }),
+      setLastUserId: (lastUserId) => set({ lastUserId }),
       nextStep: () => set((state) => ({ currentStep: state.currentStep + 1 })),
       prevStep: () => set((state) => ({ currentStep: Math.max(1, state.currentStep - 1) })),
       setPlan: (plan) => set({ plan }),
@@ -65,6 +69,7 @@ export const useOnboardingStore = create<OnboardingState>()(
       setRoadmap: (roadmap) => set({ roadmap }),
       reset: () => set({
         currentStep: 1,
+        lastUserId: null,
         plan: null,
         identities: [],
         goal: null,

@@ -439,6 +439,10 @@ export const dbService = {
       ...roadmap,
       createdAt: serverTimestamp()
     });
+    await this.saveUserProfile(userId, {
+      roadmapGenerated: true,
+      updatedAt: serverTimestamp() as any,
+    } as Partial<UserProfile>);
   },
 
   // Chat Threads

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useOnboardingStore } from "@/store/useOnboardingStore";
 import { BrainCircuit, ChevronLeft } from "lucide-react";
-import { generatePersonalizedRoadmap } from "@/ai/flows/ai-mentor-personalized-roadmap-flow";
+import { trackOnboardingEvent } from "@/lib/onboarding-events";
 
 export function AIRoadmapStep() {
   const { identities, goal, skillLevel, interests, plan, setRoadmap, nextStep, prevStep } = useOnboardingStore();
@@ -27,10 +27,26 @@ export function AIRoadmapStep() {
       `;
 
       try {
-        const res = await generatePersonalizedRoadmap({ businessGoals: goalsText });
+        const response = await fetch("/api/onboarding/roadmap-preview", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "same-origin",
+          body: JSON.stringify({ businessGoals: goalsText }),
+        });
+
+        if (!response.ok) {
+          throw new Error("Unable to generate onboarding roadmap preview");
+        }
+
+        const body = await response.json();
+        const res = body.roadmap;
         if (!isActive) return;
 
         setRoadmap(res);
+        await trackOnboardingEvent("onboarding_roadmap_generated", {
+          source: "onboarding_preview",
+          intendedPlan: plan || "explorer",
+        });
         // Hold for dramatic effect
         timeoutId = setTimeout(() => {
           if (!isActive) return;

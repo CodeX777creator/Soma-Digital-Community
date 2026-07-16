@@ -13,13 +13,13 @@ import {
   sendPasswordResetEmail, 
   sendEmailVerification,
   getAdditionalUserInfo, 
-  signOut,
   onAuthStateChanged
 } from "firebase/auth";
 import { auth } from "@/lib/firebase";
 import { getSafeRedirectPath, isStandaloneApp, requiresEmailVerification } from "@/lib/auth";
 import { getAuthActionCodeSettings } from "@/lib/firebase-auth-actions";
 import { bootstrapAuthenticatedUser } from "@/lib/auth-bootstrap";
+import { resolvePostAuthDestination } from "@/lib/auth-routing";
 import { useToast } from "@/hooks/use-toast";
 
 function LoginPageContent() {
@@ -51,7 +51,7 @@ function LoginPageContent() {
         
         if (result?.user) {
           const info = getAdditionalUserInfo(result);
-          await bootstrapAuthenticatedUser({
+          const bootstrapped = await bootstrapAuthenticatedUser({
             displayName: result.user.displayName,
             onboardingComplete: !info?.isNewUser,
           });
@@ -62,12 +62,12 @@ function LoginPageContent() {
               title: "Welcome! Let's set up your profile",
               description: "Complete onboarding to activate your account.",
             });
-            router.push(`/open?redirect=${encodeURIComponent(safeRedirect)}`);
+            router.push(resolvePostAuthDestination(bootstrapped.profile, { isNewUser: true, safeRedirect }));
             return;
           } else {
             // Existing user - redirect to dashboard
             toast({ title: "Welcome back!" });
-            router.push(safeRedirect);
+            router.push(resolvePostAuthDestination(bootstrapped.profile, { safeRedirect }));
             return;
           }
         }
@@ -90,9 +90,10 @@ function LoginPageContent() {
         if (isLoading || isGoogleLoading) return;
 
         if (requiresEmailVerification(user)) {
-          await signOut(authInstance);
-          setError("Please verify your email before signing in.");
-          return;
+          toast({
+            title: "Email verification pending",
+            description: "You can continue, but sensitive account actions may ask you to verify your email.",
+          });
         }
 
         // User is signed in
@@ -119,16 +120,17 @@ function LoginPageContent() {
       const currentUser = auth.currentUser;
       if (requiresEmailVerification(currentUser) && currentUser) {
         await sendEmailVerification(currentUser, getAuthActionCodeSettings());
-        await signOut(auth);
-        setError("Please verify your email before signing in. We sent a new verification link to your inbox.");
-        return;
+        toast({
+          title: "Verification link sent",
+          description: "You can continue now. Please verify your email when you have a moment.",
+        });
       }
 
-      await bootstrapAuthenticatedUser({
+      const bootstrapped = await bootstrapAuthenticatedUser({
         displayName: credential.user.displayName,
-        onboardingComplete: credential.user.emailVerified,
+        onboardingComplete: true,
       });
-      router.push(safeRedirect);
+      router.push(resolvePostAuthDestination(bootstrapped.profile, { safeRedirect }));
     } catch (err: any) {
       setError(err.message || "Failed to sign in. Please check your credentials.");
     } finally {
@@ -159,7 +161,7 @@ function LoginPageContent() {
 
       const result = await signInWithPopup(auth, provider);
       const info = getAdditionalUserInfo(result);
-      await bootstrapAuthenticatedUser({
+      const bootstrapped = await bootstrapAuthenticatedUser({
         displayName: result.user.displayName,
         onboardingComplete: !info?.isNewUser,
       });
@@ -169,11 +171,11 @@ function LoginPageContent() {
           title: "Welcome! Let's set up your profile",
           description: "Complete onboarding to activate your account.",
         });
-        router.replace(`/open?redirect=${encodeURIComponent(safeRedirect)}`);
+        router.replace(resolvePostAuthDestination(bootstrapped.profile, { isNewUser: true, safeRedirect }));
         return;
       }
 
-      router.replace(safeRedirect);
+      router.replace(resolvePostAuthDestination(bootstrapped.profile, { safeRedirect }));
     } catch (err: any) {
       console.error("Google sign-in error:", err);
       const message =

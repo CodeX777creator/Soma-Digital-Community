@@ -18,6 +18,8 @@ import { cn } from "@/lib/utils";
 import { auth } from "@/lib/firebase";
 import { GOOGLE_REDIRECT_PENDING_KEY, GOOGLE_REDIRECT_STORAGE_KEY, getSafeRedirectPath } from "@/lib/auth";
 import { bootstrapAuthenticatedUser } from "@/lib/auth-bootstrap";
+import { resolvePostOnboardingDestination } from "@/lib/auth-routing";
+import { trackOnboardingEvent } from "@/lib/onboarding-events";
 import { dbService } from "@/lib/db";
 import { awardXPAction } from "@/lib/xp";
 
@@ -78,7 +80,7 @@ function waitForCurrentUser() {
 function OnboardingController() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { currentStep, setPlan, plan, setStep, reset, identities, goal, skillLevel, budget, availableTime } = useOnboardingStore();
+  const { currentStep, setPlan, plan, setStep, reset, setLastUserId, lastUserId, identities, goal, skillLevel, budget, availableTime } = useOnboardingStore();
   const handledEntryPlan = useRef<string | null>(null);
   const handledGoogleRedirect = useRef(false);
   const [isCheckingGoogleRedirect, setIsCheckingGoogleRedirect] = useState(true);
@@ -96,6 +98,12 @@ function OnboardingController() {
           setIsCheckingExistingUser(false);
           return;
         }
+
+        if (lastUserId && lastUserId !== user.uid) {
+          reset();
+        }
+        setLastUserId(user.uid);
+
         const profile = await dbService.getUserProfile(user.uid);
         if (profile?.onboardingComplete === true) {
           router.replace("/dashboard");
@@ -106,7 +114,7 @@ function OnboardingController() {
       }
     });
     return unsubscribe;
-  }, [router]);
+  }, [lastUserId, reset, router, setLastUserId]);
 
   useEffect(() => {
     if (handledGoogleRedirect.current) return;
@@ -136,15 +144,15 @@ function OnboardingController() {
         sessionStorage.removeItem(GOOGLE_REDIRECT_PENDING_KEY);
 
         const safeRedirect = getSafeRedirectPath(storedRedirect || searchParams.get("redirect"));
-        const { plan } = useOnboardingStore.getState();
+        const { plan, reset } = useOnboardingStore.getState();
+        const destination = resolvePostOnboardingDestination(plan, safeRedirect);
 
-        if (safeRedirect) {
-          router.replace(safeRedirect);
-        } else if (plan === "pro" || plan === "elite") {
-          router.replace(`/dashboard?upgrade=${plan}`);
-        } else {
-          router.replace("/dashboard");
-        }
+        await trackOnboardingEvent("onboarding_completed", {
+          method: "google_redirect",
+          intendedPlan: plan || "explorer",
+        });
+        reset();
+        router.replace(destination);
       } catch (error) {
         console.error("[Google Signup] Redirect result error:", error);
         setGoogleRedirectError(
@@ -162,16 +170,38 @@ function OnboardingController() {
 
   useEffect(() => {
     if (isCheckingGoogleRedirect || isCheckingExistingUser) return;
+    trackOnboardingEvent(currentStep === 1 ? "onboarding_started" : "onboarding_step_viewed", {
+      step: currentStep,
+      intendedPlan: plan || "explorer",
+    });
+  }, [currentStep, isCheckingExistingUser, isCheckingGoogleRedirect, plan]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const handleBeforeUnload = () => {
+      if (currentStep > 1 && currentStep < 8) {
+        trackOnboardingEvent("onboarding_abandoned", {
+          step: currentStep,
+          intendedPlan: plan || "explorer",
+        });
+      }
+    };
+
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [currentStep, plan]);
+
+  useEffect(() => {
+    if (isCheckingGoogleRedirect || isCheckingExistingUser) return;
 
     const planParam = searchParams.get("plan");
     const stepParam = searchParams.get("step");
 
-    if (stepParam) {
+    if (stepParam && stepParam !== "1") {
       const parsedStep = parseInt(stepParam, 10);
       if (!isNaN(parsedStep) && parsedStep >= 1 && parsedStep <= 8) {
-        if (parsedStep === 1) {
-          reset();
-        } else if (currentStep !== parsedStep) {
+        if (currentStep !== parsedStep) {
           setStep(parsedStep);
           return;
         }

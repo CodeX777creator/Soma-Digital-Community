@@ -15,6 +15,7 @@ import {
   Globe2,
   LayoutDashboard,
   LibraryBig,
+  Mail,
   Menu,
   MessageSquare,
   PackageCheck,
@@ -145,6 +146,11 @@ export const AppLayout = ({ children }: React.PropsWithChildren) => {
   const planActionLabel = getUpgradeLabel(tier);
   const planActionHref = upgradeTarget ? `/dashboard?upgrade=${upgradeTarget}` : "/settings/billing";
   const accountName = userData?.name || user?.displayName || "Creator";
+  const needsEmailVerification = Boolean(
+    user &&
+    user.emailVerified === false &&
+    user.providerData.some((provider) => provider.providerId === "password")
+  );
   const navWithMessages = React.useMemo<NavItem[]>(
     () => [
       ...primaryNav,
@@ -341,7 +347,23 @@ export const AppLayout = ({ children }: React.PropsWithChildren) => {
 
         <main className="relative min-h-[calc(100vh-76px)] overflow-hidden px-4 py-8 sm:px-6 sm:py-9 xl:px-8">
           <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_20%_0%,rgba(79,157,255,0.16),transparent_32%),radial-gradient(circle_at_78%_18%,rgba(139,92,246,0.16),transparent_34%)]" />
-          <div className="relative mx-auto w-full max-w-[1600px]">{children}</div>
+          <div className="relative mx-auto w-full max-w-[1600px] space-y-5">
+            {needsEmailVerification && (
+              <div className="flex flex-col gap-3 rounded-[18px] border border-amber-400/20 bg-amber-400/10 px-5 py-4 text-sm text-amber-50 shadow-[0_18px_50px_rgba(0,0,0,0.22)] sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex items-start gap-3">
+                  <Mail className="mt-0.5 h-5 w-5 shrink-0 text-amber-300" />
+                  <div>
+                    <p className="font-medium text-white">Verify your email to unlock sensitive account actions.</p>
+                    <p className="mt-1 text-amber-50/70">You can keep using SDC. Check your inbox for the verification link when you have a moment.</p>
+                  </div>
+                </div>
+                <Link href="/settings" className="shrink-0 rounded-[14px] border border-white/10 bg-white/10 px-4 py-2 text-center text-xs font-semibold uppercase tracking-widest text-white hover:bg-white/15">
+                  Account settings
+                </Link>
+              </div>
+            )}
+            {children}
+          </div>
         </main>
       </div>
       <GrowthEngine />

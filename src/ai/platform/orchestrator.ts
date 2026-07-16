@@ -36,46 +36,46 @@ export interface OrchestrationPlan {
 
 const TASK_PRIORITY_MODELS: Record<AIRequestTask, Record<Exclude<AIQualityMode, 'auto'>, { providerId: AIProviderId; modelId: string }>> = {
   mentor_chat: {
-    economy: { providerId: 'vercel-ai-gateway', modelId: 'gpt-4.1-mini' },
-    balanced: { providerId: 'vercel-ai-gateway', modelId: 'gpt-4.1' },
-    premium: { providerId: 'vercel-ai-gateway', modelId: 'gpt-4.1' },
-    cinematic: { providerId: 'vercel-ai-gateway', modelId: 'gpt-4.1' },
+    economy: { providerId: 'vercel-ai-gateway', modelId: 'google/gemini-2.5-flash-lite' },
+    balanced: { providerId: 'vercel-ai-gateway', modelId: 'alibaba/qwen-3-32b' },
+    premium: { providerId: 'vercel-ai-gateway', modelId: 'nvidia/nemotron-3-nano-30b-a3b' },
+    cinematic: { providerId: 'vercel-ai-gateway', modelId: 'nvidia/nemotron-3-nano-30b-a3b' },
   },
   strategic_advice: {
-    economy: { providerId: 'vercel-ai-gateway', modelId: 'gpt-4.1-mini' },
-    balanced: { providerId: 'vercel-ai-gateway', modelId: 'gpt-4.1' },
-    premium: { providerId: 'vercel-ai-gateway', modelId: 'gpt-4.1' },
-    cinematic: { providerId: 'vercel-ai-gateway', modelId: 'gpt-4.1' },
+    economy: { providerId: 'vercel-ai-gateway', modelId: 'google/gemini-2.5-flash-lite' },
+    balanced: { providerId: 'vercel-ai-gateway', modelId: 'alibaba/qwen-3-32b' },
+    premium: { providerId: 'vercel-ai-gateway', modelId: 'nvidia/nemotron-3-nano-30b-a3b' },
+    cinematic: { providerId: 'vercel-ai-gateway', modelId: 'nvidia/nemotron-3-nano-30b-a3b' },
   },
   roadmap_generation: {
-    economy: { providerId: 'vercel-ai-gateway', modelId: 'gpt-4.1-mini' },
-    balanced: { providerId: 'vercel-ai-gateway', modelId: 'gpt-4.1' },
-    premium: { providerId: 'vercel-ai-gateway', modelId: 'gpt-4.1' },
-    cinematic: { providerId: 'vercel-ai-gateway', modelId: 'gpt-4.1' },
+    economy: { providerId: 'vercel-ai-gateway', modelId: 'google/gemini-2.5-flash-lite' },
+    balanced: { providerId: 'vercel-ai-gateway', modelId: 'alibaba/qwen-3-32b' },
+    premium: { providerId: 'vercel-ai-gateway', modelId: 'nvidia/nemotron-3-nano-30b-a3b' },
+    cinematic: { providerId: 'vercel-ai-gateway', modelId: 'nvidia/nemotron-3-nano-30b-a3b' },
   },
   content_generation: {
-    economy: { providerId: 'vercel-ai-gateway', modelId: 'claude-3.5-haiku' },
-    balanced: { providerId: 'vercel-ai-gateway', modelId: 'claude-sonnet-4' },
-    premium: { providerId: 'vercel-ai-gateway', modelId: 'claude-sonnet-4' },
-    cinematic: { providerId: 'vercel-ai-gateway', modelId: 'claude-sonnet-4' },
+    economy: { providerId: 'vercel-ai-gateway', modelId: 'meta/llama-3.1-8b' },
+    balanced: { providerId: 'vercel-ai-gateway', modelId: 'alibaba/qwen-3-32b' },
+    premium: { providerId: 'vercel-ai-gateway', modelId: 'nvidia/nemotron-3-nano-30b-a3b' },
+    cinematic: { providerId: 'vercel-ai-gateway', modelId: 'nvidia/nemotron-3-nano-30b-a3b' },
   },
   translation: {
-    economy: { providerId: 'vercel-ai-gateway', modelId: 'gemini-2.5-flash' },
-    balanced: { providerId: 'vercel-ai-gateway', modelId: 'gemini-2.5-pro' },
-    premium: { providerId: 'vercel-ai-gateway', modelId: 'gemini-2.5-pro' },
-    cinematic: { providerId: 'vercel-ai-gateway', modelId: 'gemini-2.5-pro' },
+    economy: { providerId: 'vercel-ai-gateway', modelId: 'meta/llama-3.2-1b' },
+    balanced: { providerId: 'vercel-ai-gateway', modelId: 'google/gemini-2.5-flash-lite' },
+    premium: { providerId: 'vercel-ai-gateway', modelId: 'google/gemini-2.5-flash-lite' },
+    cinematic: { providerId: 'vercel-ai-gateway', modelId: 'google/gemini-2.5-flash-lite' },
   },
   image_generation: {
-    economy: { providerId: 'vercel-ai-gateway', modelId: 'imagen-3.0-fast' },
-    balanced: { providerId: 'vercel-ai-gateway', modelId: 'imagen-3.0' },
-    premium: { providerId: 'vercel-ai-gateway', modelId: 'imagen-3.0' },
-    cinematic: { providerId: 'vercel-ai-gateway', modelId: 'imagen-3.0' },
+    economy: { providerId: 'vercel-ai-gateway', modelId: 'google/imagen-4.0-fast-generate-001' },
+    balanced: { providerId: 'vercel-ai-gateway', modelId: 'bytedance/seedream-4.5' },
+    premium: { providerId: 'vercel-ai-gateway', modelId: 'bytedance/seedream-5.0-pro' },
+    cinematic: { providerId: 'vercel-ai-gateway', modelId: 'bytedance/seedream-5.0-pro' },
   },
   video_generation: {
-    economy: { providerId: 'vercel-ai-gateway', modelId: 'veo-3-fast' },
-    balanced: { providerId: 'vercel-ai-gateway', modelId: 'veo-3' },
-    premium: { providerId: 'vercel-ai-gateway', modelId: 'veo-3' },
-    cinematic: { providerId: 'vercel-ai-gateway', modelId: 'veo-3' },
+    economy: { providerId: 'vercel-ai-gateway', modelId: 'bytedance/seedance-v1.5-pro' },
+    balanced: { providerId: 'vercel-ai-gateway', modelId: 'bytedance/seedance-v1.5-pro' },
+    premium: { providerId: 'vercel-ai-gateway', modelId: 'bytedance/seedance-v1.5-pro' },
+    cinematic: { providerId: 'vercel-ai-gateway', modelId: 'bytedance/seedance-v1.5-pro' },
   },
   voice_generation: {
     economy: { providerId: 'vercel-ai-gateway', modelId: 'elevenlabs-turbo-v2' },
@@ -84,16 +84,16 @@ const TASK_PRIORITY_MODELS: Record<AIRequestTask, Record<Exclude<AIQualityMode, 
     cinematic: { providerId: 'vercel-ai-gateway', modelId: 'elevenlabs-v2' },
   },
   summary: {
-    economy: { providerId: 'vercel-ai-gateway', modelId: 'gpt-4.1-mini' },
-    balanced: { providerId: 'vercel-ai-gateway', modelId: 'gpt-4.1-mini' },
-    premium: { providerId: 'vercel-ai-gateway', modelId: 'gpt-4.1' },
-    cinematic: { providerId: 'vercel-ai-gateway', modelId: 'gpt-4.1' },
+    economy: { providerId: 'vercel-ai-gateway', modelId: 'meta/llama-3.2-1b' },
+    balanced: { providerId: 'vercel-ai-gateway', modelId: 'meta/llama-3.1-8b' },
+    premium: { providerId: 'vercel-ai-gateway', modelId: 'google/gemini-2.5-flash-lite' },
+    cinematic: { providerId: 'vercel-ai-gateway', modelId: 'google/gemini-2.5-flash-lite' },
   },
   analysis: {
-    economy: { providerId: 'vercel-ai-gateway', modelId: 'gpt-4.1-mini' },
-    balanced: { providerId: 'vercel-ai-gateway', modelId: 'gpt-4.1' },
-    premium: { providerId: 'vercel-ai-gateway', modelId: 'gpt-4.1' },
-    cinematic: { providerId: 'vercel-ai-gateway', modelId: 'gpt-4.1' },
+    economy: { providerId: 'vercel-ai-gateway', modelId: 'google/gemini-2.5-flash-lite' },
+    balanced: { providerId: 'vercel-ai-gateway', modelId: 'alibaba/qwen-3-32b' },
+    premium: { providerId: 'vercel-ai-gateway', modelId: 'nvidia/nemotron-3-nano-30b-a3b' },
+    cinematic: { providerId: 'vercel-ai-gateway', modelId: 'nvidia/nemotron-3-nano-30b-a3b' },
   },
 };
 
@@ -116,14 +116,14 @@ function selectDirectFallback(task: AIRequestTask, qualityMode: Exclude<AIQualit
 
   if (isProviderConfigured('openai')) {
     if (task === 'content_generation') {
-      return { providerId: 'openai', modelId: qualityMode === 'economy' ? 'gpt-4.1-mini' : 'gpt-4.1' };
+      return { providerId: 'openai', modelId: qualityMode === 'economy' ? 'meta/llama-3.1-8b' : 'alibaba/qwen-3-32b' };
     }
 
     if (task === 'translation') {
-      return { providerId: 'openai', modelId: qualityMode === 'economy' ? 'gpt-4.1-mini' : 'gpt-4.1' };
+      return { providerId: 'openai', modelId: 'google/gemini-2.5-flash-lite' };
     }
 
-    return { providerId: 'openai', modelId: qualityMode === 'economy' ? 'gpt-4.1-mini' : 'gpt-4.1' };
+    return { providerId: 'openai', modelId: qualityMode === 'economy' ? 'google/gemini-2.5-flash-lite' : 'alibaba/qwen-3-32b' };
   }
 
   return {
