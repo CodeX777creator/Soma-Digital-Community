@@ -171,22 +171,24 @@ async function notifyAcademyAudience(input: {
 
 export async function listAcademyCourses(options: { includeArchived?: boolean; limit?: number } = {}) {
   const limit = Math.min(Math.max(options.limit || 100, 1), 250);
-  let query: FirebaseFirestore.Query = collection('courses').orderBy('updatedAt', 'desc').limit(limit);
-  if (!options.includeArchived) {
-    query = query.where('status', 'in', ['draft', 'published']);
-  }
+  let query: FirebaseFirestore.Query = collection('courses');
+  if (!options.includeArchived) query = query.where('status', 'in', ['draft', 'published']);
   const snap = await query.get();
-  return snap.docs.map((doc) => serialize({ courseId: doc.id, ...doc.data() } as AcademyCourseDoc));
+  return snap.docs
+    .map((doc) => serialize({ courseId: doc.id, ...doc.data() } as AcademyCourseDoc))
+    .sort((a, b) => Date.parse(b.updatedAt || b.createdAt || '') - Date.parse(a.updatedAt || a.createdAt || ''))
+    .slice(0, limit);
 }
 
 export async function listPublishedAcademyCourses(options: { limit?: number } = {}) {
   const limit = Math.min(Math.max(options.limit || 100, 1), 250);
   const snap = await collection('courses')
     .where('status', '==', 'published')
-    .orderBy('publishedAt', 'desc')
-    .limit(limit)
     .get();
-  return snap.docs.map((doc) => serialize({ courseId: doc.id, ...doc.data() } as AcademyCourseDoc));
+  return snap.docs
+    .map((doc) => serialize({ courseId: doc.id, ...doc.data() } as AcademyCourseDoc))
+    .sort((a, b) => Date.parse(b.publishedAt || b.updatedAt || '') - Date.parse(a.publishedAt || a.updatedAt || ''))
+    .slice(0, limit);
 }
 
 export async function getAcademyCourse(courseId: string) {
