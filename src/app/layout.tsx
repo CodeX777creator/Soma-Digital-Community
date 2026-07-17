@@ -48,7 +48,6 @@ export default async function RootLayout({
   return (
     <html lang="en" className="dark" suppressHydrationWarning>
       <head>
-        <link rel="preload" href="/icon-192x192.png" as="image" type="image/png" />
       </head>
       <body className="font-body antialiased bg-background text-foreground overflow-x-hidden min-h-screen">
         <AuthProvider>

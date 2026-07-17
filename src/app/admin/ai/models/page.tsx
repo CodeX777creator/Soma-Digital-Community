@@ -83,11 +83,11 @@ export default function AdminAIModelsPage() {
     const value = query.trim().toLowerCase();
     if (!value) return models;
     return models.filter((model) => (
-      model.id.toLowerCase().includes(value) ||
-      model.name.toLowerCase().includes(value) ||
-      model.provider.toLowerCase().includes(value) ||
-      model.type.toLowerCase().includes(value) ||
-      (model.tags || []).some((tag) => tag.toLowerCase().includes(value))
+      (model.id || "").toLowerCase().includes(value) ||
+      (model.name || "").toLowerCase().includes(value) ||
+      (model.provider || "").toLowerCase().includes(value) ||
+      (model.type || "").toLowerCase().includes(value) ||
+      (model.tags || []).some((tag) => (tag || "").toLowerCase().includes(value))
     ));
   }, [models, query]);
 

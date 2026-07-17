@@ -34,7 +34,7 @@ function createContentSecurityPolicy(nonce: string): string {
     img-src 'self' blob: data: https:;
     font-src 'self';
     connect-src 'self' https://*.googleapis.com https://*.firebaseio.com https://*.firebaseapp.com https://securetoken.googleapis.com https://identitytoolkit.googleapis.com https://*.cloudfunctions.net https://*.paypal.com https://www.paypal.com https://www.sandbox.paypal.com https://api.paystack.co https://api.moonshot.cn https://api.moonshot.ai wss://*.firebaseio.com;
-    frame-src 'self' https://*.firebaseapp.com https://*.web.app https://accounts.google.com https://apis.google.com https://*.paypal.com https://www.paypal.com https://www.sandbox.paypal.com https://*.paystack.co https://js.stripe.com;
+    frame-src 'self' https://vercel.live/ https://*.firebaseapp.com https://*.web.app https://accounts.google.com https://apis.google.com https://*.paypal.com https://www.paypal.com https://www.sandbox.paypal.com https://*.paystack.co https://js.stripe.com;
     media-src 'self' https://*.firebasestorage.app https://firebasestorage.googleapis.com;
     object-src 'none';
     base-uri 'self';
