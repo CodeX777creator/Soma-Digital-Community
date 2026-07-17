@@ -130,7 +130,7 @@ async function generateStudioContentInternal(
       const cachedCreditPolicy = await resolveStudioCreditPolicy(resolvedContentType);
       await recordSkippedCredits({
         userId: options.userId || input.userId,
-        task: 'content_generation',
+        task: 'chat',
         feature: cachedCreditPolicy.feature,
         modality: 'text',
         message: cacheKey,
@@ -144,7 +144,7 @@ async function generateStudioContentInternal(
           promptVersion: cachedPromptVersion,
         },
       }, 'cache_hit', {
-        creditsWouldHaveCharged: cachedCreditPolicy.credits,
+        creditsWouldHaveCharged: 0,
       });
       recordUsage({
         timestamp: startedAt,
@@ -191,7 +191,7 @@ async function generateStudioContentInternal(
           cacheHit: true,
           saved: true,
           creditsCharged: 0,
-          creditsWouldHaveCharged: cachedCreditPolicy.credits,
+          creditsWouldHaveCharged: 0,
           promptVersion: cachedPromptVersion,
         },
         providerId: cachedModel.includes('moonshot') ? 'moonshot' : 'vercel-ai-gateway',
@@ -227,7 +227,7 @@ async function generateStudioContentInternal(
     maxOutputTokens: resolvedContentType === 'marketing_planner' || resolvedContentType === 'sales_funnel' ? 2200 : 1600,
   } as any, {
     userId: options.userId || input.userId || 'anonymous',
-    task: 'content_generation',
+    task: 'chat',
     feature: creditPolicy.feature,
     modality: 'text',
     message: prompt.userPrompt,
@@ -237,7 +237,6 @@ async function generateStudioContentInternal(
     requestId: `studio_${startedAt}`,
     metadata: {
       studioContentType: resolvedContentType,
-      creditOverride: creditPolicy.credits,
     },
   });
 
@@ -306,7 +305,7 @@ async function generateStudioContentInternal(
       ...normalized.metadata,
       cacheHit: false,
       saved: Boolean(options.userId || input.userId),
-      creditsCharged: result.billing?.creditsCharged ?? creditPolicy.credits,
+      creditsCharged: result.billing?.creditsCharged ?? 0,
       creditsReserved: result.billing?.creditsReserved,
       promptVersion,
       promptKey: prompt.metadata.template,

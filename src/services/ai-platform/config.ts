@@ -15,21 +15,14 @@ function readMode(name: string, fallback: ProviderMode): ProviderMode {
 }
 
 export const creatorCreditPolicies: Record<MonetizedFeature, CreatorCreditPolicy> = {
-  mentor_chat: { feature: "mentor_chat", baseCredits: 1, monthlyLimit: 50, concurrentLimit: 2, byokEligible: true },
-  business_coach: { feature: "business_coach", baseCredits: 1, monthlyLimit: 40, concurrentLimit: 2, byokEligible: true },
-  ai_chat: { feature: "ai_chat", baseCredits: 1, monthlyLimit: 50, concurrentLimit: 2, byokEligible: true },
-  content_generation: { feature: "content_generation", baseCredits: 20, monthlyLimit: 20, concurrentLimit: 2, byokEligible: true },
-  prompt_library: { feature: "prompt_library", baseCredits: 5, monthlyLimit: 30, concurrentLimit: 4, byokEligible: true },
-  image_generation: { feature: "image_generation", baseCredits: 10, monthlyLimit: 20, concurrentLimit: 2, byokEligible: true },
-  video_generation: { feature: "video_generation", baseCredits: 100, monthlyLimit: 4, concurrentLimit: 1, byokEligible: false },
-  voice_generation: { feature: "voice_generation", baseCredits: 20, monthlyLimit: 20, concurrentLimit: 2, byokEligible: true },
-  translation: { feature: "translation", baseCredits: 2, monthlyLimit: 40, concurrentLimit: 4, byokEligible: true },
-  document_generation: { feature: "document_generation", baseCredits: 20, monthlyLimit: 20, concurrentLimit: 2, byokEligible: true },
-  business_planner: { feature: "business_planner", baseCredits: 10, monthlyLimit: 12, concurrentLimit: 2, byokEligible: true },
-  social_media_generator: { feature: "social_media_generator", baseCredits: 5, monthlyLimit: 30, concurrentLimit: 2, byokEligible: true },
-  sales_coach: { feature: "sales_coach", baseCredits: 5, monthlyLimit: 30, concurrentLimit: 2, byokEligible: true },
-  funnel_builder: { feature: "funnel_builder", baseCredits: 20, monthlyLimit: 16, concurrentLimit: 2, byokEligible: true },
-  calendar_generation: { feature: "calendar_generation", baseCredits: 15, monthlyLimit: 16, concurrentLimit: 2, byokEligible: true },
+  chat: { feature: "chat", monthlyLimit: 100, concurrentLimit: 2, byokEligible: true },
+  image_generation: { feature: "image_generation", monthlyLimit: 20, concurrentLimit: 2, byokEligible: true },
+  video_generation: { feature: "video_generation", monthlyLimit: 4, concurrentLimit: 1, byokEligible: false },
+  audio_generation: { feature: "audio_generation", monthlyLimit: 20, concurrentLimit: 2, byokEligible: true },
+  document_analysis: { feature: "document_analysis", monthlyLimit: 20, concurrentLimit: 2, byokEligible: true },
+  translation: { feature: "translation", monthlyLimit: 40, concurrentLimit: 4, byokEligible: true },
+  vision: { feature: "vision", monthlyLimit: 20, concurrentLimit: 2, byokEligible: true },
+  speech_to_text: { feature: "speech_to_text", monthlyLimit: 20, concurrentLimit: 2, byokEligible: true },
 };
 
 export const planCreditProfiles: Record<"explorer" | "pro" | "elite" | "enterprise", PlanCreditProfile> = {
@@ -39,14 +32,6 @@ export const planCreditProfiles: Record<"explorer" | "pro" | "elite" | "enterpri
     concurrentJobLimit: 1,
     dailySpendingLimit: readNumber("AI_EXPLORER_DAILY_LIMIT", 15),
     monthlyEstimatedAIExpenseCap: readNumber("AI_EXPLORER_MONTHLY_EXPENSE_CAP", 12),
-    featureOverrides: {
-      mentor_chat: 1,
-      ai_chat: 1,
-      translation: 3,
-      image_generation: 14,
-      video_generation: 140,
-      voice_generation: 28,
-    },
   },
   pro: {
     monthlyCreatorCredits: readNumber("AI_PRO_MONTHLY_CREDITS", DEFAULT_CREATOR_CREDIT_ALLOCATIONS.pro),
@@ -54,14 +39,6 @@ export const planCreditProfiles: Record<"explorer" | "pro" | "elite" | "enterpri
     concurrentJobLimit: 3,
     dailySpendingLimit: readNumber("AI_PRO_DAILY_LIMIT", 60),
     monthlyEstimatedAIExpenseCap: readNumber("AI_PRO_MONTHLY_EXPENSE_CAP", 50),
-    featureOverrides: {
-      mentor_chat: 1,
-      ai_chat: 1,
-      translation: 2,
-      image_generation: 10,
-      video_generation: 100,
-      voice_generation: 20,
-    },
   },
   elite: {
     monthlyCreatorCredits: readNumber("AI_ELITE_MONTHLY_CREDITS", DEFAULT_CREATOR_CREDIT_ALLOCATIONS.elite),
@@ -69,14 +46,6 @@ export const planCreditProfiles: Record<"explorer" | "pro" | "elite" | "enterpri
     concurrentJobLimit: 6,
     dailySpendingLimit: readNumber("AI_ELITE_DAILY_LIMIT", 180),
     monthlyEstimatedAIExpenseCap: readNumber("AI_ELITE_MONTHLY_EXPENSE_CAP", 150),
-    featureOverrides: {
-      mentor_chat: 0,
-      ai_chat: 0,
-      translation: 1,
-      image_generation: 8,
-      video_generation: 80,
-      voice_generation: 16,
-    },
   },
   enterprise: {
     monthlyCreatorCredits: readNumber("AI_ENTERPRISE_MONTHLY_CREDITS", DEFAULT_CREATOR_CREDIT_ALLOCATIONS.enterprise),
@@ -84,14 +53,6 @@ export const planCreditProfiles: Record<"explorer" | "pro" | "elite" | "enterpri
     concurrentJobLimit: 12,
     dailySpendingLimit: readNumber("AI_ENTERPRISE_DAILY_LIMIT", 500),
     monthlyEstimatedAIExpenseCap: readNumber("AI_ENTERPRISE_MONTHLY_EXPENSE_CAP", 500),
-    featureOverrides: {
-      mentor_chat: 0,
-      ai_chat: 0,
-      translation: 0,
-      image_generation: 0,
-      video_generation: 0,
-      voice_generation: 0,
-    },
   },
 };
 

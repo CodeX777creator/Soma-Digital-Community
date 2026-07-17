@@ -35,7 +35,7 @@ async function generateWithAIPlatform(request: any) {
 
   const userTier = request.config?.userTier || 'pro';
   const result = await executeMonetizedTextRequest({
-    task: 'mentor_chat',
+    task: 'chat',
     messages: normalizedMessages,
     userId,
     modelHint: request.config?.modelHint,
@@ -46,8 +46,8 @@ async function generateWithAIPlatform(request: any) {
     userTier,
   }, {
     userId,
-    task: 'mentor_chat',
-    feature: 'mentor_chat',
+    task: 'chat',
+    feature: 'chat',
     modality: 'text',
     message: normalizedMessages.map((message) => message.content).join('\n').slice(0, 2048),
     userTier,

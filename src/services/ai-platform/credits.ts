@@ -104,40 +104,41 @@ async function getPlanProfile(plan: CreatorPlan): Promise<PlanCreditProfile> {
   };
 }
 
-export function resolveFeatureCredits(plan: CreatorPlan, feature: MonetizedFeature): number {
-  const override = planCreditProfiles[plan].featureOverrides?.[feature];
-  return typeof override === "number" ? override : creatorCreditPolicies[feature].baseCredits;
+import { DEFAULT_CREATOR_CREDIT_CONFIG } from "@/lib/creator-credit-config";
+import type { PlatformFeaturePricing } from "@/lib/creator-credit-config";
+
+export function resolveDefaultFeaturePricing(feature: MonetizedFeature): PlatformFeaturePricing {
+  return DEFAULT_CREATOR_CREDIT_CONFIG.platformFeaturePricing[feature];
 }
 
-export async function resolveFeatureCreditsFromConfig(plan: CreatorPlan, feature: MonetizedFeature): Promise<number> {
+export async function resolveFeaturePricingFromConfig(feature: MonetizedFeature): Promise<PlatformFeaturePricing> {
   try {
     const snap = await adminDb.collection("config").doc("creatorCredits").get();
     if (snap.exists) {
       const config = normalizeCreatorCreditConfig(snap.data());
-      const configured = config.featurePricing[feature];
-      if (typeof configured === "number" && Number.isFinite(configured) && configured >= 0) {
-        return configured;
-      }
+      const pricing = config.platformFeaturePricing[feature];
+      if (pricing) return pricing;
     }
   } catch (error) {
-    logger.warn("[AI Credits] Falling back to default feature credits", {
-      plan,
+    logger.warn("[AI Credits] Falling back to default feature pricing", {
       feature,
       error: error instanceof Error ? error.message : String(error),
     });
   }
 
-  return resolveFeatureCredits(plan, feature);
+  return resolveDefaultFeaturePricing(feature);
 }
 
 export async function estimateCreditCost(plan: CreatorPlan, feature: MonetizedFeature, quantity = 1): Promise<number> {
-  const featureCredits = await resolveFeatureCreditsFromConfig(plan, feature);
-  return Math.max(0, featureCredits * Math.max(1, quantity));
+  const pricing = await resolveFeaturePricingFromConfig(feature);
+  const unitCost = (pricing.inputCost ?? 0) + (pricing.outputCost ?? 0);
+  return Math.max(0, (pricing.baseCost ?? 0) + unitCost * Math.max(1, quantity));
 }
 
 export function estimateDefaultCreditCost(plan: CreatorPlan, feature: MonetizedFeature, quantity = 1): number {
-  const featureCredits = resolveFeatureCredits(plan, feature);
-  return Math.max(0, featureCredits * Math.max(1, quantity));
+  const pricing = resolveDefaultFeaturePricing(feature);
+  const unitCost = (pricing.inputCost ?? 0) + (pricing.outputCost ?? 0);
+  return Math.max(0, (pricing.baseCost ?? 0) + unitCost * Math.max(1, quantity));
 }
 
 export function createRequestSignature(input: {

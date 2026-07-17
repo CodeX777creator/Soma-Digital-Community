@@ -7,16 +7,32 @@ import type { AIQualityMode } from "@/ai/platform/orchestrator";
 import type { CreatorPlan } from "@/services/ai-platform";
 
 const TASKS: AIRequestTask[] = [
-  "mentor_chat",
-  "strategic_advice",
-  "roadmap_generation",
-  "content_generation",
-  "translation",
+  "chat",
   "image_generation",
   "video_generation",
-  "voice_generation",
+  "audio_generation",
+  "document_analysis",
+  "translation",
+  "vision",
+  "speech_to_text",
+  "strategic_advice",
+  "roadmap_generation",
   "summary",
   "analysis",
+  "blog_writer",
+  "email_writer",
+  "ad_copy",
+  "sales_funnel",
+  "landing_page",
+  "social_post",
+  "product_description",
+  "course_creator",
+  "website_builder",
+  "presentation_builder",
+  "prompt_library",
+  "caption",
+  "script",
+  "carousel",
 ];
 
 const PLANS: CreatorPlan[] = ["explorer", "pro", "elite", "enterprise"];

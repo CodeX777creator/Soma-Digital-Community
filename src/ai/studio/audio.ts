@@ -217,7 +217,7 @@ async function planAudioBlueprint(input: AudioGenerationInput) {
   });
 
   const completion = await executeTextCompletion({
-    task: 'content_generation',
+    task: 'chat',
     userId: input.userId,
     userTier: normalizeRoutingPlan(input.userTier || 'pro'),
     qualityMode: 'premium',
@@ -299,7 +299,7 @@ export async function generateAudioStudioAsset(
   const synthesisText = blueprint.narrationText;
   const synthesis = await executeMonetizedAudioRequest({
     prompt: blueprint.prompt.fullPrompt,
-    task: 'voice_generation',
+    task: 'audio_generation',
     userId: ownerId,
     userTier: normalizeRoutingPlan(input.userTier || 'pro'),
     providerPreference: input.providerPreference as any,
@@ -313,8 +313,8 @@ export async function generateAudioStudioAsset(
     similarityBoost: voiceProfile.similarityBoost,
   }, {
     userId: ownerId,
-    task: 'voice_generation',
-    feature: 'voice_generation',
+    task: 'audio_generation',
+    feature: 'audio_generation',
     modality: 'audio',
     message: blueprint.prompt.fullPrompt,
     userTier: input.userTier || 'pro',

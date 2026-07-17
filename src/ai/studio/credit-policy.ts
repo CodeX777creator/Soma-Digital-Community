@@ -2,26 +2,26 @@ import type { MonetizedFeature } from '@/services/ai-platform';
 import type { StudioContentType } from './types';
 import { adminDb } from '@/lib/firebaseAdmin';
 import {
-  DEFAULT_CREATOR_CREDIT_TOOL_PRICING,
+  DEFAULT_CREATOR_CREDIT_CONFIG,
   normalizeCreatorCreditConfig,
-  type CreatorCreditToolKey,
+  type WorkflowKey,
 } from '@/lib/creator-credit-config';
 
 export interface StudioCreditPolicy {
   feature: MonetizedFeature;
-  credits?: number;
+  workflow: WorkflowKey;
 }
 
-function toolKeyForContentType(contentType: StudioContentType): CreatorCreditToolKey {
+function workflowKeyForContentType(contentType: StudioContentType): WorkflowKey {
   switch (contentType) {
     case 'caption':
       return 'caption';
     case 'ad_copy':
       return 'ad_copy';
     case 'email':
-      return 'email';
+      return 'email_writer';
     case 'blog':
-      return 'blog';
+      return 'blog_writer';
     case 'script':
       return 'script';
     case 'carousel':
@@ -29,55 +29,41 @@ function toolKeyForContentType(contentType: StudioContentType): CreatorCreditToo
     case 'sales_funnel':
       return 'sales_funnel';
     case 'marketing_planner':
-      return 'marketing_planner';
+      return 'roadmap_generation';
     case 'prompt_library':
       return 'prompt_library';
+    case 'thumbnail':
+      return 'image_generation' as any; // Thumbnail might not be a studio workflow explicitly, but keeping for compatibility
     default:
-      return 'script';
+      return 'summary';
   }
-}
-
-async function resolveToolCredits(toolKey: CreatorCreditToolKey): Promise<number> {
-  try {
-    const snap = await adminDb.collection('config').doc('creatorCredits').get();
-    const config = normalizeCreatorCreditConfig(snap.exists ? snap.data() : undefined);
-    const configured = config.toolPricing[toolKey];
-    if (typeof configured === 'number' && Number.isFinite(configured) && configured >= 0) {
-      return configured;
-    }
-  } catch {
-    // Code defaults remain the emergency fallback when Firestore is unavailable.
-  }
-
-  return DEFAULT_CREATOR_CREDIT_TOOL_PRICING[toolKey];
 }
 
 export async function resolveStudioCreditPolicy(contentType: StudioContentType): Promise<StudioCreditPolicy> {
-  const toolKey = toolKeyForContentType(contentType);
-  const credits = await resolveToolCredits(toolKey);
-
+  const workflow = workflowKeyForContentType(contentType);
+  
   switch (contentType) {
     case 'caption':
-      return { feature: 'social_media_generator', credits };
+      return { feature: 'chat', workflow };
     case 'ad_copy':
-      return { feature: 'social_media_generator', credits };
+      return { feature: 'chat', workflow };
     case 'email':
-      return { feature: 'document_generation', credits };
+      return { feature: 'chat', workflow };
     case 'blog':
-      return { feature: 'document_generation', credits };
+      return { feature: 'chat', workflow };
     case 'script':
-      return { feature: 'content_generation', credits };
+      return { feature: 'chat', workflow };
     case 'carousel':
-      return { feature: 'content_generation', credits };
+      return { feature: 'chat', workflow };
     case 'sales_funnel':
-      return { feature: 'funnel_builder', credits };
+      return { feature: 'chat', workflow };
     case 'marketing_planner':
-      return { feature: 'calendar_generation', credits };
+      return { feature: 'chat', workflow };
     case 'prompt_library':
-      return { feature: 'prompt_library', credits };
+      return { feature: 'chat', workflow };
     case 'thumbnail':
-      return { feature: 'content_generation', credits: 10 };
+      return { feature: 'image_generation', workflow };
     default:
-      return { feature: 'content_generation', credits };
+      return { feature: 'chat', workflow };
   }
 }

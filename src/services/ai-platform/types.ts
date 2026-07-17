@@ -9,25 +9,17 @@ export type CreditStatus = "reserved" | "charged" | "refunded" | "failed" | "ski
 export type ProviderMode = "credits" | "byok" | "hybrid";
 
 export type MonetizedFeature =
-  | "mentor_chat"
-  | "business_coach"
-  | "ai_chat"
-  | "content_generation"
-  | "prompt_library"
+  | "chat"
   | "image_generation"
   | "video_generation"
-  | "voice_generation"
+  | "audio_generation"
+  | "document_analysis"
   | "translation"
-  | "document_generation"
-  | "business_planner"
-  | "social_media_generator"
-  | "sales_coach"
-  | "funnel_builder"
-  | "calendar_generation";
+  | "vision"
+  | "speech_to_text";
 
 export interface CreatorCreditPolicy {
   feature: MonetizedFeature;
-  baseCredits: number;
   monthlyLimit?: number;
   concurrentLimit?: number;
   dailyLimit?: number;
@@ -40,7 +32,6 @@ export interface PlanCreditProfile {
   concurrentJobLimit: number;
   dailySpendingLimit: number;
   monthlyEstimatedAIExpenseCap: number;
-  featureOverrides?: Partial<Record<MonetizedFeature, number>>;
 }
 
 export interface ProviderConnectionStatus {

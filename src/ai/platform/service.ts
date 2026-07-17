@@ -196,7 +196,7 @@ export function createImageClient(providerId: AIProviderId): OpenAI {
 }
 
 export function resolveAIExecutionPlan(request: AITextRequest): AIExecutionPlan {
-  const task = request.task || 'mentor_chat';
+  const task = request.task || 'chat';
   const qualityMode: AIQualityMode = request.qualityMode
     || (request.modelHint === 'cheap' ? 'economy' : request.modelHint === 'smart' ? 'premium' : aiPlatformConfig.defaultQualityMode);
 
@@ -542,7 +542,7 @@ async function postToElevenLabsAudioEndpoint(
 export async function executeAudioGeneration(request: AIAudioRequest): Promise<AIAudioResponse> {
   const startTime = Date.now();
   const plan = orchestrateAIRequest({
-    task: request.task || 'voice_generation',
+    task: request.task || 'audio_generation',
     qualityMode: request.qualityMode || aiPlatformConfig.defaultQualityMode,
     userTier: request.userTier,
     providerPreference: request.providerPreference as AIProviderId | undefined,

@@ -216,8 +216,8 @@ export async function aiMentorChatEnhanced(
 
         await recordSkippedCredits({
           userId: input.userId,
-          task: 'mentor_chat',
-          feature: 'mentor_chat',
+          task: 'chat',
+          feature: 'chat',
           modality: 'text',
           message: securityCheck.sanitized,
           userTier,
@@ -337,7 +337,7 @@ export async function aiMentorChatEnhanced(
     const formattedMessages = formatMessagesForProvider(allMessages, 'openai') as ChatCompletionMessageParam[];
 
     const completionResult = await executeMonetizedTextRequest({
-      task: 'mentor_chat',
+      task: 'chat',
       messages: formattedMessages.map((message) => ({
         role: message.role,
         content: typeof message.content === 'string'
@@ -351,8 +351,8 @@ export async function aiMentorChatEnhanced(
       maxOutputTokens: 2048,
     }, {
       userId: input.userId,
-      task: 'mentor_chat',
-      feature: 'mentor_chat',
+      task: 'chat',
+      feature: 'chat',
       modality: 'text',
       message: securityCheck.sanitized,
       userTier,

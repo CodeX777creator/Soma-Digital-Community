@@ -36,10 +36,10 @@ import { toAppError, AppError } from "@/lib/errors";
 import {
   CreatorCreditBundle,
   CreatorCreditConfig,
-  CreatorCreditFeatureKey,
-  CreatorCreditToolKey,
   DEFAULT_CREATOR_CREDIT_CONFIG,
   normalizeCreatorCreditConfig,
+  PlatformFeatureKey,
+  WorkflowKey,
 } from "@/lib/creator-credit-config";
 
 type EnvStatus = { name: string; public: boolean; required: boolean; configured: boolean };
@@ -90,40 +90,35 @@ const tierLabels: Array<{ id: keyof CreatorCreditConfig["tierAllocations"]; labe
   { id: "elite", label: "Elite" },
   { id: "enterprise", label: "Enterprise" },
 ];
-const featurePricingLabels: Array<{ id: CreatorCreditFeatureKey; label: string }> = [
-  { id: "mentor_chat", label: "AI Mentor chat" },
-  { id: "ai_chat", label: "AI Chat" },
-  { id: "translation", label: "Translation" },
-  { id: "social_media_generator", label: "Social media generator" },
-  { id: "document_generation", label: "Document generation" },
-  { id: "content_generation", label: "Content generation" },
-  { id: "business_planner", label: "Business planner" },
-  { id: "calendar_generation", label: "Marketing planner" },
-  { id: "funnel_builder", label: "Funnel builder" },
-  { id: "prompt_library", label: "Prompt library" },
+const platformFeatureLabels: Array<{ id: PlatformFeatureKey; label: string }> = [
+  { id: "chat", label: "Chat" },
   { id: "image_generation", label: "Image generation" },
-  { id: "voice_generation", label: "Voice/audio generation" },
-  { id: "video_generation", label: "Video generation/render" },
-  { id: "business_coach", label: "Business coach" },
-  { id: "sales_coach", label: "Sales coach" },
-];
-const toolPricingLabels: Array<{ id: CreatorCreditToolKey; label: string }> = [
-  { id: "caption", label: "Captions / social posts" },
-  { id: "ad_copy", label: "Ad copy" },
-  { id: "email", label: "Email generator" },
-  { id: "blog", label: "Blog generator" },
-  { id: "script", label: "Script generator" },
-  { id: "carousel", label: "Carousel copy" },
-  { id: "business_planner", label: "Business planner" },
-  { id: "marketing_planner", label: "Marketing planner" },
-  { id: "sales_funnel", label: "Sales funnel" },
-  { id: "prompt_library", label: "Prompt library generation" },
-  { id: "image", label: "Image generation" },
-  { id: "voice_audio", label: "Voice/audio generation" },
-  { id: "video_render", label: "Video render" },
-  { id: "mentor_chat", label: "AI Mentor chat" },
-  { id: "ai_chat", label: "AI Chat" },
+  { id: "video_generation", label: "Video generation" },
+  { id: "audio_generation", label: "Audio generation" },
+  { id: "document_analysis", label: "Document analysis" },
   { id: "translation", label: "Translation" },
+  { id: "vision", label: "Vision" },
+  { id: "speech_to_text", label: "Speech to text" },
+];
+const workflowPolicyLabels: Array<{ id: WorkflowKey; label: string }> = [
+  { id: "strategic_advice", label: "Strategic advice" },
+  { id: "roadmap_generation", label: "Roadmap generation" },
+  { id: "summary", label: "Summary" },
+  { id: "analysis", label: "Analysis" },
+  { id: "blog_writer", label: "Blog writer" },
+  { id: "email_writer", label: "Email writer" },
+  { id: "ad_copy", label: "Ad copy" },
+  { id: "sales_funnel", label: "Sales funnel" },
+  { id: "landing_page", label: "Landing page" },
+  { id: "social_post", label: "Social post" },
+  { id: "product_description", label: "Product description" },
+  { id: "course_creator", label: "Course creator" },
+  { id: "website_builder", label: "Website builder" },
+  { id: "presentation_builder", label: "Presentation builder" },
+  { id: "prompt_library", label: "Prompt library" },
+  { id: "caption", label: "Caption generator" },
+  { id: "script", label: "Script generator" },
+  { id: "carousel", label: "Carousel generator" },
 ];
 
 function toDate(value: any): Date | null {
@@ -388,10 +383,10 @@ export default function AdminSettingsPage() {
       setError("Creator Credit bundles need unique IDs, positive credit amounts, and non-negative prices.");
       return;
     }
-    const invalidFeaturePricing = Object.values(creatorCreditsDraft.featurePricing).some((credits) => credits < 0 || !Number.isFinite(credits));
-    const invalidToolPricing = Object.values(creatorCreditsDraft.toolPricing).some((credits) => credits < 0 || !Number.isFinite(credits));
-    if (invalidFeaturePricing || invalidToolPricing) {
-      setError("Creator Credit feature and tool prices must be zero or higher.");
+    const invalidPlatformPricing = Object.values(creatorCreditsDraft.platformFeaturePricing || {}).some((pricing: any) => pricing?.baseCost < 0 || !Number.isFinite(pricing?.baseCost));
+    const invalidWorkflowPolicies = Object.values(creatorCreditsDraft.workflowPolicies || {}).some((policy: any) => policy?.dailyRuns < -1 || !Number.isFinite(policy?.dailyRuns));
+    if (invalidPlatformPricing || invalidWorkflowPolicies) {
+      setError("Platform pricing and workflow policies must have valid limits.");
       return;
     }
 
@@ -543,56 +538,85 @@ export default function AdminSettingsPage() {
         <div className="mt-6 grid gap-5 xl:grid-cols-2">
           <div className="rounded-lg border border-white/10 bg-black/15 p-4">
             <div className="mb-4">
-              <p className="text-sm font-semibold text-white">Feature credit pricing</p>
-              <p className="text-xs text-white/45">Used by the AI gateway and ledger when a request maps directly to a feature.</p>
+              <p className="text-sm font-semibold text-white">Platform Feature Pricing</p>
+              <p className="text-xs text-white/45">Unit-based costs for core AI capabilities.</p>
             </div>
-            <div className="grid gap-3 sm:grid-cols-2">
-              {featurePricingLabels.map((feature) => (
-                <Field key={feature.id} label={feature.label}>
-                  <input
-                    type="number"
-                    min={0}
-                    step={1}
-                    className={inputCls}
-                    aria-label={`${feature.label} credits`}
-                    value={creatorCreditsDraft.featurePricing[feature.id]}
-                    onChange={(e) => setCreatorCreditsDraft((current) => ({
-                      ...current,
-                      featurePricing: {
-                        ...current.featurePricing,
-                        [feature.id]: Math.max(0, Number(e.target.value) || 0),
-                      },
-                    }))}
-                  />
-                </Field>
+            <div className="grid gap-3">
+              {platformFeatureLabels.map((feature) => (
+                <div key={feature.id} className="rounded-md border border-white/5 bg-white/[0.02] p-3">
+                  <div className="mb-2 flex items-center justify-between">
+                    <span className="text-sm font-medium">{feature.label}</span>
+                    <span className="text-xs text-white/45 capitalize">{creatorCreditsDraft.platformFeaturePricing[feature.id]?.unit}</span>
+                  </div>
+                  <div className="grid grid-cols-3 gap-2">
+                    <Field label="Base Cost">
+                      <input type="number" min={0} step={0.001} className={inputCls} value={creatorCreditsDraft.platformFeaturePricing[feature.id]?.baseCost ?? 0}
+                        onChange={(e) => setCreatorCreditsDraft((cur) => ({
+                          ...cur, platformFeaturePricing: {
+                            ...cur.platformFeaturePricing, [feature.id]: { ...cur.platformFeaturePricing[feature.id], baseCost: Math.max(0, Number(e.target.value) || 0) }
+                          }
+                        }))} />
+                    </Field>
+                    <Field label="Input Cost">
+                      <input type="number" min={0} step={0.001} className={inputCls} value={creatorCreditsDraft.platformFeaturePricing[feature.id]?.inputCost ?? 0}
+                        onChange={(e) => setCreatorCreditsDraft((cur) => ({
+                          ...cur, platformFeaturePricing: {
+                            ...cur.platformFeaturePricing, [feature.id]: { ...cur.platformFeaturePricing[feature.id], inputCost: Math.max(0, Number(e.target.value) || 0) }
+                          }
+                        }))} />
+                    </Field>
+                    <Field label="Output Cost">
+                      <input type="number" min={0} step={0.001} className={inputCls} value={creatorCreditsDraft.platformFeaturePricing[feature.id]?.outputCost ?? 0}
+                        onChange={(e) => setCreatorCreditsDraft((cur) => ({
+                          ...cur, platformFeaturePricing: {
+                            ...cur.platformFeaturePricing, [feature.id]: { ...cur.platformFeaturePricing[feature.id], outputCost: Math.max(0, Number(e.target.value) || 0) }
+                          }
+                        }))} />
+                    </Field>
+                  </div>
+                </div>
               ))}
             </div>
           </div>
 
           <div className="rounded-lg border border-white/10 bg-black/15 p-4">
             <div className="mb-4">
-              <p className="text-sm font-semibold text-white">Studio tool pricing</p>
-              <p className="text-xs text-white/45">Fine-tunes visible AI Studio tools such as captions, ad copy, blogs, voice, and video.</p>
+              <p className="text-sm font-semibold text-white">Workflow Usage Limits</p>
+              <p className="text-xs text-white/45">Configure daily/monthly runs and cooldowns for Studio Tools & Workflows.</p>
             </div>
-            <div className="grid gap-3 sm:grid-cols-2">
-              {toolPricingLabels.map((tool) => (
-                <Field key={tool.id} label={tool.label}>
-                  <input
-                    type="number"
-                    min={0}
-                    step={1}
-                    className={inputCls}
-                    aria-label={`${tool.label} credits`}
-                    value={creatorCreditsDraft.toolPricing[tool.id]}
-                    onChange={(e) => setCreatorCreditsDraft((current) => ({
-                      ...current,
-                      toolPricing: {
-                        ...current.toolPricing,
-                        [tool.id]: Math.max(0, Number(e.target.value) || 0),
-                      },
-                    }))}
-                  />
-                </Field>
+            <div className="grid gap-3">
+              {workflowPolicyLabels.map((workflow) => (
+                <div key={workflow.id} className="rounded-md border border-white/5 bg-white/[0.02] p-3">
+                  <div className="mb-2">
+                    <span className="text-sm font-medium">{workflow.label}</span>
+                  </div>
+                  <div className="grid grid-cols-3 gap-2">
+                    <Field label="Daily limit (0=unlimited)">
+                      <input type="number" min={-1} step={1} className={inputCls} value={creatorCreditsDraft.workflowPolicies[workflow.id]?.dailyRuns ?? 0}
+                        onChange={(e) => setCreatorCreditsDraft((cur) => ({
+                          ...cur, workflowPolicies: {
+                            ...cur.workflowPolicies, [workflow.id]: { ...cur.workflowPolicies[workflow.id], dailyRuns: Number(e.target.value) || 0 }
+                          }
+                        }))} />
+                    </Field>
+                    <Field label="Monthly limit">
+                      <input type="number" min={0} step={1} className={inputCls} value={creatorCreditsDraft.workflowPolicies[workflow.id]?.monthlyRuns ?? 0}
+                        onChange={(e) => setCreatorCreditsDraft((cur) => ({
+                          ...cur, workflowPolicies: {
+                            ...cur.workflowPolicies, [workflow.id]: { ...cur.workflowPolicies[workflow.id], monthlyRuns: Math.max(0, Number(e.target.value) || 0) }
+                          }
+                        }))} />
+                    </Field>
+                    <Field label="Cooldown (mins)">
+                      <input type="number" min={0} step={1} className={inputCls} value={creatorCreditsDraft.workflowPolicies[workflow.id]?.cooldownMinutes ?? 0}
+                        onChange={(e) => setCreatorCreditsDraft((cur) => ({
+                          ...cur, workflowPolicies: {
+                            ...cur.workflowPolicies, [workflow.id]: { ...cur.workflowPolicies[workflow.id], cooldownMinutes: Math.max(0, Number(e.target.value) || 0) }
+                          }
+                        }))} />
+                    </Field>
+                  </div>
+                </div>
               ))}
             </div>
           </div>

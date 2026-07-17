@@ -20,7 +20,7 @@ const standardModel = {
   tierAccess: ["explorer", "pro", "elite", "enterprise"],
   creditClass: "standard",
   creditMultiplier: 1,
-  recommendedFor: ["content_generation"],
+  recommendedFor: ["chat"],
 };
 
 const premiumImageModel = {
@@ -37,7 +37,7 @@ const premiumImageModel = {
 assert.equal(CREATOR_CREDIT_RETAIL_VALUE_USD, 0.2, "1 Creator Credit should equal $0.20 retail baseline");
 
 const textQuote = estimateTextCredits({
-  feature: "content_generation",
+  feature: "chat",
   modality: "text",
   model: standardModel as any,
   prompt: "Create a useful caption for small business owners.",
@@ -63,7 +63,7 @@ const premiumImageQuote = estimateImageCredits({
 assert.ok(premiumImageQuote.credits >= 20, "Premium image models should cost at least premium image baseline");
 
 const draftQuote = estimateVideoCredits({
-  feature: "content_generation",
+  feature: "video_generation",
   modality: "video",
   generationMode: "draft",
 });
@@ -80,7 +80,7 @@ assert.equal(renderQuote.credits, 300, "Video render should charge per second");
 assert.equal(renderQuote.pricingUnit, "second");
 
 const audioQuote = estimateAudioCredits({
-  feature: "voice_generation",
+  feature: "audio_generation",
   modality: "audio",
   durationSeconds: 30,
   characters: 420,

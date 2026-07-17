@@ -64,7 +64,7 @@ export async function aiMentorStrategicAdvice(input: AIMentorStrategicAdviceInpu
         await recordSkippedCredits({
           userId: input.userId,
           task: 'strategic_advice',
-          feature: 'business_coach',
+          feature: 'chat',
           modality: 'text',
           message: cacheKey,
           userTier: 'pro',
@@ -106,7 +106,7 @@ export async function aiMentorStrategicAdvice(input: AIMentorStrategicAdviceInpu
     }, {
       userId: input.userId || 'anonymous',
       task: 'strategic_advice',
-      feature: 'business_coach',
+      feature: 'chat',
       modality: 'text',
       message: prompt.userPrompt,
       userTier: 'pro',

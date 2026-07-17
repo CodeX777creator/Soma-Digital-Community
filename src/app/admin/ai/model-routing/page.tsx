@@ -8,16 +8,14 @@ import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 
 const FEATURES = [
-  "mentor_chat",
-  "strategic_advice",
-  "roadmap_generation",
-  "content_generation",
-  "translation",
+  "chat",
   "image_generation",
   "video_generation",
-  "voice_generation",
-  "summary",
-  "analysis",
+  "audio_generation",
+  "document_analysis",
+  "translation",
+  "vision",
+  "speech_to_text",
 ];
 
 const PLANS = ["explorer", "pro", "elite", "enterprise"];
@@ -117,7 +115,7 @@ function MultiModelSelect({ models, selectedIds, onChange }: { models: Model[]; 
   );
 }
 
-function emptyConfig(featureKey = "content_generation"): Config {
+function emptyConfig(featureKey = "chat"): Config {
   return {
     featureKey,
     defaultModelId: "",
@@ -132,7 +130,7 @@ function emptyConfig(featureKey = "content_generation"): Config {
 export default function AdminAIModelRoutingPage() {
   const [configs, setConfigs] = useState<Config[]>([]);
   const [models, setModels] = useState<Model[]>([]);
-  const [selectedFeature, setSelectedFeature] = useState("content_generation");
+  const [selectedFeature, setSelectedFeature] = useState("chat");
   const [draft, setDraft] = useState<Config>(emptyConfig());
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);

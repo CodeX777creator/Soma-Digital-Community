@@ -1,38 +1,53 @@
 export type CreatorCreditTier = "explorer" | "pro" | "elite" | "enterprise";
-export type CreatorCreditFeatureKey =
-  | "mentor_chat"
-  | "business_coach"
-  | "ai_chat"
-  | "content_generation"
-  | "prompt_library"
+
+export type PlatformFeatureKey =
+  | "chat"
   | "image_generation"
   | "video_generation"
-  | "voice_generation"
+  | "audio_generation"
+  | "document_analysis"
   | "translation"
-  | "document_generation"
-  | "business_planner"
-  | "social_media_generator"
-  | "sales_coach"
-  | "funnel_builder"
-  | "calendar_generation";
-export type CreatorCreditToolKey =
-  | "caption"
-  | "social_post"
+  | "vision"
+  | "speech_to_text";
+
+export type WorkflowKey =
+  | "strategic_advice"
+  | "roadmap_generation"
+  | "summary"
+  | "analysis"
+  | "blog_writer"
+  | "email_writer"
   | "ad_copy"
-  | "email"
-  | "blog"
-  | "script"
-  | "carousel"
-  | "business_planner"
-  | "marketing_planner"
   | "sales_funnel"
+  | "landing_page"
+  | "social_post"
+  | "product_description"
+  | "course_creator"
+  | "website_builder"
+  | "presentation_builder"
   | "prompt_library"
-  | "image"
-  | "voice_audio"
-  | "video_render"
-  | "mentor_chat"
-  | "ai_chat"
-  | "translation";
+  | "caption"
+  | "script"
+  | "carousel";
+
+export type PricingUnit = "token" | "image" | "second" | "character" | "minute" | "request";
+
+export interface PlatformFeaturePricing {
+  unit: PricingUnit;
+  baseCost: number; // For images, seconds, etc.
+  inputCost?: number; // Cost per unit for inputs (e.g., per token)
+  outputCost?: number; // Cost per unit for outputs
+}
+
+export interface WorkflowPolicy {
+  dailyRuns: number; // 0 = unlimited, -1 = disabled
+  monthlyRuns: number;
+  cooldownMinutes: number;
+}
+
+// Deprecated keys preserved for backward compatibility
+export type CreatorCreditFeatureKey = string;
+export type CreatorCreditToolKey = string;
 
 export type CreatorCreditBundle = {
   id: string;
@@ -46,10 +61,14 @@ export type CreatorCreditBundle = {
 
 export type CreatorCreditConfig = {
   tierAllocations: Record<CreatorCreditTier, number>;
-  featurePricing: Record<CreatorCreditFeatureKey, number>;
-  toolPricing: Record<CreatorCreditToolKey, number>;
+  platformFeaturePricing: Record<PlatformFeatureKey, PlatformFeaturePricing>;
+  workflowPolicies: Record<WorkflowKey, WorkflowPolicy>;
   bundles: CreatorCreditBundle[];
   version: number;
+
+  // Deprecated fields
+  featurePricing?: Record<string, number>;
+  toolPricing?: Record<string, number>;
 };
 
 export const DEFAULT_CREATOR_CREDIT_ALLOCATIONS: Record<CreatorCreditTier, number> = {
@@ -67,50 +86,46 @@ export const DEFAULT_CREATOR_CREDIT_BUNDLES: CreatorCreditBundle[] = [
   { id: "credits_250", label: "250 Credits", credits: 250, priceCents: 3500, currency: "USD", sortOrder: 50, active: true },
 ];
 
-export const DEFAULT_CREATOR_CREDIT_FEATURE_PRICING: Record<CreatorCreditFeatureKey, number> = {
-  mentor_chat: 1,
-  business_coach: 1,
-  ai_chat: 1,
-  content_generation: 20,
-  prompt_library: 5,
-  image_generation: 10,
-  video_generation: 100,
-  voice_generation: 20,
-  translation: 2,
-  document_generation: 20,
-  business_planner: 10,
-  social_media_generator: 5,
-  sales_coach: 5,
-  funnel_builder: 20,
-  calendar_generation: 15,
+export const DEFAULT_PLATFORM_FEATURE_PRICING: Record<PlatformFeatureKey, PlatformFeaturePricing> = {
+  chat: { unit: "token", baseCost: 0, inputCost: 0.005, outputCost: 0.015 },
+  image_generation: { unit: "image", baseCost: 10 },
+  video_generation: { unit: "second", baseCost: 5 },
+  audio_generation: { unit: "character", baseCost: 0.1 },
+  document_analysis: { unit: "token", baseCost: 0, inputCost: 0.005, outputCost: 0.015 },
+  translation: { unit: "character", baseCost: 0.05 },
+  vision: { unit: "image", baseCost: 5, inputCost: 0.005, outputCost: 0.015 },
+  speech_to_text: { unit: "second", baseCost: 0.2 },
 };
 
-export const DEFAULT_CREATOR_CREDIT_TOOL_PRICING: Record<CreatorCreditToolKey, number> = {
-  mentor_chat: 1,
-  ai_chat: 1,
-  translation: 2,
-  caption: 5,
-  social_post: 5,
-  ad_copy: 10,
-  email: 10,
-  blog: 20,
-  script: 20,
-  carousel: 15,
-  business_planner: 10,
-  marketing_planner: 15,
-  sales_funnel: 20,
-  prompt_library: 5,
-  image: 10,
-  voice_audio: 20,
-  video_render: 100,
+const defaultWorkflowPolicy: WorkflowPolicy = { dailyRuns: 0, monthlyRuns: 0, cooldownMinutes: 0 };
+
+export const DEFAULT_WORKFLOW_POLICIES: Record<WorkflowKey, WorkflowPolicy> = {
+  strategic_advice: { dailyRuns: 10, monthlyRuns: 0, cooldownMinutes: 5 },
+  roadmap_generation: { dailyRuns: 5, monthlyRuns: 0, cooldownMinutes: 10 },
+  summary: { dailyRuns: 50, monthlyRuns: 0, cooldownMinutes: 1 },
+  analysis: { dailyRuns: 20, monthlyRuns: 0, cooldownMinutes: 5 },
+  blog_writer: { ...defaultWorkflowPolicy },
+  email_writer: { ...defaultWorkflowPolicy },
+  ad_copy: { ...defaultWorkflowPolicy },
+  sales_funnel: { ...defaultWorkflowPolicy },
+  landing_page: { ...defaultWorkflowPolicy },
+  social_post: { ...defaultWorkflowPolicy },
+  product_description: { ...defaultWorkflowPolicy },
+  course_creator: { ...defaultWorkflowPolicy },
+  website_builder: { ...defaultWorkflowPolicy },
+  presentation_builder: { ...defaultWorkflowPolicy },
+  prompt_library: { ...defaultWorkflowPolicy },
+  caption: { ...defaultWorkflowPolicy },
+  script: { ...defaultWorkflowPolicy },
+  carousel: { ...defaultWorkflowPolicy },
 };
 
 export const DEFAULT_CREATOR_CREDIT_CONFIG: CreatorCreditConfig = {
   tierAllocations: DEFAULT_CREATOR_CREDIT_ALLOCATIONS,
-  featurePricing: DEFAULT_CREATOR_CREDIT_FEATURE_PRICING,
-  toolPricing: DEFAULT_CREATOR_CREDIT_TOOL_PRICING,
+  platformFeaturePricing: DEFAULT_PLATFORM_FEATURE_PRICING,
+  workflowPolicies: DEFAULT_WORKFLOW_POLICIES,
   bundles: DEFAULT_CREATOR_CREDIT_BUNDLES,
-  version: 1,
+  version: 2,
 };
 
 function safeNumber(value: unknown, fallback: number): number {
@@ -123,6 +138,7 @@ function safeString(value: unknown, fallback: string): string {
 
 export function normalizeCreatorCreditConfig(input: unknown): CreatorCreditConfig {
   const data = input && typeof input === "object" ? input as Record<string, unknown> : {};
+  
   const tierAllocationsInput = data.tierAllocations && typeof data.tierAllocations === "object"
     ? data.tierAllocations as Partial<Record<CreatorCreditTier, unknown>>
     : {};
@@ -134,25 +150,46 @@ export function normalizeCreatorCreditConfig(input: unknown): CreatorCreditConfi
     enterprise: safeNumber(tierAllocationsInput.enterprise, DEFAULT_CREATOR_CREDIT_ALLOCATIONS.enterprise),
   };
 
-  const featurePricingInput = data.featurePricing && typeof data.featurePricing === "object"
-    ? data.featurePricing as Partial<Record<CreatorCreditFeatureKey, unknown>>
+  const platformPricingInput = data.platformFeaturePricing && typeof data.platformFeaturePricing === "object"
+    ? data.platformFeaturePricing as Partial<Record<PlatformFeatureKey, unknown>>
     : {};
-  const featurePricing = Object.fromEntries(
-    (Object.keys(DEFAULT_CREATOR_CREDIT_FEATURE_PRICING) as CreatorCreditFeatureKey[]).map((feature) => [
-      feature,
-      safeNumber(featurePricingInput[feature], DEFAULT_CREATOR_CREDIT_FEATURE_PRICING[feature]),
-    ])
-  ) as Record<CreatorCreditFeatureKey, number>;
+  
+  const platformFeaturePricing = Object.fromEntries(
+    (Object.keys(DEFAULT_PLATFORM_FEATURE_PRICING) as PlatformFeatureKey[]).map((feature) => {
+      const def = DEFAULT_PLATFORM_FEATURE_PRICING[feature];
+      const val = platformPricingInput[feature] as any;
+      if (!val || typeof val !== "object") return [feature, def];
+      return [
+        feature,
+        {
+          unit: safeString(val.unit, def.unit) as PricingUnit,
+          baseCost: safeNumber(val.baseCost, def.baseCost),
+          inputCost: val.inputCost !== undefined ? safeNumber(val.inputCost, def.inputCost || 0) : def.inputCost,
+          outputCost: val.outputCost !== undefined ? safeNumber(val.outputCost, def.outputCost || 0) : def.outputCost,
+        }
+      ];
+    })
+  ) as Record<PlatformFeatureKey, PlatformFeaturePricing>;
 
-  const toolPricingInput = data.toolPricing && typeof data.toolPricing === "object"
-    ? data.toolPricing as Partial<Record<CreatorCreditToolKey, unknown>>
+  const workflowPoliciesInput = data.workflowPolicies && typeof data.workflowPolicies === "object"
+    ? data.workflowPolicies as Partial<Record<WorkflowKey, unknown>>
     : {};
-  const toolPricing = Object.fromEntries(
-    (Object.keys(DEFAULT_CREATOR_CREDIT_TOOL_PRICING) as CreatorCreditToolKey[]).map((tool) => [
-      tool,
-      safeNumber(toolPricingInput[tool], DEFAULT_CREATOR_CREDIT_TOOL_PRICING[tool]),
-    ])
-  ) as Record<CreatorCreditToolKey, number>;
+  
+  const workflowPolicies = Object.fromEntries(
+    (Object.keys(DEFAULT_WORKFLOW_POLICIES) as WorkflowKey[]).map((workflow) => {
+      const def = DEFAULT_WORKFLOW_POLICIES[workflow];
+      const val = workflowPoliciesInput[workflow] as any;
+      if (!val || typeof val !== "object") return [workflow, def];
+      return [
+        workflow,
+        {
+          dailyRuns: typeof val.dailyRuns === "number" ? val.dailyRuns : def.dailyRuns, // allows -1
+          monthlyRuns: typeof val.monthlyRuns === "number" ? val.monthlyRuns : def.monthlyRuns,
+          cooldownMinutes: safeNumber(val.cooldownMinutes, def.cooldownMinutes),
+        }
+      ];
+    })
+  ) as Record<WorkflowKey, WorkflowPolicy>;
 
   const seen = new Set<string>();
   const rawBundles = Array.isArray(data.bundles) ? data.bundles : [];
@@ -179,12 +216,18 @@ export function normalizeCreatorCreditConfig(input: unknown): CreatorCreditConfi
     .filter((bundle): bundle is CreatorCreditBundle => Boolean(bundle))
     .sort((a, b) => a.sortOrder - b.sortOrder || a.credits - b.credits);
 
+  // Preserve legacy fields
+  const featurePricing = data.featurePricing && typeof data.featurePricing === "object" ? data.featurePricing as Record<string, number> : undefined;
+  const toolPricing = data.toolPricing && typeof data.toolPricing === "object" ? data.toolPricing as Record<string, number> : undefined;
+
   return {
     tierAllocations,
-    featurePricing,
-    toolPricing,
+    platformFeaturePricing,
+    workflowPolicies,
     bundles: bundles.length > 0 ? bundles : DEFAULT_CREATOR_CREDIT_BUNDLES,
     version: safeNumber(data.version, DEFAULT_CREATOR_CREDIT_CONFIG.version),
+    ...(featurePricing && { featurePricing }),
+    ...(toolPricing && { toolPricing }),
   };
 }
 

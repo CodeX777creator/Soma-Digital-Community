@@ -74,7 +74,7 @@ export async function generatePersonalizedRoadmap(
         await recordSkippedCredits({
           userId: input.userId,
           task: 'roadmap_generation',
-          feature: 'business_planner',
+          feature: 'chat',
           modality: 'text',
           message: cacheKey,
           userTier: 'pro',
@@ -114,7 +114,7 @@ export async function generatePersonalizedRoadmap(
     }, {
       userId: input.userId || 'anonymous',
       task: 'roadmap_generation',
-      feature: 'business_planner',
+      feature: 'chat',
       modality: 'text',
       message: prompt.userPrompt,
       userTier: 'pro',

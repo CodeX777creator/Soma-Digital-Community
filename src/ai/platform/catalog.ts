@@ -12,16 +12,32 @@ export type AIProviderId =
   | 'elevenlabs';
 
 export type AIRequestTask =
-  | 'mentor_chat'
-  | 'strategic_advice'
-  | 'roadmap_generation'
-  | 'content_generation'
-  | 'translation'
+  | 'chat'
   | 'image_generation'
   | 'video_generation'
-  | 'voice_generation'
+  | 'audio_generation'
+  | 'document_analysis'
+  | 'translation'
+  | 'vision'
+  | 'speech_to_text'
+  | 'strategic_advice'
+  | 'roadmap_generation'
   | 'summary'
-  | 'analysis';
+  | 'analysis'
+  | 'blog_writer'
+  | 'email_writer'
+  | 'ad_copy'
+  | 'sales_funnel'
+  | 'landing_page'
+  | 'social_post'
+  | 'product_description'
+  | 'course_creator'
+  | 'website_builder'
+  | 'presentation_builder'
+  | 'prompt_library'
+  | 'caption'
+  | 'script'
+  | 'carousel';
 
 export type AIModality = 'text' | 'image' | 'video' | 'audio' | 'embedding' | 'rerank';
 
@@ -194,9 +210,9 @@ export const PROVIDER_CATALOG: Record<AIProviderId, ProviderCatalogEntry> = {
 
 const textFallback = ['moonshot-kimi-k2.6', 'moonshot-v1-128k', 'moonshot-v1-32k', 'moonshot-v1-8k'];
 
-export const TASK_CATALOG: Record<AIRequestTask, TaskCatalogEntry> = {
-  mentor_chat: {
-    task: 'mentor_chat',
+export const TASK_CATALOG: Partial<Record<AIRequestTask, TaskCatalogEntry>> = {
+  chat: {
+    task: 'chat',
     modality: 'text',
     preferredProvider: 'vercel-ai-gateway',
     preferredModel: process.env.AI_MODEL_MENTOR_CHAT || 'gpt-4.1',
@@ -219,8 +235,8 @@ export const TASK_CATALOG: Record<AIRequestTask, TaskCatalogEntry> = {
     fallbackProviders: ['moonshot'],
     fallbackModels: textFallback,
   },
-  content_generation: {
-    task: 'content_generation',
+  document_analysis: {
+    task: 'document_analysis',
     modality: 'text',
     preferredProvider: 'vercel-ai-gateway',
     preferredModel: process.env.AI_MODEL_CONTENT || 'claude-sonnet-4',
@@ -251,8 +267,8 @@ export const TASK_CATALOG: Record<AIRequestTask, TaskCatalogEntry> = {
     fallbackProviders: ['google'],
     fallbackModels: ['veo-3-fast', 'video-fallback'],
   },
-  voice_generation: {
-    task: 'voice_generation',
+  audio_generation: {
+    task: 'audio_generation',
     modality: 'audio',
     preferredProvider: 'elevenlabs',
     preferredModel: process.env.AI_MODEL_VOICE || 'eleven_multilingual_v2',

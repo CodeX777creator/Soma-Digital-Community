@@ -224,7 +224,7 @@ async function planVideoBlueprint(input: VideoGenerationInput) {
   });
 
   const completion = await executeTextCompletion({
-    task: 'content_generation',
+    task: 'video_generation',
     userId: input.userId,
     userTier: normalizeRoutingPlan(input.userTier || 'pro'),
     qualityMode: 'premium',
@@ -441,7 +441,7 @@ export async function generateVideoStudioAsset(
   const submittedRealRender =
     renderOutcome.renderer !== 'bundle' &&
     (renderOutcome.status === 'completed' || renderOutcome.status === 'queued');
-  const chargeFeature = submittedRealRender ? 'video_generation' : 'content_generation';
+  const chargeFeature = submittedRealRender ? 'video_generation' : 'chat';
 
   const billingResult = await recordMonetizedUsageCharge({
     userId: ownerId,

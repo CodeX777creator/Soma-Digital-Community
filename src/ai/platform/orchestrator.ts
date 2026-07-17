@@ -34,8 +34,8 @@ export interface OrchestrationPlan {
   task: AIRequestTask;
 }
 
-const TASK_PRIORITY_MODELS: Record<AIRequestTask, Record<Exclude<AIQualityMode, 'auto'>, { providerId: AIProviderId; modelId: string }>> = {
-  mentor_chat: {
+const TASK_PRIORITY_MODELS: Partial<Record<AIRequestTask, Record<Exclude<AIQualityMode, 'auto'>, { providerId: AIProviderId; modelId: string }>>> = {
+  chat: {
     economy: { providerId: 'vercel-ai-gateway', modelId: 'google/gemini-2.5-flash-lite' },
     balanced: { providerId: 'vercel-ai-gateway', modelId: 'alibaba/qwen-3-32b' },
     premium: { providerId: 'vercel-ai-gateway', modelId: 'nvidia/nemotron-3-nano-30b-a3b' },
@@ -53,7 +53,7 @@ const TASK_PRIORITY_MODELS: Record<AIRequestTask, Record<Exclude<AIQualityMode, 
     premium: { providerId: 'vercel-ai-gateway', modelId: 'nvidia/nemotron-3-nano-30b-a3b' },
     cinematic: { providerId: 'vercel-ai-gateway', modelId: 'nvidia/nemotron-3-nano-30b-a3b' },
   },
-  content_generation: {
+  document_analysis: {
     economy: { providerId: 'vercel-ai-gateway', modelId: 'meta/llama-3.1-8b' },
     balanced: { providerId: 'vercel-ai-gateway', modelId: 'alibaba/qwen-3-32b' },
     premium: { providerId: 'vercel-ai-gateway', modelId: 'nvidia/nemotron-3-nano-30b-a3b' },
@@ -77,7 +77,7 @@ const TASK_PRIORITY_MODELS: Record<AIRequestTask, Record<Exclude<AIQualityMode, 
     premium: { providerId: 'vercel-ai-gateway', modelId: 'bytedance/seedance-v1.5-pro' },
     cinematic: { providerId: 'vercel-ai-gateway', modelId: 'bytedance/seedance-v1.5-pro' },
   },
-  voice_generation: {
+  audio_generation: {
     economy: { providerId: 'vercel-ai-gateway', modelId: 'elevenlabs-turbo-v2' },
     balanced: { providerId: 'vercel-ai-gateway', modelId: 'elevenlabs-v2' },
     premium: { providerId: 'vercel-ai-gateway', modelId: 'elevenlabs-v2' },
@@ -107,7 +107,7 @@ function normalizeQualityMode(mode?: AIQualityMode): Exclude<AIQualityMode, 'aut
 }
 
 function selectDirectFallback(task: AIRequestTask, qualityMode: Exclude<AIQualityMode, 'auto'>): { providerId: AIProviderId; modelId: string } {
-  if (task === 'voice_generation' && isProviderConfigured('elevenlabs')) {
+  if (task === 'audio_generation' && isProviderConfigured('elevenlabs')) {
     return {
       providerId: 'elevenlabs',
       modelId: qualityMode === 'economy' ? 'eleven_turbo_v2' : 'eleven_multilingual_v2',
@@ -115,7 +115,7 @@ function selectDirectFallback(task: AIRequestTask, qualityMode: Exclude<AIQualit
   }
 
   if (isProviderConfigured('openai')) {
-    if (task === 'content_generation') {
+    if (task === 'chat') {
       return { providerId: 'openai', modelId: qualityMode === 'economy' ? 'meta/llama-3.1-8b' : 'alibaba/qwen-3-32b' };
     }
 
@@ -132,14 +132,18 @@ function selectDirectFallback(task: AIRequestTask, qualityMode: Exclude<AIQualit
   };
 }
 
+function getTaskModels(task: AIRequestTask) {
+  return TASK_PRIORITY_MODELS[task] || TASK_PRIORITY_MODELS.chat!;
+}
+
 function buildFallbackPlans(task: AIRequestTask, qualityMode: Exclude<AIQualityMode, 'auto'>): Array<{ providerId: AIProviderId; modelId: string }> {
   const fallbackPlans: Array<{ providerId: AIProviderId; modelId: string }> = [];
 
   if (isProviderConfigured('vercel-ai-gateway')) {
-    const taskModel = TASK_PRIORITY_MODELS[task][qualityMode];
+    const taskModel = getTaskModels(task)[qualityMode];
     const gatewayFallback = qualityMode === 'economy'
       ? taskModel.modelId
-      : TASK_PRIORITY_MODELS[task].balanced.modelId;
+      : getTaskModels(task).balanced.modelId;
     fallbackPlans.push({
       providerId: 'vercel-ai-gateway',
       modelId: gatewayFallback,
@@ -158,7 +162,7 @@ function buildFallbackPlans(task: AIRequestTask, qualityMode: Exclude<AIQualityM
 
 export function orchestrateAIRequest(context: OrchestrationContext): OrchestrationPlan {
   const qualityMode = normalizeQualityMode(context.qualityMode);
-  const taskModels = TASK_PRIORITY_MODELS[context.task];
+  const taskModels = getTaskModels(context.task);
   const classified = selectModel(
     context.message || '',
     {
@@ -195,7 +199,7 @@ export function orchestrateAIRequest(context: OrchestrationContext): Orchestrati
     providerId,
     modelId,
     fallbackPlans,
-    modality: TASK_CATALOG[context.task].modality,
+    modality: TASK_CATALOG[context.task]?.modality || 'text',
     qualityMode,
     executionStrategy: providerId === 'vercel-ai-gateway' ? 'gateway' : 'direct',
     reason: `${context.task} routed to ${providerId}/${modelId} (${classified.reasoning})`,
