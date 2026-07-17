@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
-import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
 import {
   ArrowLeft,
   BookOpen,
@@ -17,7 +16,8 @@ import {
   Video,
 } from "lucide-react";
 import { auth } from "@/lib/firebase";
-import { storage } from "@/lib/firebase";
+import { AdminFormShell } from "@/components/admin/AdminFormShell";
+import { AdminMediaPicker } from "@/components/admin/AdminMediaPicker";
 import { ACADEMY_FINAL_EXAM_TOPIC_ID } from "@/academy/types";
 import type {
   AcademyCohortDoc,
@@ -66,7 +66,6 @@ export default function AcademyCourseBuilderPage() {
   const [bundle, setBundle] = useState<Bundle | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [uploading, setUploading] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -149,53 +148,6 @@ export default function AcademyCourseBuilderPage() {
     availableAt: "",
     delayDays: "",
   });
-
-  const uploadAcademyFile = async (file: File, folder: string) => {
-    if (!storage) throw new Error("Firebase Storage is not configured.");
-    assertAcademyFileSize(file, folder);
-    const safeName = file.name.replace(/[^a-zA-Z0-9._-]+/g, "-").slice(0, 120);
-    const path = `academy/courses/${courseId}/${folder}/${Date.now()}-${safeName}`;
-    const fileRef = ref(storage, path);
-    await uploadBytes(fileRef, file, {
-      contentType: file.type,
-      customMetadata: {
-        courseId,
-        uploadedBy: auth?.currentUser?.uid || "admin",
-      },
-    });
-    return getDownloadURL(fileRef);
-  };
-
-  const handleUpload = async (file: File | null, target: "thumbnail" | "promo" | "lessonVideo" | "lessonImage" | "sessionReplay" | "sessionMaterial") => {
-    if (!file) return;
-    try {
-      setUploading(target);
-      setError(null);
-      const folder = target === "thumbnail"
-        ? "thumbnail"
-        : target === "promo"
-          ? "promo"
-          : target === "lessonVideo"
-            ? "lessons/videos"
-            : target === "lessonImage"
-              ? "lessons/images"
-              : target === "sessionReplay"
-                ? "live-sessions/replays"
-                : "live-sessions/materials";
-      const url = await uploadAcademyFile(file, folder);
-      if (target === "thumbnail") setCourseForm((current) => ({ ...current, thumbnailUrl: url }));
-      if (target === "promo") setCourseForm((current) => ({ ...current, promoVideoUrl: url }));
-      if (target === "lessonVideo") setLessonForm((current) => ({ ...current, videoUrl: url }));
-      if (target === "lessonImage") setLessonForm((current) => ({ ...current, imageUrls: [current.imageUrls, url].filter(Boolean).join("\n") }));
-      if (target === "sessionReplay") setSessionForm((current) => ({ ...current, recordingUrl: url }));
-      if (target === "sessionMaterial") setSessionForm((current) => ({ ...current, materials: [current.materials, `${file.name}|${url}`].filter(Boolean).join("\n") }));
-      setMessage("Media uploaded.");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to upload media.");
-    } finally {
-      setUploading(null);
-    }
-  };
 
   const loadBundle = async () => {
     try {
@@ -468,27 +420,17 @@ export default function AcademyCourseBuilderPage() {
 
   return (
     <div className="space-y-6">
-      <Link href="/admin/academy" className="inline-flex items-center gap-2 text-sm text-white/50 hover:text-white">
-        <ArrowLeft className="h-4 w-4" />
-        Back to Academy
-      </Link>
-
-      <section className="rounded-3xl border border-white/10 bg-gradient-to-br from-indigo-500/15 via-white/[0.055] to-cyan-500/10 p-6">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-          <div>
-            <div className="inline-flex items-center gap-2 rounded-full border border-cyan-400/20 bg-cyan-400/10 px-3 py-1 text-xs font-medium uppercase tracking-[0.18em] text-cyan-100">
-              <BookOpen className="h-3.5 w-3.5" />
-              Course Builder
-            </div>
-            <h1 className="mt-4 text-3xl font-semibold tracking-tight">{bundle.course.title}</h1>
-            <p className="mt-2 max-w-2xl text-sm leading-6 text-white/55">Author topics, lessons, activities, quizzes, live cohorts, and certification settings in one structured workspace.</p>
-          </div>
-          <button onClick={loadBundle} className="inline-flex h-10 items-center gap-2 rounded-2xl border border-white/10 bg-white/[0.04] px-4 text-sm text-white/75 hover:bg-white/[0.08]">
-            <RefreshCw className="h-4 w-4" />
-            Refresh
-          </button>
-        </div>
-      </section>
+      <AdminFormShell
+        eyebrow="Course Builder"
+        title={bundle.course.title}
+        description="Author topics, lessons, activities, quizzes, live cohorts, and certification settings in one structured workspace."
+        backHref="/admin/academy"
+        backLabel="Back to Academy"
+        status={courseForm.status}
+        saving={saving}
+        lastSavedLabel="Refresh pulls the latest saved course structure."
+        onSave={loadBundle}
+      >
 
       {error ? <div className="rounded-2xl border border-red-400/20 bg-red-400/10 p-3 text-sm text-red-100">{error}</div> : null}
       {message ? <div className="rounded-2xl border border-emerald-400/20 bg-emerald-400/10 p-3 text-sm text-emerald-100">{message}</div> : null}
@@ -515,24 +457,30 @@ export default function AcademyCourseBuilderPage() {
               <Field label="Title"><input className="academy-input" value={courseForm.title} onChange={(event) => setCourseForm({ ...courseForm, title: event.target.value })} /></Field>
               <Field label="Description"><textarea rows={5} className="academy-input resize-none" value={courseForm.description} onChange={(event) => setCourseForm({ ...courseForm, description: event.target.value })} /></Field>
               <div className="grid gap-3 md:grid-cols-2">
-                <Field label="Thumbnail">
-                  <UploadRow
-                    value={courseForm.thumbnailUrl}
-                    uploading={uploading === "thumbnail"}
-                    accept="image/*"
-                    onChange={(value) => setCourseForm({ ...courseForm, thumbnailUrl: value })}
-                    onUpload={(file) => handleUpload(file, "thumbnail")}
-                  />
-                </Field>
-                <Field label="Promo video">
-                  <UploadRow
-                    value={courseForm.promoVideoUrl}
-                    uploading={uploading === "promo"}
-                    accept="video/*"
-                    onChange={(value) => setCourseForm({ ...courseForm, promoVideoUrl: value })}
-                    onUpload={(file) => handleUpload(file, "promo")}
-                  />
-                </Field>
+              <AdminMediaPicker
+                label="Course thumbnail"
+                value={courseForm.thumbnailUrl}
+                kind="image"
+                accept="image/*"
+                usageContext="academy"
+                linkedEntityType="academyCourse"
+                linkedEntityId={courseId}
+                helperText="Upload, choose from library, or paste a course cover URL."
+                aspectHint="Recommended: 16:9 or 3:2."
+                onChange={(url) => setCourseForm({ ...courseForm, thumbnailUrl: url })}
+              />
+              <AdminMediaPicker
+                label="Promo video"
+                value={courseForm.promoVideoUrl}
+                kind="video"
+                accept="video/*"
+                usageContext="academy"
+                linkedEntityType="academyCourse"
+                linkedEntityId={courseId}
+                helperText="Use a trailer, intro, or sales preview video."
+                aspectHint="Recommended: MP4/WebM."
+                onChange={(url) => setCourseForm({ ...courseForm, promoVideoUrl: url })}
+              />
                 <Field label="Category"><input className="academy-input" value={courseForm.category} onChange={(event) => setCourseForm({ ...courseForm, category: event.target.value })} /></Field>
                 <Field label="Duration minutes"><input type="number" min={0} className="academy-input" value={courseForm.estimatedDuration} onChange={(event) => setCourseForm({ ...courseForm, estimatedDuration: event.target.value })} /></Field>
                 <Field label="Level"><select className="academy-input" value={courseForm.level} onChange={(event) => setCourseForm({ ...courseForm, level: event.target.value })}><option value="beginner">Beginner</option><option value="intermediate">Intermediate</option><option value="advanced">Advanced</option><option value="all_levels">All levels</option></select></Field>
@@ -661,22 +609,34 @@ export default function AcademyCourseBuilderPage() {
                 <Field label="Format"><select className="academy-input" value={lessonForm.lessonType} onChange={(event) => setLessonForm({ ...lessonForm, lessonType: event.target.value as AcademyLessonType })}><option value="written">Written</option><option value="video">Video</option><option value="image">Image</option><option value="mixed">Mixed</option></select></Field>
                 <Field label="Sort"><input type="number" min={0} className="academy-input" value={lessonForm.sortOrder} onChange={(event) => setLessonForm({ ...lessonForm, sortOrder: event.target.value })} /></Field>
               </div>
-              <Field label="Video">
-                <UploadRow
-                  value={lessonForm.videoUrl}
-                  uploading={uploading === "lessonVideo"}
-                  accept="video/*"
-                  onChange={(value) => setLessonForm({ ...lessonForm, videoUrl: value })}
-                  onUpload={(file) => handleUpload(file, "lessonVideo")}
-                />
-              </Field>
-              <Field label="Upload image">
-                <div className="rounded-2xl border border-white/10 bg-white/[0.025] p-3">
-                  <input type="file" accept="image/*" disabled={uploading === "lessonImage"} onChange={(event) => handleUpload(event.target.files?.[0] || null, "lessonImage")} className="w-full text-sm text-white/50 file:mr-3 file:rounded-xl file:border-0 file:bg-white/[0.08] file:px-3 file:py-2 file:text-sm file:text-white" />
-                  {uploading === "lessonImage" ? <p className="mt-2 text-xs text-cyan-200">Uploading image...</p> : null}
-                </div>
-              </Field>
-              <Field label="Image URLs"><textarea rows={3} className="academy-input resize-none" value={lessonForm.imageUrls} onChange={(event) => setLessonForm({ ...lessonForm, imageUrls: event.target.value })} placeholder="One image URL per line" /></Field>
+              <AdminMediaPicker
+                label="Lesson video"
+                value={lessonForm.videoUrl}
+                kind="video"
+                accept="video/*"
+                usageContext="academy"
+                linkedEntityType="academyLesson"
+                linkedEntityId={lessonForm.topicId || courseId}
+                helperText="Upload the lesson video or paste an externally hosted lesson URL."
+                onChange={(url) => setLessonForm({ ...lessonForm, videoUrl: url })}
+              />
+              <AdminMediaPicker
+                label="Lesson image gallery"
+                value={lessonForm.imageUrls.split("\n").filter(Boolean)[0] || ""}
+                kind="image"
+                accept="image/*"
+                usageContext="academy"
+                linkedEntityType="academyLesson"
+                linkedEntityId={lessonForm.topicId || courseId}
+                helperText="Add images one at a time. Their order below becomes the gallery/carousel order."
+                aspectHint="Recommended: consistent ratios per lesson."
+                onChange={(url) => setLessonForm((current) => ({ ...current, imageUrls: [...current.imageUrls.split("\n").filter(Boolean), url].join("\n") }))}
+              />
+              <MediaListEditor
+                label="Selected lesson images"
+                value={lessonForm.imageUrls}
+                onChange={(value) => setLessonForm({ ...lessonForm, imageUrls: value })}
+              />
               <Field label="Written lesson content"><textarea rows={6} className="academy-input resize-none" value={lessonForm.writtenContent} onChange={(event) => setLessonForm({ ...lessonForm, writtenContent: event.target.value })} /></Field>
               <Field label="Transcript"><textarea rows={3} className="academy-input resize-none" value={lessonForm.transcript} onChange={(event) => setLessonForm({ ...lessonForm, transcript: event.target.value })} /></Field>
               <Field label="Key takeaways"><textarea rows={4} className="academy-input resize-none" value={lessonForm.keyTakeaways} onChange={(event) => setLessonForm({ ...lessonForm, keyTakeaways: event.target.value })} placeholder="One takeaway per line" /></Field>
@@ -829,21 +789,29 @@ export default function AcademyCourseBuilderPage() {
                 <Field label="Starts"><input type="datetime-local" className="academy-input" value={sessionForm.startsAt} onChange={(event) => setSessionForm({ ...sessionForm, startsAt: event.target.value })} /></Field>
                 <Field label="Ends"><input type="datetime-local" className="academy-input" value={sessionForm.endsAt} onChange={(event) => setSessionForm({ ...sessionForm, endsAt: event.target.value })} /></Field>
               </div>
-              <Field label="Replay video">
-                <UploadRow
-                  value={sessionForm.recordingUrl}
-                  uploading={uploading === "sessionReplay"}
-                  accept="video/*"
-                  onChange={(value) => setSessionForm({ ...sessionForm, recordingUrl: value })}
-                  onUpload={(file) => handleUpload(file, "sessionReplay")}
-                />
-              </Field>
+              <AdminMediaPicker
+                label="Replay video"
+                value={sessionForm.recordingUrl}
+                kind="video"
+                accept="video/*"
+                usageContext="academy"
+                linkedEntityType="academyLiveSession"
+                linkedEntityId={courseId}
+                helperText="Upload the replay after class or paste a Zoom, Meet, Vimeo, or YouTube replay link."
+                onChange={(url) => setSessionForm({ ...sessionForm, recordingUrl: url })}
+              />
               <Field label="Materials">
-                <textarea rows={4} className="academy-input resize-none" value={sessionForm.materials} onChange={(event) => setSessionForm({ ...sessionForm, materials: event.target.value })} placeholder="Title|URL, one resource per line" />
-                <div className="mt-2 rounded-2xl border border-white/10 bg-white/[0.025] p-3">
-                  <input type="file" disabled={uploading === "sessionMaterial"} onChange={(event) => handleUpload(event.target.files?.[0] || null, "sessionMaterial")} className="w-full text-sm text-white/50 file:mr-3 file:rounded-xl file:border-0 file:bg-white/[0.08] file:px-3 file:py-2 file:text-sm file:text-white" />
-                  {uploading === "sessionMaterial" ? <p className="mt-2 text-xs text-cyan-200">Uploading resource...</p> : null}
-                </div>
+                <AdminMediaPicker
+                  label="Add class material"
+                  value=""
+                  kind="document"
+                  usageContext="academy"
+                  linkedEntityType="academyLiveSession"
+                  linkedEntityId={courseId}
+                  helperText="Upload PDFs, worksheets, slides, or paste a resource URL."
+                  onChange={(url, asset) => setSessionForm((current) => ({ ...current, materials: [current.materials, `${asset?.fileName || "Resource"}|${url}`].filter(Boolean).join("\n") }))}
+                />
+                <MaterialsListEditor value={sessionForm.materials} onChange={(value) => setSessionForm({ ...sessionForm, materials: value })} />
               </Field>
               <SubmitButton saving={saving}>Schedule Class</SubmitButton>
             </form>
@@ -852,6 +820,7 @@ export default function AcademyCourseBuilderPage() {
       </div>
 
       <AcademyInputStyles />
+      </AdminFormShell>
     </div>
   );
 }
@@ -924,28 +893,64 @@ function parseMaterials(value: string) {
     .filter((item) => item.title && item.url);
 }
 
-function assertAcademyFileSize(file: File, folder: string) {
-  const imageLimit = 10 * 1024 * 1024;
-  const documentLimit = 50 * 1024 * 1024;
-  const videoLimit = 500 * 1024 * 1024;
-  const limit = folder.includes("materials") ? documentLimit : folder.includes("thumbnail") || folder.includes("images") ? imageLimit : videoLimit;
-  if (file.size > limit) {
-    const mb = Math.round(limit / 1024 / 1024);
-    throw new Error(`File is too large. Limit for this upload is ${mb}MB.`);
-  }
-}
-
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return <label className="block space-y-2"><span className="text-sm font-medium text-white/75">{label}</span>{children}</label>;
 }
 
-function UploadRow({ value, accept, uploading, onChange, onUpload }: { value: string; accept: string; uploading: boolean; onChange: (value: string) => void; onUpload: (file: File | null) => void }) {
+function MediaListEditor({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
+  const items = value.split("\n").map((item) => item.trim()).filter(Boolean);
+  const updateItems = (next: string[]) => onChange(next.filter(Boolean).join("\n"));
+  const move = (index: number, direction: -1 | 1) => {
+    const next = [...items];
+    const target = index + direction;
+    if (target < 0 || target >= next.length) return;
+    [next[index], next[target]] = [next[target], next[index]];
+    updateItems(next);
+  };
+
   return (
-    <div className="space-y-2">
-      <input className="academy-input" value={value} onChange={(event) => onChange(event.target.value)} placeholder="Upload or paste URL" />
-      <div className="rounded-2xl border border-white/10 bg-white/[0.025] p-3">
-        <input type="file" accept={accept} disabled={uploading} onChange={(event) => onUpload(event.target.files?.[0] || null)} className="w-full text-sm text-white/50 file:mr-3 file:rounded-xl file:border-0 file:bg-white/[0.08] file:px-3 file:py-2 file:text-sm file:text-white" />
-        {uploading ? <p className="mt-2 text-xs text-cyan-200">Uploading media...</p> : null}
+    <div className="rounded-3xl border border-white/10 bg-white/[0.025] p-4">
+      <p className="text-sm font-semibold text-white/75">{label}</p>
+      <p className="mt-1 text-xs text-white/40">Drag-style ordering is represented with move controls for reliability across desktop and mobile.</p>
+      <div className="mt-3 space-y-2">
+        {items.length ? items.map((item, index) => (
+          <div key={`${item}-${index}`} className="grid gap-2 rounded-2xl border border-white/10 bg-black/20 p-2 sm:grid-cols-[72px_1fr_auto] sm:items-center">
+            <div className="h-14 overflow-hidden rounded-xl border border-white/10 bg-white/[0.04]">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={item} alt="" className="h-full w-full object-cover" />
+            </div>
+            <input value={item} onChange={(event) => updateItems(items.map((current, currentIndex) => currentIndex === index ? event.target.value : current))} className="academy-input min-h-10" />
+            <div className="flex gap-1">
+              <button type="button" onClick={() => move(index, -1)} className="rounded-xl border border-white/10 px-2 py-1 text-xs text-white/60 hover:text-white">Up</button>
+              <button type="button" onClick={() => move(index, 1)} className="rounded-xl border border-white/10 px-2 py-1 text-xs text-white/60 hover:text-white">Down</button>
+              <button type="button" onClick={() => updateItems(items.filter((_, currentIndex) => currentIndex !== index))} className="rounded-xl border border-red-300/20 px-2 py-1 text-xs text-red-100 hover:bg-red-400/10">Remove</button>
+            </div>
+          </div>
+        )) : <p className="rounded-2xl border border-dashed border-white/10 p-4 text-sm text-white/40">No lesson images selected yet.</p>}
+      </div>
+    </div>
+  );
+}
+
+function MaterialsListEditor({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+  const rows = value.split("\n").map((line) => line.trim()).filter(Boolean);
+  const updateRows = (next: string[]) => onChange(next.filter(Boolean).join("\n"));
+
+  return (
+    <div className="mt-3 rounded-3xl border border-white/10 bg-white/[0.025] p-4">
+      <p className="text-sm font-semibold text-white/75">Selected materials</p>
+      <div className="mt-3 space-y-2">
+        {rows.length ? rows.map((row, index) => {
+          const [title, ...urlParts] = row.split("|");
+          const url = urlParts.join("|");
+          return (
+            <div key={`${row}-${index}`} className="grid gap-2 rounded-2xl border border-white/10 bg-black/20 p-2 md:grid-cols-[0.7fr_1fr_auto]">
+              <input value={title || ""} onChange={(event) => updateRows(rows.map((current, currentIndex) => currentIndex === index ? `${event.target.value}|${url}` : current))} placeholder="Resource title" className="academy-input min-h-10" />
+              <input value={url || ""} onChange={(event) => updateRows(rows.map((current, currentIndex) => currentIndex === index ? `${title}|${event.target.value}` : current))} placeholder="Resource URL" className="academy-input min-h-10" />
+              <button type="button" onClick={() => updateRows(rows.filter((_, currentIndex) => currentIndex !== index))} className="rounded-xl border border-red-300/20 px-3 py-2 text-xs text-red-100 hover:bg-red-400/10">Remove</button>
+            </div>
+          );
+        }) : <p className="rounded-2xl border border-dashed border-white/10 p-4 text-sm text-white/40">No class materials selected yet.</p>}
       </div>
     </div>
   );

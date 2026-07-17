@@ -3,12 +3,9 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   collection,
-  doc,
   onSnapshot,
   orderBy,
   query,
-  serverTimestamp,
-  updateDoc,
 } from "firebase/firestore";
 import {
   Ban,
@@ -22,6 +19,7 @@ import {
   ShieldOff,
 } from "lucide-react";
 import { auth, db } from "@/lib/firebase";
+import { AdminMediaPicker } from "@/components/admin/AdminMediaPicker";
 
 type Tier = "explorer" | "pro" | "elite";
 type StatusFilter = "all" | "active" | "banned";
@@ -239,20 +237,6 @@ export default function AdminUsersPage() {
     setActionLoading(`tier-${user.uid}`);
     setError(null);
     try {
-      await updateDoc(doc(db, "users", user.uid), {
-        tier,
-        plan: tier,
-        "subscription.plan": tier,
-        "subscription.subscriptionPlan": tier,
-        manualTierOverride: {
-          tier,
-          reason,
-          updatedAt: serverTimestamp(),
-          updatedBy: auth?.currentUser?.uid || null,
-        },
-        updatedAt: serverTimestamp(),
-      });
-
       await authedAdminFetch("/api/admin/users/update-tier", {
         uid: user.uid,
         tier,
@@ -281,11 +265,6 @@ export default function AdminUsersPage() {
         uid: user.uid,
         disabled,
       });
-      await updateDoc(doc(db, "users", user.uid), {
-        disabled,
-        status: disabled ? "banned" : "active",
-        updatedAt: serverTimestamp(),
-      });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to update user status.");
     } finally {
@@ -302,14 +281,35 @@ export default function AdminUsersPage() {
     setActionLoading(`admin-${user.uid}`);
     setError(null);
     try {
-      await updateDoc(doc(db, "users", user.uid), {
-        isAdmin: !isAdmin,
-        role: isAdmin ? "member" : "admin",
-        updatedAt: serverTimestamp(),
+      await authedAdminFetch("/api/admin/settings/admin-access", {
+        uid: user.uid,
+        action: isAdmin ? "revoke" : "grant",
       });
       setSelectedUser((prev) => prev ? { ...prev, isAdmin: !isAdmin, role: isAdmin ? "member" : "admin" } : null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to update admin access.");
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const updateUserAvatar = async (url: string) => {
+    if (!db || !selectedUser) {
+      setError("Database not initialized.");
+      return;
+    }
+    const confirmed = window.confirm("Replace this user's app profile image? OAuth provider photos will remain untouched.");
+    if (!confirmed) return;
+    setActionLoading(`avatar-${selectedUser.uid}`);
+    setError(null);
+    try {
+      await authedAdminFetch("/api/admin/users/avatar", {
+        uid: selectedUser.uid,
+        photoURL: url,
+      });
+      setSelectedUser((prev) => prev ? { ...prev, photoURL: url, avatarURL: url, adminManagedAvatarUrl: url } : null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to update profile image.");
     } finally {
       setActionLoading(null);
     }
@@ -528,6 +528,34 @@ export default function AdminUsersPage() {
 
             <div className="grid gap-4 p-5 lg:grid-cols-2">
               <DetailCard title="Profile">
+                <div className="mb-4 rounded-2xl border border-white/10 bg-black/15 p-3">
+                  <div className="mb-3 flex items-center gap-3">
+                    <div className="flex h-14 w-14 items-center justify-center overflow-hidden rounded-2xl bg-white/10 text-sm font-semibold">
+                      {selectedUser.photoURL ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={selectedUser.photoURL} alt="" className="h-full w-full object-cover" />
+                      ) : (
+                        selectedUser.name.slice(0, 2).toUpperCase()
+                      )}
+                    </div>
+                    <div>
+                      <p className="text-sm font-semibold text-white/80">Profile image</p>
+                      <p className="text-xs text-white/40">Provider photo: {selectedUser.photoURL ? "available" : "not set"}</p>
+                    </div>
+                  </div>
+                  <AdminMediaPicker
+                    label="Admin-managed profile image"
+                    value={selectedUser.photoURL || ""}
+                    kind="image"
+                    accept="image/*"
+                    usageContext="users"
+                    linkedEntityType="user"
+                    linkedEntityId={selectedUser.uid}
+                    helperText="Upload or select an app profile image. This does not change the user's Google/Firebase provider photo."
+                    aspectHint="Recommended: square image, at least 400x400."
+                    onChange={(url) => updateUserAvatar(url)}
+                  />
+                </div>
                 <DetailRow label="UID" value={selectedUser.uid} />
                 <DetailRow label="Name" value={selectedUser.name} />
                 <DetailRow label="Email" value={selectedUser.email || "-"} />

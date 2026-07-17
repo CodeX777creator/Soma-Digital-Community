@@ -2,12 +2,10 @@
 
 import { useEffect, useState } from "react";
 import {
-  addDoc,
   collection,
   onSnapshot,
   orderBy,
   query,
-  serverTimestamp,
 } from "firebase/firestore";
 import {
   Bell,
@@ -46,6 +44,22 @@ function dateLabel(value: any) {
 }
 
 const TIERS: Tier[] = ["all", "explorer", "pro", "elite"];
+
+async function adminNotificationFetch(path: string, options: RequestInit = {}) {
+  const token = await auth?.currentUser?.getIdToken();
+  if (!token) throw new Error("Admin session expired.");
+  const response = await fetch(path, {
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+      ...(options.headers || {}),
+    },
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(payload?.error || "Notification action failed.");
+  return payload;
+}
 
 export default function AdminSystemNotificationsPage() {
   const [title, setTitle] = useState("");
@@ -86,14 +100,14 @@ export default function AdminSystemNotificationsPage() {
     setSending(true);
     setError(null);
     try {
-      await addDoc(collection(db, "systemNotifications"), {
-        title: title.trim(),
-        body: body.trim(),
-        linkUrl: linkUrl.trim() || null,
-        targetTier,
-        sentAt: serverTimestamp(),
-        sentBy: auth?.currentUser?.email || auth?.currentUser?.uid || "admin",
-        read: false,
+      await adminNotificationFetch("/api/admin/system-notifications", {
+        method: "POST",
+        body: JSON.stringify({
+          title: title.trim(),
+          body: body.trim(),
+          linkUrl: linkUrl.trim(),
+          targetTier,
+        }),
       });
       setTitle("");
       setBody("");

@@ -19,6 +19,7 @@ import {
   XCircle,
 } from "lucide-react";
 import { auth } from "@/lib/firebase";
+import { AdminMediaPicker } from "@/components/admin/AdminMediaPicker";
 import type {
   EventRecord,
   EventAnalyticsSummary,
@@ -715,9 +716,18 @@ export default function AdminEventsPage() {
                   </select>
                 </Field>
               </div>
-              <Field label="Cover image URL">
-                <input value={form.coverImageUrl} onChange={(event) => updateForm("coverImageUrl", event.target.value)} placeholder="https://..." className="admin-input" />
-              </Field>
+              <AdminMediaPicker
+                label="Event cover image"
+                value={form.coverImageUrl}
+                kind="image"
+                accept="image/*"
+                usageContext="events"
+                linkedEntityType="event"
+                linkedEntityId={selectedEvent?.eventId}
+                helperText="Upload a branded event cover, choose from the library, or paste an external URL."
+                aspectHint="Recommended: 16:9, strong title-safe center area."
+                onChange={(url) => updateForm("coverImageUrl", url)}
+              />
             </FormSection>
 
             <FormSection title="Schedule">
@@ -789,16 +799,18 @@ export default function AdminEventsPage() {
                   )}
                 </div>
               </Field>
-              <Field label="Replay URL">
-                <div className="flex gap-2">
-                  <input value={form.replayUrl} onChange={(event) => updateForm("replayUrl", event.target.value)} placeholder="Replay URL after the event is complete" className="admin-input" />
-                  {form.replayUrl && (
-                    <a href={form.replayUrl} target="_blank" rel="noreferrer" className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.04] text-white/70 hover:bg-white/[0.08]" aria-label="Open replay URL">
-                      <Video className="h-4 w-4" />
-                    </a>
-                  )}
-                </div>
-              </Field>
+              <AdminMediaPicker
+                label="Replay video"
+                value={form.replayUrl}
+                kind="video"
+                accept="video/*"
+                usageContext="events"
+                linkedEntityType="event"
+                linkedEntityId={selectedEvent?.eventId}
+                helperText="Upload the replay after the event or paste a Zoom, Meet, Vimeo, or YouTube replay URL."
+                aspectHint={form.replayUrl ? "Replay status: ready or externally linked." : "Replay status: none yet."}
+                onChange={(url) => updateForm("replayUrl", url)}
+              />
             </FormSection>
 
             <div className="flex flex-wrap gap-2 border-t border-white/10 pt-5">

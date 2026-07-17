@@ -3,30 +3,20 @@
 import React, { FormEvent, useEffect, useId, useMemo, useState } from "react";
 import {
   collection,
-  deleteDoc,
-  doc,
   onSnapshot,
   orderBy,
   query,
-  serverTimestamp,
-  setDoc,
-  updateDoc,
 } from "firebase/firestore";
 import {
-  getDownloadURL,
-  ref,
-  uploadBytesResumable,
-} from "firebase/storage";
-import {
   Edit,
-  FileUp,
   ImageIcon,
   Loader2,
   Plus,
   Search,
   Trash2,
 } from "lucide-react";
-import { auth, db, storage } from "@/lib/firebase";
+import { auth, db } from "@/lib/firebase";
+import { AdminMediaPicker } from "@/components/admin/AdminMediaPicker";
 
 type AssetType = "pdf" | "video" | "template" | "notion" | "link" | "code" | "course";
 type AssetTier = "free" | "pro" | "elite";
@@ -91,7 +81,22 @@ const ASSET_TIERS: AssetTier[] = ["free", "pro", "elite"];
 const LICENSE_TYPES: LicenseType[] = ["standard", "mrr"];
 const COMMISSION_TYPES: CommissionType[] = ["percentage", "fixed"];
 const COMMISSION_BASES: CommissionBase[] = ["full_price"];
-const MAX_FILE_SIZE = 50 * 1024 * 1024;
+
+async function adminMarketplaceFetch(path: string, options: RequestInit = {}) {
+  const token = await auth?.currentUser?.getIdToken();
+  if (!token) throw new Error("Admin session expired.");
+  const response = await fetch(path, {
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+      ...(options.headers || {}),
+    },
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(payload.error || "Marketplace action failed.");
+  return payload;
+}
 const COLLECTION = "marketplaceAssets";
 
 const emptyForm: AssetFormState = {
@@ -201,20 +206,6 @@ function formatPrice(price: number, tier: AssetTier) {
   }).format(price);
 }
 
-function validateUpload(file: File, purpose: "thumbnail" | "asset") {
-  if (file.size > MAX_FILE_SIZE) {
-    throw new Error("File must be smaller than 50MB.");
-  }
-
-  if (purpose === "thumbnail" && !file.type.startsWith("image/")) {
-    throw new Error("Thumbnail upload must be an image file.");
-  }
-
-  if (purpose === "asset" && !file.type) {
-    throw new Error("File type could not be detected.");
-  }
-}
-
 export default function AdminMarketplacePage() {
   const [assets, setAssets] = useState<MarketplaceAsset[]>([]);
   const [loading, setLoading] = useState(true);
@@ -228,8 +219,6 @@ export default function AdminMarketplacePage() {
   const [draftAssetId, setDraftAssetId] = useState<string | null>(null);
   const [form, setForm] = useState<AssetFormState>(emptyForm);
   const [saving, setSaving] = useState(false);
-  const [thumbnailProgress, setThumbnailProgress] = useState<number | null>(null);
-  const [assetProgress, setAssetProgress] = useState<number | null>(null);
 
   useEffect(() => {
     if (!db) {
@@ -280,11 +269,9 @@ export default function AdminMarketplacePage() {
       return;
     }
     setEditingAsset(null);
-    setDraftAssetId(doc(collection(db, COLLECTION)).id);
+    setDraftAssetId(crypto.randomUUID());
     setForm(emptyForm);
     setError(null);
-    setThumbnailProgress(null);
-    setAssetProgress(null);
     setModalOpen(true);
   };
 
@@ -293,117 +280,7 @@ export default function AdminMarketplacePage() {
     setDraftAssetId(asset.id);
     setForm(formFromAsset(asset));
     setError(null);
-    setThumbnailProgress(null);
-    setAssetProgress(null);
-      setModalOpen(true);
-  };
-
-  const uploadFile = async (
-    file: File,
-    assetId: string,
-    purpose: "thumbnail" | "asset"
-  ) => {
-    validateUpload(file, purpose);
-    const uid = auth?.currentUser?.uid;
-
-    if (!uid) {
-      throw new Error("Admin session expired. Please sign in again.");
-    }
-
-    if (!storage) {
-      throw new Error("Storage not initialized.");
-    }
-
-    const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "-");
-    
-    const storageRef = ref(storage, `marketplace-assets/${assetId}/${safeName}`);
-    const uploadTask = uploadBytesResumable(storageRef, file, {
-      customMetadata: {
-        assetId,
-        uploadedBy: uid,
-        type: purpose === "thumbnail" ? "thumbnail" : "asset",
-      },
-    });
-
-    return new Promise<string>((resolve, reject) => {
-      uploadTask.on(
-        "state_changed",
-        (snapshot) => {
-          const progress = Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 100);
-          if (purpose === "thumbnail") setThumbnailProgress(progress);
-          if (purpose === "asset") setAssetProgress(progress);
-        },
-        reject,
-        async () => {
-          const url = await getDownloadURL(uploadTask.snapshot.ref);
-          resolve(url);
-        }
-      );
-    });
-  };
-
-  const ensureUploadAssetId = async () => {
-    if (!db) throw new Error("Database not initialized.");
-    if (editingAsset) return editingAsset.id;
-
-    const assetId = draftAssetId || doc(collection(db, COLLECTION)).id;
-    if (!draftAssetId) setDraftAssetId(assetId);
-
-    await setDoc(
-      doc(db, COLLECTION, assetId),
-      {
-        title: form.title.trim() || "Untitled draft",
-        description: form.description.trim() || "",
-        type: form.type,
-        category: form.category.trim() || "General",
-        tags: parseTags(form.tags),
-        thumbnailUrl: form.thumbnailUrl.trim(),
-        assetUrl: form.assetUrl.trim(),
-        tier: form.tier,
-        price: Number(form.price) || 0,
-        licenseType: form.licenseType,
-        resaleEnabled: form.licenseType === "mrr" && form.resaleEnabled,
-        resalePrice: Number(form.resalePrice) || Number(form.price) || 0,
-        resellerCommissionType: form.resellerCommissionType,
-        resellerCommissionValue: Number(form.resellerCommissionValue) || 0,
-        commissionBase: form.commissionBase,
-        courseValue: Number(form.courseValue) || Number(form.price) || 0,
-        externalPlatform: form.externalPlatform.trim(),
-        externalAccessUrl: form.externalAccessUrl.trim(),
-        accessInstructions: form.accessInstructions.trim(),
-        websiteOnboardingInstructions: form.websiteOnboardingInstructions.trim(),
-        published: false,
-        draft: true,
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      },
-      { merge: true }
-    );
-
-    return assetId;
-  };
-
-  const handleUpload = async (
-    event: React.ChangeEvent<HTMLInputElement>,
-    purpose: "thumbnail" | "asset"
-  ) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-
-    setError(null);
-
-    try {
-      const assetId = await ensureUploadAssetId();
-      const url = await uploadFile(file, assetId, purpose);
-      setForm((current) => ({
-        ...current,
-        [purpose === "thumbnail" ? "thumbnailUrl" : "assetUrl"]: url,
-      }));
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Upload failed.");
-    } finally {
-      event.target.value = "";
-    }
+    setModalOpen(true);
   };
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
@@ -464,18 +341,15 @@ export default function AdminMarketplacePage() {
         websiteOnboardingInstructions: form.websiteOnboardingInstructions.trim(),
         published: form.published,
         draft: false,
-        updatedAt: serverTimestamp(),
       };
 
-      if (editingAsset) {
-        await updateDoc(doc(db, COLLECTION, editingAsset.id), payload);
-      } else {
-        const assetId = draftAssetId || doc(collection(db, COLLECTION)).id;
-        await setDoc(doc(db, COLLECTION, assetId), {
-          ...payload,
-          createdAt: serverTimestamp(),
-        });
-      }
+      await adminMarketplaceFetch("/api/admin/marketplace", {
+        method: "POST",
+        body: JSON.stringify({
+          assetId: editingAsset?.id || draftAssetId || undefined,
+          asset: payload,
+        }),
+      });
 
       setModalOpen(false);
       setEditingAsset(null);
@@ -497,9 +371,9 @@ export default function AdminMarketplacePage() {
     if (!confirmed) return;
 
     try {
-      await deleteDoc(doc(db, COLLECTION, asset.id));
-    } catch {
-      setError("Unable to delete asset.");
+      await adminMarketplaceFetch(`/api/admin/marketplace/${asset.id}`, { method: "DELETE" });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to delete asset.");
     }
   };
 
@@ -509,12 +383,12 @@ export default function AdminMarketplacePage() {
       return;
     }
     try {
-      await updateDoc(doc(db, COLLECTION, asset.id), {
-        published: !asset.published,
-        updatedAt: serverTimestamp(),
+      await adminMarketplaceFetch(`/api/admin/marketplace/${asset.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ action: "publish", published: !asset.published }),
       });
-    } catch {
-      setError("Unable to update published status.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to update published status.");
     }
   };
 
@@ -938,37 +812,33 @@ export default function AdminMarketplacePage() {
                 />
               </Field>
 
-              <Field label="Thumbnail URL or upload" className="md:col-span-2">
-                <div className="grid gap-3 md:grid-cols-[1fr_auto]">
-                  <input
-                    value={form.thumbnailUrl}
-                    onChange={(event) => setForm({ ...form, thumbnailUrl: event.target.value })}
-                    className="admin-input"
-                    placeholder="https://..."
-                    aria-label="Thumbnail URL"
-                  />
-                  <UploadButton icon={ImageIcon} label="Upload Image" accept="image/*" onChange={(event) => handleUpload(event, "thumbnail")} />
-                </div>
-                {thumbnailProgress !== null && (
-                  <ProgressBar label="Thumbnail upload" value={thumbnailProgress} />
-                )}
-              </Field>
+              <div className="md:col-span-2">
+                <AdminMediaPicker
+                  label="Product thumbnail"
+                  value={form.thumbnailUrl}
+                  kind="image"
+                  accept="image/*"
+                  usageContext="marketplace"
+                  linkedEntityType="marketplaceAsset"
+                  linkedEntityId={editingAsset?.id || undefined}
+                  helperText="Upload a clean product preview, choose from media library, or paste a thumbnail URL."
+                  aspectHint="Recommended: 1:1 or 4:5."
+                  onChange={(url) => setForm({ ...form, thumbnailUrl: url })}
+                />
+              </div>
 
-              <Field label="Asset file upload or external URL" className="md:col-span-2">
-                <div className="grid gap-3 md:grid-cols-[1fr_auto]">
-                  <input
-                    value={form.assetUrl}
-                    onChange={(event) => setForm({ ...form, assetUrl: event.target.value })}
-                    className="admin-input"
-                    placeholder="https://..."
-                    aria-label="Asset URL"
-                  />
-                  <UploadButton icon={FileUp} label="Upload File" onChange={(event) => handleUpload(event, "asset")} />
-                </div>
-                {assetProgress !== null && (
-                  <ProgressBar label="Asset upload" value={assetProgress} />
-                )}
-              </Field>
+              <div className="md:col-span-2">
+                <AdminMediaPicker
+                  label="Product file or external resource"
+                  value={form.assetUrl}
+                  kind="all"
+                  usageContext="marketplace"
+                  linkedEntityType="marketplaceAsset"
+                  linkedEntityId={editingAsset?.id || undefined}
+                  helperText="Upload the product file or paste the external delivery URL."
+                  onChange={(url) => setForm({ ...form, assetUrl: url })}
+                />
+              </div>
 
               <label className="flex items-center gap-3 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-3 md:col-span-2">
                 <input
@@ -1047,59 +917,5 @@ function Field({
       </span>
       {children}
     </label>
-  );
-}
-
-function UploadButton({
-  icon: Icon,
-  label,
-  accept,
-  onChange,
-}: {
-  icon: typeof FileUp;
-  label: string;
-  accept?: string;
-  onChange: (event: React.ChangeEvent<HTMLInputElement>) => void;
-}) {
-  return (
-    <label className="inline-flex h-10 cursor-pointer items-center justify-center gap-2 rounded-md border border-white/10 px-3 text-sm text-white/70 hover:bg-white/10 hover:text-white">
-      <Icon className="h-4 w-4" />
-      {label}
-      <input type="file" accept={accept} onChange={onChange} className="sr-only" />
-    </label>
-  );
-}
-
-function ProgressBar({ label, value }: { label: string; value: number }) {
-  const progressRef = React.useRef<HTMLDivElement>(null);
-  
-  React.useEffect(() => {
-    if (progressRef.current) {
-      progressRef.current.style.setProperty("--progress-width", `${value}%`);
-    }
-  }, [value]);
-
-  return (
-    <div className="mt-2">
-      <div className="mb-1 flex justify-between text-xs text-white/45">
-        <span>{label}</span>
-        <span>{value}%</span>
-      </div>
-      <div
-        ref={progressRef}
-        className="h-2 overflow-hidden rounded-full bg-white/10"
-        role="progressbar"
-        aria-label={label}
-        {...{
-          "aria-valuenow": value,
-          "aria-valuemin": 0,
-          "aria-valuemax": 100,
-        }}
-      >
-        <div
-          className="h-full rounded-full bg-cyan-400 transition-all w-[var(--progress-width)]"
-        />
-      </div>
-    </div>
   );
 }

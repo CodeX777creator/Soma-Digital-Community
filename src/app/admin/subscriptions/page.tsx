@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { collection, doc, onSnapshot, orderBy, query, serverTimestamp, updateDoc } from "firebase/firestore";
+import { collection, onSnapshot, orderBy, query } from "firebase/firestore";
 import {
   CalendarClock,
   CheckCircle2,
@@ -48,6 +48,22 @@ type UserRecord = {
 const TIERS: Array<"all" | Tier> = ["all", "explorer", "pro", "elite"];
 const STATUSES: SubscriptionStatus[] = ["all", "active", "cancelled", "past_due", "expired", "approval_pending", "created"];
 const PROVIDERS: Array<"all" | Provider> = ["all", "paypal", "paystack", "admin", "other"];
+
+async function adminSubscriptionFetch(path: string, options: RequestInit = {}) {
+  const token = await auth?.currentUser?.getIdToken();
+  if (!token) throw new Error("Admin session expired.");
+  const response = await fetch(path, {
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+      ...(options.headers || {}),
+    },
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(payload?.error || "Subscription action failed.");
+  return payload;
+}
 
 function toDate(value: any): Date | null {
   if (!value) return null;
@@ -227,19 +243,7 @@ export default function AdminSubscriptionsPage() {
     setCancelLoading(subscription.id);
     setError(null);
     try {
-      await updateDoc(doc(db, "subscriptions", subscription.id), {
-        subscriptionStatus: "cancelled",
-        cancelledAt: serverTimestamp(),
-        cancelledBy: "admin",
-        updatedAt: serverTimestamp(),
-      });
-      if (subscription.userId) {
-        await updateDoc(doc(db, "users", subscription.userId), {
-          "subscription.subscriptionStatus": "cancelled",
-          "subscription.status": "cancelled",
-          updatedAt: serverTimestamp(),
-        });
-      }
+      await adminSubscriptionFetch(`/api/admin/subscriptions/${subscription.id}/cancel`, { method: "POST" });
       setSelected(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to cancel subscription.");

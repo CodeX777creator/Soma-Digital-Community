@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import { ArrowLeft, BookOpen, Loader2, Sparkles } from "lucide-react";
 import Link from "next/link";
 import { auth } from "@/lib/firebase";
+import { AdminFormShell } from "@/components/admin/AdminFormShell";
+import { AdminMediaPicker } from "@/components/admin/AdminMediaPicker";
 
 async function adminFetch(path: string, options: RequestInit = {}) {
   const token = await auth?.currentUser?.getIdToken();
@@ -34,6 +36,7 @@ export default function NewAcademyCoursePage() {
     visibility: "public",
     estimatedDuration: "0",
     thumbnailUrl: "",
+    promoVideoUrl: "",
   });
 
   const update = (key: keyof typeof form, value: string) => setForm((current) => ({ ...current, [key]: value }));
@@ -61,21 +64,15 @@ export default function NewAcademyCoursePage() {
 
   return (
     <div className="mx-auto max-w-5xl space-y-6">
-      <Link href="/admin/academy" className="inline-flex items-center gap-2 text-sm text-white/50 hover:text-white">
-        <ArrowLeft className="h-4 w-4" />
-        Back to Academy
-      </Link>
-
-      <section className="rounded-3xl border border-white/10 bg-gradient-to-br from-indigo-500/15 via-white/[0.055] to-cyan-500/10 p-6">
-        <div className="inline-flex items-center gap-2 rounded-full border border-cyan-400/20 bg-cyan-400/10 px-3 py-1 text-xs font-medium uppercase tracking-[0.18em] text-cyan-100">
-          <Sparkles className="h-3.5 w-3.5" />
-          New Certification
-        </div>
-        <h1 className="mt-4 text-3xl font-semibold tracking-tight">Create an Academy course</h1>
-        <p className="mt-2 max-w-2xl text-sm leading-6 text-white/55">
-          Start with the course shell, then build topics, lessons, activities, quizzes, cohorts, and live classes in the builder.
-        </p>
-      </section>
+      <AdminFormShell
+        eyebrow="New Certification"
+        title="Create an Academy course"
+        description="Start with the course shell, upload the visual identity, then build topics, lessons, activities, quizzes, cohorts, and live classes in the builder."
+        backHref="/admin/academy"
+        backLabel="Back to Academy"
+        status="Draft setup"
+        dirty={Boolean(form.title || form.description || form.thumbnailUrl || form.promoVideoUrl)}
+      >
 
       <form onSubmit={submit} className="rounded-3xl border border-white/10 bg-[#0d1018] p-6">
         {error ? <div className="mb-5 rounded-2xl border border-red-400/20 bg-red-400/10 p-3 text-sm text-red-100">{error}</div> : null}
@@ -87,13 +84,43 @@ export default function NewAcademyCoursePage() {
             <Field label="Course description">
               <textarea required rows={7} value={form.description} onChange={(event) => update("description", event.target.value)} placeholder="Describe what students will learn and the transformation they should expect." className="academy-input resize-none" />
             </Field>
-            <Field label="Thumbnail URL">
-              <input value={form.thumbnailUrl} onChange={(event) => update("thumbnailUrl", event.target.value)} placeholder="https://..." className="academy-input" />
-            </Field>
+            <AdminMediaPicker
+              label="Course thumbnail"
+              value={form.thumbnailUrl}
+              kind="image"
+              accept="image/*"
+              usageContext="academy"
+              linkedEntityType="academyCourse"
+              helperText="Upload a polished course cover or choose one from the media library."
+              aspectHint="Recommended: 16:9 or 3:2, at least 1200px wide."
+              onChange={(url) => update("thumbnailUrl", url)}
+            />
+            <AdminMediaPicker
+              label="Promo video"
+              value={form.promoVideoUrl}
+              kind="video"
+              accept="video/*"
+              usageContext="academy"
+              linkedEntityType="academyCourse"
+              helperText="Optional course preview or trailer. You can add this now or later in the builder."
+              aspectHint="Recommended: MP4/WebM under 750MB."
+              onChange={(url) => update("promoVideoUrl", url)}
+            />
           </div>
           <div className="space-y-4 rounded-3xl border border-white/10 bg-white/[0.025] p-4">
-            <div className="flex h-36 items-center justify-center rounded-2xl border border-white/10 bg-gradient-to-br from-cyan-400/20 to-violet-500/20">
-              <BookOpen className="h-10 w-10 text-white/35" />
+            <div className="overflow-hidden rounded-2xl border border-white/10 bg-gradient-to-br from-cyan-400/20 to-violet-500/20">
+              {form.thumbnailUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={form.thumbnailUrl} alt="" className="h-40 w-full object-cover" />
+              ) : (
+                <div className="flex h-40 items-center justify-center">
+                  <BookOpen className="h-10 w-10 text-white/35" />
+                </div>
+              )}
+              <div className="border-t border-white/10 p-4">
+                <p className="text-sm font-semibold">{form.title || "Course preview"}</p>
+                <p className="mt-1 line-clamp-3 text-xs leading-5 text-white/45">{form.description || "Your course card updates as you add title, description, and media."}</p>
+              </div>
             </div>
             <Field label="Category">
               <input value={form.category} onChange={(event) => update("category", event.target.value)} className="academy-input" />
@@ -125,6 +152,7 @@ export default function NewAcademyCoursePage() {
           </button>
         </div>
       </form>
+      </AdminFormShell>
 
       <AcademyInputStyles />
     </div>

@@ -9,9 +9,6 @@ import {
   getDocs,
   onSnapshot,
   query,
-  serverTimestamp,
-  setDoc,
-  updateDoc,
   where,
 } from "firebase/firestore";
 import {
@@ -33,6 +30,7 @@ import {
   Zap,
 } from "lucide-react";
 import { auth, db } from "@/lib/firebase";
+import { AdminMediaPicker } from "@/components/admin/AdminMediaPicker";
 import {
   CreatorCreditBundle,
   CreatorCreditConfig,
@@ -50,10 +48,40 @@ type SettingsStatus = {
   system: { projectId: string | null; nodeEnv: string | null; firebaseRulesConfigured: boolean; storageRulesConfigured: boolean };
 };
 type PricingConfig = { pro: number; elite: number };
-type SiteConfig = { brandName: string; contactEmail: string; twitterUrl: string; instagramUrl: string; youtubeUrl: string; linkedinUrl: string };
+type SiteConfig = {
+  brandName: string;
+  contactEmail: string;
+  twitterUrl: string;
+  instagramUrl: string;
+  youtubeUrl: string;
+  linkedinUrl: string;
+  logoUrl: string;
+  faviconUrl: string;
+  socialShareImageUrl: string;
+  emailHeaderLogoUrl: string;
+  certificateSealUrl: string;
+  brandPalette: string;
+  brandFont: string;
+  brandVoicePreset: string;
+};
 
 const DEFAULT_PRICING: PricingConfig = { pro: 97, elite: 297 };
-const DEFAULT_SITE: SiteConfig = { brandName: "Soma Digital Community", contactEmail: "", twitterUrl: "", instagramUrl: "", youtubeUrl: "", linkedinUrl: "" };
+const DEFAULT_SITE: SiteConfig = {
+  brandName: "Soma Digital Community",
+  contactEmail: "",
+  twitterUrl: "",
+  instagramUrl: "",
+  youtubeUrl: "",
+  linkedinUrl: "",
+  logoUrl: "",
+  faviconUrl: "",
+  socialShareImageUrl: "",
+  emailHeaderLogoUrl: "",
+  certificateSealUrl: "",
+  brandPalette: "blue_violet",
+  brandFont: "Inter",
+  brandVoicePreset: "premium_helpful",
+};
 const tierLabels: Array<{ id: keyof CreatorCreditConfig["tierAllocations"]; label: string }> = [
   { id: "explorer", label: "Explorer" },
   { id: "pro", label: "Pro" },
@@ -113,6 +141,22 @@ function dateLabel(value: any) {
 function hasAdminAccess(profile: Record<string, any> | null) {
   const roles = Array.isArray(profile?.roles) ? profile.roles : [];
   return profile?.isAdmin === true || profile?.role === "admin" || roles.includes("admin");
+}
+
+async function adminSettingsFetch(path: string, options: RequestInit = {}) {
+  const token = await auth?.currentUser?.getIdToken();
+  if (!token) throw new Error("Admin session expired.");
+  const response = await fetch(path, {
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+      ...(options.headers || {}),
+    },
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(payload.error || "Admin settings action failed.");
+  return payload;
 }
 
 async function loadSettingsStatus() {
@@ -217,6 +261,14 @@ export default function AdminSettingsPage() {
           instagramUrl: data.instagramUrl ?? "",
           youtubeUrl: data.youtubeUrl ?? "",
           linkedinUrl: data.linkedinUrl ?? "",
+          logoUrl: data.logoUrl ?? "",
+          faviconUrl: data.faviconUrl ?? "",
+          socialShareImageUrl: data.socialShareImageUrl ?? "",
+          emailHeaderLogoUrl: data.emailHeaderLogoUrl ?? "",
+          certificateSealUrl: data.certificateSealUrl ?? "",
+          brandPalette: data.brandPalette ?? DEFAULT_SITE.brandPalette,
+          brandFont: data.brandFont ?? DEFAULT_SITE.brandFont,
+          brandVoicePreset: data.brandVoicePreset ?? DEFAULT_SITE.brandVoicePreset,
         };
         setSite(loaded);
         setSiteDraft(loaded);
@@ -249,7 +301,10 @@ export default function AdminSettingsPage() {
     if (!db) return;
     setSavingPricing(true);
     try {
-      await setDoc(doc(db, "config", "pricing"), { ...pricingDraft, updatedAt: serverTimestamp() }, { merge: true });
+      await adminSettingsFetch("/api/admin/settings", {
+        method: "PATCH",
+        body: JSON.stringify({ target: "pricing", data: pricingDraft }),
+      });
       setPricingSaved(true);
       setTimeout(() => setPricingSaved(false), 3000);
     } catch {
@@ -263,7 +318,10 @@ export default function AdminSettingsPage() {
     if (!db) return;
     setSavingSite(true);
     try {
-      await setDoc(doc(db, "config", "site"), { ...siteDraft, updatedAt: serverTimestamp() }, { merge: true });
+      await adminSettingsFetch("/api/admin/settings", {
+        method: "PATCH",
+        body: JSON.stringify({ target: "site", data: siteDraft }),
+      });
       setSiteSaved(true);
       setTimeout(() => setSiteSaved(false), 3000);
     } catch {
@@ -333,11 +391,10 @@ export default function AdminSettingsPage() {
     setError(null);
     try {
       const normalized = normalizeCreatorCreditConfig(creatorCreditsDraft);
-      await setDoc(doc(db, "config", "creatorCredits"), {
-        ...normalized,
-        updatedAt: serverTimestamp(),
-        updatedBy: adminUser?.uid || null,
-      }, { merge: true });
+      await adminSettingsFetch("/api/admin/settings", {
+        method: "PATCH",
+        body: JSON.stringify({ target: "creatorCredits", data: normalized }),
+      });
       setCreatorCreditsSaved(true);
       setTimeout(() => setCreatorCreditsSaved(false), 3000);
     } catch {
@@ -368,13 +425,11 @@ export default function AdminSettingsPage() {
       const userSnap = await getDoc(userRef);
       if (!userSnap.exists()) throw new Error(`No user found with UID "${uid}".`);
 
-      if (adminAction === "grant") {
-        await updateDoc(userRef, { isAdmin: true, role: "admin", updatedAt: serverTimestamp() });
-        setAdminActionMsg({ ok: true, text: `Admin access granted to ${userSnap.data().email || uid}.` });
-      } else {
-        await updateDoc(userRef, { isAdmin: false, role: "member", updatedAt: serverTimestamp() });
-        setAdminActionMsg({ ok: true, text: `Admin access revoked from ${userSnap.data().email || uid}.` });
-      }
+      await adminSettingsFetch("/api/admin/settings/admin-access", {
+        method: "POST",
+        body: JSON.stringify({ uid, action: adminAction }),
+      });
+      setAdminActionMsg({ ok: true, text: `Admin access ${adminAction === "grant" ? "granted to" : "revoked from"} ${userSnap.data().email || uid}.` });
       setAdminTarget("");
     } catch (err) {
       setAdminActionMsg({ ok: false, text: err instanceof Error ? err.message : "Action failed." });
@@ -634,6 +689,105 @@ export default function AdminSettingsPage() {
               placeholder="hello@somatoday.com"
               onChange={(e) => setSiteDraft({ ...siteDraft, contactEmail: e.target.value })} />
           </Field>
+          <Field label="Brand Palette">
+            <select className={inputCls} value={siteDraft.brandPalette}
+              onChange={(e) => setSiteDraft({ ...siteDraft, brandPalette: e.target.value })}>
+              <option value="blue_violet">Blue + violet</option>
+              <option value="cyan_indigo">Cyan + indigo</option>
+              <option value="emerald_blue">Emerald + blue</option>
+              <option value="hazy_red_violet">Hazy red + violet</option>
+              <option value="monochrome_luxury">Monochrome luxury</option>
+            </select>
+          </Field>
+          <Field label="Brand Font">
+            <select className={inputCls} value={siteDraft.brandFont}
+              onChange={(e) => setSiteDraft({ ...siteDraft, brandFont: e.target.value })}>
+              <option value="Inter">Inter</option>
+              <option value="Manrope">Manrope</option>
+              <option value="DM Sans">DM Sans</option>
+              <option value="Plus Jakarta Sans">Plus Jakarta Sans</option>
+              <option value="Sora">Sora</option>
+            </select>
+          </Field>
+          <Field label="Brand Voice">
+            <select className={inputCls} value={siteDraft.brandVoicePreset}
+              onChange={(e) => setSiteDraft({ ...siteDraft, brandVoicePreset: e.target.value })}>
+              <option value="premium_helpful">Premium, direct, helpful</option>
+              <option value="warm_coach">Warm coach</option>
+              <option value="bold_promotional">Bold and promotional</option>
+              <option value="calm_teacher">Calm teacher</option>
+              <option value="founder_story">Founder story</option>
+            </select>
+          </Field>
+          <div className="sm:col-span-2">
+            <AdminMediaPicker
+              label="Brand logo"
+              value={siteDraft.logoUrl}
+              kind="image"
+              accept="image/*"
+              usageContext="settings"
+              linkedEntityType="siteConfig"
+              linkedEntityId="site"
+              helperText="Upload the primary logo used across admin, emails, and product surfaces."
+              aspectHint="Recommended: transparent PNG or SVG."
+              onChange={(url) => setSiteDraft({ ...siteDraft, logoUrl: url })}
+            />
+          </div>
+          <div className="sm:col-span-2">
+            <AdminMediaPicker
+              label="Favicon"
+              value={siteDraft.faviconUrl}
+              kind="image"
+              accept="image/*"
+              usageContext="settings"
+              linkedEntityType="siteConfig"
+              linkedEntityId="site"
+              helperText="Upload a small square icon for browser tabs and app shortcuts."
+              aspectHint="Recommended: 512x512 PNG."
+              onChange={(url) => setSiteDraft({ ...siteDraft, faviconUrl: url })}
+            />
+          </div>
+          <div className="sm:col-span-2">
+            <AdminMediaPicker
+              label="Social share image"
+              value={siteDraft.socialShareImageUrl}
+              kind="image"
+              accept="image/*"
+              usageContext="settings"
+              linkedEntityType="siteConfig"
+              linkedEntityId="site"
+              helperText="Used for public link previews when SDC is shared."
+              aspectHint="Recommended: 1200x630."
+              onChange={(url) => setSiteDraft({ ...siteDraft, socialShareImageUrl: url })}
+            />
+          </div>
+          <div className="sm:col-span-2">
+            <AdminMediaPicker
+              label="Email header logo"
+              value={siteDraft.emailHeaderLogoUrl}
+              kind="image"
+              accept="image/*"
+              usageContext="settings"
+              linkedEntityType="siteConfig"
+              linkedEntityId="site"
+              helperText="Used in transactional and marketing emails."
+              onChange={(url) => setSiteDraft({ ...siteDraft, emailHeaderLogoUrl: url })}
+            />
+          </div>
+          <div className="sm:col-span-2">
+            <AdminMediaPicker
+              label="Certificate seal"
+              value={siteDraft.certificateSealUrl}
+              kind="image"
+              accept="image/*"
+              usageContext="settings"
+              linkedEntityType="siteConfig"
+              linkedEntityId="site"
+              helperText="Used on Academy certificates where enabled."
+              aspectHint="Recommended: transparent PNG."
+              onChange={(url) => setSiteDraft({ ...siteDraft, certificateSealUrl: url })}
+            />
+          </div>
           <Field label="Twitter / X URL">
             <input type="url" className={inputCls} value={siteDraft.twitterUrl}
               placeholder="https://x.com/somadigi"

@@ -2,15 +2,12 @@
 
 import { useEffect, useMemo, useState } from "react";
 import {
-  arrayRemove,
   collection,
   doc,
   getDoc,
   onSnapshot,
   orderBy,
   query,
-  serverTimestamp,
-  updateDoc,
 } from "firebase/firestore";
 import { Loader2, Search, ShieldOff } from "lucide-react";
 import { auth, db } from "@/lib/firebase";
@@ -35,6 +32,22 @@ type Purchase = {
 type UserSummary = { name: string; email: string };
 
 const STATUSES: ProvisioningStatus[] = ["not_required", "access_pending", "access_sent", "registration_completed"];
+
+async function adminPurchaseFetch(path: string, options: RequestInit = {}) {
+  const token = await auth?.currentUser?.getIdToken();
+  if (!token) throw new Error("Admin session expired.");
+  const response = await fetch(path, {
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+      ...(options.headers || {}),
+    },
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(payload?.error || "Purchase action failed.");
+  return payload;
+}
 
 function dateLabel(value: any) {
   const date = value?.toDate?.() || (value ? new Date(value) : null);
@@ -132,7 +145,6 @@ export default function AdminPurchasesPage() {
   };
 
   const revokeAccess = async (purchase: Purchase) => {
-    if (!db) return;
     const confirmed = window.confirm(
       `Revoke access to "${purchase.assetTitle}" for ${users[purchase.userId]?.email || purchase.userId}? This cannot be undone.`
     );
@@ -140,17 +152,7 @@ export default function AdminPurchasesPage() {
     setRevokeId(purchase.id);
     setError(null);
     try {
-      await updateDoc(doc(db, "assetPurchases", purchase.id), {
-        revoked: true,
-        revokedAt: serverTimestamp(),
-        revokedBy: auth?.currentUser?.uid || "admin",
-        status: "revoked",
-      });
-      if (purchase.userId && purchase.assetId) {
-        await updateDoc(doc(db, "users", purchase.userId), {
-          purchasedAssets: arrayRemove(purchase.assetId),
-        });
-      }
+      await adminPurchaseFetch(`/api/admin/purchases/${purchase.id}/revoke`, { method: "POST" });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to revoke access.");
     } finally {

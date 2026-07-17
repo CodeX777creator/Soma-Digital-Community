@@ -2,16 +2,11 @@
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import {
-  addDoc,
   collection,
-  deleteDoc,
-  doc,
   Firestore,
   onSnapshot,
   orderBy,
   query,
-  serverTimestamp,
-  updateDoc,
 } from "firebase/firestore";
 import {
   AlertTriangle,
@@ -30,6 +25,7 @@ import {
   X,
 } from "lucide-react";
 import { auth, db } from "@/lib/firebase";
+import { AdminErrorState, AdminEmptyState, AdminLoadingState } from "@/components/admin/AdminState";
 import { Post } from "@/lib/db";
 
 type ModeratedPost = Post & {
@@ -41,6 +37,22 @@ type ModeratedPost = Post & {
 
 type FilterStatus = "all" | "pinned" | "flagged" | "announcement" | "win";
 type SortOption = "newest" | "oldest" | "engagement" | "likes";
+
+async function adminContentFetch(path: string, options: RequestInit = {}) {
+  const token = await auth?.currentUser?.getIdToken();
+  if (!token) throw new Error("Admin session expired.");
+  const response = await fetch(path, {
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+      ...(options.headers || {}),
+    },
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(payload.error || "Content action failed.");
+  return payload;
+}
 
 function toDate(value: any): Date | null {
   if (!value) return null;
@@ -205,10 +217,12 @@ export default function AdminContentPage() {
   const handleTogglePin = async (postId: string, currentPinned: boolean) => {
     setProcessingId(postId);
     try {
-      await updateDoc(doc(db as Firestore, "posts", postId), { isPinned: !currentPinned });
+      await adminContentFetch(`/api/admin/content/${postId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ action: "toggle_pin" }),
+      });
     } catch (err) {
-      console.error("Error toggling pin:", err);
-      setError("Failed to update pin status.");
+      setError(err instanceof Error ? err.message : "Failed to update pin status.");
     } finally {
       setProcessingId(null);
     }
@@ -217,11 +231,10 @@ export default function AdminContentPage() {
   const handleDeletePost = async (postId: string) => {
     setProcessingId(postId);
     try {
-      await deleteDoc(doc(db as Firestore, "posts", postId));
+      await adminContentFetch(`/api/admin/content/${postId}`, { method: "DELETE" });
       setDeleteConfirm(null);
     } catch (err) {
-      console.error("Error deleting post:", err);
-      setError("Failed to delete post.");
+      setError(err instanceof Error ? err.message : "Failed to delete post.");
     } finally {
       setProcessingId(null);
     }
@@ -230,13 +243,12 @@ export default function AdminContentPage() {
   const handleFlagPost = async (postId: string, flag: boolean) => {
     setProcessingId(postId);
     try {
-      await updateDoc(doc(db as Firestore, "posts", postId), {
-        moderationStatus: flag ? "flagged" : "approved",
-        moderatedAt: new Date(),
+      await adminContentFetch(`/api/admin/content/${postId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ action: "moderate", flagged: flag }),
       });
     } catch (err) {
-      console.error("Error flagging post:", err);
-      setError("Failed to update moderation status.");
+      setError(err instanceof Error ? err.message : "Failed to update moderation status.");
     } finally {
       setProcessingId(null);
     }
@@ -248,27 +260,15 @@ export default function AdminContentPage() {
     setPostingAnnouncement(true);
     setError(null);
     try {
-      const user = auth?.currentUser;
-      await addDoc(collection(db as Firestore, "posts"), {
-        content: announcementText.trim(),
-        type: "announcement",
-        authorId: user?.uid || "admin",
-        authorName: user?.displayName || user?.email || "Admin",
-        authorAvatar: user?.photoURL || "",
-        isPinned: false,
-        likeCount: 0,
-        commentCount: 0,
-        tags: ["announcement"],
-        moderationStatus: "approved",
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
+      await adminContentFetch("/api/admin/content", {
+        method: "POST",
+        body: JSON.stringify({ action: "create_announcement", content: announcementText.trim() }),
       });
       setAnnouncementText("");
       setAnnouncementSuccess(true);
       setTimeout(() => setAnnouncementSuccess(false), 3000);
     } catch (err) {
-      console.error("Error creating announcement:", err);
-      setError("Failed to create announcement.");
+      setError(err instanceof Error ? err.message : "Failed to create announcement.");
     } finally {
       setPostingAnnouncement(false);
     }
@@ -283,14 +283,13 @@ export default function AdminContentPage() {
     if (!editingPost || !editContent.trim() || !db) return;
     setSavingEdit(true);
     try {
-      await updateDoc(doc(db as Firestore, "posts", editingPost.id), {
-        content: editContent.trim(),
-        updatedAt: serverTimestamp(),
-        editedByAdmin: true,
+      await adminContentFetch(`/api/admin/content/${editingPost.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ action: "edit", content: editContent.trim() }),
       });
       setEditingPost(null);
     } catch (err) {
-      setError("Failed to save post edit.");
+      setError(err instanceof Error ? err.message : "Failed to save post edit.");
     } finally {
       setSavingEdit(false);
     }
@@ -333,13 +332,7 @@ export default function AdminContentPage() {
         </form>
       </section>
 
-      {error && (
-        <div className="rounded-lg border border-red-500/25 bg-red-500/10 px-4 py-3 text-sm text-red-100 flex items-center gap-2">
-          <AlertTriangle className="h-4 w-4" />
-          {error}
-          <button onClick={() => setError(null)} className="ml-auto text-xs underline hover:text-red-200">Dismiss</button>
-        </div>
-      )}
+      {error && <AdminErrorState description={error} onRetry={() => setError(null)} retryLabel="Dismiss" />}
 
       <section className="rounded-lg border border-white/10 bg-white/[0.035] p-4 space-y-4">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
@@ -388,24 +381,12 @@ export default function AdminContentPage() {
 
       <section className="rounded-lg border border-white/10 bg-white/[0.035]">
         {loading ? (
-          <div className="flex min-h-[40vh] items-center justify-center">
-            <div className="flex items-center gap-3 text-sm text-white/55">
-              <Loader2 className="h-4 w-4 animate-spin text-cyan-300" />
-              Loading content...
-            </div>
-          </div>
+          <AdminLoadingState label="Loading content..." />
         ) : filteredPosts.length === 0 ? (
-          <div className="flex min-h-[40vh] flex-col items-center justify-center gap-4 text-center">
-            <div className="rounded-full border border-white/10 bg-white/[0.03] p-4">
-              <MessageSquare className="h-8 w-8 text-white/30" />
-            </div>
-            <div>
-              <p className="text-sm font-medium text-white/70">No posts found</p>
-              <p className="text-xs text-white/45 mt-1">
-                {searchQuery || filterStatus !== "all" ? "Try adjusting your filters" : "Posts will appear here once created"}
-              </p>
-            </div>
-          </div>
+          <AdminEmptyState
+            title="No posts found"
+            description={searchQuery || filterStatus !== "all" ? "Try adjusting your filters." : "Posts will appear here once created."}
+          />
         ) : (
           <div className="divide-y divide-white/10">
             {filteredPosts.map((post) => (

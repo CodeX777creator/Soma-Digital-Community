@@ -26,26 +26,36 @@ import {
   BookOpen,
   Route,
   TicketPercent,
+  Search,
+  Plus,
 } from "lucide-react";
 import { auth, db } from "@/lib/firebase";
 
 const navItems = [
-  { label: "Dashboard", href: "/admin/dashboard", icon: LayoutDashboard },
-  { label: "Analytics", href: "/admin/analytics", icon: Activity },
-  { label: "AI Gateway", href: "/admin/ai", icon: Bot },
-  { label: "Onboarding", href: "/admin/onboarding", icon: Route },
-  { label: "Promos", href: "/admin/promos", icon: TicketPercent },
-  { label: "Academy", href: "/admin/academy", icon: BookOpen },
-  { label: "Social Ops", href: "/admin/social-ops", icon: Share2 },
-  { label: "Marketplace", href: "/admin/marketplace", icon: Boxes },
-  { label: "Events", href: "/admin/events", icon: CalendarDays },
-  { label: "Purchases", href: "/admin/purchases", icon: GraduationCap },
-  { label: "Users", href: "/admin/users", icon: Users },
-  { label: "Subscriptions", href: "/admin/subscriptions", icon: CreditCard },
-  { label: "Payouts", href: "/admin/payouts", icon: HandCoins },
-  { label: "Content", href: "/admin/content", icon: FileText },
-  { label: "Notifications", href: "/admin/system-notifications", icon: Bell },
-  { label: "Settings", href: "/admin/settings", icon: Settings },
+  { group: "Operations", label: "Dashboard", href: "/admin/dashboard", icon: LayoutDashboard },
+  { group: "Operations", label: "Analytics", href: "/admin/analytics", icon: Activity },
+  { group: "Operations", label: "Social Ops", href: "/admin/social-ops", icon: Share2 },
+  { group: "Operations", label: "Events", href: "/admin/events", icon: CalendarDays },
+  { group: "Business", label: "Users", href: "/admin/users", icon: Users },
+  { group: "Business", label: "Subscriptions", href: "/admin/subscriptions", icon: CreditCard },
+  { group: "Business", label: "Purchases", href: "/admin/purchases", icon: GraduationCap },
+  { group: "Business", label: "Payouts", href: "/admin/payouts", icon: HandCoins },
+  { group: "Business", label: "Promos", href: "/admin/promos", icon: TicketPercent },
+  { group: "Products", label: "Academy", href: "/admin/academy", icon: BookOpen },
+  { group: "Products", label: "Marketplace", href: "/admin/marketplace", icon: Boxes },
+  { group: "Products", label: "Content", href: "/admin/content", icon: FileText },
+  { group: "Platform", label: "AI Gateway", href: "/admin/ai", icon: Bot },
+  { group: "Platform", label: "Onboarding", href: "/admin/onboarding", icon: Route },
+  { group: "Platform", label: "Notifications", href: "/admin/system-notifications", icon: Bell },
+  { group: "Platform", label: "Settings", href: "/admin/settings", icon: Settings },
+];
+
+const quickCreateItems = [
+  { label: "Course", href: "/admin/academy/courses/new" },
+  { label: "Event", href: "/admin/events" },
+  { label: "Marketplace product", href: "/admin/marketplace" },
+  { label: "Promo", href: "/admin/promos" },
+  { label: "Notification", href: "/admin/system-notifications" },
 ];
 
 function getInitials(user: User | null) {
@@ -69,12 +79,28 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [checking, setChecking] = useState(true);
   const [adminUser, setAdminUser] = useState<User | null>(null);
+  const [navSearch, setNavSearch] = useState("");
+  const [quickOpen, setQuickOpen] = useState(false);
 
   const isLoginRoute = pathname === "/admin/login";
 
   const pageTitle = useMemo(() => {
     const active = navItems.find((item) => pathname.startsWith(item.href));
     return active?.label || "Admin";
+  }, [pathname]);
+
+  const navGroups = useMemo(() => {
+    const term = navSearch.trim().toLowerCase();
+    const filtered = navItems.filter((item) => !term || item.label.toLowerCase().includes(term) || item.group.toLowerCase().includes(term));
+    return filtered.reduce<Record<string, typeof navItems>>((groups, item) => {
+      groups[item.group] = [...(groups[item.group] || []), item];
+      return groups;
+    }, {});
+  }, [navSearch]);
+
+  const breadcrumbs = useMemo(() => {
+    const parts = pathname.split("/").filter(Boolean).slice(1);
+    return ["Admin", ...parts.map((part) => part.replace(/-/g, " ").replace(/\b\w/g, (char) => char.toUpperCase()))];
   }, [pathname]);
 
   useEffect(() => {
@@ -174,26 +200,45 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
           </button>
         </div>
 
-        <nav className="space-y-1 px-3 py-4">
-          {navItems.map((item) => {
-            const Icon = item.icon;
-            const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
+        <div className="px-3 pt-4">
+          <label className="relative block">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-white/30" />
+            <input
+              value={navSearch}
+              onChange={(event) => setNavSearch(event.target.value)}
+              placeholder="Search admin..."
+              className="h-10 w-full rounded-2xl border border-white/10 bg-black/25 pl-9 pr-3 text-sm text-white outline-none placeholder:text-white/30 focus:border-cyan-300/45"
+            />
+          </label>
+        </div>
 
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-colors ${
-                  active
-                    ? "bg-cyan-400/10 text-cyan-200 ring-1 ring-cyan-400/20"
-                    : "text-white/60 hover:bg-white/[0.06] hover:text-white"
-                }`}
-              >
-                <Icon className="h-4 w-4" />
-                {item.label}
-              </Link>
-            );
-          })}
+        <nav className="space-y-5 px-3 py-4">
+          {Object.entries(navGroups).map(([group, items]) => (
+            <div key={group}>
+              <p className="mb-2 px-3 text-[10px] font-semibold uppercase tracking-[0.22em] text-white/30">{group}</p>
+              <div className="space-y-1">
+                {items.map((item) => {
+                  const Icon = item.icon;
+                  const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
+
+                  return (
+                    <Link
+                      key={item.href}
+                      href={item.href}
+                      className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-colors ${
+                        active
+                          ? "bg-cyan-400/10 text-cyan-200 ring-1 ring-cyan-400/20"
+                          : "text-white/60 hover:bg-white/[0.06] hover:text-white"
+                      }`}
+                    >
+                      <Icon className="h-4 w-4" />
+                      {item.label}
+                    </Link>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
         </nav>
       </aside>
 
@@ -210,11 +255,35 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
             </button>
             <div>
               <h1 className="text-base font-semibold">{pageTitle}</h1>
-              <p className="text-xs text-white/45">Realtime operations overview</p>
+              <p className="text-xs text-white/45">{breadcrumbs.join(" / ")}</p>
             </div>
           </div>
 
           <div className="flex items-center gap-3">
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setQuickOpen((current) => !current)}
+                className="inline-flex h-9 items-center gap-2 rounded-md border border-white/10 px-3 text-xs font-medium text-white/70 hover:bg-white/10 hover:text-white"
+              >
+                <Plus className="h-4 w-4" />
+                <span className="hidden sm:inline">Quick create</span>
+              </button>
+              {quickOpen ? (
+                <div className="absolute right-0 top-11 z-40 w-56 overflow-hidden rounded-2xl border border-white/10 bg-[#0b0e14] p-2 shadow-2xl shadow-black/40">
+                  {quickCreateItems.map((item) => (
+                    <Link
+                      key={item.href + item.label}
+                      href={item.href}
+                      onClick={() => setQuickOpen(false)}
+                      className="block rounded-xl px-3 py-2 text-sm text-white/65 hover:bg-white/[0.06] hover:text-white"
+                    >
+                      {item.label}
+                    </Link>
+                  ))}
+                </div>
+              ) : null}
+            </div>
             <div className="hidden text-right sm:block">
               <p className="text-sm font-medium">{adminUser?.displayName || "Admin"}</p>
               <p className="text-xs text-white/45">{adminUser?.email}</p>
