@@ -601,6 +601,7 @@ export default function AdminSettingsPage() {
                   <input
                     type="text"
                     className={inputCls}
+                    aria-label="Bundle ID"
                     value={bundle.id}
                     onChange={(e) => updateBundle(bundle.id, { id: e.target.value.trim() })}
                   />
@@ -609,6 +610,7 @@ export default function AdminSettingsPage() {
                   <input
                     type="text"
                     className={inputCls}
+                    aria-label="Bundle label"
                     value={bundle.label}
                     onChange={(e) => updateBundle(bundle.id, { label: e.target.value })}
                   />
@@ -619,6 +621,7 @@ export default function AdminSettingsPage() {
                     min={1}
                     step={1}
                     className={inputCls}
+                    aria-label="Bundle credits"
                     value={bundle.credits}
                     onChange={(e) => updateBundle(bundle.id, { credits: Math.max(1, Number(e.target.value) || 1) })}
                   />
@@ -629,6 +632,7 @@ export default function AdminSettingsPage() {
                     min={0}
                     step={1}
                     className={inputCls}
+                    aria-label="Bundle price in cents"
                     value={bundle.priceCents}
                     onChange={(e) => updateBundle(bundle.id, { priceCents: Math.max(0, Number(e.target.value) || 0) })}
                   />
@@ -639,6 +643,7 @@ export default function AdminSettingsPage() {
                     min={0}
                     step={1}
                     className={inputCls}
+                    aria-label="Bundle sort order"
                     value={bundle.sortOrder}
                     onChange={(e) => updateBundle(bundle.id, { sortOrder: Math.max(0, Number(e.target.value) || 0) })}
                   />
@@ -691,6 +696,7 @@ export default function AdminSettingsPage() {
           </Field>
           <Field label="Brand Palette">
             <select className={inputCls} value={siteDraft.brandPalette}
+              aria-label="Brand palette"
               onChange={(e) => setSiteDraft({ ...siteDraft, brandPalette: e.target.value })}>
               <option value="blue_violet">Blue + violet</option>
               <option value="cyan_indigo">Cyan + indigo</option>
@@ -701,6 +707,7 @@ export default function AdminSettingsPage() {
           </Field>
           <Field label="Brand Font">
             <select className={inputCls} value={siteDraft.brandFont}
+              aria-label="Brand font"
               onChange={(e) => setSiteDraft({ ...siteDraft, brandFont: e.target.value })}>
               <option value="Inter">Inter</option>
               <option value="Manrope">Manrope</option>
@@ -711,6 +718,7 @@ export default function AdminSettingsPage() {
           </Field>
           <Field label="Brand Voice">
             <select className={inputCls} value={siteDraft.brandVoicePreset}
+              aria-label="Brand voice preset"
               onChange={(e) => setSiteDraft({ ...siteDraft, brandVoicePreset: e.target.value })}>
               <option value="premium_helpful">Premium, direct, helpful</option>
               <option value="warm_coach">Warm coach</option>

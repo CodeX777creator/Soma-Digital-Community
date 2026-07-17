@@ -15,7 +15,7 @@ import {
   X,
   XCircle,
 } from "lucide-react";
-import { db } from "@/lib/firebase";
+import { auth, db } from "@/lib/firebase";
 
 type Tier = "explorer" | "pro" | "elite";
 type SubscriptionStatus = "active" | "cancelled" | "past_due" | "expired" | "approval_pending" | "created" | "all";
