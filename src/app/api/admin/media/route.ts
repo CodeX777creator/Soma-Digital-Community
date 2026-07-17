@@ -1,3 +1,4 @@
+import crypto from "crypto";
 import { FieldValue } from "firebase-admin/firestore";
 import { apiError, apiResponse, createAPIHandler } from "@/lib/api-middleware";
 import { adminDb, adminStorage } from "@/lib/firebaseAdmin";
