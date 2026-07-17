@@ -83,11 +83,11 @@ export default function AdminAIModelsPage() {
     const value = query.trim().toLowerCase();
     if (!value) return models;
     return models.filter((model) => (
-      (model.id || "").toLowerCase().includes(value) ||
-      (model.name || "").toLowerCase().includes(value) ||
-      (model.provider || "").toLowerCase().includes(value) ||
-      (model.type || "").toLowerCase().includes(value) ||
-      (model.tags || []).some((tag) => (tag || "").toLowerCase().includes(value))
+      String(model.id || "").toLowerCase().includes(value) ||
+      String(model.name || "").toLowerCase().includes(value) ||
+      String(model.provider || "").toLowerCase().includes(value) ||
+      String(model.type || "").toLowerCase().includes(value) ||
+      (Array.isArray(model.tags) ? model.tags : []).some((tag) => String(tag || "").toLowerCase().includes(value))
     ));
   }, [models, query]);
 
@@ -132,8 +132,8 @@ export default function AdminAIModelsPage() {
                   <p className="font-semibold text-white">{model.name}</p>
                   <p className="mt-1 text-xs text-white/45">{model.id}</p>
                   <div className="mt-2 flex flex-wrap gap-1">
-                    {(model.tags || []).slice(0, 5).map((tag) => (
-                      <span key={tag} className="rounded-full bg-white/[0.06] px-2 py-1 text-[10px] text-white/55">{tag}</span>
+                    {(Array.isArray(model.tags) ? model.tags : []).slice(0, 5).map((tag) => (
+                      <span key={tag} className="rounded-full bg-white/[0.06] px-2 py-1 text-[10px] text-white/55">{String(tag)}</span>
                     ))}
                   </div>
                 </div>
@@ -146,8 +146,8 @@ export default function AdminAIModelsPage() {
                   <p className="text-xs text-white/40">×{model.creditMultiplier || 1} multiplier</p>
                 </div>
                 <div className="flex flex-wrap gap-2">
-                  {(model.tierAccess || []).map((tier) => (
-                    <span key={tier} className="rounded-full bg-cyan-400/10 px-2 py-1 text-xs text-cyan-100">{tier}</span>
+                  {(Array.isArray(model.tierAccess) ? model.tierAccess : []).map((tier) => (
+                    <span key={tier} className="rounded-full bg-cyan-400/10 px-2 py-1 text-xs text-cyan-100">{String(tier)}</span>
                   ))}
                 </div>
               </div>

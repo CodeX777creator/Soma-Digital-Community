@@ -41,7 +41,7 @@ type UserRecord = {
   subscription?: any;
   [key: string]: any;
 };
-type RelatedRecord = { id: string; [key: string]: any };
+type RelatedRecord = { id: string;[key: string]: any };
 type ActivityRecord = RelatedRecord & {
   activityType: string;
   activityText: string;
@@ -396,7 +396,7 @@ export default function AdminUsersPage() {
           title="Users Action Error"
           description={activeError.userMessage}
           requestId={activeError.requestId}
-          onRetry={activeError.retryable ? () => {} : undefined}
+          onRetry={activeError.retryable ? () => { } : undefined}
         />
       )}
 
@@ -614,9 +614,8 @@ export default function AdminUsersPage() {
                 <div className="grid gap-3">
                   <div className="flex items-center justify-between rounded-lg border border-white/10 bg-black/15 px-3 py-2 text-sm">
                     <span className="text-white/70">Admin role</span>
-                    <span className={`inline-flex items-center gap-1.5 text-xs font-semibold ${
-                      selectedUser.isAdmin === true || selectedUser.role === "admin" ? "text-emerald-300" : "text-white/35"
-                    }`}>
+                    <span className={`inline-flex items-center gap-1.5 text-xs font-semibold ${selectedUser.isAdmin === true || selectedUser.role === "admin" ? "text-emerald-300" : "text-white/35"
+                      }`}>
                       {selectedUser.isAdmin === true || selectedUser.role === "admin" ? (
                         <><ShieldCheck className="h-4 w-4" /> Granted</>
                       ) : (
@@ -628,11 +627,10 @@ export default function AdminUsersPage() {
                     type="button"
                     onClick={() => toggleAdmin(selectedUser)}
                     disabled={actionLoading === `admin-${selectedUser.uid}`}
-                    className={`inline-flex h-10 items-center justify-center gap-2 rounded-md px-4 text-sm font-semibold disabled:opacity-50 ${
-                      selectedUser.isAdmin === true || selectedUser.role === "admin"
+                    className={`inline-flex h-10 items-center justify-center gap-2 rounded-md px-4 text-sm font-semibold disabled:opacity-50 ${selectedUser.isAdmin === true || selectedUser.role === "admin"
                         ? "border border-red-400/25 text-red-200 hover:bg-red-500/10"
                         : "bg-emerald-500 text-white hover:bg-emerald-400"
-                    }`}
+                      }`}
                   >
                     {actionLoading === `admin-${selectedUser.uid}` ? (
                       <Loader2 className="h-4 w-4 animate-spin" />

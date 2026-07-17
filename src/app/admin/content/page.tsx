@@ -183,9 +183,9 @@ export default function AdminContentPage() {
       const q = searchQuery.toLowerCase();
       result = result.filter(
         (post) =>
-          post.content.toLowerCase().includes(q) ||
-          post.authorName.toLowerCase().includes(q) ||
-          post.tags?.some((tag) => tag.toLowerCase().includes(q))
+          String(post.content || "").toLowerCase().includes(q) ||
+          String(post.authorName || "").toLowerCase().includes(q) ||
+          (Array.isArray(post.tags) ? post.tags : []).some((tag) => String(tag || "").toLowerCase().includes(q))
       );
     }
     switch (filterStatus) {
@@ -429,11 +429,10 @@ export default function AdminContentPage() {
                         type="button"
                         onClick={() => handleTogglePin(post.id, !!post.isPinned)}
                         disabled={processingId === post.id}
-                        className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium disabled:opacity-50 ${
-                          post.isPinned
+                        className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium disabled:opacity-50 ${post.isPinned
                             ? "border-cyan-400/30 bg-cyan-400/10 text-cyan-300 hover:bg-cyan-400/20"
                             : "border-white/10 bg-white/5 text-white/50 hover:bg-white/10 hover:text-white/80"
-                        }`}
+                          }`}
                       >
                         {processingId === post.id ? (
                           <Loader2 className="h-2.5 w-2.5 animate-spin" />
@@ -449,11 +448,10 @@ export default function AdminContentPage() {
                         type="button"
                         onClick={() => handleFlagPost(post.id, post.moderationStatus !== "flagged")}
                         disabled={processingId === post.id}
-                        className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium disabled:opacity-50 ${
-                          post.moderationStatus === "flagged"
+                        className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium disabled:opacity-50 ${post.moderationStatus === "flagged"
                             ? "border-amber-400/30 bg-amber-400/10 text-amber-300 hover:bg-amber-400/20"
                             : "border-white/10 bg-white/5 text-white/50 hover:bg-amber-400/10 hover:text-amber-300"
-                        }`}
+                          }`}
                       >
                         {post.moderationStatus === "flagged" ? "Unflag" : "Flag"}
                       </button>

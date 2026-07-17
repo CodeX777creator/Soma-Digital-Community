@@ -297,7 +297,7 @@ export default function AdminSubscriptionsPage() {
           title="Subscriptions Action Error"
           description={activeError.userMessage}
           requestId={activeError.requestId}
-          onRetry={activeError.retryable ? () => {} : undefined}
+          onRetry={activeError.retryable ? () => { } : undefined}
         />
       )}
 
