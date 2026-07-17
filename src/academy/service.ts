@@ -1866,6 +1866,25 @@ export async function updateAcademyLesson(lessonId: string, input: Partial<Acade
   return serialize({ lessonId: updated.id, ...updated.data() } as AcademyLessonDoc);
 }
 
+export async function deleteAcademyTopic(topicId: string) {
+  const snap = await collection('topics').doc(topicId).get();
+  if (!snap.exists) throw new Error('Academy topic not found');
+  await collection('topics').doc(topicId).delete();
+}
+
+export async function deleteAcademyLesson(lessonId: string) {
+  const snap = await collection('lessons').doc(lessonId).get();
+  if (!snap.exists) throw new Error('Academy lesson not found');
+  await collection('lessons').doc(lessonId).delete();
+}
+
+export async function deleteAcademyActivity(activityId: string) {
+  const snap = await collection('activities').doc(activityId).get();
+  if (!snap.exists) throw new Error('Academy activity not found');
+  await collection('activities').doc(activityId).delete();
+}
+
+
 export async function createAcademyCohort(input: Partial<AcademyCohortDoc>) {
   const ref = collection('cohorts').doc();
   const doc = stripUndefined({

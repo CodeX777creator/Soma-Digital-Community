@@ -1,6 +1,6 @@
 import { apiError, apiResponse, createAPIHandler } from '@/lib/api-middleware';
 import { requireRole } from '@/lib/serverAuth';
-import { updateAcademyLesson } from '@/academy';
+import { updateAcademyLesson, deleteAcademyLesson } from '@/academy';
 import { AcademyValidationError } from '@/academy/validation';
 
 const handler = createAPIHandler(async (req, context) => {
@@ -22,4 +22,19 @@ const handler = createAPIHandler(async (req, context) => {
   }
 });
 
+const deleteHandler = createAPIHandler(async (req, context) => {
+  await requireRole(req as any, 'admin');
+  const { lessonId } = await context.params;
+  try {
+    await deleteAcademyLesson(lessonId);
+    return apiResponse({ deleted: true });
+  } catch (error) {
+    if (error instanceof Error && error.message === 'Academy lesson not found') {
+      return apiError('Academy lesson not found.', { status: 404, code: 'ACADEMY_LESSON_NOT_FOUND' });
+    }
+    throw error;
+  }
+});
+
 export const PATCH = handler;
+export const DELETE = deleteHandler;

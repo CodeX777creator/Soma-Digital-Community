@@ -4,16 +4,21 @@ import Link from "next/link";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import {
-  ArrowLeft,
   BookOpen,
   CalendarDays,
   CheckCircle2,
+  ChevronDown,
+  ChevronUp,
+  Eye,
+  EyeOff,
   Layers3,
   Loader2,
+  Pencil,
   Plus,
-  RefreshCw,
   Sparkles,
+  Trash2,
   Video,
+  X,
 } from "lucide-react";
 import { auth } from "@/lib/firebase";
 import { AdminFormShell } from "@/components/admin/AdminFormShell";
@@ -516,50 +521,19 @@ export default function AcademyCourseBuilderPage() {
           <Panel title="Course Structure" icon={Layers3}>
             <div className="space-y-4">
               {bundle.topics.map((topic) => (
-                <div key={topic.topicId} className="rounded-3xl border border-white/10 bg-black/20 p-4">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="text-xs uppercase tracking-[0.16em] text-cyan-200">Topic {topic.sortOrder + 1}</p>
-                      <h3 className="mt-1 text-lg font-semibold">{topic.title}</h3>
-                      <p className="mt-1 text-sm text-white/45">{topic.description}</p>
-                    </div>
-                    <span className="rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1 text-xs text-white/45">{topic.unlockRule}</span>
-                  </div>
-                  <div className="mt-4 space-y-2">
-                    {(lessonsByTopic.get(topic.topicId) || []).map((lesson) => (
-                      <div key={lesson.lessonId} className="rounded-2xl border border-white/10 bg-white/[0.03] p-3">
-                        <div className="flex items-center justify-between gap-3">
-                          <div>
-                            <p className="font-medium text-white">{lesson.title}</p>
-                            <p className="mt-1 text-xs text-white/40">{lesson.lessonType} - {lesson.keyTakeaways.length} takeaways - {lesson.status}</p>
-                          </div>
-                          <span className="rounded-full border border-cyan-400/20 bg-cyan-400/10 px-2.5 py-1 text-xs text-cyan-100">{lesson.sortOrder}</span>
-                        </div>
-                        {(activitiesByLesson.get(lesson.lessonId) || []).length ? (
-                          <div className="mt-3 space-y-2 border-t border-white/10 pt-3">
-                            {(activitiesByLesson.get(lesson.lessonId) || []).map((activity) => (
-                              <div key={activity.activityId} className="rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-xs text-white/55">
-                                <div className="flex flex-wrap items-center justify-between gap-2">
-                                  <span className="font-medium text-white/80">{activity.title}</span>
-                                  <span>{activity.activityType}{activity.manualReviewRequired ? " - manual review" : " - auto-complete"}</span>
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        ) : null}
-                      </div>
-                    ))}
-                    {bundle.quizzes.some((quiz) => quiz.topicId === topic.topicId) ? (
-                      <div className="rounded-2xl border border-violet-400/20 bg-violet-400/10 p-3 text-sm text-violet-100">
-                        Quiz Yourself configured - {bundle.quizzes.find((quiz) => quiz.topicId === topic.topicId)?.passingScore || 70}% passing score
-                      </div>
-                    ) : null}
-                  </div>
-                </div>
+                <EditableTopic
+                  key={topic.topicId}
+                  topic={topic}
+                  lessons={lessonsByTopic.get(topic.topicId) || []}
+                  activitiesByLesson={activitiesByLesson}
+                  quizzes={bundle.quizzes.filter((q) => q.topicId === topic.topicId)}
+                  courseId={courseId}
+                  onRefresh={loadBundle}
+                />
               ))}
               {bundle.quizzes.some((quiz) => quiz.topicId === ACADEMY_FINAL_EXAM_TOPIC_ID) ? (
                 <div className="rounded-3xl border border-emerald-400/20 bg-emerald-400/10 p-4 text-sm text-emerald-100">
-                  Final certification exam configured.
+                  ✅ Final certification exam configured.
                 </div>
               ) : null}
               {!bundle.topics.length ? <p className="rounded-2xl border border-dashed border-white/10 p-6 text-center text-sm text-white/45">No topics yet. Add your first module from the right panel.</p> : null}
@@ -824,6 +798,435 @@ export default function AcademyCourseBuilderPage() {
     </div>
   );
 }
+
+// ─── Inline Editing Components ───────────────────────────────────────────────
+
+function useAdminFetch() {
+  const save = async (path: string, body: unknown): Promise<void> => {
+    const token = await auth?.currentUser?.getIdToken();
+    if (!token) throw new Error("Admin session expired.");
+    const res = await fetch(path, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify(body),
+    });
+    const payload = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(payload.error || "Save failed.");
+  };
+  const destroy = async (path: string): Promise<void> => {
+    const token = await auth?.currentUser?.getIdToken();
+    if (!token) throw new Error("Admin session expired.");
+    const res = await fetch(path, {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) {
+      const payload = await res.json().catch(() => ({}));
+      throw new Error(payload.error || "Delete failed.");
+    }
+  };
+  return { save, destroy };
+}
+
+function ConfirmDelete({ onConfirm, onCancel, busy }: { onConfirm: () => void; onCancel: () => void; busy: boolean }) {
+  return (
+    <div className="flex items-center gap-2 rounded-2xl border border-red-400/30 bg-red-400/10 px-3 py-2">
+      <span className="text-xs text-red-200">Delete permanently?</span>
+      <button type="button" onClick={onConfirm} disabled={busy} className="rounded-xl bg-red-500 px-2.5 py-1 text-xs font-semibold text-white disabled:opacity-60">
+        {busy ? <Loader2 className="h-3 w-3 animate-spin" /> : "Yes, delete"}
+      </button>
+      <button type="button" onClick={onCancel} className="rounded-xl border border-white/10 px-2.5 py-1 text-xs text-white/60">Cancel</button>
+    </div>
+  );
+}
+
+function StatusPill({ status }: { status: string }) {
+  const colour =
+    status === "published" ? "border-emerald-400/30 bg-emerald-400/10 text-emerald-200" :
+    status === "draft"     ? "border-white/10 bg-white/[0.04] text-white/50" :
+                             "border-white/10 bg-white/[0.03] text-white/35";
+  return <span className={`rounded-full border px-2.5 py-0.5 text-xs ${colour}`}>{status}</span>;
+}
+
+// ── EditableActivity ──────────────────────────────────────────────────────────
+function EditableActivity({
+  activity,
+  onRefresh,
+}: {
+  activity: AcademyActivityDoc;
+  onRefresh: () => void;
+}) {
+  const { save, destroy } = useAdminFetch();
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [err, setErr] = useState("");
+  const [form, setForm] = useState({
+    title: activity.title,
+    prompt: activity.prompt,
+    activityType: activity.activityType,
+    options: (activity.options || []).map((o) => `${o.isCorrect ? "*" : ""}${o.label}`).join("\n"),
+    required: activity.required,
+    manualReviewRequired: activity.manualReviewRequired,
+    sortOrder: String(activity.sortOrder),
+  });
+
+  const handleSave = async (event: FormEvent) => {
+    event.preventDefault();
+    try {
+      setBusy(true); setErr("");
+      await save(`/api/admin/academy/activities/${activity.activityId}`, {
+        ...form,
+        sortOrder: Number(form.sortOrder),
+        options: parseActivityOptions(form.options),
+      });
+      onRefresh();
+      setOpen(false);
+    } catch (e) { setErr(e instanceof Error ? e.message : "Save failed."); }
+    finally { setBusy(false); }
+  };
+
+  const handleDelete = async () => {
+    try {
+      setBusy(true); setErr("");
+      await destroy(`/api/admin/academy/activities/${activity.activityId}`);
+      onRefresh();
+    } catch (e) { setErr(e instanceof Error ? e.message : "Delete failed."); setConfirmDelete(false); }
+    finally { setBusy(false); }
+  };
+
+  return (
+    <div className="rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-xs">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <span className="font-medium text-white/80">{form.title}</span>
+          <span className="ml-2 text-white/35">{form.activityType}{form.manualReviewRequired ? " · manual review" : " · auto"}</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          {confirmDelete
+            ? <ConfirmDelete onConfirm={handleDelete} onCancel={() => setConfirmDelete(false)} busy={busy} />
+            : <>
+                <button type="button" onClick={() => setOpen((v) => !v)} className="rounded-xl border border-white/10 px-2 py-1 text-white/50 hover:text-white">
+                  {open ? <ChevronUp className="h-3.5 w-3.5" /> : <Pencil className="h-3.5 w-3.5" />}
+                </button>
+                <button type="button" onClick={() => setConfirmDelete(true)} className="rounded-xl border border-red-400/20 px-2 py-1 text-red-300/60 hover:text-red-200">
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+              </>
+          }
+        </div>
+      </div>
+      {err ? <p className="mt-2 text-xs text-red-300">{err}</p> : null}
+      {open && (
+        <form onSubmit={handleSave} className="mt-3 space-y-2 border-t border-white/10 pt-3">
+          <Field label="Title"><input className="academy-input" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} /></Field>
+          <Field label="Prompt"><textarea rows={3} className="academy-input resize-none" value={form.prompt} onChange={(e) => setForm({ ...form, prompt: e.target.value })} /></Field>
+          <div className="grid grid-cols-2 gap-2">
+            <Field label="Type">
+              <select className="academy-input" value={form.activityType} onChange={(e) => setForm({ ...form, activityType: e.target.value as AcademyActivityType })}>
+                {["reflection","short_text","long_text","multiple_choice","checkboxes","file_upload","link_submission","project_submission"].map((t) => <option key={t} value={t}>{t}</option>)}
+              </select>
+            </Field>
+            <Field label="Sort"><input type="number" className="academy-input" value={form.sortOrder} onChange={(e) => setForm({ ...form, sortOrder: e.target.value })} /></Field>
+          </div>
+          {["multiple_choice","checkboxes"].includes(form.activityType) && (
+            <Field label="Options (prefix correct with *)">
+              <textarea rows={4} className="academy-input resize-none" value={form.options} onChange={(e) => setForm({ ...form, options: e.target.value })} placeholder="Option A&#10;*Correct option&#10;Option C" />
+            </Field>
+          )}
+          <div className="grid grid-cols-2 gap-2">
+            <Check label="Required" checked={form.required} onChange={(v) => setForm({ ...form, required: v })} />
+            <Check label="Manual review" checked={form.manualReviewRequired} onChange={(v) => setForm({ ...form, manualReviewRequired: v })} />
+          </div>
+          <div className="flex justify-end">
+            <button type="submit" disabled={busy} className="inline-flex h-8 items-center gap-1.5 rounded-xl bg-gradient-to-r from-cyan-400 to-violet-500 px-3 text-xs font-semibold text-white disabled:opacity-60">
+              {busy ? <Loader2 className="h-3 w-3 animate-spin" /> : <CheckCircle2 className="h-3 w-3" />}Save Activity
+            </button>
+          </div>
+        </form>
+      )}
+    </div>
+  );
+}
+
+// ── EditableLesson ────────────────────────────────────────────────────────────
+function EditableLesson({
+  lesson,
+  activities,
+  courseId,
+  onRefresh,
+}: {
+  lesson: AcademyLessonDoc;
+  activities: AcademyActivityDoc[];
+  courseId: string;
+  onRefresh: () => void;
+}) {
+  const { save, destroy } = useAdminFetch();
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [err, setErr] = useState("");
+  const [form, setForm] = useState({
+    title: lesson.title,
+    lessonType: lesson.lessonType,
+    videoUrl: lesson.videoUrl || "",
+    imageUrls: (lesson.imageUrls || []).join("\n"),
+    writtenContent: lesson.writtenContent || "",
+    transcript: lesson.transcript || "",
+    keyTakeaways: (lesson.keyTakeaways || []).join("\n"),
+    durationMinutes: lesson.durationMinutes ? String(lesson.durationMinutes) : "",
+    sortOrder: String(lesson.sortOrder),
+    status: lesson.status,
+    activityRequired: lesson.activityRequired,
+    discussionEnabled: lesson.discussionEnabled,
+    aiTutorEnabled: lesson.aiTutorEnabled,
+  });
+
+  const handleSave = async (event: FormEvent) => {
+    event.preventDefault();
+    try {
+      setBusy(true); setErr("");
+      await save(`/api/admin/academy/lessons/${lesson.lessonId}`, {
+        ...form,
+        durationMinutes: form.durationMinutes ? Number(form.durationMinutes) : null,
+        sortOrder: Number(form.sortOrder),
+        imageUrls: form.imageUrls.split("\n").map((u) => u.trim()).filter(Boolean),
+        keyTakeaways: form.keyTakeaways.split("\n").map((u) => u.trim()).filter(Boolean),
+      });
+      onRefresh();
+      setOpen(false);
+    } catch (e) { setErr(e instanceof Error ? e.message : "Save failed."); }
+    finally { setBusy(false); }
+  };
+
+  const handleDelete = async () => {
+    try {
+      setBusy(true); setErr("");
+      await destroy(`/api/admin/academy/lessons/${lesson.lessonId}`);
+      onRefresh();
+    } catch (e) { setErr(e instanceof Error ? e.message : "Delete failed."); setConfirmDelete(false); }
+    finally { setBusy(false); }
+  };
+
+  const quickToggleStatus = async () => {
+    const next = form.status === "published" ? "draft" : "published";
+    try {
+      setBusy(true);
+      await save(`/api/admin/academy/lessons/${lesson.lessonId}`, { status: next });
+      setForm((f) => ({ ...f, status: next }));
+      onRefresh();
+    } catch (e) { setErr(e instanceof Error ? e.message : "Failed."); }
+    finally { setBusy(false); }
+  };
+
+  return (
+    <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-3">
+      <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          <p className="font-medium text-white">{form.title}</p>
+          <div className="mt-1 flex flex-wrap items-center gap-2">
+            <span className="text-xs text-white/40">{form.lessonType}</span>
+            <StatusPill status={form.status} />
+            <span className="text-xs text-white/30">sort: {form.sortOrder}</span>
+          </div>
+        </div>
+        <div className="flex shrink-0 items-center gap-1.5">
+          {busy ? <Loader2 className="h-4 w-4 animate-spin text-white/40" /> : null}
+          {!confirmDelete && (
+            <button type="button" onClick={quickToggleStatus} title={form.status === "published" ? "Set to Draft" : "Publish"} className="rounded-xl border border-white/10 px-2 py-1 text-white/50 hover:text-white">
+              {form.status === "published" ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+            </button>
+          )}
+          {confirmDelete
+            ? <ConfirmDelete onConfirm={handleDelete} onCancel={() => setConfirmDelete(false)} busy={busy} />
+            : <>
+                <button type="button" onClick={() => setOpen((v) => !v)} className="rounded-xl border border-white/10 px-2 py-1 text-white/50 hover:text-white">
+                  {open ? <ChevronUp className="h-3.5 w-3.5" /> : <Pencil className="h-3.5 w-3.5" />}
+                </button>
+                <button type="button" onClick={() => setConfirmDelete(true)} className="rounded-xl border border-red-400/20 px-2 py-1 text-red-300/60 hover:text-red-200">
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+              </>
+          }
+        </div>
+      </div>
+      {err ? <p className="mt-2 text-xs text-red-300">{err}</p> : null}
+      {open && (
+        <form onSubmit={handleSave} className="mt-4 space-y-3 border-t border-white/10 pt-4">
+          <Field label="Lesson title"><input className="academy-input" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} /></Field>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Format">
+              <select className="academy-input" value={form.lessonType} onChange={(e) => setForm({ ...form, lessonType: e.target.value as AcademyLessonType })}>
+                {["written","video","image","mixed"].map((t) => <option key={t} value={t}>{t}</option>)}
+              </select>
+            </Field>
+            <Field label="Status">
+              <select className="academy-input" value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value as import("@/academy").AcademyLessonStatus })}>
+                {["draft","published","archived"].map((s) => <option key={s} value={s}>{s}</option>)}
+              </select>
+            </Field>
+          </div>
+          <AdminMediaPicker label="Lesson video" value={form.videoUrl} kind="video" accept="video/*" usageContext="academy" linkedEntityType="academyLesson" linkedEntityId={lesson.lessonId} helperText="Upload or paste a video URL." onChange={(url) => setForm({ ...form, videoUrl: url })} />
+          <Field label="Written content"><textarea rows={5} className="academy-input resize-none" value={form.writtenContent} onChange={(e) => setForm({ ...form, writtenContent: e.target.value })} /></Field>
+          <Field label="Transcript"><textarea rows={3} className="academy-input resize-none" value={form.transcript} onChange={(e) => setForm({ ...form, transcript: e.target.value })} /></Field>
+          <Field label="Key takeaways (one per line)"><textarea rows={4} className="academy-input resize-none" value={form.keyTakeaways} onChange={(e) => setForm({ ...form, keyTakeaways: e.target.value })} /></Field>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Duration (mins)"><input type="number" className="academy-input" value={form.durationMinutes} onChange={(e) => setForm({ ...form, durationMinutes: e.target.value })} /></Field>
+            <Field label="Sort"><input type="number" className="academy-input" value={form.sortOrder} onChange={(e) => setForm({ ...form, sortOrder: e.target.value })} /></Field>
+          </div>
+          <div className="grid gap-2 sm:grid-cols-3">
+            <Check label="Activity required" checked={form.activityRequired} onChange={(v) => setForm({ ...form, activityRequired: v })} />
+            <Check label="Discussions" checked={form.discussionEnabled} onChange={(v) => setForm({ ...form, discussionEnabled: v })} />
+            <Check label="AI Tutor" checked={form.aiTutorEnabled} onChange={(v) => setForm({ ...form, aiTutorEnabled: v })} />
+          </div>
+          <div className="flex justify-end">
+            <button type="submit" disabled={busy} className="inline-flex h-9 items-center gap-2 rounded-2xl bg-gradient-to-r from-cyan-400 to-violet-500 px-4 text-sm font-semibold text-white disabled:opacity-60">
+              {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}Save Lesson
+            </button>
+          </div>
+        </form>
+      )}
+      {/* Activities under this lesson */}
+      {activities.length > 0 && (
+        <div className="mt-3 space-y-2 border-t border-white/10 pt-3">
+          <p className="text-[11px] uppercase tracking-widest text-white/30">Activities</p>
+          {activities.map((activity) => (
+            <EditableActivity key={activity.activityId} activity={activity} onRefresh={onRefresh} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── EditableTopic ─────────────────────────────────────────────────────────────
+function EditableTopic({
+  topic,
+  lessons,
+  activitiesByLesson,
+  quizzes,
+  courseId,
+  onRefresh,
+}: {
+  topic: AcademyTopicDoc;
+  lessons: AcademyLessonDoc[];
+  activitiesByLesson: Map<string, AcademyActivityDoc[]>;
+  quizzes: AcademyQuizDoc[];
+  courseId: string;
+  onRefresh: () => void;
+}) {
+  const { save, destroy } = useAdminFetch();
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [err, setErr] = useState("");
+  const [form, setForm] = useState({
+    title: topic.title,
+    description: topic.description,
+    sortOrder: String(topic.sortOrder),
+    unlockRule: topic.unlockRule,
+    quizRequired: topic.quizRequired,
+    dripDelayDays: topic.dripDelayDays != null ? String(topic.dripDelayDays) : "",
+  });
+
+  const handleSave = async (event: FormEvent) => {
+    event.preventDefault();
+    try {
+      setBusy(true); setErr("");
+      await save(`/api/admin/academy/topics/${topic.topicId}`, {
+        ...form,
+        sortOrder: Number(form.sortOrder),
+        dripDelayDays: form.dripDelayDays ? Number(form.dripDelayDays) : null,
+      });
+      onRefresh();
+      setOpen(false);
+    } catch (e) { setErr(e instanceof Error ? e.message : "Save failed."); }
+    finally { setBusy(false); }
+  };
+
+  const handleDelete = async () => {
+    try {
+      setBusy(true); setErr("");
+      await destroy(`/api/admin/academy/topics/${topic.topicId}`);
+      onRefresh();
+    } catch (e) { setErr(e instanceof Error ? e.message : "Delete failed."); setConfirmDelete(false); }
+    finally { setBusy(false); }
+  };
+
+  return (
+    <div className="rounded-3xl border border-white/10 bg-black/20 p-4">
+      {/* Topic header */}
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-xs uppercase tracking-[0.16em] text-cyan-200">Topic {topic.sortOrder + 1}</p>
+          <h3 className="mt-1 text-lg font-semibold">{form.title}</h3>
+          {form.description && <p className="mt-1 text-sm text-white/45">{form.description}</p>}
+        </div>
+        <div className="flex shrink-0 items-center gap-1.5">
+          {busy ? <Loader2 className="h-4 w-4 animate-spin text-white/40" /> : null}
+          {confirmDelete
+            ? <ConfirmDelete onConfirm={handleDelete} onCancel={() => setConfirmDelete(false)} busy={busy} />
+            : <>
+                <button type="button" onClick={() => setOpen((v) => !v)} className="rounded-xl border border-white/10 px-2.5 py-1.5 text-xs text-white/50 hover:text-white flex items-center gap-1">
+                  {open ? <><ChevronUp className="h-3.5 w-3.5" /> Close</> : <><Pencil className="h-3.5 w-3.5" /> Edit</>}
+                </button>
+                <button type="button" onClick={() => setConfirmDelete(true)} className="rounded-xl border border-red-400/20 px-2 py-1.5 text-red-300/60 hover:text-red-200">
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+              </>
+          }
+        </div>
+      </div>
+      {err ? <p className="mt-2 text-sm text-red-300">{err}</p> : null}
+
+      {/* Topic edit form */}
+      {open && (
+        <form onSubmit={handleSave} className="mt-4 space-y-3 rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+          <p className="text-xs font-semibold uppercase tracking-widest text-white/40">Edit Topic</p>
+          <Field label="Title"><input required className="academy-input" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} /></Field>
+          <Field label="Description"><textarea rows={3} className="academy-input resize-none" value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} /></Field>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Sort"><input type="number" min={0} className="academy-input" value={form.sortOrder} onChange={(e) => setForm({ ...form, sortOrder: e.target.value })} /></Field>
+            <Field label="Drip days"><input type="number" min={0} className="academy-input" value={form.dripDelayDays} onChange={(e) => setForm({ ...form, dripDelayDays: e.target.value })} /></Field>
+          </div>
+          <Field label="Unlock rule">
+            <select className="academy-input" value={form.unlockRule} onChange={(e) => setForm({ ...form, unlockRule: e.target.value as import("@/academy").AcademyUnlockRule })}>
+              {["immediate","lesson_completion","topic_quiz_passed","manual_approval","date_based","cohort_schedule"].map((r) => <option key={r} value={r}>{r.replace(/_/g," ")}</option>)}
+            </select>
+          </Field>
+          <Check label="Quiz required" checked={form.quizRequired} onChange={(v) => setForm({ ...form, quizRequired: v })} />
+          <div className="flex justify-end">
+            <button type="submit" disabled={busy} className="inline-flex h-9 items-center gap-2 rounded-2xl bg-gradient-to-r from-cyan-400 to-violet-500 px-4 text-sm font-semibold text-white disabled:opacity-60">
+              {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}Save Topic
+            </button>
+          </div>
+        </form>
+      )}
+
+      {/* Lessons under this topic */}
+      <div className="mt-4 space-y-2">
+        {lessons.map((lesson) => (
+          <EditableLesson
+            key={lesson.lessonId}
+            lesson={lesson}
+            activities={activitiesByLesson.get(lesson.lessonId) || []}
+            courseId={courseId}
+            onRefresh={onRefresh}
+          />
+        ))}
+        {!lessons.length && <p className="rounded-xl border border-dashed border-white/10 p-3 text-center text-xs text-white/35">No lessons yet. Add one from the right panel.</p>}
+        {quizzes.map((quiz) => (
+          <div key={quiz.quizId} className="rounded-2xl border border-violet-400/20 bg-violet-400/10 p-3 text-sm text-violet-100 flex items-center justify-between">
+            <span>📝 {quiz.title} — passing score: {quiz.passingScore}%</span>
+            <StatusPill status={quiz.status} />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ─── end Inline Editing Components ───────────────────────────────────────────
 
 function Panel({ title, icon: Icon, children }: { title: string; icon: typeof BookOpen; children: React.ReactNode }) {
   return (
