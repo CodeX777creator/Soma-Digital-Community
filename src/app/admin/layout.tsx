@@ -185,11 +185,11 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
       )}
 
       <aside
-        className={`fixed inset-y-0 left-0 z-40 w-72 border-r border-white/10 bg-[#080a0f]/95 backdrop-blur-xl transition-transform duration-200 lg:translate-x-0 ${
+        className={`fixed inset-y-0 left-0 z-40 w-72 flex flex-col border-r border-white/10 bg-[#080a0f]/95 backdrop-blur-xl transition-transform duration-200 lg:translate-x-0 ${
           mobileOpen ? "translate-x-0" : "-translate-x-full"
         }`}
       >
-        <div className="flex h-16 items-center justify-between border-b border-white/10 px-5">
+        <div className="flex h-16 shrink-0 items-center justify-between border-b border-white/10 px-5">
           <Link href="/admin/dashboard" className="flex items-center gap-3">
             <div className="flex h-9 w-9 items-center justify-center rounded-lg border border-cyan-400/30 bg-cyan-400/10">
               <BarChart3 className="h-5 w-5 text-cyan-300" />
@@ -209,7 +209,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
           </button>
         </div>
 
-        <div className="px-3 pt-4">
+        <div className="px-3 pt-4 shrink-0">
           <label className="relative block">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-white/30" />
             <input
@@ -221,7 +221,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
           </label>
         </div>
 
-        <nav className="space-y-5 px-3 py-4">
+        <nav className="flex-1 space-y-5 overflow-y-auto px-3 py-4">
           {Object.entries(navGroups).map(([group, items]) => (
             <div key={group}>
               <p className="mb-2 px-3 text-[10px] font-semibold uppercase tracking-[0.22em] text-white/30">{group}</p>

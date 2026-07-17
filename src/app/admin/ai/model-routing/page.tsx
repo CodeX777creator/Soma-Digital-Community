@@ -48,22 +48,24 @@ async function adminFetch(path: string, init?: RequestInit) {
   });
 }
 
-function MultiModelSelect({ models, selectedIds, onChange }: { models: Model[]; selectedIds: string[]; onChange: (ids: string[]) => void }) {
+function MultiModelSelect({ models, selectedIds, onChange }: { models: Model[]; selectedIds?: string[]; onChange: (ids: string[]) => void }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
+
+  const safeSelectedIds = Array.isArray(selectedIds) ? selectedIds : [];
 
   const filtered = query.trim() ? models.filter((m) => m.id.toLowerCase().includes(query.toLowerCase()) || m.name.toLowerCase().includes(query.toLowerCase())) : models;
 
   const toggle = (id: string) => {
-    if (selectedIds.includes(id)) onChange(selectedIds.filter(x => x !== id));
-    else onChange([...selectedIds, id]);
+    if (safeSelectedIds.includes(id)) onChange(safeSelectedIds.filter(x => x !== id));
+    else onChange([...safeSelectedIds, id]);
   };
 
   return (
     <div className="space-y-3">
-      {selectedIds.length > 0 && (
+      {safeSelectedIds.length > 0 && (
         <div className="flex flex-wrap gap-2">
-          {selectedIds.map(id => (
+          {safeSelectedIds.map(id => (
             <div key={id} className="flex items-center gap-1.5 rounded-full border border-cyan-500/20 bg-cyan-500/10 pl-3 pr-1 py-1 text-xs text-cyan-200">
               {id}
               <button type="button" onClick={() => toggle(id)} className="rounded-full p-1 hover:bg-cyan-500/20 hover:text-cyan-100 transition-colors">
@@ -76,7 +78,7 @@ function MultiModelSelect({ models, selectedIds, onChange }: { models: Model[]; 
       <Popover open={open} onOpenChange={setOpen}>
         <PopoverTrigger asChild>
           <Button variant="outline" className="w-full justify-start border-white/10 bg-[#090B13] text-white hover:bg-white/5 hover:text-white font-normal">
-            {selectedIds.length === 0 ? "Select fallback models..." : `Add more fallback models (${selectedIds.length} selected)`}
+            {safeSelectedIds.length === 0 ? "Select fallback models..." : `Add more fallback models (${safeSelectedIds.length} selected)`}
           </Button>
         </PopoverTrigger>
         <PopoverContent className="w-[400px] max-w-[90vw] p-0 border-white/10 bg-[#0b0e14] shadow-2xl shadow-black" align="start">
@@ -92,7 +94,7 @@ function MultiModelSelect({ models, selectedIds, onChange }: { models: Model[]; 
           <div className="max-h-[300px] overflow-y-auto p-1">
             {filtered.length === 0 ? <p className="p-4 text-center text-sm text-white/50">No models found.</p> : null}
             {filtered.map((model) => {
-              const isSelected = selectedIds.includes(model.id);
+              const isSelected = safeSelectedIds.includes(model.id);
               return (
                 <button
                   key={model.id}

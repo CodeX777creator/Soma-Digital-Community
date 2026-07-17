@@ -71,6 +71,7 @@ async function adminFetch(path: string, init?: RequestInit) {
 export default function AdminAIModelsPage() {
   const [models, setModels] = useState<AIModel[]>([]);
   const [query, setQuery] = useState("");
+  const [sort, setSort] = useState("name");
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -115,16 +116,31 @@ export default function AdminAIModelsPage() {
   }, []);
 
   const filtered = useMemo(() => {
+    let result = models;
     const value = query.trim().toLowerCase();
-    if (!value) return models;
-    return models.filter((model) => (
-      String(model.id || "").toLowerCase().includes(value) ||
-      String(model.name || "").toLowerCase().includes(value) ||
-      String(model.provider || "").toLowerCase().includes(value) ||
-      String(model.type || "").toLowerCase().includes(value) ||
-      (Array.isArray(model.tags) ? model.tags : []).some((tag) => String(tag || "").toLowerCase().includes(value))
-    ));
-  }, [models, query]);
+    if (value) {
+      result = result.filter((model) => (
+        String(model.id || "").toLowerCase().includes(value) ||
+        String(model.name || "").toLowerCase().includes(value) ||
+        String(model.provider || "").toLowerCase().includes(value) ||
+        String(model.type || "").toLowerCase().includes(value) ||
+        (Array.isArray(model.tags) ? model.tags : []).some((tag) => String(tag || "").toLowerCase().includes(value))
+      ));
+    }
+
+    return [...result].sort((a, b) => {
+      if (sort === "name") return String(a.name || "").localeCompare(String(b.name || ""));
+      if (sort === "provider") return String(a.provider || "").localeCompare(String(b.provider || "")) || String(a.name || "").localeCompare(String(b.name || ""));
+      if (sort === "class") {
+        const classOrder: Record<string, number> = { "specialized": 4, "premium": 3, "advanced": 2, "standard": 1 };
+        const aClass = classOrder[a.creditClass || "standard"] || 0;
+        const bClass = classOrder[b.creditClass || "standard"] || 0;
+        if (aClass !== bClass) return bClass - aClass;
+        return String(a.name || "").localeCompare(String(b.name || ""));
+      }
+      return 0;
+    });
+  }, [models, query, sort]);
 
   return (
     <div className="space-y-6">
@@ -148,9 +164,20 @@ export default function AdminAIModelsPage() {
             <Database className="h-4 w-4 text-cyan-200" />
             {filtered.length} model{filtered.length === 1 ? "" : "s"}
           </div>
-          <div className="relative w-full md:w-80">
-            <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-white/35" />
-            <Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search models" className="pl-9" />
+          <div className="flex w-full md:w-auto flex-col md:flex-row items-center gap-3">
+            <select
+              value={sort}
+              onChange={(e) => setSort(e.target.value)}
+              className="h-10 w-full md:w-auto md:h-9 rounded-md border border-white/10 bg-[#090B13] px-3 text-sm text-white outline-none"
+            >
+              <option value="name">Sort by Name</option>
+              <option value="provider">Sort by Provider</option>
+              <option value="class">Sort by Class</option>
+            </select>
+            <div className="relative w-full md:w-80">
+              <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-white/35" />
+              <Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search models" className="md:h-9 pl-9" />
+            </div>
           </div>
         </div>
 
