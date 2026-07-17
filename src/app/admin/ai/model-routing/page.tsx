@@ -2,9 +2,10 @@
 
 import { useEffect, useState } from "react";
 import { getAuth } from "firebase/auth";
-import { Loader2, Route, Save } from "lucide-react";
+import { Loader2, Route, Save, Search, Check, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 
 const FEATURES = [
   "mentor_chat",
@@ -45,6 +46,73 @@ async function adminFetch(path: string, init?: RequestInit) {
       "Content-Type": "application/json",
     },
   });
+}
+
+function MultiModelSelect({ models, selectedIds, onChange }: { models: Model[]; selectedIds: string[]; onChange: (ids: string[]) => void }) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+
+  const filtered = query.trim() ? models.filter((m) => m.id.toLowerCase().includes(query.toLowerCase()) || m.name.toLowerCase().includes(query.toLowerCase())) : models;
+
+  const toggle = (id: string) => {
+    if (selectedIds.includes(id)) onChange(selectedIds.filter(x => x !== id));
+    else onChange([...selectedIds, id]);
+  };
+
+  return (
+    <div className="space-y-3">
+      {selectedIds.length > 0 && (
+        <div className="flex flex-wrap gap-2">
+          {selectedIds.map(id => (
+            <div key={id} className="flex items-center gap-1.5 rounded-full border border-cyan-500/20 bg-cyan-500/10 pl-3 pr-1 py-1 text-xs text-cyan-200">
+              {id}
+              <button type="button" onClick={() => toggle(id)} className="rounded-full p-1 hover:bg-cyan-500/20 hover:text-cyan-100 transition-colors">
+                <X className="h-3 w-3"/>
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverTrigger asChild>
+          <Button variant="outline" className="w-full justify-start border-white/10 bg-[#090B13] text-white hover:bg-white/5 hover:text-white font-normal">
+            {selectedIds.length === 0 ? "Select fallback models..." : `Add more fallback models (${selectedIds.length} selected)`}
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent className="w-[400px] max-w-[90vw] p-0 border-white/10 bg-[#0b0e14] shadow-2xl shadow-black" align="start">
+          <div className="flex items-center border-b border-white/10 px-3">
+            <Search className="mr-2 h-4 w-4 shrink-0 opacity-50 text-white" />
+            <input 
+              className="flex h-11 w-full rounded-md bg-transparent py-3 text-sm outline-none placeholder:text-white/40 text-white"
+              placeholder="Search by model ID or name..."
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+            />
+          </div>
+          <div className="max-h-[300px] overflow-y-auto p-1">
+            {filtered.length === 0 ? <p className="p-4 text-center text-sm text-white/50">No models found.</p> : null}
+            {filtered.map((model) => {
+              const isSelected = selectedIds.includes(model.id);
+              return (
+                <button
+                  key={model.id}
+                  type="button"
+                  onClick={() => toggle(model.id)}
+                  className={`flex w-full items-center justify-between rounded-sm px-3 py-2 text-sm outline-none transition-colors hover:bg-white/10 text-white ${isSelected ? "bg-white/5" : ""}`}
+                >
+                  <div className="flex flex-col items-start text-left">
+                    <span className="font-medium text-white/90">{model.name}</span>
+                    <span className="text-[10px] text-white/40">{model.id}</span>
+                  </div>
+                  {isSelected && <Check className="h-4 w-4 text-cyan-400" />}
+                </button>
+              );
+            })}
+          </div>
+        </PopoverContent>
+      </Popover>
+    </div>
+  );
 }
 
 function emptyConfig(featureKey = "content_generation"): Config {
@@ -159,10 +227,14 @@ export default function AdminAIModelRoutingPage() {
               </label>
             </div>
 
-            <label className="mt-4 block space-y-2 text-sm">
-              <span className="text-white/70">Fallback model IDs, comma-separated</span>
-              <Input value={draft.fallbackModelIds.join(", ")} onChange={(event) => setDraft({ ...draft, fallbackModelIds: event.target.value.split(",").map((item) => item.trim()).filter(Boolean) })} />
-            </label>
+            <div className="mt-4 block space-y-2 text-sm">
+              <span className="text-white/70">Fallback model IDs</span>
+              <MultiModelSelect 
+                models={models} 
+                selectedIds={draft.fallbackModelIds} 
+                onChange={(ids) => setDraft({ ...draft, fallbackModelIds: ids })} 
+              />
+            </div>
 
             <div className="mt-5">
               <p className="mb-2 text-sm text-white/70">Allowed tiers</p>

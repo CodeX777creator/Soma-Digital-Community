@@ -28,6 +28,7 @@ import {
   TicketPercent,
   Search,
   Plus,
+  ArrowLeft,
 } from "lucide-react";
 import { auth, db } from "@/lib/firebase";
 
@@ -101,6 +102,14 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
   const breadcrumbs = useMemo(() => {
     const parts = pathname.split("/").filter(Boolean).slice(1);
     return ["Admin", ...parts.map((part) => part.replace(/-/g, " ").replace(/\b\w/g, (char) => char.toUpperCase()))];
+  }, [pathname]);
+
+  const parentRoute = useMemo(() => {
+    const parts = pathname.split("/").filter(Boolean);
+    if (parts.length > 2) {
+      return "/" + parts.slice(0, parts.length - 1).join("/");
+    }
+    return null;
   }, [pathname]);
 
   useEffect(() => {
@@ -254,7 +263,14 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
               <Menu className="h-5 w-5" />
             </button>
             <div>
-              <h1 className="text-base font-semibold">{pageTitle}</h1>
+              <div className="flex items-center gap-2">
+                {parentRoute && (
+                  <Link href={parentRoute} className="rounded-full p-1 -ml-1 hover:bg-white/10 text-white/40 hover:text-white transition-colors">
+                    <ArrowLeft className="h-4 w-4" />
+                  </Link>
+                )}
+                <h1 className="text-base font-semibold">{pageTitle}</h1>
+              </div>
               <p className="text-xs text-white/45">{breadcrumbs.join(" / ")}</p>
             </div>
           </div>

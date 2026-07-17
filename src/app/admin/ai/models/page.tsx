@@ -12,12 +12,47 @@ type AIModel = {
   provider: string;
   type: string;
   tags?: string[];
-  pricing?: Record<string, number>;
+  contextWindow?: number;
+  maxTokens?: number;
+  pricing?: {
+    input?: number;
+    output?: number;
+    image?: number;
+    video?: number;
+    audio?: number;
+  };
   sdcEnabled?: boolean;
   tierAccess?: string[];
   creditClass?: string;
   creditMultiplier?: number;
 };
+
+function formatPricing(model: AIModel) {
+  if (!model.pricing) return null;
+  const p = model.pricing;
+  if (model.type === "image" && p.image) {
+    return `$${p.image.toFixed(3)} / img`;
+  }
+  if (model.type === "video" && p.video) {
+    return `$${p.video.toFixed(3)} / sec`;
+  }
+  if (model.type === "audio" && p.audio) {
+    return `$${p.audio.toFixed(3)} / sec`;
+  }
+  if (p.input || p.output) {
+    const inputFormatted = p.input ? `$${(p.input * 1000000).toFixed(2)}` : "Free";
+    const outputFormatted = p.output ? `$${(p.output * 1000000).toFixed(2)}` : "Free";
+    return `In: ${inputFormatted} / 1M | Out: ${outputFormatted} / 1M`;
+  }
+  return null;
+}
+
+function formatNumber(num?: number) {
+  if (!num) return "-";
+  if (num >= 1000000) return `${(num / 1000000).toFixed(1)}M`;
+  if (num >= 1000) return `${(num / 1000).toFixed(0)}k`;
+  return num.toString();
+}
 
 async function adminFetch(path: string, init?: RequestInit) {
   const user = getAuth().currentUser;
@@ -127,7 +162,7 @@ export default function AdminAIModelsPage() {
         ) : (
           <div className="divide-y divide-white/10">
             {filtered.map((model) => (
-              <div key={model.id} className="grid gap-3 p-4 lg:grid-cols-[1.4fr_0.7fr_0.7fr_1fr] lg:items-center">
+              <div key={model.id} className="grid gap-3 p-4 lg:grid-cols-[1.4fr_1.2fr_0.7fr_1fr] lg:items-center">
                 <div>
                   <p className="font-semibold text-white">{model.name}</p>
                   <p className="mt-1 text-xs text-white/45">{model.id}</p>
@@ -138,8 +173,12 @@ export default function AdminAIModelsPage() {
                   </div>
                 </div>
                 <div className="text-sm text-white/65">
-                  <p>{model.provider}</p>
-                  <p className="text-xs text-white/40">{model.type}</p>
+                  <p className="capitalize">{model.provider} • {model.type}</p>
+                  <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs text-white/40">
+                    {model.contextWindow ? <span>{formatNumber(model.contextWindow)} ctx</span> : null}
+                    {model.maxTokens ? <span>{formatNumber(model.maxTokens)} out</span> : null}
+                  </div>
+                  <p className="mt-1 text-xs text-cyan-200/50">{formatPricing(model)}</p>
                 </div>
                 <div className="text-sm text-white/65">
                   <p className="capitalize">{model.creditClass || "standard"}</p>

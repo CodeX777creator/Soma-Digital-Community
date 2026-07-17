@@ -49,7 +49,7 @@ export default async function RootLayout({
     <html lang="en" className="dark" suppressHydrationWarning>
       <head>
       </head>
-      <body className="font-body antialiased bg-background text-foreground overflow-x-hidden min-h-screen">
+      <body className="font-body antialiased bg-background text-foreground min-h-screen">
         <AuthProvider>
           <PayPalProvider nonce={nonce}>
             <NetworkStatusIndicator />
