@@ -107,26 +107,29 @@ async function createExternalMedia(req: Request, adminId: string) {
 }
 
 async function uploadMedia(req: Request, adminId: string) {
-  const form = await req.formData();
-  const file = form.get("file");
-  if (!(file instanceof File)) {
-    return apiError("Choose a file to upload.", { status: 400, code: "MEDIA_FILE_REQUIRED" });
-  }
+  try {
+    const form = await req.formData();
+    const file = form.get("file");
+    
+    if (!file || typeof file !== "object" || !("arrayBuffer" in file) || typeof (file as any).name !== "string") {
+      return apiError("Choose a file to upload.", { status: 400, code: "MEDIA_FILE_REQUIRED" });
+    }
+    const uploadedFile = file as File;
 
   const usageContext = normalizeAdminUsageContext(form.get("usageContext"));
   const linkedEntityType = String(form.get("linkedEntityType") || "");
   const linkedEntityId = String(form.get("linkedEntityId") || "");
   const altText = String(form.get("altText") || "");
   const caption = String(form.get("caption") || "");
-  const contentType = file.type || "application/octet-stream";
-  const kind = getAdminMediaKind(contentType, file.name);
+  const contentType = uploadedFile.type || "application/octet-stream";
+  const kind = getAdminMediaKind(contentType, uploadedFile.name);
 
   if (!isAllowedType(contentType) && kind === "unknown") {
     return apiError("This file type is not supported for admin uploads.", { status: 400, code: "UPLOAD_UNSUPPORTED_TYPE" });
   }
 
   const maxSize = ADMIN_MEDIA_LIMITS[kind === "external" ? "unknown" : kind];
-  if (file.size > maxSize) {
+  if (uploadedFile.size > maxSize) {
     return apiError(`This file is too large. Try a file under ${Math.round(maxSize / 1024 / 1024)}MB.`, {
       status: 400,
       code: "UPLOAD_TOO_LARGE",
@@ -134,12 +137,12 @@ async function uploadMedia(req: Request, adminId: string) {
   }
 
   const assetRef = adminDb.collection("adminMediaAssets").doc();
-  const safeName = sanitizeAdminFileName(file.name);
+  const safeName = sanitizeAdminFileName(uploadedFile.name);
   const root = contextRoot(usageContext, linkedEntityId);
   const storagePath = `${root}/${assetRef.id}/${Date.now()}-${safeName}`;
   const token = crypto.randomUUID();
   const bucket = adminStorage.bucket();
-  const buffer = Buffer.from(await file.arrayBuffer());
+  const buffer = Buffer.from(await uploadedFile.arrayBuffer());
 
   await bucket.file(storagePath).save(buffer, {
     resumable: false,
@@ -161,9 +164,9 @@ async function uploadMedia(req: Request, adminId: string) {
     assetId: assetRef.id,
     source: "upload",
     kind,
-    fileName: file.name,
+    fileName: uploadedFile.name,
     contentType,
-    sizeBytes: file.size,
+    sizeBytes: uploadedFile.size,
     width: null,
     height: null,
     durationSeconds: null,
@@ -187,10 +190,14 @@ async function uploadMedia(req: Request, adminId: string) {
     action: "admin_media_uploaded",
     entityType: "adminMediaAsset",
     entityId: assetRef.id,
-    metadata: { usageContext, linkedEntityType, linkedEntityId, kind, sizeBytes: file.size, storagePath },
+    metadata: { usageContext, linkedEntityType, linkedEntityId, kind, sizeBytes: uploadedFile.size, storagePath },
   });
 
   return apiResponse({ asset }, { status: 201 });
+  } catch (error: any) {
+    console.error("Upload Error:", error);
+    return apiError(`Upload failed: ${error.message}`, { status: 500, code: "UPLOAD_FAILED" });
+  }
 }
 
 const handler = createAPIHandler(async (req) => {
