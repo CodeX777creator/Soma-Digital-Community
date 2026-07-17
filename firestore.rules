@@ -262,7 +262,7 @@ service cloud.firestore {
             .hasOnly(['missions', 'postCount', 'commentCount', 'likeCount', 'engagementScore', 'updatedAt'])
           ||
           request.resource.data.diff(resource.data).affectedKeys()
-            .hasOnly(['name', 'displayName', 'photoURL', 'avatarURL', 'avatarUrl', 'selectedIdentity', 'updatedAt'])
+            .hasOnly(['name', 'displayName', 'photoURL', 'avatarURL', 'avatarUrl', 'selectedIdentity', 'bio', 'jobTitle', 'company', 'website', 'updatedAt'])
           ||
           request.resource.data.diff(resource.data).affectedKeys()
             .hasOnly(['growthAssessmentDismissed', 'growthAssessmentResult', 'ownsLegacyBuilders', 'engagementScore', 'updatedAt'])
