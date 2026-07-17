@@ -160,7 +160,7 @@ export default function AdminLoginPage() {
     try {
       const provider = new GoogleAuthProvider();
       provider.setCustomParameters({ prompt: "select_account" });
-      
+
       // Use redirect flow to avoid COOP/popup issues entirely
       await signInWithRedirect(auth as Auth, provider);
       // Page will redirect to Google and back - result handled in useEffect above
@@ -276,7 +276,7 @@ export default function AdminLoginPage() {
                   onChange={(event) => setPassword(event.target.value)}
                   disabled={isBusy}
                   className="w-full bg-white/[0.04] border border-white/10 rounded-xl py-4 pl-12 pr-12 text-white placeholder:text-white/25 focus:outline-none focus:border-cyan-400/60 focus:ring-1 focus:ring-cyan-400/60 transition-all disabled:opacity-60"
-                  placeholder="Password"
+                  placeholder="Enter Your Password"
                 />
                 <button
                   type="button"
