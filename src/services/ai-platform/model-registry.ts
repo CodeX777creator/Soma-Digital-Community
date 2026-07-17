@@ -88,6 +88,18 @@ function inferCreditClass(model: { type?: string; tags?: string[]; id?: string }
   return "standard";
 }
 
+function removeUndefined(obj: Record<string, any>): Record<string, any> {
+  const result = { ...obj };
+  for (const key of Object.keys(result)) {
+    if (result[key] === undefined) {
+      delete result[key];
+    } else if (result[key] !== null && typeof result[key] === "object" && !(result[key] instanceof admin.firestore.FieldValue)) {
+      result[key] = removeUndefined(result[key]);
+    }
+  }
+  return result;
+}
+
 function defaultTierAccess(creditClass: AIModelCreditClass): CreatorPlan[] {
   if (creditClass === "specialized") return ["elite", "enterprise"];
   if (creditClass === "premium" || creditClass === "advanced") return ["pro", "elite", "enterprise"];
@@ -166,15 +178,16 @@ export async function syncVercelAIModels(actorId: string): Promise<{ runId: stri
       .map(normalizeModel)
       .filter((model: AIModelRegistryDoc | null): model is AIModelRegistryDoc => Boolean(model));
 
+
     const batchLimit = 450;
     let synced = 0;
     for (let i = 0; i < models.length; i += batchLimit) {
       const batch = adminDb.batch();
       for (const model of models.slice(i, i + batchLimit)) {
-        batch.set(modelRef(model.id), {
+        batch.set(modelRef(model.id), removeUndefined({
           ...model,
           updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-        }, { merge: true });
+        }), { merge: true });
         synced++;
       }
       await batch.commit();
@@ -223,11 +236,11 @@ export async function getAIModelFeatureConfig(featureKey: AIRequestTask): Promis
 }
 
 export async function upsertAIModelFeatureConfig(config: AIModelFeatureConfigDoc): Promise<void> {
-  await featureConfigRef(config.featureKey).set({
+  await featureConfigRef(config.featureKey).set(removeUndefined({
     ...config,
     updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     createdAt: config.createdAt || admin.firestore.FieldValue.serverTimestamp(),
-  }, { merge: true });
+  }), { merge: true });
 }
 
 export async function resolveConfiguredModelRoute(input: {

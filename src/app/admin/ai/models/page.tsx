@@ -45,7 +45,10 @@ export default function AdminAIModelsPage() {
     setError(null);
     try {
       const response = await adminFetch("/api/admin/ai/models?limit=500");
-      if (!response.ok) throw new Error("Unable to load AI models.");
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || "Unable to load AI models.");
+      }
       const data = await response.json();
       setModels(data.models || []);
     } catch (err) {
@@ -60,7 +63,10 @@ export default function AdminAIModelsPage() {
     setError(null);
     try {
       const response = await adminFetch("/api/admin/ai/models/sync", { method: "POST" });
-      if (!response.ok) throw new Error("Model sync failed.");
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || "Model sync failed.");
+      }
       await loadModels();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Model sync failed.");
