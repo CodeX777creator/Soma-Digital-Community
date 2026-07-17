@@ -160,7 +160,7 @@ export default function AdminAIModelRoutingPage() {
 
   useEffect(() => {
     const existing = configs.find((config) => config.featureKey === selectedFeature);
-    setDraft(existing || emptyConfig(selectedFeature));
+    setDraft({ ...emptyConfig(selectedFeature), ...(existing || {}) });
   }, [configs, selectedFeature]);
 
   const save = async () => {
