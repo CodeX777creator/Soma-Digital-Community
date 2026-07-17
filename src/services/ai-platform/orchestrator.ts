@@ -4,8 +4,9 @@ import { selectModel } from "@/ai/core/model-router";
 import { persistOrchestrationOutcome } from "@/ai/telemetry/firestore";
 import { orchestrateAIRequest as coreOrchestrateAIRequest, type AIQualityMode } from "@/ai/platform/orchestrator";
 import { creatorCreditPolicies, monetizationConfig } from "./config";
+import { resolveConfiguredModelRoute } from "./model-registry";
 import type { AIExecutionContext, CreatorPlan, ProviderMode } from "./types";
-import { normalizeRoutingPlan } from "./types";
+import { normalizeBillingPlan, normalizeRoutingPlan } from "./types";
 import type { AIProviderId, AIRequestTask } from "@/ai/platform/catalog";
 
 export interface MonetizedRouteDecision {
@@ -30,8 +31,9 @@ export function shouldPreferByok(context: AIExecutionContext): boolean {
   return providerMode === "byok" || providerMode === "hybrid";
 }
 
-export function routeMonetizedAIRequest(context: AIExecutionContext): MonetizedRouteDecision {
+export async function routeMonetizedAIRequest(context: AIExecutionContext): Promise<MonetizedRouteDecision> {
   const tier = normalizeRoutingPlan(context.userTier);
+  const billingTier = normalizeBillingPlan(context.userTier);
   const qualityMode = context.qualityMode || (tier === "elite" ? "premium" : tier === "pro" ? "balanced" : "economy");
   const providerMode = context.providerMode || monetizationConfig.providerMode;
   const byokPreferred = shouldPreferByok(context);
@@ -50,6 +52,15 @@ export function routeMonetizedAIRequest(context: AIExecutionContext): MonetizedR
     userTier: tier,
     history: context.history,
   });
+  const configuredRoute = await resolveConfiguredModelRoute({
+    featureKey: context.task,
+    userTier: billingTier,
+    modality: context.modality,
+    fallbackModelId: basePlan.modelId || routing.primaryModel,
+  }).catch(() => null);
+  const providerId = configuredRoute?.providerId || basePlan.providerId;
+  const modelId = configuredRoute?.modelId || basePlan.modelId || routing.primaryModel;
+  const fallbackCount = configuredRoute?.fallbackModelIds.length || basePlan.fallbackPlans.length;
 
   void persistOrchestrationOutcome({
     traceId,
@@ -58,8 +69,8 @@ export function routeMonetizedAIRequest(context: AIExecutionContext): MonetizedR
     task: context.task,
     feature: context.feature,
     modality: context.modality,
-    providerId: basePlan.providerId,
-    modelId: basePlan.modelId || routing.primaryModel,
+    providerId,
+    modelId,
     providerMode,
     qualityMode,
     billingSource: byokPreferred ? "byok" : "sdc_credits",
@@ -73,13 +84,15 @@ export function routeMonetizedAIRequest(context: AIExecutionContext): MonetizedR
     estimatedCostUsd: undefined,
     metadata: {
       providerPreference: context.providerPreference || null,
+      routeSource: configuredRoute?.source || "fallback",
+      featureConfigDefaultModelId: configuredRoute?.featureConfig?.defaultModelId || null,
     },
   }).catch(() => undefined);
 
   return {
     traceId,
-    providerId: basePlan.providerId,
-    modelId: basePlan.modelId || routing.primaryModel,
+    providerId,
+    modelId,
     providerMode,
     reason: byokPreferred
       ? `BYOK enabled for ${context.feature}`
@@ -89,6 +102,6 @@ export function routeMonetizedAIRequest(context: AIExecutionContext): MonetizedR
     qualityMode,
     task: context.task,
     feature: context.feature,
-    fallbackCount: basePlan.fallbackPlans.length,
+    fallbackCount,
   };
 }

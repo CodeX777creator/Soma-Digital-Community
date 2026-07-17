@@ -203,6 +203,8 @@ export interface ImageAssetRecord {
   provider: string;
   model: string;
   credits?: number;
+  creditsReserved?: number;
+  creditsRefunded?: number;
   promptVersion: string;
   visibility: 'private' | 'team' | 'public';
   tags: string[];
@@ -292,6 +294,9 @@ export interface VideoAssetRecord {
   posterFrameUrl?: string;
   provider: string;
   model: string;
+  credits?: number;
+  creditsReserved?: number;
+  creditsRefunded?: number;
   promptVersion: string;
   renderStrategy?: 'ffmpeg' | 'cloud' | 'bundle';
   visibility: 'private' | 'team' | 'public';
@@ -416,6 +421,9 @@ export interface AudioAssetRecord {
   brandTemplate?: BrandTemplate | null;
   productRules?: ProductRules | null;
   brandName?: string;
+  credits?: number;
+  creditsReserved?: number;
+  creditsRefunded?: number;
   storagePath: string;
   waveformStoragePath?: string;
   thumbnail: string;

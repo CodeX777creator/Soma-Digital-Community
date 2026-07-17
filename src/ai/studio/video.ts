@@ -443,7 +443,7 @@ export async function generateVideoStudioAsset(
     (renderOutcome.status === 'completed' || renderOutcome.status === 'queued');
   const chargeFeature = submittedRealRender ? 'video_generation' : 'content_generation';
 
-  await recordMonetizedUsageCharge({
+  const billingResult = await recordMonetizedUsageCharge({
     userId: ownerId,
     task: chargeFeature,
     feature: chargeFeature,
@@ -459,6 +459,7 @@ export async function generateVideoStudioAsset(
       renderer: renderOutcome.renderer,
       renderStatus: renderOutcome.status,
       generationMode,
+      durationSeconds,
       creditPolicy: submittedRealRender ? 'video_generation_render' : 'content_generation_blueprint',
     },
   }, {
@@ -509,6 +510,9 @@ export async function generateVideoStudioAsset(
     posterFrameUrl,
     provider: providerId,
     model: modelId,
+    credits: billingResult.billing.creditsCharged,
+    creditsReserved: billingResult.billing.creditsReserved,
+    creditsRefunded: billingResult.billing.creditsRefunded,
     promptVersion: 'video-studio@1.0.0',
     renderStrategy: renderOutcome.renderer,
     visibility: input.visibility || 'private',

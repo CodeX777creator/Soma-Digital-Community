@@ -14,12 +14,15 @@ import {
   Image as ImageIcon,
   Layers,
   Loader2,
+  Palette,
   Play,
   RefreshCcw,
   Save,
   Send,
   Sparkles,
   Target,
+  Type,
+  Upload,
   Wand2,
 } from "lucide-react";
 import { AppLayout } from "@/components/layout/AppLayout";
@@ -33,6 +36,7 @@ import { useAuth } from "@/providers/AuthProvider";
 import { parseApiError } from "@/lib/clientApi";
 import { showErrorToast } from "@/lib/error-toast";
 import { cn } from "@/lib/utils";
+import { estimateVideoCreatorCredits, formatCreatorCreditEstimate } from "@/lib/ai-credit-estimates";
 import type {
   BrandTemplate,
   ProductRules,
@@ -77,6 +81,33 @@ type PlatformPreset = {
   captionStyle: string;
   intelligence: string[];
 };
+
+const BRAND_COLOR_PALETTES = [
+  { label: "Blue", value: "blue, navy, sky blue", swatches: ["#2563EB", "#0F172A", "#4F9DFF"] },
+  { label: "Purple blue", value: "purple, blue, electric violet", swatches: ["#5B5FFF", "#8B5CF6", "#4F9DFF"] },
+  { label: "Hazy red", value: "hazy red, soft coral, deep burgundy", swatches: ["#EF4444", "#F87171", "#7F1D1D"] },
+  { label: "Green", value: "emerald green, deep forest, mint", swatches: ["#10B981", "#064E3B", "#A7F3D0"] },
+  { label: "Gold black", value: "black, warm gold, champagne", swatches: ["#090B13", "#D4AF37", "#F8E7B0"] },
+  { label: "Clean neutral", value: "charcoal, white, soft gray", swatches: ["#111827", "#F8FAFC", "#94A3B8"] },
+];
+
+const BRAND_FONT_OPTIONS = [
+  "Modern clean sans",
+  "Premium editorial",
+  "Bold social headline",
+  "Friendly rounded",
+  "Elegant serif",
+  "Tech startup",
+];
+
+const BRAND_VOICE_PRESETS = [
+  "Premium, direct, and helpful. Avoid hype.",
+  "Warm coach. Encouraging, simple, and practical.",
+  "Bold promotional. Energetic, clear, and action-focused.",
+  "Calm teacher. Patient, structured, and beginner-friendly.",
+  "Founder-led. Human, honest, and confident.",
+  "Luxury brand. Minimal, polished, and refined.",
+];
 
 const PLATFORM_PRESETS: PlatformPreset[] = [
   {
@@ -221,7 +252,7 @@ function buildProductRules(state: VideoStudioFormState): ProductRules {
 function createStarterScenes(state: VideoStudioFormState): VideoScene[] {
   const duration = Math.max(18, Math.min(90, state.durationSeconds || getPreset(state.platform).durationSeconds));
   const slice = Math.max(5, Math.round(duration / 4));
-  const idea = state.idea || DEFAULT_IDEA;
+  const idea = (state.idea || DEFAULT_IDEA).split("\n")[0].trim();
   return [
     {
       sceneNumber: 1,
@@ -258,8 +289,13 @@ function sceneLabel(index: number) {
   return ["Hook", "Problem", "Solution", "CTA"][index] || `Scene ${index + 1}`;
 }
 
-function formatCredits(mode: OutputMode) {
-  return mode === "render" ? "100 Creator Credits" : "20 Creator Credits";
+function formatCredits(mode: OutputMode, durationSeconds?: number) {
+  return formatCreatorCreditEstimate(estimateVideoCreatorCredits({ mode, durationSeconds }));
+}
+
+function formatCreditExplanation(mode: OutputMode, durationSeconds: number) {
+  if (mode === "draft") return "Draft includes script, scenes, captions, thumbnail direction, and scheduler plan.";
+  return `${durationSeconds}s × 10 credits/sec. Drafting and scheduling existing assets cost less than rendering.`;
 }
 
 function platformScheduleUrl(platform: SocialVideoPlatform) {
@@ -281,7 +317,7 @@ export default function VideoStudioPage() {
     outputMode: "draft",
     title: "",
     callToAction: "",
-    brandName: "Soma Digital Community",
+    brandName: "",
     brandVoice: "",
     brandColors: "",
     brandFonts: "",
@@ -300,15 +336,43 @@ export default function VideoStudioPage() {
   const [advancedProductionOpen, setAdvancedProductionOpen] = useState(false);
   const [outputTab, setOutputTab] = useState<OutputTab>("preview");
   const [mobileStep, setMobileStep] = useState<MobileStep>("idea");
+  const [logoPreviewUrl, setLogoPreviewUrl] = useState("");
+  const [logoFileName, setLogoFileName] = useState("");
+  const [draftInstructions, setDraftInstructions] = useState("");
+  const [editableScript, setEditableScript] = useState("");
+  const [editableScenes, setEditableScenes] = useState<VideoScene[] | null>(null);
+  const [selectedSceneIndex, setSelectedSceneIndex] = useState(0);
 
   const selectedPreset = useMemo(() => getPreset(state.platform), [state.platform]);
   const draftScenes = useMemo(() => createStarterScenes(state), [state.idea, state.audience, state.platform, state.goal, state.callToAction, state.durationSeconds]);
-  const activeScenes = latestVideo?.scenes?.length ? latestVideo.scenes : draftScenes;
-  const generatedPrompt = useMemo(() => buildPrompt(state), [state]);
+  const activeScenes = editableScenes?.length ? editableScenes : latestVideo?.scenes?.length ? latestVideo.scenes : draftScenes;
+  const generatedPrompt = useMemo(() => {
+    const base = buildPrompt(state);
+    return draftInstructions ? `${base}\n\nAdditional draft directions:\n${draftInstructions}` : base;
+  }, [state, draftInstructions]);
   const recommendedAction = history.length > 0 ? "Repurpose a recent video into platform variants." : "Create your first video draft from one idea.";
 
   const updateField = <K extends keyof VideoStudioFormState>(key: K, value: VideoStudioFormState[K]) => {
     setState((current) => ({ ...current, [key]: value }));
+  };
+
+  const handleLogoFile = (file?: File | null) => {
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      toast({ title: "Unsupported logo file", description: "Please upload a PNG, JPG, or SVG image.", variant: "destructive" });
+      return;
+    }
+    if (file.size > 2 * 1024 * 1024) {
+      toast({ title: "Logo is too large", description: "Use a logo smaller than 2MB.", variant: "destructive" });
+      return;
+    }
+    const url = URL.createObjectURL(file);
+    setLogoPreviewUrl((current) => {
+      if (current) URL.revokeObjectURL(current);
+      return url;
+    });
+    setLogoFileName(file.name);
+    updateField("brandLogoUrl", file.name);
   };
 
   const selectPlatform = (platform: SocialVideoPlatform) => {
@@ -342,7 +406,7 @@ export default function VideoStudioPage() {
       cta: "Add a clear call to action that feels natural.",
       shorten: "Shorten this for a fast vertical social video.",
     } satisfies Record<string, string>;
-    updateField("idea", `${state.idea || DEFAULT_IDEA}\n\nDirection: ${additions[action]}`);
+    setDraftInstructions((current) => [current, `Script direction: ${additions[action]}`].filter(Boolean).join("\n"));
     setOutputTab("script");
     setMobileStep("script");
   };
@@ -354,9 +418,14 @@ export default function VideoStudioPage() {
       cinematic: "Make the scene direction more cinematic while staying professional.",
       product: "Make the scene flow more product-focused and conversion-focused.",
     } satisfies Record<string, string>;
-    updateField("idea", `${state.idea || DEFAULT_IDEA}\n\nScene direction: ${additions[action]}`);
+    setDraftInstructions((current) => [current, `Scene direction: ${additions[action]}`].filter(Boolean).join("\n"));
     setOutputTab("scenes");
     setMobileStep("script");
+  };
+
+  const updateScene = (index: number, updates: Partial<VideoScene>) => {
+    const source = activeScenes.length ? activeScenes : draftScenes;
+    setEditableScenes(source.map((scene, sceneIndex) => (sceneIndex === index ? { ...scene, ...updates } : scene)));
   };
 
   const loadHistory = async () => {
@@ -385,6 +454,12 @@ export default function VideoStudioPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.uid]);
 
+  useEffect(() => {
+    return () => {
+      if (logoPreviewUrl) URL.revokeObjectURL(logoPreviewUrl);
+    };
+  }, [logoPreviewUrl]);
+
   const handleGenerate = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!user || loading) return;
@@ -404,7 +479,7 @@ export default function VideoStudioPage() {
             ? "Render this as a production-ready video with matching visuals, voiceover, captions, and platform pacing."
             : "Create a polished video draft with script, scenes, captions, thumbnail prompt, and render-ready direction.",
           negativePrompt: state.anythingToAvoid || undefined,
-          scenes: draftScenes,
+          scenes: editableScenes?.length ? editableScenes : draftScenes,
           stylePreset: selectedPreset.stylePreset,
           aspectRatio: selectedPreset.aspectRatio,
           durationSeconds: state.durationSeconds,
@@ -427,6 +502,9 @@ export default function VideoStudioPage() {
 
       const data = await response.json() as { video: VideoGenerationResult };
       setLatestVideo(data.video);
+      setEditableScript(data.video.script || generatedPrompt);
+      setEditableScenes(data.video.scenes?.length ? data.video.scenes : draftScenes);
+      setSelectedSceneIndex(0);
       setOutputTab("preview");
       await loadHistory();
       toast({
@@ -509,14 +587,12 @@ export default function VideoStudioPage() {
                         <Target className="h-4 w-4 text-[#4F9DFF]" />
                         Draft cost
                       </div>
-                      <p className="text-2xl font-semibold">{formatCredits(state.outputMode)}</p>
+                      <p className="text-2xl font-semibold">{formatCredits(state.outputMode, state.durationSeconds)}</p>
                       <p className="text-sm leading-6 text-[#BFC6D4]">
-                        {state.outputMode === "render"
-                          ? "Full video render. Use this when you are ready to create the final asset."
-                          : "Video draft. Use this for script, scenes, captions, and thumbnail direction."}
+                        {formatCreditExplanation(state.outputMode, state.durationSeconds)}
                       </p>
-                      <div className="grid gap-2">
-                        <button
+              <div className="grid gap-2">
+                <button
                           type="button"
                           onClick={() => updateField("outputMode", "draft")}
                           className={cn(
@@ -524,8 +600,8 @@ export default function VideoStudioPage() {
                             state.outputMode === "draft" ? "border-[#4F9DFF]/70 bg-[#2563EB]/20 text-white" : "border-white/[0.08] bg-black/10 text-[#BFC6D4]"
                           )}
                         >
-                          Create video draft
-                        </button>
+                  Create draft - planning only
+                </button>
                         <button
                           type="button"
                           onClick={() => updateField("outputMode", "render")}
@@ -534,9 +610,12 @@ export default function VideoStudioPage() {
                             state.outputMode === "render" ? "border-[#8B5CF6]/70 bg-[#8B5CF6]/20 text-white" : "border-white/[0.08] bg-black/10 text-[#BFC6D4]"
                           )}
                         >
-                          Render full video
-                        </button>
-                      </div>
+                  Render full video - final file
+                </button>
+              </div>
+              <div className="rounded-[14px] border border-white/[0.08] bg-black/20 p-3 text-xs leading-5 text-[#BFC6D4]">
+                Draft creates an editable script, scenes, captions, thumbnail direction, and scheduler plan. Full video submits an actual render for a playable video file.
+              </div>
                     </div>
                   </div>
 
@@ -656,12 +735,100 @@ export default function VideoStudioPage() {
                       onToggle={() => setAdvancedBrandOpen((value) => !value)}
                     >
                       <div className="grid gap-3 md:grid-cols-2">
-                        <Input value={state.brandName} onChange={(event) => updateField("brandName", event.target.value)} placeholder="Brand name" className="rounded-[14px] border-white/[0.08] bg-black/20 text-white" />
-                        <Input value={state.templateName} onChange={(event) => updateField("templateName", event.target.value)} placeholder="Campaign or template name" className="rounded-[14px] border-white/[0.08] bg-black/20 text-white" />
-                        <Input value={state.brandColors} onChange={(event) => updateField("brandColors", event.target.value)} placeholder="Brand colors, separated by commas" className="rounded-[14px] border-white/[0.08] bg-black/20 text-white" />
-                        <Input value={state.brandFonts} onChange={(event) => updateField("brandFonts", event.target.value)} placeholder="Brand fonts" className="rounded-[14px] border-white/[0.08] bg-black/20 text-white" />
-                        <Input value={state.brandLogoUrl} onChange={(event) => updateField("brandLogoUrl", event.target.value)} placeholder="Logo URL" className="rounded-[14px] border-white/[0.08] bg-black/20 text-white md:col-span-2" />
-                        <Textarea value={state.brandVoice} onChange={(event) => updateField("brandVoice", event.target.value)} rows={3} placeholder="Brand voice, tone, and style notes" className="rounded-[14px] border-white/[0.08] bg-black/20 text-white md:col-span-2" />
+                        <div className="space-y-2">
+                          <label className="text-xs font-semibold uppercase tracking-[0.16em] text-[#8E98AA]">Your brand or business name</label>
+                          <Input value={state.brandName} onChange={(event) => updateField("brandName", event.target.value)} placeholder="Example: Soma Digital Community" className="rounded-[14px] border-white/[0.08] bg-black/20 text-white" />
+                        </div>
+                        <div className="space-y-2">
+                          <label className="text-xs font-semibold uppercase tracking-[0.16em] text-[#8E98AA]">Campaign or template name</label>
+                          <Input value={state.templateName} onChange={(event) => updateField("templateName", event.target.value)} placeholder="Example: Founder launch, course promo" className="rounded-[14px] border-white/[0.08] bg-black/20 text-white" />
+                        </div>
+                        <div className="space-y-3 md:col-span-2">
+                          <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-[#8E98AA]">
+                            <Palette className="h-3.5 w-3.5 text-[#4F9DFF]" />
+                            Brand colours
+                          </div>
+                          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                            {BRAND_COLOR_PALETTES.map((palette) => (
+                              <button
+                                key={palette.label}
+                                type="button"
+                                onClick={() => updateField("brandColors", palette.value)}
+                                className={cn(
+                                  "rounded-[14px] border p-3 text-left transition hover:bg-white/[0.07]",
+                                  state.brandColors === palette.value ? "border-[#4F9DFF]/70 bg-[#2563EB]/20" : "border-white/[0.08] bg-black/20",
+                                )}
+                              >
+                                <span className="text-sm font-medium text-white">{palette.label}</span>
+                                <span className="mt-2 flex gap-1">
+                                  {palette.swatches.map((color) => (
+                                    <span key={color} className="h-4 w-4 rounded-full border border-white/20" style={{ backgroundColor: color }} />
+                                  ))}
+                                </span>
+                              </button>
+                            ))}
+                          </div>
+                          <Input value={state.brandColors} onChange={(event) => updateField("brandColors", event.target.value)} placeholder="Or type your own colours, e.g. blue, gold, white" className="rounded-[14px] border-white/[0.08] bg-black/20 text-white" />
+                        </div>
+                        <div className="space-y-2">
+                          <label className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-[#8E98AA]">
+                            <Type className="h-3.5 w-3.5 text-[#8B5CF6]" />
+                            Brand font style
+                          </label>
+                          <select
+                            value={state.brandFonts}
+                            onChange={(event) => updateField("brandFonts", event.target.value)}
+                            className="h-10 w-full rounded-[14px] border border-white/[0.08] bg-black/20 px-3 text-sm text-white"
+                          >
+                            <option value="">Choose a font style</option>
+                            {BRAND_FONT_OPTIONS.map((font) => (
+                              <option key={font} value={font}>
+                                {font}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                        <div className="space-y-2">
+                          <label className="text-xs font-semibold uppercase tracking-[0.16em] text-[#8E98AA]">Logo</label>
+                          <label className="flex h-10 cursor-pointer items-center justify-center gap-2 rounded-[14px] border border-white/[0.08] bg-black/20 px-3 text-sm text-[#BFC6D4] transition hover:bg-white/[0.07] hover:text-white">
+                            <Upload className="h-4 w-4" />
+                            Upload logo
+                            <input
+                              type="file"
+                              accept="image/png,image/jpeg,image/webp,image/svg+xml"
+                              className="sr-only"
+                              onChange={(event) => handleLogoFile(event.target.files?.[0])}
+                            />
+                          </label>
+                        </div>
+                        <div className="space-y-2 md:col-span-2">
+                          <label className="text-xs font-semibold uppercase tracking-[0.16em] text-[#8E98AA]">Logo URL or uploaded logo</label>
+                          <div className="grid gap-3 md:grid-cols-[1fr_120px]">
+                            <Input value={state.brandLogoUrl} onChange={(event) => updateField("brandLogoUrl", event.target.value)} placeholder="Paste logo URL, or upload a file above" className="rounded-[14px] border-white/[0.08] bg-black/20 text-white" />
+                            <div className="flex min-h-10 items-center justify-center rounded-[14px] border border-white/[0.08] bg-black/20 p-2 text-xs text-[#8E98AA]">
+                              {logoPreviewUrl ? <img src={logoPreviewUrl} alt="Uploaded logo preview" className="max-h-10 max-w-full object-contain" /> : logoFileName || "No logo"}
+                            </div>
+                          </div>
+                        </div>
+                        <div className="space-y-3 md:col-span-2">
+                          <label className="text-xs font-semibold uppercase tracking-[0.16em] text-[#8E98AA]">Brand voice</label>
+                          <div className="flex flex-wrap gap-2">
+                            {BRAND_VOICE_PRESETS.map((voice) => (
+                              <button
+                                key={voice}
+                                type="button"
+                                onClick={() => updateField("brandVoice", voice)}
+                                className={cn(
+                                  "rounded-full border px-3 py-1.5 text-xs transition hover:bg-white/[0.07]",
+                                  state.brandVoice === voice ? "border-[#8B5CF6]/70 bg-[#8B5CF6]/20 text-white" : "border-white/[0.08] bg-black/20 text-[#BFC6D4]",
+                                )}
+                              >
+                                {voice.split(".")[0]}
+                              </button>
+                            ))}
+                          </div>
+                          <Textarea value={state.brandVoice} onChange={(event) => updateField("brandVoice", event.target.value)} rows={3} placeholder="Example: Warm coach. Simple, encouraging, and practical. Avoid hype or unrealistic claims." className="rounded-[14px] border-white/[0.08] bg-black/20 text-white" />
+                        </div>
                       </div>
                     </AdvancedPanel>
 
@@ -678,10 +845,20 @@ export default function VideoStudioPage() {
                           max={180}
                           value={state.durationSeconds}
                           onChange={(event) => updateField("durationSeconds", Number(event.target.value) || selectedPreset.durationSeconds)}
-                          placeholder="Duration"
+                          placeholder="Duration in seconds"
                           className="rounded-[14px] border-white/[0.08] bg-black/20 text-white"
                         />
-                        <Input value={state.voiceoverTone} onChange={(event) => updateField("voiceoverTone", event.target.value)} placeholder="Voiceover tone" className="rounded-[14px] border-white/[0.08] bg-black/20 text-white" />
+                        <select
+                          value={state.voiceoverTone}
+                          onChange={(event) => updateField("voiceoverTone", event.target.value)}
+                          className="h-10 rounded-[14px] border border-white/[0.08] bg-black/20 px-3 text-sm text-white"
+                        >
+                          <option value="Confident, clear, and practical">Confident, clear, and practical</option>
+                          <option value="Warm, friendly, and encouraging">Warm, friendly, and encouraging</option>
+                          <option value="Professional, concise, and authoritative">Professional, concise, and authoritative</option>
+                          <option value="Energetic, direct, and promotional">Energetic, direct, and promotional</option>
+                          <option value="Calm, educational, and beginner-friendly">Calm, educational, and beginner-friendly</option>
+                        </select>
                         <select
                           aria-label="Video visibility"
                           value={state.visibility}
@@ -692,7 +869,10 @@ export default function VideoStudioPage() {
                           <option value="team">Team</option>
                           <option value="public">Public</option>
                         </select>
-                        <Textarea value={state.anythingToAvoid} onChange={(event) => updateField("anythingToAvoid", event.target.value)} rows={3} placeholder="Anything to avoid?" className="rounded-[14px] border-white/[0.08] bg-black/20 text-white md:col-span-2" />
+                        <div className="space-y-2 md:col-span-2">
+                          <label className="text-xs font-semibold uppercase tracking-[0.16em] text-[#8E98AA]">Anything Soma should avoid?</label>
+                          <Textarea value={state.anythingToAvoid} onChange={(event) => updateField("anythingToAvoid", event.target.value)} rows={3} placeholder="Example: avoid fake income claims, childish visuals, cluttered text, or aggressive sales language." className="rounded-[14px] border-white/[0.08] bg-black/20 text-white" />
+                        </div>
                       </div>
                     </AdvancedPanel>
                   </div>
@@ -717,7 +897,7 @@ export default function VideoStudioPage() {
                   </div>
                   <div className="mt-5 space-y-4">
                     <StatusRow label="Selected platform" value={selectedPreset.label} />
-                    <StatusRow label="Estimated use" value={formatCredits(state.outputMode)} />
+                    <StatusRow label="Estimated use" value={formatCredits(state.outputMode, state.durationSeconds)} />
                     <StatusRow label="Suggested format" value={`${selectedPreset.aspectRatio}, ${state.durationSeconds}s`} />
                     <StatusRow label="Recent videos" value={String(history.length)} />
                   </div>
@@ -779,7 +959,17 @@ export default function VideoStudioPage() {
               <div className="flex flex-col gap-3 border-b border-white/[0.08] pb-4 md:flex-row md:items-center md:justify-between">
                 <div>
                   <p className="text-sm font-semibold uppercase tracking-[0.22em] text-[#7E8799]">Output workspace</p>
-                  <h2 className="mt-2 text-2xl font-semibold">{latestVideo ? latestVideo.title : "Your video draft will appear here"}</h2>
+                  <h2 className="mt-2 text-2xl font-semibold">{latestVideo ? latestVideo.title : state.outputMode === "render" ? "Your rendered video will appear here" : "Your editable video draft will appear here"}</h2>
+                  <p className="mt-2 text-sm text-[#BFC6D4]">
+                    {state.outputMode === "render"
+                      ? "Full Video creates a playable asset. Draft mode creates editable planning pieces first."
+                      : "Video Draft is editable: refine the script, select scenes, adjust captions, then schedule or render."}
+                  </p>
+                  {typeof latestVideo?.credits === "number" ? (
+                    <p className="mt-2 text-xs font-medium text-[#BFF8D1]">
+                      Charged {latestVideo.credits} credits{latestVideo.creditsRefunded ? ` · ${latestVideo.creditsRefunded} returned` : ""}
+                    </p>
+                  ) : null}
                 </div>
                 <div className="flex flex-wrap gap-2">
                   {(["preview", "script", "scenes", "captions", "thumbnail", "scheduler"] as OutputTab[]).map((tab) => (
@@ -803,10 +993,24 @@ export default function VideoStudioPage() {
                   <PreviewPanel video={latestVideo} preset={selectedPreset} />
                 ) : null}
                 {outputTab === "script" ? (
-                  <ScriptPanel video={latestVideo} prompt={generatedPrompt} onCopy={copyText} onAction={applyScriptAction} />
+                  <ScriptPanel
+                    video={latestVideo}
+                    prompt={generatedPrompt}
+                    value={editableScript || latestVideo?.script || generatedPrompt}
+                    onChange={setEditableScript}
+                    onCopy={copyText}
+                    onAction={applyScriptAction}
+                    instructions={draftInstructions}
+                  />
                 ) : null}
                 {outputTab === "scenes" ? (
-                  <ScenesPanel scenes={activeScenes} onAction={applySceneAction} />
+                  <ScenesPanel
+                    scenes={activeScenes}
+                    selectedIndex={selectedSceneIndex}
+                    onSelect={setSelectedSceneIndex}
+                    onSceneChange={updateScene}
+                    onAction={applySceneAction}
+                  />
                 ) : null}
                 {outputTab === "captions" ? (
                   <CaptionsPanel video={latestVideo} onCopy={copyText} />
@@ -963,19 +1167,25 @@ function PreviewPanel({ video, preset }: { video: VideoGenerationResult | null; 
 function ScriptPanel({
   video,
   prompt,
+  value,
+  onChange,
   onCopy,
   onAction,
+  instructions,
 }: {
   video: VideoGenerationResult | null;
   prompt: string;
+  value: string;
+  onChange: (value: string) => void;
   onCopy: (value: string, label: string) => void;
   onAction: (action: "hook" | "simple" | "premium" | "cta" | "shorten") => void;
+  instructions: string;
 }) {
-  const script = video?.script || prompt;
+  const script = value || video?.script || prompt;
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-3">
-        <p className="text-sm text-[#BFC6D4]">Script and voiceover direction</p>
+        <p className="text-sm text-[#BFC6D4]">Editable script and voiceover direction</p>
         <Button type="button" size="sm" variant="outline" onClick={() => onCopy(script, "Script")}>
           <Copy className="h-4 w-4" />
           Copy
@@ -988,9 +1198,19 @@ function ScriptPanel({
         <ContextButton onClick={() => onAction("cta")}>Add CTA</ContextButton>
         <ContextButton onClick={() => onAction("shorten")}>Shorten for social</ContextButton>
       </div>
-      <div className="rounded-[18px] border border-white/[0.08] bg-black/20 p-5 text-sm leading-7 text-[#E5E7EB] whitespace-pre-wrap">
-        {script}
-      </div>
+      {instructions ? (
+        <div className="rounded-[18px] border border-[#4F9DFF]/20 bg-[#4F9DFF]/10 p-4 text-xs leading-5 text-[#CFE3FF]">
+          <p className="font-semibold uppercase tracking-[0.16em]">Pending Soma directions</p>
+          <p className="mt-2 whitespace-pre-wrap">{instructions}</p>
+        </div>
+      ) : null}
+      <Textarea
+        value={script}
+        onChange={(event) => onChange(event.target.value)}
+        rows={14}
+        className="rounded-[18px] border-white/[0.08] bg-black/20 text-sm leading-7 text-[#E5E7EB]"
+        placeholder="Your editable video script will appear here."
+      />
       {video?.voiceoverScript ? (
         <div className="rounded-[18px] border border-white/[0.08] bg-white/[0.035] p-5">
           <p className="text-sm font-semibold">Voiceover</p>
@@ -1003,11 +1223,18 @@ function ScriptPanel({
 
 function ScenesPanel({
   scenes,
+  selectedIndex,
+  onSelect,
+  onSceneChange,
   onAction,
 }: {
   scenes: VideoScene[];
+  selectedIndex: number;
+  onSelect: (index: number) => void;
+  onSceneChange: (index: number, updates: Partial<VideoScene>) => void;
   onAction: (action: "add" | "visuals" | "cinematic" | "product") => void;
 }) {
+  const selectedScene = scenes[selectedIndex] || scenes[0];
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap gap-2">
@@ -1018,7 +1245,15 @@ function ScenesPanel({
       </div>
       <div className="grid gap-3 md:grid-cols-2">
         {scenes.map((scene, index) => (
-          <div key={`${scene.sceneNumber}-${index}`} className="rounded-[18px] border border-white/[0.08] bg-white/[0.035] p-4">
+          <button
+            key={`${scene.sceneNumber}-${index}`}
+            type="button"
+            onClick={() => onSelect(index)}
+            className={cn(
+              "rounded-[18px] border p-4 text-left transition hover:-translate-y-0.5 hover:bg-white/[0.06]",
+              selectedIndex === index ? "border-[#4F9DFF]/70 bg-[#2563EB]/15 shadow-lg shadow-[#2563EB]/10" : "border-white/[0.08] bg-white/[0.035]",
+            )}
+          >
             <div className="flex items-center justify-between gap-3">
               <p className="text-sm font-semibold">{sceneLabel(index)}</p>
               <span className="rounded-full bg-white/[0.06] px-2 py-1 text-xs text-[#BFC6D4]">{scene.durationSeconds}s</span>
@@ -1026,9 +1261,59 @@ function ScenesPanel({
             <p className="mt-3 text-sm leading-6 text-white">{scene.onScreenText}</p>
             <p className="mt-3 text-xs leading-5 text-[#BFC6D4]">{scene.visualDescription}</p>
             <p className="mt-3 border-t border-white/[0.08] pt-3 text-xs leading-5 text-[#BFC6D4]">{scene.narration}</p>
-          </div>
+          </button>
         ))}
       </div>
+      {selectedScene ? (
+        <div className="rounded-[18px] border border-[#4F9DFF]/25 bg-[#0D1222] p-5">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#4F9DFF]">Scene editor</p>
+              <h3 className="mt-1 text-lg font-semibold">{sceneLabel(selectedIndex)}</h3>
+            </div>
+            <span className="rounded-full bg-white/[0.06] px-3 py-1 text-xs text-[#BFC6D4]">Selected</span>
+          </div>
+          <div className="mt-4 grid gap-4 md:grid-cols-[1fr_120px]">
+            <div className="space-y-2">
+              <label className="text-xs font-semibold uppercase tracking-[0.16em] text-[#8E98AA]">On-screen text</label>
+              <Input
+                value={selectedScene.onScreenText}
+                onChange={(event) => onSceneChange(selectedIndex, { onScreenText: event.target.value })}
+                className="rounded-[14px] border-white/[0.08] bg-black/20 text-white"
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-xs font-semibold uppercase tracking-[0.16em] text-[#8E98AA]">Seconds</label>
+              <Input
+                type="number"
+                min={3}
+                max={60}
+                value={selectedScene.durationSeconds}
+                onChange={(event) => onSceneChange(selectedIndex, { durationSeconds: Number(event.target.value) || selectedScene.durationSeconds })}
+                className="rounded-[14px] border-white/[0.08] bg-black/20 text-white"
+              />
+            </div>
+            <div className="space-y-2 md:col-span-2">
+              <label className="text-xs font-semibold uppercase tracking-[0.16em] text-[#8E98AA]">Visual direction</label>
+              <Textarea
+                value={selectedScene.visualDescription}
+                onChange={(event) => onSceneChange(selectedIndex, { visualDescription: event.target.value })}
+                rows={3}
+                className="rounded-[14px] border-white/[0.08] bg-black/20 text-white"
+              />
+            </div>
+            <div className="space-y-2 md:col-span-2">
+              <label className="text-xs font-semibold uppercase tracking-[0.16em] text-[#8E98AA]">Voiceover / narration</label>
+              <Textarea
+                value={selectedScene.narration}
+                onChange={(event) => onSceneChange(selectedIndex, { narration: event.target.value })}
+                rows={4}
+                className="rounded-[14px] border-white/[0.08] bg-black/20 text-white"
+              />
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

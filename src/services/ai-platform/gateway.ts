@@ -15,6 +15,8 @@ import {
 import type { StreamChunk } from "@/ai/core/streaming-handler";
 import { createRequestSignature, estimateCreditCost, getCreatorCreditDashboard, reserveCredits, finalizeCredits, refundCredits } from "./credits";
 import { routeMonetizedAIRequest } from "./orchestrator";
+import { estimateUsageCredits, type UsagePricingQuote } from "./pricing";
+import { getAIModel } from "./model-registry";
 import { getProviderConnection, listProviderConnections, toggleProviderConnection, upsertProviderConnection, removeProviderConnection } from "./byok";
 import type { AIExecutionContext, AIExecutionLease, CreatorPlan, ProviderMode } from "./types";
 import { normalizeRoutingPlan } from "./types";
@@ -25,17 +27,19 @@ function toPlan(tier: CreatorPlan | string | undefined): CreatorPlan {
   return "explorer";
 }
 
-async function reserveForContext(context: AIExecutionContext, estimatedCostUsd: number): Promise<AIExecutionLease> {
+async function reserveForContext(context: AIExecutionContext, estimatedCostUsd: number, pricingQuote?: UsagePricingQuote): Promise<AIExecutionLease> {
   const plan = toPlan(context.userTier);
-  const route = routeMonetizedAIRequest({
+  const route = await routeMonetizedAIRequest({
     ...context,
     userTier: normalizeRoutingPlan(context.userTier),
   });
 
-  const creditOverride = typeof context.metadata?.creditOverride === "number" && Number.isFinite(context.metadata.creditOverride)
+  const creditOverride = context.metadata?.pricingMode === "fixed"
+    && typeof context.metadata?.creditOverride === "number"
+    && Number.isFinite(context.metadata.creditOverride)
     ? Math.max(0, Math.floor(context.metadata.creditOverride))
     : null;
-  const credits = creditOverride ?? await estimateCreditCost(plan, context.feature);
+  const credits = creditOverride ?? pricingQuote?.credits ?? await estimateCreditCost(plan, context.feature);
   const providerConnection = context.allowByok
     ? await getProviderConnection(context.userId, route.providerId)
     : null;
@@ -63,6 +67,18 @@ async function reserveForContext(context: AIExecutionContext, estimatedCostUsd: 
         modelId: route.modelId,
         providerId: route.providerId,
         reason: route.reason,
+        ...(pricingQuote ? {
+          pricingUnit: pricingQuote.pricingUnit,
+          estimatedUnits: pricingQuote.estimatedUnits,
+          unitRateCredits: pricingQuote.unitRateCredits,
+          inputTokens: pricingQuote.inputTokens,
+          outputTokens: pricingQuote.outputTokens,
+          imageCount: pricingQuote.imageCount,
+          durationSeconds: pricingQuote.durationSeconds,
+          characters: pricingQuote.characters,
+          modelPricingSnapshot: pricingQuote.modelPricingSnapshot,
+          pricingExplanation: pricingQuote.explanation,
+        } : {}),
       },
     },
     useByok ? 0 : credits,
@@ -150,30 +166,83 @@ async function recordOutcome(input: {
   });
 }
 
+function pricingMetadata(pricingQuote?: UsagePricingQuote): Record<string, unknown> {
+  if (!pricingQuote) return {};
+  return {
+    pricingUnit: pricingQuote.pricingUnit,
+    estimatedUnits: pricingQuote.estimatedUnits,
+    unitRateCredits: pricingQuote.unitRateCredits,
+    inputTokens: pricingQuote.inputTokens,
+    outputTokens: pricingQuote.outputTokens,
+    imageCount: pricingQuote.imageCount,
+    durationSeconds: pricingQuote.durationSeconds,
+    characters: pricingQuote.characters,
+    modelPricingSnapshot: pricingQuote.modelPricingSnapshot,
+    pricingExplanation: pricingQuote.explanation,
+    retailValueUsd: pricingQuote.retailValueUsd,
+  };
+}
+
 export async function executeMonetizedTextRequest(
   request: AITextRequest,
   context: AIExecutionContext
 ) {
   const estimate = request.maxOutputTokens ? request.maxOutputTokens / 1000 : 2;
-  const lease = await reserveForContext(context, estimate);
+  const plannedRoute = await routeMonetizedAIRequest({
+    ...context,
+    userTier: normalizeRoutingPlan(context.userTier),
+  });
+  const model = await getAIModel(plannedRoute.modelId).catch(() => null);
+  const prompt = request.messages.map((message) => typeof message.content === "string" ? message.content : JSON.stringify(message.content)).join("\n");
+  const pricingQuote = estimateUsageCredits({
+    feature: context.feature,
+    modality: "text",
+    model,
+    prompt,
+    maxOutputTokens: request.maxOutputTokens,
+  });
+  const lease = await reserveForContext({
+    ...context,
+    providerPreference: plannedRoute.providerId,
+    metadata: {
+      ...(context.metadata || {}),
+      modelId: plannedRoute.modelId,
+      providerId: plannedRoute.providerId,
+    },
+  }, estimate, pricingQuote);
 
   try {
     const response = await executeTextCompletion({
       ...request,
       userTier: normalizeRoutingPlan(context.userTier),
       providerPreference: lease.providerId,
+      modelId: lease.modelId,
       qualityMode: request.qualityMode,
     });
+    const actualPricingQuote = estimateUsageCredits({
+      feature: context.feature,
+      modality: "text",
+      model,
+      prompt,
+      inputTokens: response.usage?.inputTokens || pricingQuote.inputTokens,
+      outputTokens: response.usage?.outputTokens,
+      maxOutputTokens: response.usage?.outputTokens || pricingQuote.outputTokens,
+    });
+    const creditsCharged = lease.billingSource === "byok"
+      ? 0
+      : Math.min(lease.creditsReserved, actualPricingQuote.credits);
 
     await finalizeCredits(lease, {
       durationMs: response.durationMs,
-      creditsCharged: lease.billingSource === "byok" ? 0 : lease.creditsReserved,
+      creditsCharged,
       actualCostUsd: response.durationMs / 1000,
       modelId: response.plan.modelId,
       providerId: response.plan.providerId,
       status: "charged",
       metadata: {
         requestType: "text",
+        ...pricingMetadata(actualPricingQuote),
+        reservedPricing: pricingMetadata(pricingQuote),
       },
     });
     await recordOutcome({
@@ -184,8 +253,8 @@ export async function executeMonetizedTextRequest(
       responsePlanProviderId: response.plan.providerId,
       responsePlanModelId: response.plan.modelId,
       actualCostUsd: response.durationMs / 1000,
-      creditsCharged: lease.billingSource === "byok" ? 0 : lease.creditsReserved,
-      creditsRefunded: 0,
+      creditsCharged,
+      creditsRefunded: Math.max(0, lease.creditsReserved - creditsCharged),
     });
 
     return {
@@ -193,7 +262,7 @@ export async function executeMonetizedTextRequest(
       billing: {
         source: lease.billingSource,
         creditsReserved: lease.creditsReserved,
-        creditsCharged: lease.billingSource === "byok" ? 0 : lease.creditsReserved,
+        creditsCharged,
         requestId: lease.requestId,
       },
     };
@@ -223,7 +292,28 @@ export async function* executeMonetizedTextStream(
 ): AsyncGenerator<StreamChunk> {
   const startedAt = Date.now();
   const estimate = request.maxOutputTokens ? request.maxOutputTokens / 1000 : 2;
-  const lease = await reserveForContext(context, estimate);
+  const plannedRoute = await routeMonetizedAIRequest({
+    ...context,
+    userTier: normalizeRoutingPlan(context.userTier),
+  });
+  const model = await getAIModel(plannedRoute.modelId).catch(() => null);
+  const prompt = request.messages.map((message) => typeof message.content === "string" ? message.content : JSON.stringify(message.content)).join("\n");
+  const pricingQuote = estimateUsageCredits({
+    feature: context.feature,
+    modality: "text",
+    model,
+    prompt,
+    maxOutputTokens: request.maxOutputTokens,
+  });
+  const lease = await reserveForContext({
+    ...context,
+    providerPreference: plannedRoute.providerId,
+    metadata: {
+      ...(context.metadata || {}),
+      modelId: plannedRoute.modelId,
+      providerId: plannedRoute.providerId,
+    },
+  }, estimate, pricingQuote);
   let providerId = lease.providerId;
   let modelId = lease.modelId;
   let finishReason = "";
@@ -234,6 +324,7 @@ export async function* executeMonetizedTextStream(
       ...request,
       userTier: normalizeRoutingPlan(context.userTier),
       providerPreference: lease.providerId,
+      modelId: lease.modelId,
       qualityMode: request.qualityMode,
     });
 
@@ -270,6 +361,7 @@ export async function* executeMonetizedTextStream(
       status: "charged",
       metadata: {
         requestType: "text_stream",
+        ...pricingMetadata(pricingQuote),
         finishReason: finishReason || "stop",
       },
     });
@@ -321,12 +413,26 @@ export async function executeMonetizedImageRequest(
   request: AIImageRequest,
   context: AIExecutionContext
 ) {
-  const lease = await reserveForContext(context, 0.02);
+  const plannedRoute = await routeMonetizedAIRequest({ ...context, userTier: normalizeRoutingPlan(context.userTier) });
+  const model = await getAIModel(plannedRoute.modelId).catch(() => null);
+  const pricingQuote = estimateUsageCredits({
+    feature: context.feature,
+    modality: "image",
+    model,
+    prompt: request.prompt,
+    imageCount: 1,
+  });
+  const lease = await reserveForContext({
+    ...context,
+    providerPreference: plannedRoute.providerId,
+    metadata: { ...(context.metadata || {}), modelId: plannedRoute.modelId, providerId: plannedRoute.providerId },
+  }, pricingQuote.estimatedCostUsd, pricingQuote);
   try {
     const response = await executeImageGeneration({
       ...request,
       userTier: context.userTier as any,
       providerPreference: lease.providerId,
+      modelId: lease.modelId,
     });
     await finalizeCredits(lease, {
       durationMs: response.durationMs,
@@ -335,7 +441,7 @@ export async function executeMonetizedImageRequest(
       modelId: response.plan.modelId,
       providerId: response.plan.providerId,
       status: "charged",
-      metadata: { requestType: "image" },
+      metadata: { requestType: "image", ...pricingMetadata(pricingQuote) },
     });
     await recordOutcome({
       lease,
@@ -348,7 +454,17 @@ export async function executeMonetizedImageRequest(
       creditsCharged: lease.billingSource === "byok" ? 0 : lease.creditsReserved,
       creditsRefunded: 0,
     });
-    return response;
+    return {
+      ...response,
+      billing: {
+        source: lease.billingSource,
+        creditsReserved: lease.creditsReserved,
+        creditsCharged: lease.billingSource === "byok" ? 0 : lease.creditsReserved,
+        creditsRefunded: 0,
+        requestId: lease.requestId,
+        pricing: pricingMetadata(pricingQuote),
+      },
+    };
   } catch (error) {
     await refundCredits(lease, error instanceof Error ? error.message : String(error), { requestType: "image" });
     await recordOutcome({
@@ -371,12 +487,27 @@ export async function executeMonetizedVideoRequest(
   request: AIVideoRequest,
   context: AIExecutionContext
 ) {
-  const lease = await reserveForContext(context, 0.2);
+  const plannedRoute = await routeMonetizedAIRequest({ ...context, userTier: normalizeRoutingPlan(context.userTier) });
+  const model = await getAIModel(plannedRoute.modelId).catch(() => null);
+  const pricingQuote = estimateUsageCredits({
+    feature: context.feature,
+    modality: "video",
+    model,
+    prompt: request.prompt,
+    durationSeconds: request.durationSeconds,
+    generationMode: context.metadata?.generationMode === "draft" ? "draft" : "render",
+  });
+  const lease = await reserveForContext({
+    ...context,
+    providerPreference: plannedRoute.providerId,
+    metadata: { ...(context.metadata || {}), modelId: plannedRoute.modelId, providerId: plannedRoute.providerId },
+  }, pricingQuote.estimatedCostUsd, pricingQuote);
   try {
     const response = await executeVideoGeneration({
       ...request,
       userTier: context.userTier as any,
       providerPreference: lease.providerId,
+      modelId: lease.modelId,
     });
     await finalizeCredits(lease, {
       durationMs: response.durationMs,
@@ -385,7 +516,7 @@ export async function executeMonetizedVideoRequest(
       modelId: response.plan.modelId,
       providerId: response.plan.providerId,
       status: "charged",
-      metadata: { requestType: "video" },
+      metadata: { requestType: "video", ...pricingMetadata(pricingQuote) },
     });
     await recordOutcome({
       lease,
@@ -398,7 +529,17 @@ export async function executeMonetizedVideoRequest(
       creditsCharged: lease.billingSource === "byok" ? 0 : lease.creditsReserved,
       creditsRefunded: 0,
     });
-    return response;
+    return {
+      ...response,
+      billing: {
+        source: lease.billingSource,
+        creditsReserved: lease.creditsReserved,
+        creditsCharged: lease.billingSource === "byok" ? 0 : lease.creditsReserved,
+        creditsRefunded: 0,
+        requestId: lease.requestId,
+        pricing: pricingMetadata(pricingQuote),
+      },
+    };
   } catch (error) {
     await refundCredits(lease, error instanceof Error ? error.message : String(error), { requestType: "video" });
     await recordOutcome({
@@ -429,7 +570,29 @@ export async function recordMonetizedUsageCharge(
     metadata?: Record<string, unknown>;
   }
 ) {
-  const lease = await reserveForContext(context, input.estimatedCostUsd);
+  const plannedRoute = await routeMonetizedAIRequest({ ...context, userTier: normalizeRoutingPlan(context.userTier) });
+  const model = await getAIModel(input.modelId || plannedRoute.modelId).catch(() => null);
+  const usageModality = context.metadata?.generationMode === "draft"
+    ? "video"
+    : input.requestType;
+  const pricingQuote = estimateUsageCredits({
+    feature: context.feature,
+    modality: usageModality,
+    model,
+    prompt: context.message,
+    durationSeconds: typeof context.metadata?.durationSeconds === "number" ? context.metadata.durationSeconds : undefined,
+    characters: typeof context.metadata?.characters === "number" ? context.metadata.characters : context.message.length,
+    generationMode: context.metadata?.generationMode === "draft" ? "draft" : input.requestType === "video" ? "render" : undefined,
+  });
+  const lease = await reserveForContext({
+    ...context,
+    providerPreference: plannedRoute.providerId,
+    metadata: {
+      ...(context.metadata || {}),
+      modelId: input.modelId || plannedRoute.modelId,
+      providerId: input.providerId || plannedRoute.providerId,
+    },
+  }, input.estimatedCostUsd, pricingQuote);
   const durationMs = input.durationMs ?? 0;
   const providerId = input.providerId || lease.providerId;
   const modelId = input.modelId || lease.modelId;
@@ -443,6 +606,7 @@ export async function recordMonetizedUsageCharge(
     status: "charged",
     metadata: {
       requestType: input.requestType,
+      ...pricingMetadata(pricingQuote),
       ...input.metadata,
     },
   });
@@ -473,12 +637,27 @@ export async function executeMonetizedAudioRequest(
   request: AIAudioRequest,
   context: AIExecutionContext
 ) {
-  const lease = await reserveForContext(context, 0.05);
+  const plannedRoute = await routeMonetizedAIRequest({ ...context, userTier: normalizeRoutingPlan(context.userTier) });
+  const model = await getAIModel(plannedRoute.modelId).catch(() => null);
+  const pricingQuote = estimateUsageCredits({
+    feature: context.feature,
+    modality: "audio",
+    model,
+    prompt: request.prompt,
+    durationSeconds: typeof context.metadata?.durationSeconds === "number" ? context.metadata.durationSeconds : undefined,
+    characters: request.narrationText?.length || request.prompt.length,
+  });
+  const lease = await reserveForContext({
+    ...context,
+    providerPreference: plannedRoute.providerId,
+    metadata: { ...(context.metadata || {}), modelId: plannedRoute.modelId, providerId: plannedRoute.providerId },
+  }, pricingQuote.estimatedCostUsd, pricingQuote);
   try {
     const response = await executeAudioGeneration({
       ...request,
       userTier: context.userTier as any,
       providerPreference: lease.providerId,
+      modelId: lease.modelId,
     });
     await finalizeCredits(lease, {
       durationMs: response.durationMs,
@@ -487,7 +666,7 @@ export async function executeMonetizedAudioRequest(
       modelId: response.plan.modelId,
       providerId: response.plan.providerId,
       status: "charged",
-      metadata: { requestType: "audio" },
+      metadata: { requestType: "audio", ...pricingMetadata(pricingQuote) },
     });
     await recordOutcome({
       lease,
@@ -500,7 +679,17 @@ export async function executeMonetizedAudioRequest(
       creditsCharged: lease.billingSource === "byok" ? 0 : lease.creditsReserved,
       creditsRefunded: 0,
     });
-    return response;
+    return {
+      ...response,
+      billing: {
+        source: lease.billingSource,
+        creditsReserved: lease.creditsReserved,
+        creditsCharged: lease.billingSource === "byok" ? 0 : lease.creditsReserved,
+        creditsRefunded: 0,
+        requestId: lease.requestId,
+        pricing: pricingMetadata(pricingQuote),
+      },
+    };
   } catch (error) {
     await refundCredits(lease, error instanceof Error ? error.message : String(error), { requestType: "audio" });
     await recordOutcome({

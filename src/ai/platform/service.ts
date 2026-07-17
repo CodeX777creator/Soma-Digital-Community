@@ -30,6 +30,7 @@ export interface AITextRequest {
   modelHint?: 'cheap' | 'smart' | 'auto';
   qualityMode?: AIQualityMode;
   providerPreference?: AIProviderId;
+  modelId?: string;
   maxOutputTokens?: number;
   temperature?: number;
   topP?: number;
@@ -40,6 +41,11 @@ export interface AITextResponse {
   text: string;
   plan: AIExecutionPlan;
   durationMs: number;
+  usage?: {
+    inputTokens?: number;
+    outputTokens?: number;
+    totalTokens?: number;
+  };
 }
 
 export interface AIImageRequest {
@@ -49,6 +55,7 @@ export interface AIImageRequest {
   userTier?: 'free' | 'explorer' | 'pro' | 'elite';
   qualityMode?: AIQualityMode;
   providerPreference?: AIProviderId;
+  modelId?: string;
   aspectRatio?: '1:1' | '4:5' | '16:9' | '9:16' | '3:2' | '2:3';
   size?: '1024x1024' | '1024x1792' | '1792x1024';
   stylePreset?: string;
@@ -71,6 +78,7 @@ export interface AIVideoRequest {
   userTier?: 'free' | 'explorer' | 'pro' | 'elite';
   qualityMode?: AIQualityMode;
   providerPreference?: AIProviderId;
+  modelId?: string;
   aspectRatio?: '1:1' | '4:5' | '16:9' | '9:16' | '3:2' | '2:3';
   durationSeconds?: number;
   stylePreset?: string;
@@ -98,6 +106,7 @@ export interface AIAudioRequest {
   userTier?: 'free' | 'explorer' | 'pro' | 'elite';
   qualityMode?: AIQualityMode;
   providerPreference?: AIProviderId;
+  modelId?: string;
   voiceId?: string;
   voicePreset?: string;
   language?: string;
@@ -202,7 +211,7 @@ export function resolveAIExecutionPlan(request: AITextRequest): AIExecutionPlan 
 
   return {
     providerId: plan.providerId,
-    modelId: plan.modelId,
+    modelId: request.modelId || plan.modelId,
     fallbackPlans: plan.fallbackPlans,
     reason: plan.reason,
     modality: plan.modality,
@@ -237,6 +246,11 @@ export async function executeTextCompletion(request: AITextRequest): Promise<AIT
     text,
     plan,
     durationMs: Date.now() - startTime,
+    usage: {
+      inputTokens: completion.usage?.prompt_tokens,
+      outputTokens: completion.usage?.completion_tokens,
+      totalTokens: completion.usage?.total_tokens,
+    },
   };
 }
 
@@ -346,10 +360,17 @@ export async function executeImageGeneration(request: AIImageRequest): Promise<A
     message: request.prompt,
     history: [],
   });
+  const executionPlan = {
+    providerId: plan.providerId,
+    modelId: request.modelId || plan.modelId,
+    fallbackPlans: plan.fallbackPlans,
+    reason: plan.reason,
+    modality: plan.modality,
+  };
 
-  const client = getProviderClient(plan.providerId);
+  const client = getProviderClient(executionPlan.providerId);
   const imageResponse = await (client as any).images.generate({
-    model: plan.modelId,
+    model: executionPlan.modelId,
     prompt: request.prompt,
     size: resolveImageSize(request),
     n: 1,
@@ -358,7 +379,7 @@ export async function executeImageGeneration(request: AIImageRequest): Promise<A
 
   const payload = await readImagePayload(imageResponse);
   return {
-    plan,
+    plan: executionPlan,
     durationMs: Date.now() - startTime,
     imageBuffer: payload.buffer,
     mimeType: payload.mimeType,
@@ -528,9 +549,16 @@ export async function executeAudioGeneration(request: AIAudioRequest): Promise<A
     message: request.prompt,
     history: [],
   });
+  const executionPlan = {
+    providerId: plan.providerId,
+    modelId: request.modelId || plan.modelId,
+    fallbackPlans: plan.fallbackPlans,
+    reason: plan.reason,
+    modality: plan.modality,
+  };
 
   const voiceId = resolveVoiceVoiceId(request);
-  const modelId = resolveAudioModel(request);
+  const modelId = request.modelId || resolveAudioModel(request);
   const requestBody = {
     text: request.narrationText,
     model_id: modelId,
@@ -550,7 +578,7 @@ export async function executeAudioGeneration(request: AIAudioRequest): Promise<A
 
   const payload = await readAudioPayload(response);
   return {
-    plan,
+    plan: executionPlan,
     durationMs: Date.now() - startTime,
     ...(payload.buffer ? { audioBuffer: payload.buffer } : {}),
     mimeType: payload.mimeType,
@@ -598,9 +626,16 @@ export async function executeVideoGeneration(request: AIVideoRequest): Promise<A
     message: request.prompt,
     history: [],
   });
+  const executionPlan = {
+    providerId: plan.providerId,
+    modelId: request.modelId || plan.modelId,
+    fallbackPlans: plan.fallbackPlans,
+    reason: plan.reason,
+    modality: plan.modality,
+  };
 
   const requestBody = {
-    model: plan.modelId,
+    model: executionPlan.modelId,
     prompt: request.prompt,
     resolution: resolveVideoResolution(request),
     duration_seconds: request.durationSeconds || 10,
@@ -616,7 +651,7 @@ export async function executeVideoGeneration(request: AIVideoRequest): Promise<A
 
   for (const endpoint of endpointCandidates) {
     try {
-      const response = await postToProviderVideoEndpoint(plan.providerId, endpoint, requestBody);
+      const response = await postToProviderVideoEndpoint(executionPlan.providerId, endpoint, requestBody);
       if (!response.ok) {
         const bodyText = await response.text().catch(() => '');
         const error = new Error(`Video generation request failed (${response.status}): ${bodyText || response.statusText}`);
@@ -629,7 +664,7 @@ export async function executeVideoGeneration(request: AIVideoRequest): Promise<A
 
       const payload = await readVideoPayload(response);
       return {
-        plan,
+        plan: executionPlan,
         durationMs: Date.now() - startTime,
         ...(payload.buffer ? { videoBuffer: payload.buffer } : {}),
         mimeType: payload.mimeType,

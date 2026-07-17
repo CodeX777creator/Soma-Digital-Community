@@ -365,6 +365,17 @@ export async function reserveCredits(context: AIExecutionContext, credits: numbe
       reason: context.metadata?.reason ? String(context.metadata.reason) : undefined,
       providerMode: context.providerMode || "hybrid",
       estimatedCostUsd,
+      pricingUnit: context.metadata?.pricingUnit as any,
+      estimatedUnits: typeof context.metadata?.estimatedUnits === "number" ? context.metadata.estimatedUnits : undefined,
+      unitRateCredits: typeof context.metadata?.unitRateCredits === "number" ? context.metadata.unitRateCredits : undefined,
+      inputTokens: typeof context.metadata?.inputTokens === "number" ? context.metadata.inputTokens : undefined,
+      outputTokens: typeof context.metadata?.outputTokens === "number" ? context.metadata.outputTokens : undefined,
+      imageCount: typeof context.metadata?.imageCount === "number" ? context.metadata.imageCount : undefined,
+      durationSeconds: typeof context.metadata?.durationSeconds === "number" ? context.metadata.durationSeconds : undefined,
+      characters: typeof context.metadata?.characters === "number" ? context.metadata.characters : undefined,
+      modelPricingSnapshot: context.metadata?.modelPricingSnapshot && typeof context.metadata.modelPricingSnapshot === "object"
+        ? context.metadata.modelPricingSnapshot as Record<string, unknown>
+        : undefined,
       metadata: context.metadata,
     } satisfies CreditLedgerEntry);
   });
@@ -434,6 +445,18 @@ export async function finalizeCredits(lease: AIExecutionLease, input: {
       creditsRefunded: refunded,
       status: input.status,
       actualCostUsd: input.actualCostUsd,
+      actualUnits: typeof input.metadata?.actualUnits === "number" ? input.metadata.actualUnits : ledger.actualUnits,
+      pricingUnit: typeof input.metadata?.pricingUnit === "string" ? input.metadata.pricingUnit as any : ledger.pricingUnit,
+      estimatedUnits: typeof input.metadata?.estimatedUnits === "number" ? input.metadata.estimatedUnits : ledger.estimatedUnits,
+      unitRateCredits: typeof input.metadata?.unitRateCredits === "number" ? input.metadata.unitRateCredits : ledger.unitRateCredits,
+      inputTokens: typeof input.metadata?.inputTokens === "number" ? input.metadata.inputTokens : ledger.inputTokens,
+      outputTokens: typeof input.metadata?.outputTokens === "number" ? input.metadata.outputTokens : ledger.outputTokens,
+      imageCount: typeof input.metadata?.imageCount === "number" ? input.metadata.imageCount : ledger.imageCount,
+      durationSeconds: typeof input.metadata?.durationSeconds === "number" ? input.metadata.durationSeconds : ledger.durationSeconds,
+      characters: typeof input.metadata?.characters === "number" ? input.metadata.characters : ledger.characters,
+      modelPricingSnapshot: input.metadata?.modelPricingSnapshot && typeof input.metadata.modelPricingSnapshot === "object"
+        ? input.metadata.modelPricingSnapshot as Record<string, unknown>
+        : ledger.modelPricingSnapshot,
       metadata: {
         ...(ledger.metadata || {}),
         ...(input.metadata || {}),

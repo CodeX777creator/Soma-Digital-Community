@@ -33,6 +33,7 @@ import { useAuth } from "@/providers/AuthProvider";
 import { parseApiError } from "@/lib/clientApi";
 import { showErrorToast } from "@/lib/error-toast";
 import { cn } from "@/lib/utils";
+import { estimateImageCreatorCredits, formatCreatorCreditEstimate } from "@/lib/ai-credit-estimates";
 import type {
   BrandTemplate,
   ImageAspectRatio,
@@ -305,6 +306,7 @@ export default function ImageStudioPage() {
   const brandStyle = useMemo(() => getBrandStyle(state.brandStyle), [state.brandStyle]);
   const stylePreset = advancedOutputOpen ? state.rawStylePreset : brandStyle.stylePreset || visualPreset.stylePreset;
   const aspectRatio = advancedOutputOpen ? state.rawAspectRatio : visualPreset.aspectRatio;
+  const estimatedImageCredits = estimateImageCreatorCredits(1, brandStyle.id === "product_3d");
   const prompt = useMemo(() => buildPrompt(state), [state]);
   const promptEdits = useMemo(() => buildPromptEdits(state), [state]);
   const brandTemplate = useMemo(() => buildBrandTemplate(state), [state]);
@@ -544,8 +546,8 @@ export default function ImageStudioPage() {
                         <Sparkles className="h-4 w-4 text-[#4F9DFF]" />
                         Credit cost
                       </div>
-                      <p className="text-2xl font-semibold">10 Creator Credits</p>
-                      <p className="text-sm leading-6 text-[#BFC6D4]">Generating a new image uses credits. Reusing a saved asset costs 0 credits.</p>
+                      <p className="text-2xl font-semibold">{formatCreatorCreditEstimate(estimatedImageCredits)}</p>
+                      <p className="text-sm leading-6 text-[#BFC6D4]">1 image × {estimatedImageCredits} credits/image. Reusing a saved asset costs 0 credits.</p>
                       <div className="rounded-[14px] border border-[#22C55E]/20 bg-[#22C55E]/10 p-3 text-sm text-[#BFF8D1]">
                         Selected: {visualPreset.formatLabel} · {brandStyle.label}
                       </div>
@@ -697,7 +699,7 @@ export default function ImageStudioPage() {
                     <StatusRow label="Use case" value={USE_CASES.find((item) => item.id === state.useCase)?.label || state.useCase} />
                     <StatusRow label="Format" value={visualPreset.formatLabel} />
                     <StatusRow label="Style" value={brandStyle.label} />
-                    <StatusRow label="Credit cost" value="10 credits" />
+                    <StatusRow label="Estimated use" value={`${estimatedImageCredits} credits per image`} />
                   </div>
                 </GlassCard>
 
@@ -734,6 +736,9 @@ export default function ImageStudioPage() {
                         <img src={latestImage.thumbnail} alt={latestImage.title} className="aspect-square w-full rounded-[16px] border border-white/[0.08] object-cover" />
                         <p className="truncate text-sm font-medium">{latestImage.title}</p>
                         <p className="text-xs text-[#7E8799]">{latestImage.stylePreset.replace(/_/g, " ")} · {latestImage.aspectRatio}</p>
+                        {typeof latestImage.credits === "number" ? (
+                          <p className="text-xs text-[#BFF8D1]">Charged {latestImage.credits} credits{latestImage.creditsRefunded ? ` · ${latestImage.creditsRefunded} returned` : ""}</p>
+                        ) : null}
                       </div>
                     ) : (
                       <div className="rounded-[16px] border border-dashed border-white/[0.12] p-6 text-sm text-[#7E8799]">

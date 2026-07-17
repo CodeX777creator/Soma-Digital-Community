@@ -34,6 +34,7 @@ import { useAuth } from "@/providers/AuthProvider";
 import { parseApiError } from "@/lib/clientApi";
 import { showErrorToast } from "@/lib/error-toast";
 import { cn } from "@/lib/utils";
+import { estimateAudioCreatorCredits, formatCreatorCreditEstimate } from "@/lib/ai-credit-estimates";
 import {
   AUDIO_LANGUAGES,
   type AudioAssetRecord,
@@ -77,6 +78,9 @@ type AudioStudioResponse = {
     thumbnail: string;
     provider: string;
     model: string;
+    credits?: number;
+    creditsReserved?: number;
+    creditsRefunded?: number;
     promptVersion: string;
     visibility: "private" | "team" | "public";
     tags: string[];
@@ -455,6 +459,7 @@ export default function AudioStudioPage() {
 
   const selectedType = useMemo(() => getAudioType(state.audioType), [state.audioType]);
   const selectedVoice = useMemo(() => getVoiceStyle(state.voiceStyle), [state.voiceStyle]);
+  const estimatedAudioCredits = estimateAudioCreatorCredits({ durationSeconds: state.durationSeconds });
   const generatedPrompt = useMemo(() => buildPrompt(state), [state]);
   const transcriptSegments = latestAudio?.transcriptSegments || [];
   const playableAudio = Boolean(latestAudio?.downloadUrl && latestAudio.renderStrategy !== "bundle" && latestAudio.renderState === "completed");
@@ -748,7 +753,7 @@ export default function AudioStudioPage() {
                 <div className="mt-5 space-y-3 text-sm">
                   <div className="flex items-center justify-between rounded-2xl bg-white/[0.04] px-4 py-3">
                     <span className="text-[#BFC6D4]">Credit use</span>
-                    <span className="font-semibold text-white">20 credits</span>
+                    <span className="font-semibold text-white">{estimatedAudioCredits} credits</span>
                   </div>
                   <div className="flex items-center justify-between rounded-2xl bg-white/[0.04] px-4 py-3">
                     <span className="text-[#BFC6D4]">Voice style</span>
@@ -759,7 +764,7 @@ export default function AudioStudioPage() {
                     <span className="font-semibold text-white">{state.language}</span>
                   </div>
                   <div className="rounded-2xl border border-[#4F9DFF]/20 bg-[#4F9DFF]/10 px-4 py-3 text-xs leading-5 text-[#CFE3FF]">
-                    Reusing saved audio costs 0 credits. New voice/audio generation uses 20 Creator Credits.
+                    {state.durationSeconds}s × 2 credits/sec. Reusing saved audio costs 0 credits.
                   </div>
                   <div className="rounded-2xl border border-white/[0.08] bg-white/[0.03] p-4">
                     <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#7E8799]">Soma will optimize for</p>
@@ -1085,7 +1090,7 @@ export default function AudioStudioPage() {
 
               <GlassCard className="flex flex-col gap-4 p-5 md:flex-row md:items-center md:justify-between md:p-6">
                 <div>
-                  <p className="text-sm font-semibold text-white">Voice/audio generation uses 20 Creator Credits.</p>
+                  <p className="text-sm font-semibold text-white">Estimated use: {formatCreatorCreditEstimate(estimatedAudioCredits)}.</p>
                   <p className="mt-1 text-sm text-[#BFC6D4]">Scheduling, downloading, or reusing saved audio costs 0 credits.</p>
                 </div>
                 <Button type="submit" className="h-12 min-w-[210px] rounded-2xl bg-gradient-to-r from-[#2563EB] to-[#8B5CF6]" disabled={loading}>
@@ -1160,6 +1165,14 @@ export default function AudioStudioPage() {
                           <div className="rounded-2xl bg-white/[0.04] p-3">
                             <p className="text-[#8E98AA]">Duration</p>
                             <p className="mt-1 font-semibold text-white">{formatDuration(latestAudio.durationSeconds)}</p>
+                          </div>
+                          <div className="rounded-2xl bg-white/[0.04] p-3 sm:col-span-2">
+                            <p className="text-[#8E98AA]">Creator Credits</p>
+                            <p className="mt-1 font-semibold text-white">
+                              {typeof latestAudio.credits === "number"
+                                ? `Charged ${latestAudio.credits} credits${latestAudio.creditsRefunded ? ` · ${latestAudio.creditsRefunded} returned` : ""}`
+                                : `${latestAudio.durationSeconds}s × 2 credits/sec estimate`}
+                            </p>
                           </div>
                         </div>
                       </div>

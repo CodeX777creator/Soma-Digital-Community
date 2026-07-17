@@ -120,6 +120,16 @@ export interface CreditLedgerEntry {
   providerMode: ProviderMode;
   estimatedCostUsd?: number;
   actualCostUsd?: number;
+  pricingUnit?: "token" | "image" | "second" | "character" | "flat";
+  estimatedUnits?: number;
+  actualUnits?: number;
+  unitRateCredits?: number;
+  inputTokens?: number;
+  outputTokens?: number;
+  imageCount?: number;
+  durationSeconds?: number;
+  characters?: number;
+  modelPricingSnapshot?: Record<string, unknown>;
   metadata?: Record<string, unknown>;
 }
 

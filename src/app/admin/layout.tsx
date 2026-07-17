@@ -20,6 +20,7 @@ import {
   X,
   Bell,
   Activity,
+  Bot,
   CalendarDays,
   Share2,
   BookOpen,
@@ -31,6 +32,7 @@ import { auth, db } from "@/lib/firebase";
 const navItems = [
   { label: "Dashboard", href: "/admin/dashboard", icon: LayoutDashboard },
   { label: "Analytics", href: "/admin/analytics", icon: Activity },
+  { label: "AI Gateway", href: "/admin/ai", icon: Bot },
   { label: "Onboarding", href: "/admin/onboarding", icon: Route },
   { label: "Promos", href: "/admin/promos", icon: TicketPercent },
   { label: "Academy", href: "/admin/academy", icon: BookOpen },

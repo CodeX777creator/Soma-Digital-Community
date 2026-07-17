@@ -60,12 +60,11 @@ export const DEFAULT_CREATOR_CREDIT_ALLOCATIONS: Record<CreatorCreditTier, numbe
 };
 
 export const DEFAULT_CREATOR_CREDIT_BUNDLES: CreatorCreditBundle[] = [
-  { id: "credits_5", label: "5 Credits", credits: 5, priceCents: 125, currency: "USD", sortOrder: 10, active: true },
-  { id: "credits_10", label: "10 Credits", credits: 10, priceCents: 225, currency: "USD", sortOrder: 20, active: true },
-  { id: "credits_25", label: "25 Credits", credits: 25, priceCents: 500, currency: "USD", sortOrder: 30, active: true },
-  { id: "credits_50", label: "50 Credits", credits: 50, priceCents: 450, currency: "USD", sortOrder: 40, active: true },
-  { id: "credits_100", label: "100 Credits", credits: 100, priceCents: 800, currency: "USD", sortOrder: 50, active: true },
-  { id: "credits_250", label: "250 Credits", credits: 250, priceCents: 1750, currency: "USD", sortOrder: 60, active: true },
+  { id: "credits_10", label: "10 Credits", credits: 10, priceCents: 200, currency: "USD", sortOrder: 10, active: true },
+  { id: "credits_25", label: "25 Credits", credits: 25, priceCents: 500, currency: "USD", sortOrder: 20, active: true },
+  { id: "credits_50", label: "50 Credits", credits: 50, priceCents: 900, currency: "USD", sortOrder: 30, active: true },
+  { id: "credits_100", label: "100 Credits", credits: 100, priceCents: 1600, currency: "USD", sortOrder: 40, active: true },
+  { id: "credits_250", label: "250 Credits", credits: 250, priceCents: 3500, currency: "USD", sortOrder: 50, active: true },
 ];
 
 export const DEFAULT_CREATOR_CREDIT_FEATURE_PRICING: Record<CreatorCreditFeatureKey, number> = {

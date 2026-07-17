@@ -5,6 +5,8 @@ export * from "./config";
 export * from "./crypto";
 export * from "./byok";
 export * from "./credits";
+export * from "./pricing";
+export * from "./model-registry";
 export * from "./orchestrator";
 export * from "./gateway";
 export * from "./image";

@@ -322,6 +322,10 @@ export async function generateAudioStudioAsset(
     providerMode: 'hybrid',
     allowByok: true,
     requestId: `aud_${ownerId}_${Date.now()}`,
+    metadata: {
+      durationSeconds,
+      characters: synthesisText.length,
+    },
   });
 
   const assetId = `aud_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
@@ -477,6 +481,9 @@ export async function generateAudioStudioAsset(
     waveformPreviewUrl,
     provider: synthesis.plan.providerId,
     model: synthesis.plan.modelId,
+    credits: synthesis.billing?.creditsCharged,
+    creditsReserved: synthesis.billing?.creditsReserved,
+    creditsRefunded: synthesis.billing?.creditsRefunded,
     promptVersion: 'audio-studio@1.0.0',
     renderStrategy: renderOutcome.renderer,
     visibility: input.visibility || 'private',
