@@ -20,6 +20,8 @@ import {
 } from "lucide-react";
 import { auth, db } from "@/lib/firebase";
 import { AdminMediaPicker } from "@/components/admin/AdminMediaPicker";
+import { AdminErrorState, AdminEmptyState, AdminLoadingState } from "@/components/admin/AdminState";
+import { toAppError, AppError } from "@/lib/errors";
 
 type Tier = "explorer" | "pro" | "elite";
 type StatusFilter = "all" | "active" | "banned";
@@ -122,6 +124,7 @@ export default function AdminUsersPage() {
   const [mentorChats, setMentorChats] = useState<RelatedRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [activeError, setActiveError] = useState<AppError | null>(null);
   const [search, setSearch] = useState("");
   const [tierFilter, setTierFilter] = useState<"all" | Tier>("all");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
@@ -236,6 +239,7 @@ export default function AdminUsersPage() {
     }
     setActionLoading(`tier-${user.uid}`);
     setError(null);
+    setActiveError(null);
     try {
       await authedAdminFetch("/api/admin/users/update-tier", {
         uid: user.uid,
@@ -243,7 +247,7 @@ export default function AdminUsersPage() {
         reason,
       });
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to change tier.");
+      setActiveError(toAppError(err, { userMessage: "Unable to change tier." }));
     } finally {
       setActionLoading(null);
     }
@@ -260,13 +264,14 @@ export default function AdminUsersPage() {
 
     setActionLoading(`ban-${user.uid}`);
     setError(null);
+    setActiveError(null);
     try {
       await authedAdminFetch("/api/admin/users/set-disabled", {
         uid: user.uid,
         disabled,
       });
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to update user status.");
+      setActiveError(toAppError(err, { userMessage: "Unable to update user status." }));
     } finally {
       setActionLoading(null);
     }
@@ -280,6 +285,7 @@ export default function AdminUsersPage() {
     if (!confirmed) return;
     setActionLoading(`admin-${user.uid}`);
     setError(null);
+    setActiveError(null);
     try {
       await authedAdminFetch("/api/admin/settings/admin-access", {
         uid: user.uid,
@@ -287,7 +293,7 @@ export default function AdminUsersPage() {
       });
       setSelectedUser((prev) => prev ? { ...prev, isAdmin: !isAdmin, role: isAdmin ? "member" : "admin" } : null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to update admin access.");
+      setActiveError(toAppError(err, { userMessage: "Unable to update admin access." }));
     } finally {
       setActionLoading(null);
     }
@@ -302,6 +308,7 @@ export default function AdminUsersPage() {
     if (!confirmed) return;
     setActionLoading(`avatar-${selectedUser.uid}`);
     setError(null);
+    setActiveError(null);
     try {
       await authedAdminFetch("/api/admin/users/avatar", {
         uid: selectedUser.uid,
@@ -309,7 +316,7 @@ export default function AdminUsersPage() {
       });
       setSelectedUser((prev) => prev ? { ...prev, photoURL: url, avatarURL: url, adminManagedAvatarUrl: url } : null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to update profile image.");
+      setActiveError(toAppError(err, { userMessage: "Unable to update profile image." }));
     } finally {
       setActionLoading(null);
     }
@@ -384,10 +391,20 @@ export default function AdminUsersPage() {
         </select>
       </section>
 
+      {activeError && (
+        <AdminErrorState
+          title="Users Action Error"
+          description={activeError.userMessage}
+          requestId={activeError.requestId}
+          onRetry={activeError.retryable ? () => {} : undefined}
+        />
+      )}
+
       {error && (
-        <div className="rounded-lg border border-red-500/25 bg-red-500/10 px-4 py-3 text-sm text-red-100">
-          {error}
-        </div>
+        <AdminErrorState
+          title="Users Error"
+          description={error}
+        />
       )}
 
       <section className="overflow-hidden rounded-lg border border-white/10 bg-white/[0.035]">

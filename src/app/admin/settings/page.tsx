@@ -31,6 +31,8 @@ import {
 } from "lucide-react";
 import { auth, db } from "@/lib/firebase";
 import { AdminMediaPicker } from "@/components/admin/AdminMediaPicker";
+import { AdminErrorState } from "@/components/admin/AdminState";
+import { toAppError, AppError } from "@/lib/errors";
 import {
   CreatorCreditBundle,
   CreatorCreditConfig,
@@ -198,6 +200,7 @@ export default function AdminSettingsPage() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [activeError, setActiveError] = useState<AppError | null>(null);
 
   // Tier pricing
   const [pricing, setPricing] = useState<PricingConfig>(DEFAULT_PRICING);
@@ -285,11 +288,12 @@ export default function AdminSettingsPage() {
   const refresh = async () => {
     setRefreshing(true);
     setError(null);
+    setActiveError(null);
     try {
       const nextStatus = await loadSettingsStatus();
       setStatus(nextStatus);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to load settings.");
+      setActiveError(toAppError(err));
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -300,6 +304,8 @@ export default function AdminSettingsPage() {
   const savePricing = async () => {
     if (!db) return;
     setSavingPricing(true);
+    setError(null);
+    setActiveError(null);
     try {
       await adminSettingsFetch("/api/admin/settings", {
         method: "PATCH",
@@ -307,8 +313,8 @@ export default function AdminSettingsPage() {
       });
       setPricingSaved(true);
       setTimeout(() => setPricingSaved(false), 3000);
-    } catch {
-      setError("Unable to save pricing.");
+    } catch (err) {
+      setActiveError(toAppError(err, { userMessage: "Unable to save pricing." }));
     } finally {
       setSavingPricing(false);
     }
@@ -317,6 +323,8 @@ export default function AdminSettingsPage() {
   const saveSite = async () => {
     if (!db) return;
     setSavingSite(true);
+    setError(null);
+    setActiveError(null);
     try {
       await adminSettingsFetch("/api/admin/settings", {
         method: "PATCH",
@@ -324,8 +332,8 @@ export default function AdminSettingsPage() {
       });
       setSiteSaved(true);
       setTimeout(() => setSiteSaved(false), 3000);
-    } catch {
-      setError("Unable to save site config.");
+    } catch (err) {
+      setActiveError(toAppError(err, { userMessage: "Unable to save site config." }));
     } finally {
       setSavingSite(false);
     }
@@ -389,6 +397,7 @@ export default function AdminSettingsPage() {
 
     setSavingCreatorCredits(true);
     setError(null);
+    setActiveError(null);
     try {
       const normalized = normalizeCreatorCreditConfig(creatorCreditsDraft);
       await adminSettingsFetch("/api/admin/settings", {
@@ -397,8 +406,8 @@ export default function AdminSettingsPage() {
       });
       setCreatorCreditsSaved(true);
       setTimeout(() => setCreatorCreditsSaved(false), 3000);
-    } catch {
-      setError("Unable to save Creator Credits config.");
+    } catch (err) {
+      setActiveError(toAppError(err, { userMessage: "Unable to save Creator Credits config." }));
     } finally {
       setSavingCreatorCredits(false);
     }
@@ -432,7 +441,7 @@ export default function AdminSettingsPage() {
       setAdminActionMsg({ ok: true, text: `Admin access ${adminAction === "grant" ? "granted to" : "revoked from"} ${userSnap.data().email || uid}.` });
       setAdminTarget("");
     } catch (err) {
-      setAdminActionMsg({ ok: false, text: err instanceof Error ? err.message : "Action failed." });
+      setAdminActionMsg({ ok: false, text: toAppError(err).userMessage });
     } finally {
       setAdminActionLoading(false);
     }
@@ -459,8 +468,21 @@ export default function AdminSettingsPage() {
         </button>
       </section>
 
+      {activeError && (
+        <AdminErrorState
+          title="Settings Error"
+          description={activeError.userMessage}
+          requestId={activeError.requestId}
+          onRetry={activeError.retryable ? refresh : undefined}
+        />
+      )}
+
       {error && (
-        <div className="rounded-lg border border-red-500/25 bg-red-500/10 px-4 py-3 text-sm text-red-100">{error}</div>
+        <AdminErrorState
+          title="Settings Error"
+          description={error}
+          onRetry={refresh}
+        />
       )}
 
       {/* ── Tier Pricing ───────────────────────────────── */}

@@ -16,6 +16,8 @@ import {
   XCircle,
 } from "lucide-react";
 import { auth, db } from "@/lib/firebase";
+import { AdminErrorState, AdminEmptyState, AdminLoadingState } from "@/components/admin/AdminState";
+import { toAppError, AppError } from "@/lib/errors";
 
 type Tier = "explorer" | "pro" | "elite";
 type SubscriptionStatus = "active" | "cancelled" | "past_due" | "expired" | "approval_pending" | "created" | "all";
@@ -168,6 +170,7 @@ export default function AdminSubscriptionsPage() {
   const [users, setUsers] = useState<Record<string, UserRecord>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [activeError, setActiveError] = useState<AppError | null>(null);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<SubscriptionStatus>("all");
   const [providerFilter, setProviderFilter] = useState<"all" | Provider>("all");
@@ -242,11 +245,12 @@ export default function AdminSubscriptionsPage() {
     if (!confirmed) return;
     setCancelLoading(subscription.id);
     setError(null);
+    setActiveError(null);
     try {
       await adminSubscriptionFetch(`/api/admin/subscriptions/${subscription.id}/cancel`, { method: "POST" });
       setSelected(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to cancel subscription.");
+      setActiveError(toAppError(err, { userMessage: "Unable to cancel subscription." }));
     } finally {
       setCancelLoading(null);
     }
@@ -288,8 +292,20 @@ export default function AdminSubscriptionsPage() {
         <FilterSelect value={tierFilter} onChange={(value) => setTierFilter(value as "all" | Tier)} options={TIERS} label="Filter by tier" />
       </section>
 
+      {activeError && (
+        <AdminErrorState
+          title="Subscriptions Action Error"
+          description={activeError.userMessage}
+          requestId={activeError.requestId}
+          onRetry={activeError.retryable ? () => {} : undefined}
+        />
+      )}
+
       {error && (
-        <div className="rounded-lg border border-red-500/25 bg-red-500/10 px-4 py-3 text-sm text-red-100">{error}</div>
+        <AdminErrorState
+          title="Subscriptions Error"
+          description={error}
+        />
       )}
 
       <section className="overflow-hidden rounded-lg border border-white/10 bg-white/[0.035]">
