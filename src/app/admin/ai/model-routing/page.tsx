@@ -241,21 +241,29 @@ export default function AdminAIModelRoutingPage() {
             <div className="mt-5">
               <p className="mb-2 text-sm text-white/70">Allowed tiers</p>
               <div className="flex flex-wrap gap-2">
-                {PLANS.map((plan) => (
-                  <button
-                    key={plan}
-                    type="button"
-                    onClick={() => setDraft((current) => ({
-                      ...current,
-                      allowedTiers: current.allowedTiers.includes(plan)
-                        ? current.allowedTiers.filter((item) => item !== plan)
-                        : [...current.allowedTiers, plan],
-                    }))}
-                    className={`rounded-full px-3 py-1 text-sm ${draft.allowedTiers.includes(plan) ? "bg-cyan-400/15 text-cyan-100" : "bg-white/[0.05] text-white/45"}`}
-                  >
-                    {plan}
-                  </button>
-                ))}
+                {PLANS.map((plan) => {
+                  const safeTiers = Array.isArray(draft.allowedTiers) ? draft.allowedTiers : [];
+                  const isAllowed = safeTiers.includes(plan);
+                  
+                  return (
+                    <button
+                      key={plan}
+                      type="button"
+                      onClick={() => setDraft((current) => {
+                        const currentTiers = Array.isArray(current.allowedTiers) ? current.allowedTiers : [];
+                        return {
+                          ...current,
+                          allowedTiers: currentTiers.includes(plan)
+                            ? currentTiers.filter((item) => item !== plan)
+                            : [...currentTiers, plan],
+                        };
+                      })}
+                      className={`rounded-full px-3 py-1 text-sm ${isAllowed ? "bg-cyan-400/15 text-cyan-100" : "bg-white/[0.05] text-white/45"}`}
+                    >
+                      {plan}
+                    </button>
+                  );
+                })}
               </div>
             </div>
 
