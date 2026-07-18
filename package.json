@@ -13,7 +13,8 @@
     "functions:build": "cd functions && npm run build",
     "seed:marketplace": "tsx -r dotenv/config scripts/seedMarketplace.ts",
     "test:ai-pricing": "tsx scripts/validateAIPricing.ts",
-    "test:academy-commerce": "tsx scripts/validateAcademyCommerce.ts"
+    "test:academy-commerce": "tsx scripts/validateAcademyCommerce.ts",
+    "test:social-platform-settings": "tsx scripts/validateSocialPlatformSettings.ts"
   },
   "dependencies": {
     "@genkit-ai/google-genai": "^1.28.0",

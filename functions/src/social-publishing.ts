@@ -3,6 +3,7 @@ import crypto from 'crypto';
 import { onSchedule } from 'firebase-functions/v2/scheduler';
 import { defineBoolean, defineInt, defineSecret, defineString } from 'firebase-functions/params';
 import { sendNotificationWithPush } from './push-notifications';
+import { mapPlatformSettingsToProvider, normalizePlatformSettings } from './social-platform-settings';
 
 const db = admin.firestore();
 
@@ -346,6 +347,15 @@ function sanitizeStringArray(value: unknown, maxItems = 40): string[] {
     items.push(normalized);
   });
   return items.slice(0, maxItems);
+}
+
+function buildFinalText(post: ScheduledPostDoc): string {
+  const hashtags = sanitizeStringArray(post.hashtags);
+  return [
+    post.caption || '',
+    hashtags.length > 0 ? hashtags.map((tag) => `#${tag.replace(/^#/, '')}`).join(' ') : '',
+    post.cta || '',
+  ].filter(Boolean).join('\n\n').trim();
 }
 
 function getDefaultContentType(platform: SocialPlatform): ScheduledPostContentType {
@@ -799,22 +809,21 @@ class TikTokNativePublisher implements NativePublisher {
   }
 
   private resolveMode(context: NativePublisherContext): 'direct' | 'draft' {
-    const requested = context.payload.platformSettings.tiktokPublishMode
-      || context.payload.platformSettings.publishMode
-      || context.payload.platformSettings.mode;
+    const settings = normalizePlatformSettings('tiktok', context.payload.platformSettings || {});
+    const requested = settings.tiktokPublishMode;
     if (requested === 'draft' || requested === 'inbox' || requested === 'upload') return 'draft';
     if (requested === 'direct') return 'direct';
     return hasScope(context.account, 'video.publish') ? 'direct' : 'draft';
   }
 
   private async buildPostInfo(context: NativePublisherContext): Promise<Record<string, unknown>> {
-    const settings = context.payload.platformSettings || {};
+    const settings = mapPlatformSettingsToProvider('tiktok', context.payload.platformSettings || {});
     const creatorInfo = await this.fetchCreatorInfo(context.credentials?.accessToken || '').catch((error) => ({
       privacyLevelOptions: [] as string[],
       warning: error instanceof Error ? error.message : String(error),
     }));
     const privacyOptions = creatorInfo.privacyLevelOptions;
-    const requestedPrivacy = typeof settings.privacyLevel === 'string' ? settings.privacyLevel : undefined;
+    const requestedPrivacy = typeof settings.privacy_level === 'string' ? settings.privacy_level : undefined;
     const privacyLevel = requestedPrivacy && privacyOptions.includes(requestedPrivacy)
       ? requestedPrivacy
       : privacyOptions.includes('SELF_ONLY')
@@ -824,24 +833,24 @@ class TikTokNativePublisher implements NativePublisher {
     const postInfo: Record<string, unknown> = {
       title: context.payload.content.finalText.slice(0, 2200),
       privacy_level: privacyLevel,
-      disable_duet: sanitizeBoolean(settings.disableDuet, false),
-      disable_comment: sanitizeBoolean(settings.disableComment, false),
-      disable_stitch: sanitizeBoolean(settings.disableStitch, false),
+      disable_duet: sanitizeBoolean(settings.disable_duet, false),
+      disable_comment: sanitizeBoolean(settings.disable_comment, false),
+      disable_stitch: sanitizeBoolean(settings.disable_stitch, false),
     };
 
-    const coverTimestamp = sanitizeNumber(settings.videoCoverTimestampMs);
+    const coverTimestamp = sanitizeNumber(settings.video_cover_timestamp_ms);
     if (coverTimestamp !== undefined) {
       postInfo.video_cover_timestamp_ms = coverTimestamp;
     }
 
-    if (typeof settings.isAigc === 'boolean') {
-      postInfo.is_aigc = settings.isAigc;
+    if (typeof settings.is_aigc === 'boolean') {
+      postInfo.is_aigc = settings.is_aigc;
     }
-    if (typeof settings.brandContentToggle === 'boolean') {
-      postInfo.brand_content_toggle = settings.brandContentToggle;
+    if (typeof settings.brand_content_toggle === 'boolean') {
+      postInfo.brand_content_toggle = settings.brand_content_toggle;
     }
-    if (typeof settings.brandOrganicToggle === 'boolean') {
-      postInfo.brand_organic_toggle = settings.brandOrganicToggle;
+    if (typeof settings.brand_organic_toggle === 'boolean') {
+      postInfo.brand_organic_toggle = settings.brand_organic_toggle;
     }
 
     return postInfo;
@@ -1078,9 +1087,10 @@ class InstagramNativePublisher implements NativePublisher {
       body.caption = context.payload.content.finalText;
     }
     if (item.type === 'video') {
-      body.media_type = context.payload.platformSettings.instagramMediaType === 'VIDEO' ? 'VIDEO' : 'REELS';
+      const providerSettings = mapPlatformSettingsToProvider('instagram', context.payload.platformSettings || {});
+      body.media_type = providerSettings.media_type === 'VIDEO' ? 'VIDEO' : 'REELS';
       body.video_url = item.downloadUrl;
-      body.share_to_feed = sanitizeBoolean(context.payload.platformSettings.shareToFeed, true);
+      body.share_to_feed = sanitizeBoolean(providerSettings.share_to_feed, true);
       return body;
     }
     body.image_url = item.downloadUrl;
@@ -1309,7 +1319,7 @@ class XNativePublisher implements NativePublisher {
   }
 
   private resolveMediaIds(context: NativePublisherContext): string[] {
-    const raw = context.payload.platformSettings.xMediaIds || context.payload.platformSettings.mediaIds;
+    const raw = mapPlatformSettingsToProvider('x', context.payload.platformSettings || {}).media_ids;
     return sanitizeStringListSetting(raw, 4);
   }
 }
@@ -1490,14 +1500,14 @@ class YouTubeNativePublisher implements NativePublisher {
   }
 
   private buildMetadata(context: NativePublisherContext): Record<string, unknown> {
-    const settings = context.payload.platformSettings || {};
-    const rawPrivacy = sanitizeStringSetting(settings.youtubePrivacyStatus || settings.privacyStatus, 20);
+    const settings = mapPlatformSettingsToProvider('youtube', context.payload.platformSettings || {});
+    const rawPrivacy = sanitizeStringSetting(settings.privacyStatus, 20);
     const privacyStatus = rawPrivacy && ['public', 'unlisted', 'private'].includes(rawPrivacy)
       ? rawPrivacy
       : 'private';
-    const settingsTags = sanitizeStringListSetting(settings.youtubeTags || settings.tags, 30);
+    const settingsTags = sanitizeStringListSetting(settings.tags, 30);
     const tags = settingsTags.length > 0 ? settingsTags : context.payload.content.hashtags.slice(0, 30);
-    const title = sanitizeStringSetting(settings.youtubeTitle || settings.title, 100)
+    const title = sanitizeStringSetting(settings.title, 100)
       || sanitizeStringSetting(context.payload.title, 100)
       || sanitizeStringSetting(context.payload.caption, 100)
       || 'SDC video';
@@ -1505,13 +1515,13 @@ class YouTubeNativePublisher implements NativePublisher {
     return {
       snippet: {
         title,
-        description: context.payload.content.finalText.slice(0, 5000),
+        description: sanitizeStringSetting(settings.descriptionOverride, 5000) || context.payload.content.finalText.slice(0, 5000),
         tags,
-        categoryId: sanitizeStringSetting(settings.youtubeCategoryId || settings.categoryId, 20) || '22',
+        categoryId: sanitizeStringSetting(settings.categoryId, 20) || '22',
       },
       status: {
         privacyStatus,
-        selfDeclaredMadeForKids: sanitizeBoolean(settings.madeForKids || settings.selfDeclaredMadeForKids, false),
+        selfDeclaredMadeForKids: sanitizeBoolean(settings.selfDeclaredMadeForKids, false),
       },
     };
   }
@@ -1649,7 +1659,7 @@ async function buildPublishPayload(post: ScheduledPostDoc, account: SocialAccoun
       timezone: post.timezone || account.timezone,
       status: post.status,
     },
-    platformSettings: jsonClone(post.platformSettings || {}),
+    platformSettings: jsonClone(normalizePlatformSettings(post.platform, post.platformSettings || {})),
     metadata: jsonClone({
       ...(post.metadata || {}),
       providerPostId: post.providerPostId || post.externalPostId || null,
@@ -2029,6 +2039,9 @@ async function evaluatePublishGuards(post: ScheduledPostDoc, account: SocialAcco
     };
   }
 
+  const platformSettingsGuard = evaluatePlatformSettingsGuard(post, account);
+  if (!platformSettingsGuard.ok) return platformSettingsGuard;
+
   const duplicate = await reserveDuplicateFingerprint(post);
   if (!duplicate.ok) return duplicate;
 
@@ -2059,6 +2072,129 @@ async function evaluatePublishGuards(post: ScheduledPostDoc, account: SocialAcco
       retryable: true,
       failureCode: 'PROVIDER_RATE_LIMIT',
       reason: `${post.platform} rate limit reached. This post will retry shortly.`,
+    };
+  }
+
+  return { ok: true };
+}
+
+function evaluatePlatformSettingsGuard(post: ScheduledPostDoc, account: SocialAccountDoc): PublishGuardOutcome {
+  const contentType = post.contentType || getDefaultContentType(post.platform);
+  const settings = normalizePlatformSettings(post.platform, post.platformSettings || {});
+
+  if (post.platform === 'tiktok') {
+    if (!['PUBLIC_TO_EVERYONE', 'MUTUAL_FOLLOW_FRIENDS', 'SELF_ONLY'].includes(String(settings.tiktokPrivacyLevel))) {
+      return {
+        ok: false,
+        retryable: false,
+        failureCode: 'INVALID_PRIVACY_SETTING',
+        reason: 'TikTok privacy setting is invalid.',
+      };
+    }
+    if (settings.tiktokPublishMode === 'direct' && !hasScope(account, 'video.publish')) {
+      return {
+        ok: false,
+        retryable: false,
+        failureCode: 'DIRECT_POST_PERMISSION_MISSING',
+        reason: 'TikTok Direct Post requires video.publish permission.',
+      };
+    }
+    if (settings.tiktokPublishMode !== 'direct' && !hasScope(account, 'video.upload')) {
+      return {
+        ok: false,
+        retryable: false,
+        failureCode: 'DRAFT_UPLOAD_PERMISSION_MISSING',
+        reason: 'TikTok Draft Inbox requires video.upload permission.',
+      };
+    }
+    if ((post.metadata?.aiGenerated === true || post.metadata?.generatedByAi === true) && settings.tiktokAiGenerated !== true) {
+      return {
+        ok: false,
+        retryable: false,
+        failureCode: 'AI_DISCLOSURE_REQUIRED',
+        reason: 'TikTok AI-generated content disclosure is required for this post.',
+      };
+    }
+    if ((post.metadata?.paidPromotion === true || post.metadata?.brandedContent === true || post.metadata?.sponsored === true)
+      && settings.tiktokBrandedContent !== true
+      && settings.tiktokOrganicBrandContent !== true) {
+      return {
+        ok: false,
+        retryable: false,
+        failureCode: 'PROMOTIONAL_DISCLOSURE_REQUIRED',
+        reason: 'TikTok branded or organic brand content disclosure is required.',
+      };
+    }
+  }
+
+  if (post.platform === 'youtube') {
+    const title = typeof settings.youtubeTitle === 'string' ? settings.youtubeTitle : post.title || post.caption || '';
+    if (title.length > 100) {
+      return {
+        ok: false,
+        retryable: false,
+        failureCode: 'YOUTUBE_TITLE_TOO_LONG',
+        reason: 'YouTube titles must be 100 characters or fewer.',
+      };
+    }
+    if (!['public', 'unlisted', 'private'].includes(String(settings.youtubeVisibility))) {
+      return {
+        ok: false,
+        retryable: false,
+        failureCode: 'INVALID_PRIVACY_SETTING',
+        reason: 'YouTube visibility must be public, unlisted, or private.',
+      };
+    }
+    if (!hasScope(account, 'https://www.googleapis.com/auth/youtube.upload')) {
+      return {
+        ok: false,
+        retryable: false,
+        failureCode: 'YOUTUBE_UPLOAD_PERMISSION_MISSING',
+        reason: 'YouTube upload permission is missing.',
+      };
+    }
+  }
+
+  if (post.platform === 'instagram' && settings.instagramFormat === 'carousel') {
+    const assetCount = (post.assetIds || []).length;
+    if (assetCount < 2 || assetCount > 10) {
+      return {
+        ok: false,
+        retryable: false,
+        failureCode: 'INSTAGRAM_CAROUSEL_ASSET_COUNT_INVALID',
+        reason: 'Instagram carousels require 2 to 10 ordered media assets.',
+      };
+    }
+  }
+
+  if (post.platform === 'x') {
+    const finalText = buildFinalText(post);
+    if (finalText.length > 280 && settings.xThreadEnabled !== true) {
+      return {
+        ok: false,
+        retryable: false,
+        failureCode: 'X_TEXT_TOO_LONG',
+        reason: 'X posts must be 280 characters or fewer unless thread mode is enabled.',
+      };
+    }
+    if (contentType !== 'text' && (!Array.isArray(settings.xMediaIds) || settings.xMediaIds.length === 0)) {
+      return {
+        ok: false,
+        retryable: false,
+        failureCode: 'X_MEDIA_IDS_REQUIRED',
+        reason: 'X media posts require uploaded media IDs until direct media upload is enabled.',
+      };
+    }
+  }
+
+  if (post.platform === 'facebook'
+    && (post.metadata?.paidPromotion === true || post.metadata?.brandedContent === true || post.metadata?.sponsored === true)
+    && settings.facebookPromotionalDisclosure !== true) {
+    return {
+      ok: false,
+      retryable: false,
+      failureCode: 'PROMOTIONAL_DISCLOSURE_REQUIRED',
+      reason: 'Facebook promotional disclosure is required for this post.',
     };
   }
 
@@ -2203,6 +2339,8 @@ async function processScheduledPosts(): Promise<{
     const account = await pickSocialAccount(claimed.ownerId, claimed.platform, connectedAccountId);
     const startedAtDate = new Date();
     const guard = await evaluatePublishGuards(claimed, account);
+    const normalizedSettingsSnapshot = normalizePlatformSettings(claimed.platform, claimed.platformSettings || {});
+    const providerSettingsSnapshot = mapPlatformSettingsToProvider(claimed.platform, claimed.platformSettings || {});
 
     await recordPublishAttempt({
       publishAttemptId,
@@ -2223,6 +2361,8 @@ async function processScheduledPosts(): Promise<{
         title: claimed.title || null,
         contentType: claimed.contentType || getDefaultContentType(claimed.platform),
         assetCount: (claimed.assetIds || []).length,
+        normalizedPlatformSettings: normalizedSettingsSnapshot,
+        providerPlatformSettings: providerSettingsSnapshot,
       },
     });
 
@@ -2238,6 +2378,8 @@ async function processScheduledPosts(): Promise<{
         metadata: {
           guardBlocked: true,
           guardCode: guard.failureCode || 'PUBLISH_GUARD_BLOCKED',
+          normalizedPlatformSettings: normalizedSettingsSnapshot,
+          providerPlatformSettings: providerSettingsSnapshot,
         },
       });
       await recordSocialAuditLog({
@@ -2284,6 +2426,8 @@ async function processScheduledPosts(): Promise<{
             nativePublishingEnabled: socialNativePublishingEnabled.value(),
             providerPublishStatus: outcome.providerPublishStatus || (awaitingConfirmation ? 'submitted' : 'published'),
             confirmationRequired: awaitingConfirmation,
+            normalizedPlatformSettings: normalizedSettingsSnapshot,
+            providerPlatformSettings: providerSettingsSnapshot,
           },
         });
         if (awaitingConfirmation) {
@@ -2306,6 +2450,8 @@ async function processScheduledPosts(): Promise<{
           metadata: {
             deliveryMode: outcome.deliveryMode || 'external_endpoint',
             nativePublishingEnabled: socialNativePublishingEnabled.value(),
+            normalizedPlatformSettings: normalizedSettingsSnapshot,
+            providerPlatformSettings: providerSettingsSnapshot,
           },
         });
         failed += 1;

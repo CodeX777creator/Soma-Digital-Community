@@ -80,6 +80,8 @@ import {
   requiresMedia,
   type ScheduledPostContentType,
 } from "@/social/capabilities";
+import { normalizePlatformSettings } from "@/social/platform-settings";
+import { evaluatePostPublishReadiness, type PublishReadinessResult } from "@/social/publish-readiness";
 
 type CalendarResponse = {
   month: string;
@@ -219,11 +221,33 @@ interface CalendarFormState {
   hashtags: string;
   cta: string;
   destinationCaptions: Record<string, string>;
-  tiktokPrivacy: "public" | "friends" | "private";
-  instagramPublishAs: "feed" | "reel" | "story";
+  tiktokPublishMode: "draft" | "direct";
+  tiktokPrivacyLevel: "PUBLIC_TO_EVERYONE" | "MUTUAL_FOLLOW_FRIENDS" | "SELF_ONLY";
+  tiktokAiGenerated: boolean;
+  tiktokBrandedContent: boolean;
+  tiktokOrganicBrandContent: boolean;
+  tiktokAllowComments: boolean;
+  tiktokAllowDuet: boolean;
+  tiktokAllowStitch: boolean;
+  tiktokCoverTimestampMs: string;
+  instagramFormat: "feed" | "reel" | "story" | "carousel";
+  instagramShareToFeed: boolean;
+  instagramBrandedContent: boolean;
   youtubeTitle: string;
   youtubeVisibility: "public" | "unlisted" | "private";
+  youtubeDescription: string;
+  youtubeMadeForKids: boolean;
+  youtubeCategoryId: string;
+  youtubeTags: string;
+  facebookPostType: "feed" | "photo" | "video" | "reel";
+  facebookPromotionalDisclosure: boolean;
+  facebookLinkUrl: string;
   linkedinDestinationType: "profile" | "organization";
+  linkedinOrganizationUrn: string;
+  linkedinVisibility: "PUBLIC";
+  xThreadEnabled: boolean;
+  xMediaIds: string;
+  xSensitiveMedia: boolean;
   campaignId: string;
   notes: string;
   timezone: string;
@@ -369,6 +393,13 @@ function buildAiStudioActionHref(
 
 function buildFormFromPost(post: ScheduledPostRecord): CalendarFormState {
   const scheduled = splitIsoToFormValues(post.scheduledTime);
+  const contentType = post.contentType || getDefaultContentType(post.platform);
+  const settings = normalizePlatformSettings(post.platform, post.platformSettings || {}, {
+    contentType,
+    title: post.title,
+    caption: post.caption,
+    assetCount: (post.assetIds || []).length,
+  });
   return {
     title: post.title || "",
     caption: post.caption || "",
@@ -376,7 +407,7 @@ function buildFormFromPost(post: ScheduledPostRecord): CalendarFormState {
     connectedAccountId: post.connectedAccountId || post.socialAccountId || "",
     destinationAccountIds: [post.connectedAccountId || post.socialAccountId || ""].filter(Boolean),
     publicationGroupId: post.publicationGroupId || "",
-    contentType: post.contentType || getDefaultContentType(post.platform),
+    contentType,
     status: post.status,
     scheduledDate: scheduled.scheduledDate,
     scheduledTime: scheduled.scheduledTime,
@@ -384,11 +415,33 @@ function buildFormFromPost(post: ScheduledPostRecord): CalendarFormState {
     hashtags: (post.hashtags || []).map((tag) => `#${tag}`).join(" "),
     cta: post.cta || "",
     destinationCaptions: {},
-    tiktokPrivacy: (post.platformSettings?.privacyLevel as CalendarFormState["tiktokPrivacy"]) || "public",
-    instagramPublishAs: (post.platformSettings?.publishAs as CalendarFormState["instagramPublishAs"]) || "feed",
-    youtubeTitle: (post.platformSettings?.title as string) || post.title || "",
-    youtubeVisibility: (post.platformSettings?.visibility as CalendarFormState["youtubeVisibility"]) || "private",
-    linkedinDestinationType: (post.platformSettings?.destinationType as CalendarFormState["linkedinDestinationType"]) || "profile",
+    tiktokPublishMode: (settings.tiktokPublishMode as CalendarFormState["tiktokPublishMode"]) || "draft",
+    tiktokPrivacyLevel: (settings.tiktokPrivacyLevel as CalendarFormState["tiktokPrivacyLevel"]) || "SELF_ONLY",
+    tiktokAiGenerated: settings.tiktokAiGenerated === true,
+    tiktokBrandedContent: settings.tiktokBrandedContent === true,
+    tiktokOrganicBrandContent: settings.tiktokOrganicBrandContent === true,
+    tiktokAllowComments: settings.tiktokAllowComments !== false,
+    tiktokAllowDuet: settings.tiktokAllowDuet !== false,
+    tiktokAllowStitch: settings.tiktokAllowStitch !== false,
+    tiktokCoverTimestampMs: String(settings.tiktokCoverTimestampMs || 0),
+    instagramFormat: (settings.instagramFormat as CalendarFormState["instagramFormat"]) || "feed",
+    instagramShareToFeed: settings.instagramShareToFeed !== false,
+    instagramBrandedContent: settings.instagramBrandedContent === true,
+    youtubeTitle: (settings.youtubeTitle as string) || post.title || "",
+    youtubeVisibility: (settings.youtubeVisibility as CalendarFormState["youtubeVisibility"]) || "private",
+    youtubeDescription: (settings.youtubeDescription as string) || "",
+    youtubeMadeForKids: settings.youtubeMadeForKids === true,
+    youtubeCategoryId: (settings.youtubeCategoryId as string) || "22",
+    youtubeTags: Array.isArray(settings.youtubeTags) ? settings.youtubeTags.join(", ") : "",
+    facebookPostType: (settings.facebookPostType as CalendarFormState["facebookPostType"]) || "feed",
+    facebookPromotionalDisclosure: settings.facebookPromotionalDisclosure === true,
+    facebookLinkUrl: (settings.facebookLinkUrl as string) || "",
+    linkedinDestinationType: (settings.linkedinDestinationType as CalendarFormState["linkedinDestinationType"]) || "profile",
+    linkedinOrganizationUrn: (settings.linkedinOrganizationUrn as string) || "",
+    linkedinVisibility: "PUBLIC",
+    xThreadEnabled: settings.xThreadEnabled === true,
+    xMediaIds: Array.isArray(settings.xMediaIds) ? settings.xMediaIds.join(", ") : "",
+    xSensitiveMedia: settings.xSensitiveMedia === true,
     campaignId: post.campaignId || "",
     notes: post.notes || "",
     timezone: post.timezone || "",
@@ -411,11 +464,33 @@ function buildEmptyForm(date: string): CalendarFormState {
     hashtags: "",
     cta: "",
     destinationCaptions: {},
-    tiktokPrivacy: "public",
-    instagramPublishAs: "feed",
+    tiktokPublishMode: "draft",
+    tiktokPrivacyLevel: "SELF_ONLY",
+    tiktokAiGenerated: false,
+    tiktokBrandedContent: false,
+    tiktokOrganicBrandContent: false,
+    tiktokAllowComments: true,
+    tiktokAllowDuet: true,
+    tiktokAllowStitch: true,
+    tiktokCoverTimestampMs: "0",
+    instagramFormat: "feed",
+    instagramShareToFeed: true,
+    instagramBrandedContent: false,
     youtubeTitle: "",
     youtubeVisibility: "private",
+    youtubeDescription: "",
+    youtubeMadeForKids: false,
+    youtubeCategoryId: "22",
+    youtubeTags: "",
+    facebookPostType: "feed",
+    facebookPromotionalDisclosure: false,
+    facebookLinkUrl: "",
     linkedinDestinationType: "profile",
+    linkedinOrganizationUrn: "",
+    linkedinVisibility: "PUBLIC",
+    xThreadEnabled: false,
+    xMediaIds: "",
+    xSensitiveMedia: false,
     campaignId: "",
     notes: "",
     timezone: "",
@@ -476,44 +551,143 @@ function getPostReadinessWarning(
   accountMap: Record<string, SocialAccountRecord>,
   assetMap: Record<string, StudioAssetSummary>
 ): string | null {
-  if (post.status === "published" || post.status === "cancelled") return null;
-  const account = getPostAccount(post, accountMap);
-  if (!account) return "No destination account selected";
-  if (account.status !== "connected") return "Destination account is not connected";
-  if (account.lastError) return account.lastError;
-  const contentType = post.contentType || getDefaultContentType(post.platform);
-  if (requiresMedia(post.platform, contentType) && post.assetIds.length === 0) return "Media required before publishing";
-  const missingAsset = post.assetIds.find((assetId) => !assetMap[assetId]);
-  if (missingAsset) return "Attached media is not available yet";
-  return null;
+  const readiness = getPostReadiness(post, accountMap, assetMap);
+  return readiness.ready ? null : readiness.issues[0]?.detail || readiness.label;
+}
+
+function getPostReadiness(
+  post: ScheduledPostRecord,
+  accountMap: Record<string, SocialAccountRecord>,
+  assetMap: Record<string, StudioAssetSummary>
+): PublishReadinessResult {
+  if (post.status === "published" || post.status === "cancelled") {
+    return { ready: true, status: "ready", label: "Ready to publish", issues: [], warnings: [] };
+  }
+  return evaluatePostPublishReadiness({
+    post,
+    account: getPostAccount(post, accountMap),
+    assets: (post.assetIds || []).map((assetId) => assetMap[assetId] || { assetId, status: "missing" }),
+  });
 }
 
 function buildPlatformSettings(platform: SocialPlatform, form: CalendarFormState): Record<string, unknown> {
+  const base = {
+    tiktokPublishMode: form.tiktokPublishMode,
+    tiktokPrivacyLevel: form.tiktokPrivacyLevel,
+    tiktokAiGenerated: form.tiktokAiGenerated,
+    tiktokBrandedContent: form.tiktokBrandedContent,
+    tiktokOrganicBrandContent: form.tiktokOrganicBrandContent,
+    tiktokAllowComments: form.tiktokAllowComments,
+    tiktokAllowDuet: form.tiktokAllowDuet,
+    tiktokAllowStitch: form.tiktokAllowStitch,
+    tiktokCoverTimestampMs: Number(form.tiktokCoverTimestampMs || 0),
+    instagramFormat: form.instagramFormat,
+    instagramShareToFeed: form.instagramShareToFeed,
+    instagramBrandedContent: form.instagramBrandedContent,
+    youtubeTitle: form.youtubeTitle || form.title || form.caption.slice(0, 90),
+    youtubeDescription: form.youtubeDescription,
+    youtubeVisibility: form.youtubeVisibility,
+    youtubeMadeForKids: form.youtubeMadeForKids,
+    youtubeCategoryId: form.youtubeCategoryId,
+    youtubeTags: splitHashtags(form.youtubeTags),
+    facebookPostType: form.facebookPostType,
+    facebookPromotionalDisclosure: form.facebookPromotionalDisclosure,
+    facebookLinkUrl: form.facebookLinkUrl,
+    linkedinDestinationType: form.linkedinDestinationType,
+    linkedinOrganizationUrn: form.linkedinOrganizationUrn,
+    linkedinVisibility: form.linkedinVisibility,
+    xThreadEnabled: form.xThreadEnabled,
+    xMediaIds: form.xMediaIds.split(",").map((item) => item.trim()).filter(Boolean),
+    xSensitiveMedia: form.xSensitiveMedia,
+  };
+
   switch (platform) {
     case "tiktok":
-      return {
-        privacyLevel: form.tiktokPrivacy,
-        allowComments: true,
-        allowDuet: true,
-        allowStitch: true,
-      };
+      return normalizePlatformSettings(platform, base, { contentType: form.contentType, caption: form.caption });
     case "instagram":
-      return {
-        publishAs: form.instagramPublishAs,
-        shareToFeed: form.instagramPublishAs !== "story",
-      };
+      return normalizePlatformSettings(platform, base, { contentType: form.contentType, caption: form.caption, assetCount: splitAssetIds(form.assetIds).length });
     case "youtube":
-      return {
-        title: form.youtubeTitle || form.title || form.caption.slice(0, 90),
-        visibility: form.youtubeVisibility,
-      };
+      return normalizePlatformSettings(platform, base, { contentType: form.contentType, title: form.title, caption: form.caption });
     case "linkedin":
-      return {
-        destinationType: form.linkedinDestinationType,
-      };
+      return normalizePlatformSettings(platform, base, { contentType: form.contentType, caption: form.caption });
+    case "facebook":
+    case "x":
+      return normalizePlatformSettings(platform, base, { contentType: form.contentType, caption: form.caption });
     default:
       return {};
   }
+}
+
+function buildPreviewScheduledPost(form: CalendarFormState, account: SocialAccountRecord): ScheduledPostRecord {
+  return {
+    scheduledPostId: `preview_${account.socialAccountId}`,
+    ownerId: "preview",
+    platform: account.providerId,
+    socialAccountId: account.socialAccountId,
+    connectedAccountId: account.socialAccountId,
+    publicationGroupId: form.publicationGroupId,
+    contentType: form.contentType,
+    status: form.status,
+    scheduledTime: `${form.scheduledDate || format(new Date(), "yyyy-MM-dd")}T${form.scheduledTime || "09:00"}:00.000Z`,
+    title: form.title,
+    caption: form.destinationCaptions[account.socialAccountId] || form.caption,
+    hashtags: splitHashtags(form.hashtags),
+    cta: form.cta,
+    assetIds: splitAssetIds(form.assetIds),
+    campaignId: form.campaignId,
+    notes: form.notes,
+    timezone: form.timezone,
+    platformSettings: buildPlatformSettings(account.providerId, form),
+    metadata: {},
+    createdAt: null,
+    updatedAt: null,
+  };
+}
+
+function describePlatformSettings(platform: SocialPlatform, settings: Record<string, unknown>): string[] {
+  const normalized = normalizePlatformSettings(platform, settings);
+  if (platform === "tiktok") {
+    return [
+      `Mode: ${normalized.tiktokPublishMode === "direct" ? "Direct post" : "Draft inbox"}`,
+      `Audience: ${normalized.tiktokPrivacyLevel === "PUBLIC_TO_EVERYONE" ? "Everyone" : normalized.tiktokPrivacyLevel === "MUTUAL_FOLLOW_FRIENDS" ? "Friends" : "Only me"}`,
+      normalized.tiktokAiGenerated ? "AI label on" : "AI label off",
+      normalized.tiktokBrandedContent || normalized.tiktokOrganicBrandContent ? "Brand disclosure on" : "No brand disclosure",
+    ];
+  }
+  if (platform === "instagram") {
+    return [
+      `Placement: ${String(normalized.instagramFormat || "feed")}`,
+      normalized.instagramShareToFeed === false ? "Do not share Reel to feed" : "Share Reel to feed when available",
+      normalized.instagramBrandedContent ? "Branded content context" : "No branded-content context",
+    ];
+  }
+  if (platform === "youtube") {
+    return [
+      `Visibility: ${String(normalized.youtubeVisibility || "private")}`,
+      normalized.youtubeMadeForKids ? "Made for kids" : "Not made for kids",
+      normalized.youtubeTags && Array.isArray(normalized.youtubeTags) && normalized.youtubeTags.length > 0 ? `${normalized.youtubeTags.length} tag(s)` : "No YouTube tags",
+    ];
+  }
+  if (platform === "facebook") {
+    return [
+      `Post type: ${String(normalized.facebookPostType || "feed")}`,
+      normalized.facebookPromotionalDisclosure ? "Promotional disclosure on" : "No promotional disclosure",
+    ];
+  }
+  if (platform === "linkedin") {
+    return [
+      `Destination: ${String(normalized.linkedinDestinationType || "profile")}`,
+      `Visibility: ${String(normalized.linkedinVisibility || "PUBLIC")}`,
+    ];
+  }
+  if (platform === "x") {
+    return [
+      normalized.xThreadEnabled ? "Thread enabled" : "Single post",
+      normalized.xSensitiveMedia ? "Sensitive media" : "Standard media",
+      normalized.xMediaIds && Array.isArray(normalized.xMediaIds) && normalized.xMediaIds.length > 0 ? `${normalized.xMediaIds.length} media ID(s)` : "No X media IDs",
+    ];
+  }
+  return [];
 }
 
 function buildCampaignFormFromCampaign(campaign: SocialCampaignRecord): CampaignFormState {
@@ -1116,6 +1290,10 @@ export default function SocialCalendarPage() {
   const postsNeedingAttention = useMemo(() => {
     return queuePosts.filter((post) => getPostReadinessWarning(post, socialAccountMap, studioAssetMap) || post.status === "failed");
   }, [queuePosts, socialAccountMap, studioAssetMap]);
+  const selectedPostReadiness = useMemo(() => {
+    if (!selectedPost) return null;
+    return getPostReadiness(selectedPost, socialAccountMap, studioAssetMap);
+  }, [selectedPost, socialAccountMap, studioAssetMap]);
   const postAnalyticsByPostId = useMemo(() => {
     return postAnalytics.reduce<Record<string, SocialPostAnalyticsRecord>>((acc, record) => {
       const existing = acc[record.scheduledPostId];
@@ -3713,74 +3891,184 @@ export default function SocialCalendarPage() {
                   </ComposerSection>
 
                   {!isEventsMode && targetPlatforms.length > 0 ? (
-                    <ComposerSection title="Advanced" description="Provider rules, internal notes, and timezone." visible={workflowStep === "edit"}>
+                    <ComposerSection title="Advanced" description="Provider rules, disclosures, internal notes, and timezone." visible={workflowStep === "edit"}>
                       <div>
                         <label className="text-sm font-medium">Platform settings</label>
-                        <p className="mt-1 text-xs text-muted-foreground">These prepare the post for native publishing rules later.</p>
+                        <p className="mt-1 text-xs text-muted-foreground">These prepare each post for native publishing rules, disclosures, and platform limits.</p>
                       </div>
                       {targetPlatforms.includes("tiktok") ? (
-                        <div className="space-y-2">
-                          <label className="text-xs font-medium text-muted-foreground">TikTok privacy</label>
-                          <select
-                            value={form.tiktokPrivacy}
-                            onChange={(event) => updateField("tiktokPrivacy", event.target.value as CalendarFormState["tiktokPrivacy"])}
-                            aria-label="TikTok privacy setting"
-                            className="h-11 w-full rounded-[16px] border border-white/10 bg-background px-3 text-sm"
-                          >
-                            <option value="public">Public</option>
-                            <option value="friends">Friends</option>
-                            <option value="private">Private</option>
-                          </select>
+                        <div className="depth-panel space-y-3 rounded-[18px] p-4">
+                          <div>
+                            <div className="text-sm font-semibold text-white">TikTok</div>
+                            <p className="mt-1 text-xs text-muted-foreground">Direct Post requires approved TikTok permissions. Draft Inbox is safest during app review.</p>
+                          </div>
+                          <div className="grid gap-3 md:grid-cols-2">
+                            <div className="space-y-2">
+                              <label className="text-xs font-medium text-muted-foreground">Publish mode</label>
+                              <select value={form.tiktokPublishMode} onChange={(event) => updateField("tiktokPublishMode", event.target.value as CalendarFormState["tiktokPublishMode"])} aria-label="TikTok publish mode" className="h-11 w-full rounded-[16px] border border-white/10 bg-background px-3 text-sm">
+                                <option value="draft">Draft inbox</option>
+                                <option value="direct">Direct post</option>
+                              </select>
+                            </div>
+                            <div className="space-y-2">
+                              <label className="text-xs font-medium text-muted-foreground">Audience</label>
+                              <select value={form.tiktokPrivacyLevel} onChange={(event) => updateField("tiktokPrivacyLevel", event.target.value as CalendarFormState["tiktokPrivacyLevel"])} aria-label="TikTok audience" className="h-11 w-full rounded-[16px] border border-white/10 bg-background px-3 text-sm">
+                                <option value="PUBLIC_TO_EVERYONE">Everyone</option>
+                                <option value="MUTUAL_FOLLOW_FRIENDS">Friends</option>
+                                <option value="SELF_ONLY">Only me</option>
+                              </select>
+                            </div>
+                          </div>
+                          <div className="grid gap-2 md:grid-cols-2">
+                            {[
+                              ["tiktokAiGenerated", "AI-generated content label"],
+                              ["tiktokBrandedContent", "Branded content"],
+                              ["tiktokOrganicBrandContent", "Organic brand content"],
+                              ["tiktokAllowComments", "Allow comments"],
+                              ["tiktokAllowDuet", "Allow duet"],
+                              ["tiktokAllowStitch", "Allow stitch"],
+                            ].map(([key, label]) => (
+                              <label key={key} className="flex items-center gap-3 rounded-[14px] border border-white/10 bg-white/[0.03] px-3 py-2 text-sm">
+                                <input type="checkbox" checked={Boolean(form[key as keyof CalendarFormState])} onChange={(event) => updateField(key as keyof CalendarFormState, event.target.checked as never)} className="h-4 w-4 accent-primary" />
+                                <span>{label}</span>
+                              </label>
+                            ))}
+                          </div>
+                          <div className="space-y-2">
+                            <label className="text-xs font-medium text-muted-foreground">Cover timestamp in milliseconds</label>
+                            <Input value={form.tiktokCoverTimestampMs} onChange={(event) => updateField("tiktokCoverTimestampMs", event.target.value)} placeholder="0" className="rounded-[16px] border-white/10 bg-white/[0.03]" />
+                            <p className="text-xs text-muted-foreground">1000 ms equals 1 second.</p>
+                          </div>
                         </div>
                       ) : null}
                       {targetPlatforms.includes("instagram") ? (
-                        <div className="space-y-2">
-                          <label className="text-xs font-medium text-muted-foreground">Instagram placement</label>
-                          <select
-                            value={form.instagramPublishAs}
-                            onChange={(event) => updateField("instagramPublishAs", event.target.value as CalendarFormState["instagramPublishAs"])}
-                            aria-label="Instagram placement"
-                            className="h-11 w-full rounded-[16px] border border-white/10 bg-background px-3 text-sm"
-                          >
-                            <option value="feed">Feed</option>
-                            <option value="reel">Reel</option>
-                            <option value="story">Story</option>
-                          </select>
+                        <div className="depth-panel space-y-3 rounded-[18px] p-4">
+                          <div className="text-sm font-semibold text-white">Instagram</div>
+                          <div className="grid gap-3 md:grid-cols-2">
+                            <div className="space-y-2">
+                              <label className="text-xs font-medium text-muted-foreground">Placement</label>
+                              <select value={form.instagramFormat} onChange={(event) => updateField("instagramFormat", event.target.value as CalendarFormState["instagramFormat"])} aria-label="Instagram placement" className="h-11 w-full rounded-[16px] border border-white/10 bg-background px-3 text-sm">
+                                <option value="feed">Feed</option>
+                                <option value="reel">Reel</option>
+                                <option value="story">Story</option>
+                                <option value="carousel">Carousel</option>
+                              </select>
+                            </div>
+                            <div className="space-y-2">
+                              <label className="text-xs font-medium text-muted-foreground">Reel feed setting</label>
+                              <label className="flex h-11 items-center gap-3 rounded-[16px] border border-white/10 bg-white/[0.03] px-3 text-sm">
+                                <input type="checkbox" checked={form.instagramShareToFeed} onChange={(event) => updateField("instagramShareToFeed", event.target.checked)} className="h-4 w-4 accent-primary" />
+                                Share Reel to feed
+                              </label>
+                            </div>
+                          </div>
+                          <label className="flex items-center gap-3 rounded-[14px] border border-white/10 bg-white/[0.03] px-3 py-2 text-sm">
+                            <input type="checkbox" checked={form.instagramBrandedContent} onChange={(event) => updateField("instagramBrandedContent", event.target.checked)} className="h-4 w-4 accent-primary" />
+                            Branded content or paid partnership context
+                          </label>
                         </div>
                       ) : null}
                       {targetPlatforms.includes("youtube") ? (
-                        <div className="grid gap-3 md:grid-cols-2">
-                          <div className="space-y-2">
-                            <label className="text-xs font-medium text-muted-foreground">YouTube title</label>
-                            <Input value={form.youtubeTitle} onChange={(event) => updateField("youtubeTitle", event.target.value)} placeholder="Video title" className="rounded-[16px] border-white/10 bg-white/[0.03]" />
+                        <div className="depth-panel space-y-3 rounded-[18px] p-4">
+                          <div className="text-sm font-semibold text-white">YouTube</div>
+                          <div className="grid gap-3 md:grid-cols-2">
+                            <div className="space-y-2">
+                              <label className="text-xs font-medium text-muted-foreground">Title</label>
+                              <Input value={form.youtubeTitle} onChange={(event) => updateField("youtubeTitle", event.target.value)} placeholder="Video title" maxLength={100} className="rounded-[16px] border-white/10 bg-white/[0.03]" />
+                            </div>
+                            <div className="space-y-2">
+                              <label className="text-xs font-medium text-muted-foreground">Visibility</label>
+                              <select value={form.youtubeVisibility} onChange={(event) => updateField("youtubeVisibility", event.target.value as CalendarFormState["youtubeVisibility"])} aria-label="YouTube visibility" className="h-11 w-full rounded-[16px] border border-white/10 bg-background px-3 text-sm">
+                                <option value="private">Private</option>
+                                <option value="unlisted">Unlisted</option>
+                                <option value="public">Public</option>
+                              </select>
+                            </div>
+                            <div className="space-y-2">
+                              <label className="text-xs font-medium text-muted-foreground">Category ID</label>
+                              <Input value={form.youtubeCategoryId} onChange={(event) => updateField("youtubeCategoryId", event.target.value)} placeholder="22" className="rounded-[16px] border-white/10 bg-white/[0.03]" />
+                            </div>
+                            <label className="flex h-11 items-center gap-3 rounded-[16px] border border-white/10 bg-white/[0.03] px-3 text-sm">
+                              <input type="checkbox" checked={form.youtubeMadeForKids} onChange={(event) => updateField("youtubeMadeForKids", event.target.checked)} className="h-4 w-4 accent-primary" />
+                              Made for kids
+                            </label>
                           </div>
                           <div className="space-y-2">
-                            <label className="text-xs font-medium text-muted-foreground">YouTube visibility</label>
-                            <select
-                              value={form.youtubeVisibility}
-                              onChange={(event) => updateField("youtubeVisibility", event.target.value as CalendarFormState["youtubeVisibility"])}
-                              aria-label="YouTube visibility"
-                              className="h-11 w-full rounded-[16px] border border-white/10 bg-background px-3 text-sm"
-                            >
-                              <option value="private">Private</option>
-                              <option value="unlisted">Unlisted</option>
-                              <option value="public">Public</option>
-                            </select>
+                            <label className="text-xs font-medium text-muted-foreground">Description override</label>
+                            <Textarea value={form.youtubeDescription} onChange={(event) => updateField("youtubeDescription", event.target.value)} rows={3} placeholder="Leave empty to use the caption." className="rounded-[16px] border-white/10 bg-white/[0.03]" />
+                          </div>
+                          <div className="space-y-2">
+                            <label className="text-xs font-medium text-muted-foreground">Tags</label>
+                            <Input value={form.youtubeTags} onChange={(event) => updateField("youtubeTags", event.target.value)} placeholder="business, marketing, digital skills" className="rounded-[16px] border-white/10 bg-white/[0.03]" />
+                          </div>
+                        </div>
+                      ) : null}
+                      {targetPlatforms.includes("facebook") ? (
+                        <div className="depth-panel space-y-3 rounded-[18px] p-4">
+                          <div className="text-sm font-semibold text-white">Facebook</div>
+                          <div className="grid gap-3 md:grid-cols-2">
+                            <div className="space-y-2">
+                              <label className="text-xs font-medium text-muted-foreground">Post type</label>
+                              <select value={form.facebookPostType} onChange={(event) => updateField("facebookPostType", event.target.value as CalendarFormState["facebookPostType"])} aria-label="Facebook post type" className="h-11 w-full rounded-[16px] border border-white/10 bg-background px-3 text-sm">
+                                <option value="feed">Feed post</option>
+                                <option value="photo">Photo post</option>
+                                <option value="video">Video post</option>
+                                <option value="reel">Reel</option>
+                              </select>
+                            </div>
+                            <label className="flex h-11 items-center gap-3 rounded-[16px] border border-white/10 bg-white/[0.03] px-3 text-sm">
+                              <input type="checkbox" checked={form.facebookPromotionalDisclosure} onChange={(event) => updateField("facebookPromotionalDisclosure", event.target.checked)} className="h-4 w-4 accent-primary" />
+                              Promotional disclosure
+                            </label>
+                          </div>
+                          <div className="space-y-2">
+                            <label className="text-xs font-medium text-muted-foreground">Link URL</label>
+                            <Input value={form.facebookLinkUrl} onChange={(event) => updateField("facebookLinkUrl", event.target.value)} placeholder="https://..." className="rounded-[16px] border-white/10 bg-white/[0.03]" />
                           </div>
                         </div>
                       ) : null}
                       {targetPlatforms.includes("linkedin") ? (
-                        <div className="space-y-2">
-                          <label className="text-xs font-medium text-muted-foreground">LinkedIn destination type</label>
-                          <select
-                            value={form.linkedinDestinationType}
-                            onChange={(event) => updateField("linkedinDestinationType", event.target.value as CalendarFormState["linkedinDestinationType"])}
-                            aria-label="LinkedIn destination type"
-                            className="h-11 w-full rounded-[16px] border border-white/10 bg-background px-3 text-sm"
-                          >
-                            <option value="profile">Profile</option>
-                            <option value="organization">Organization</option>
-                          </select>
+                        <div className="depth-panel space-y-3 rounded-[18px] p-4">
+                          <div className="text-sm font-semibold text-white">LinkedIn</div>
+                          <div className="grid gap-3 md:grid-cols-2">
+                            <div className="space-y-2">
+                              <label className="text-xs font-medium text-muted-foreground">Destination type</label>
+                              <select value={form.linkedinDestinationType} onChange={(event) => updateField("linkedinDestinationType", event.target.value as CalendarFormState["linkedinDestinationType"])} aria-label="LinkedIn destination type" className="h-11 w-full rounded-[16px] border border-white/10 bg-background px-3 text-sm">
+                                <option value="profile">Profile</option>
+                                <option value="organization">Organization</option>
+                              </select>
+                            </div>
+                            <div className="space-y-2">
+                              <label className="text-xs font-medium text-muted-foreground">Visibility</label>
+                              <select value={form.linkedinVisibility} onChange={(event) => updateField("linkedinVisibility", event.target.value as CalendarFormState["linkedinVisibility"])} aria-label="LinkedIn visibility" className="h-11 w-full rounded-[16px] border border-white/10 bg-background px-3 text-sm">
+                                <option value="PUBLIC">Public</option>
+                              </select>
+                            </div>
+                          </div>
+                          <div className="space-y-2">
+                            <label className="text-xs font-medium text-muted-foreground">Organization URN</label>
+                            <Input value={form.linkedinOrganizationUrn} onChange={(event) => updateField("linkedinOrganizationUrn", event.target.value)} placeholder="Optional. Soma can use connected page destination later." className="rounded-[16px] border-white/10 bg-white/[0.03]" />
+                          </div>
+                        </div>
+                      ) : null}
+                      {targetPlatforms.includes("x") ? (
+                        <div className="depth-panel space-y-3 rounded-[18px] p-4">
+                          <div className="text-sm font-semibold text-white">X</div>
+                          <div className="grid gap-2 md:grid-cols-2">
+                            <label className="flex items-center gap-3 rounded-[14px] border border-white/10 bg-white/[0.03] px-3 py-2 text-sm">
+                              <input type="checkbox" checked={form.xThreadEnabled} onChange={(event) => updateField("xThreadEnabled", event.target.checked)} className="h-4 w-4 accent-primary" />
+                              Create as thread if caption is long
+                            </label>
+                            <label className="flex items-center gap-3 rounded-[14px] border border-white/10 bg-white/[0.03] px-3 py-2 text-sm">
+                              <input type="checkbox" checked={form.xSensitiveMedia} onChange={(event) => updateField("xSensitiveMedia", event.target.checked)} className="h-4 w-4 accent-primary" />
+                              Sensitive media
+                            </label>
+                          </div>
+                          <div className="space-y-2">
+                            <label className="text-xs font-medium text-muted-foreground">Uploaded media IDs</label>
+                            <Input value={form.xMediaIds} onChange={(event) => updateField("xMediaIds", event.target.value)} placeholder="Comma-separated IDs from X media upload" className="rounded-[16px] border-white/10 bg-white/[0.03]" />
+                            <p className="text-xs text-muted-foreground">Used until native X media upload is enabled in the publishing worker.</p>
+                          </div>
                         </div>
                       ) : null}
                       <div className="space-y-2">
@@ -3825,6 +4113,55 @@ export default function SocialCalendarPage() {
                             )}
                           </div>
                         </div>
+                        {publishTargetAccounts.length > 0 ? (
+                          <div className="space-y-3">
+                            {publishTargetAccounts.map((account) => {
+                              const previewPost = buildPreviewScheduledPost(form, account);
+                              const readiness = evaluatePostPublishReadiness({
+                                post: previewPost,
+                                account,
+                                assets: selectedAssets.map(({ assetId, asset }) => asset || { assetId, status: "missing" }),
+                              });
+                              const finalCaption = [
+                                previewPost.caption,
+                                previewPost.hashtags?.length ? previewPost.hashtags.map((tag) => `#${tag.replace(/^#/, "")}`).join(" ") : "",
+                                previewPost.cta || "",
+                              ].filter(Boolean).join("\n\n");
+                              return (
+                                <div key={account.socialAccountId} className="depth-card rounded-[16px] p-4">
+                                  <div className="flex flex-wrap items-start justify-between gap-3">
+                                    <div>
+                                      <div className="text-sm font-semibold text-white">{account.providerLabel} · {getAccountDisplayLabel(account)}</div>
+                                      <div className="mt-1 text-xs text-muted-foreground">{account.accountName}</div>
+                                    </div>
+                                    <Badge variant="outline" className={cn("border px-2 py-0.5 text-[10px] uppercase tracking-[0.16em]", readiness.ready ? "border-emerald-400/25 text-emerald-300" : "border-amber-400/25 text-amber-300")}>
+                                      {readiness.label}
+                                    </Badge>
+                                  </div>
+                                  <div className="mt-3 rounded-[14px] border border-white/10 bg-black/20 p-3">
+                                    <div className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">Final caption</div>
+                                    <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-white/85">{finalCaption || "No caption yet."}</p>
+                                  </div>
+                                  <div className="mt-3 flex flex-wrap gap-2">
+                                    {describePlatformSettings(account.providerId, previewPost.platformSettings || {}).map((label) => (
+                                      <span key={label} className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-xs text-muted-foreground">{label}</span>
+                                    ))}
+                                  </div>
+                                  {readiness.issues.length > 0 || readiness.warnings.length > 0 ? (
+                                    <div className="mt-3 space-y-2">
+                                      {[...readiness.issues, ...readiness.warnings].slice(0, 4).map((entry) => (
+                                        <div key={`${entry.code}-${entry.detail}`} className={cn("flex gap-2 rounded-[12px] border px-3 py-2 text-xs", entry.severity === "blocking" ? "border-amber-400/20 bg-amber-400/10 text-amber-100" : "border-white/10 bg-white/[0.03] text-muted-foreground")}>
+                                          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                                          <span>{entry.detail}</span>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  ) : null}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        ) : null}
                         <div className="depth-card overflow-hidden rounded-[16px]">
                           <div className="flex aspect-video items-center justify-center bg-black/35">
                             {selectedAssets[0]?.asset?.thumbnail || selectedAssets[0]?.asset?.downloadUrl ? (
@@ -4115,6 +4452,31 @@ export default function SocialCalendarPage() {
                           <div className="mt-1 text-xs text-muted-foreground">Recorded publish attempts</div>
                         </div>
                       </div>
+
+                      {selectedPostReadiness ? (
+                        <div className="mt-4 depth-card rounded-[16px] p-4">
+                          <div className="flex items-center justify-between gap-3">
+                            <div>
+                              <div className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">Publish readiness</div>
+                              <div className="mt-1 text-sm font-semibold text-white">{selectedPostReadiness.label}</div>
+                            </div>
+                            <Badge variant="outline" className={cn("border px-2 py-0.5 text-[10px] uppercase tracking-[0.16em]", selectedPostReadiness.ready ? "border-emerald-400/25 text-emerald-300" : "border-amber-400/25 text-amber-300")}>
+                              {selectedPostReadiness.ready ? "Ready" : "Needs attention"}
+                            </Badge>
+                          </div>
+                          {[...selectedPostReadiness.issues, ...selectedPostReadiness.warnings].length > 0 ? (
+                            <div className="mt-3 space-y-2">
+                              {[...selectedPostReadiness.issues, ...selectedPostReadiness.warnings].map((entry) => (
+                                <div key={`${entry.code}-${entry.detail}`} className={cn("rounded-[12px] border px-3 py-2 text-xs leading-5", entry.severity === "blocking" ? "border-amber-400/20 bg-amber-400/10 text-amber-100" : "border-white/10 bg-white/[0.03] text-muted-foreground")}>
+                                  <span className="font-medium">{entry.label}:</span> {entry.detail}
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <p className="mt-3 text-sm text-muted-foreground">Account, media, settings, and permissions look ready for native publishing.</p>
+                          )}
+                        </div>
+                      ) : null}
 
                       <div className="mt-4 space-y-2">
                         <div className="flex items-center justify-between gap-3">

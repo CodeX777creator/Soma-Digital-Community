@@ -4,6 +4,7 @@ import { logger } from '@/lib/logger';
 import { getSocialProvider, SOCIAL_PROVIDER_REGISTRY } from './providers';
 import { openSocialPayload, sealSocialPayload } from './credentials';
 import { getDefaultContentType, getPlatformCapability, isScheduledPostContentType } from './capabilities';
+import { normalizePlatformSettings, validatePlatformSettings as validateScheduledPlatformSettings } from './platform-settings';
 import type {
   ContentCalendarSummary,
   EncryptedPayload,
@@ -1292,7 +1293,16 @@ async function validateScheduledPostDocument(doc: ScheduledPostDoc): Promise<voi
     throw createValidationError('Text posts need a caption before scheduling.', 'CAPTION_REQUIRED');
   }
 
-  validatePlatformSettings(doc.platform, doc.platformSettings || {});
+  const platformSettingsResult = validateScheduledPlatformSettings(doc.platform, doc.platformSettings || {}, {
+    contentType: doc.contentType || getDefaultContentType(doc.platform),
+    caption,
+    title: doc.title,
+    status: doc.status,
+    assetCount: (doc.assetIds || []).length,
+  });
+  if (!platformSettingsResult.ok) {
+    throw createValidationError(platformSettingsResult.errors[0] || 'Platform settings are invalid.', 'INVALID_PLATFORM_SETTINGS');
+  }
 
   await validateConnectedAccount({
     ownerId: doc.ownerId,
@@ -1333,43 +1343,6 @@ function validateEventCalendarDocument(doc: ScheduledPostDoc): void {
   }
 }
 
-function validatePlatformSettings(platform: SocialPlatform, settings: Record<string, unknown>): void {
-  if (platform === 'tiktok') {
-    const privacyLevel = settings.privacyLevel;
-    if (privacyLevel !== undefined && !['public', 'friends', 'private'].includes(String(privacyLevel))) {
-      throw createValidationError('TikTok privacy must be public, friends, or private.', 'INVALID_PLATFORM_SETTINGS');
-    }
-    return;
-  }
-
-  if (platform === 'youtube') {
-    const visibility = settings.visibility;
-    if (visibility !== undefined && !['public', 'unlisted', 'private'].includes(String(visibility))) {
-      throw createValidationError('YouTube visibility must be public, unlisted, or private.', 'INVALID_PLATFORM_SETTINGS');
-    }
-    const title = settings.title;
-    if (typeof title === 'string' && title.length > 100) {
-      throw createValidationError('YouTube titles must be 100 characters or fewer.', 'INVALID_PLATFORM_SETTINGS');
-    }
-    return;
-  }
-
-  if (platform === 'instagram') {
-    const publishAs = settings.publishAs;
-    if (publishAs !== undefined && !['feed', 'reel', 'story'].includes(String(publishAs))) {
-      throw createValidationError('Instagram format must be feed, reel, or story.', 'INVALID_PLATFORM_SETTINGS');
-    }
-    return;
-  }
-
-  if (platform === 'linkedin') {
-    const destinationType = settings.destinationType;
-    if (destinationType !== undefined && !['profile', 'organization'].includes(String(destinationType))) {
-      throw createValidationError('LinkedIn destination must be profile or organization.', 'INVALID_PLATFORM_SETTINGS');
-    }
-  }
-}
-
 function serializeScheduledPost(doc: ScheduledPostDoc): ScheduledPostRecord {
   return {
     scheduledPostId: doc.scheduledPostId,
@@ -1389,7 +1362,12 @@ function serializeScheduledPost(doc: ScheduledPostDoc): ScheduledPostRecord {
     campaignId: doc.campaignId,
     notes: doc.notes,
     timezone: doc.timezone,
-    platformSettings: doc.platformSettings || {},
+    platformSettings: normalizePlatformSettings(doc.platform, doc.platformSettings || {}, {
+      contentType: doc.contentType || getDefaultContentType(doc.platform),
+      title: doc.title,
+      caption: doc.caption,
+      assetCount: (doc.assetIds || []).length,
+    }),
     metadata: doc.metadata || {},
     createdAt: toIso(doc.createdAt),
     updatedAt: toIso(doc.updatedAt),
@@ -1490,6 +1468,7 @@ export async function createScheduledPost(input: ScheduledPostInput): Promise<Sc
   const connectedAccountId = input.connectedAccountId || input.socialAccountId;
   const docRef = adminDb.collection('scheduledPosts').doc();
   const now = admin.firestore.FieldValue.serverTimestamp();
+  const contentType = normalizeContentType(input.platform, input.contentType);
 
   const doc = stripUndefined<ScheduledPostDoc>({
     scheduledPostId: docRef.id,
@@ -1498,7 +1477,7 @@ export async function createScheduledPost(input: ScheduledPostInput): Promise<Sc
     socialAccountId: connectedAccountId ? sanitizeString(connectedAccountId, 160) : undefined,
     connectedAccountId: connectedAccountId ? sanitizeString(connectedAccountId, 160) : undefined,
     publicationGroupId: normalizePublicationGroupId(input.publicationGroupId),
-    contentType: normalizeContentType(input.platform, input.contentType),
+    contentType,
     status,
     scheduledTime,
     title: input.title ? sanitizeString(input.title, 160) : undefined,
@@ -1509,7 +1488,12 @@ export async function createScheduledPost(input: ScheduledPostInput): Promise<Sc
     campaignId: input.campaignId ? sanitizeString(input.campaignId, 120) : undefined,
     notes: input.notes ? sanitizeString(input.notes, 1000) : undefined,
     timezone: input.timezone ? sanitizeString(input.timezone, 80) : undefined,
-    platformSettings: input.platformSettings ? normalizeMetadata(input.platformSettings) : undefined,
+    platformSettings: normalizeMetadata(normalizePlatformSettings(input.platform, input.platformSettings || {}, {
+      contentType,
+      title: input.title,
+      caption: input.caption,
+      assetCount: normalizeAssetIds(input.assetIds).length,
+    })),
     metadata: normalizeMetadata(input.metadata),
     attemptCount: 0,
     lastAttemptAt: null,
@@ -1571,7 +1555,12 @@ export async function updateScheduledPost(
     campaignId: patch.campaignId !== undefined ? sanitizeString(patch.campaignId || '', 120) || undefined : current.campaignId,
     notes: patch.notes !== undefined ? sanitizeString(patch.notes || '', 1000) || undefined : current.notes,
     timezone: patch.timezone !== undefined ? sanitizeString(patch.timezone || '', 80) || undefined : current.timezone,
-    platformSettings: patch.platformSettings !== undefined ? normalizeMetadata(patch.platformSettings) : current.platformSettings || {},
+    platformSettings: normalizeMetadata(normalizePlatformSettings(platform, patch.platformSettings !== undefined ? patch.platformSettings : current.platformSettings || {}, {
+      contentType: patch.contentType !== undefined ? normalizeContentType(platform, patch.contentType) : current.contentType || getDefaultContentType(platform),
+      title: patch.title !== undefined ? patch.title : current.title,
+      caption: patch.caption !== undefined ? patch.caption : current.caption,
+      assetCount: patch.assetIds ? normalizeAssetIds(patch.assetIds).length : (current.assetIds || []).length,
+    })),
     metadata: patch.metadata ? normalizeMetadata(patch.metadata) : current.metadata,
     updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     attemptCount: current.attemptCount ?? 0,
