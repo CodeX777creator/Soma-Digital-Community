@@ -66,7 +66,7 @@ const businessNav: NavItem[] = [
   { name: "Social Hub", href: "/social", icon: ShoppingBag },
   { name: "Products", href: "/marketplace", icon: Package },
   { name: "Analytics", href: "/tools/insights", icon: BarChart3 },
-  { name: "Sales", href: "/reseller", icon: BriefcaseBusiness },
+  { name: "Reseller", href: "/reseller", icon: BriefcaseBusiness },
   { name: "Website Tools", href: "/tools", icon: Globe2 },
 ];
 

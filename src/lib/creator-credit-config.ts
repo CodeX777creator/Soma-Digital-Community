@@ -71,6 +71,9 @@ export type CreatorCreditConfig = {
   toolPricing?: Record<string, number>;
 };
 
+export const CREATOR_CREDIT_RETAIL_VALUE_USD = 0.2;
+export const CREATOR_CREDIT_RETAIL_VALUE_CENTS = CREATOR_CREDIT_RETAIL_VALUE_USD * 100;
+
 export const DEFAULT_CREATOR_CREDIT_ALLOCATIONS: Record<CreatorCreditTier, number> = {
   explorer: 0,
   pro: 220,

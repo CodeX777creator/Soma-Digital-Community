@@ -75,7 +75,7 @@ async function getCreditsForPlan(plan: CreatorPlan): Promise<number> {
     const config = normalizeCreatorCreditConfig(snap.data());
     return config.tierAllocations[plan] ?? planCreditProfiles[plan].monthlyCreatorCredits;
   } catch (error) {
-    logger.warn("[AI Credits] Falling back to default plan credits", {
+    logger.warn("[Creator Credits] Falling back to default plan credits", {
       plan,
       error: error instanceof Error ? error.message : String(error),
     });
@@ -89,7 +89,7 @@ async function getLegacyPurchasedCredits(userId: string): Promise<number> {
     const purchased = snap.data()?.credits?.purchased;
     return safeCount(purchased);
   } catch (error) {
-    logger.warn("[AI Credits] Unable to read legacy purchased credits", {
+    logger.warn("[Creator Credits] Unable to read legacy purchased credits", {
       userId,
       error: error instanceof Error ? error.message : String(error),
     });
@@ -120,7 +120,7 @@ export async function resolveFeaturePricingFromConfig(feature: MonetizedFeature)
       if (pricing) return pricing;
     }
   } catch (error) {
-    logger.warn("[AI Credits] Falling back to default feature pricing", {
+    logger.warn("[Creator Credits] Falling back to default feature pricing", {
       feature,
       error: error instanceof Error ? error.message : String(error),
     });
@@ -381,7 +381,7 @@ export async function reserveCredits(context: AIExecutionContext, credits: numbe
     } satisfies CreditLedgerEntry);
   });
 
-  logger.info("[AI Credits] Reserved credits", {
+  logger.info("[Creator Credits] Reserved credits", {
     userId: context.userId,
     feature: context.feature,
     credits,

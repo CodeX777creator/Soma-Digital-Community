@@ -860,7 +860,7 @@ export default function AIStudioPage() {
     if (isCreditBlocked) {
       toast({
         title: "Creator Credits needed",
-        description: `This generation uses ${estimatedCredits} Creator Credits. Buy credits, upgrade, or enable BYOK to continue.`,
+        description: `This generation uses ${estimatedCredits} Creator Credits. Buy Creator Credits, upgrade for monthly credits, or use your own provider key if BYOK is enabled.`,
         variant: "destructive",
       });
       return;
@@ -1147,7 +1147,7 @@ export default function AIStudioPage() {
                         <div>
                           <span className="font-medium text-white">This will use {estimatedCredits} Creator Credits.</span>{" "}
                           {isCreditBlocked
-                            ? "You need Creator Credits, a paid plan, or BYOK before this can run."
+                            ? "Buy Creator Credits, upgrade for monthly credits, or use your own provider key if BYOK is enabled."
                             : latestGenerationWasCached
                               ? "Reusing cached work costs 0 credits and still appears in your history."
                               : "Credits are reserved first and refunded automatically if generation fails."}
@@ -1156,7 +1156,7 @@ export default function AIStudioPage() {
                           <Button asChild type="button" variant="outline" size="sm" className="rounded-xl border-white/[0.08] bg-white/[0.04]">
                             <Link href="/settings/credits">
                               <CreditCard className="h-4 w-4" />
-                              Buy Credits
+                              Buy Creator Credits
                             </Link>
                           </Button>
                           <Button asChild type="button" variant="outline" size="sm" className="rounded-xl border-white/[0.08] bg-white/[0.04]">

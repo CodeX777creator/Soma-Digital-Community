@@ -301,7 +301,7 @@ export function isRetryableError(error: unknown): boolean {
 export function getErrorActionLabel(error: unknown): string {
   const appError = toAppError(error);
   if (appError.code === "UNAUTHORIZED" || appError.code === "SESSION_EXPIRED") return "Sign in";
-  if (appError.code === "CREATOR_CREDITS_EXHAUSTED" || appError.code === "BYOK_REQUIRED") return "Buy Credits";
+  if (appError.code === "CREATOR_CREDITS_EXHAUSTED" || appError.code === "BYOK_REQUIRED") return "Buy Creator Credits";
   if (appError.category === "social_oauth") return "Check Setup";
   if (appError.retryable) return "Try Again";
   return "Review";

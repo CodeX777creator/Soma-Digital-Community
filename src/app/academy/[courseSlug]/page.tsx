@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useParams, useSearchParams } from "next/navigation";
-import { ArrowRight, BookOpen, CalendarDays, CheckCircle2, Clock3, CreditCard, Download, ExternalLink, GraduationCap, Loader2, Lock, PlayCircle, Sparkles, Store, Video } from "lucide-react";
+import { ArrowRight, BookOpen, CalendarDays, CheckCircle2, Clock3, Copy, CreditCard, Download, ExternalLink, GraduationCap, Loader2, Lock, PlayCircle, Share2, Sparkles, Store, Video } from "lucide-react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import { PromoRedeemCard } from "@/components/promos/PromoRedeemCard";
@@ -32,6 +32,8 @@ type Bundle = {
   mrrState?: {
     eligibility?: Record<string, any> | null;
     purchase?: Record<string, any> | null;
+    hasCertificate?: boolean;
+    resellerLink?: Record<string, any> | null;
   };
 };
 
@@ -64,6 +66,7 @@ export default function AcademyCoursePage() {
   const [joiningSession, setJoiningSession] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const referralSlug = searchParams.get("ref") || "";
 
   const load = async () => {
     try {
@@ -80,22 +83,41 @@ export default function AcademyCoursePage() {
   useEffect(() => { void load(); }, [courseSlug]);
 
   useEffect(() => {
+    const course = bundle?.course;
+    if (!referralSlug || !course?.courseId) return;
+    void fetch("/api/reseller/click", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        slug: referralSlug,
+        itemId: course.courseId,
+        itemType: "academy_course",
+        page: typeof window !== "undefined" ? window.location.pathname : `/academy/${course.slug}`,
+      }),
+      keepalive: true,
+    }).catch(() => undefined);
+  }, [bundle?.course?.courseId, bundle?.course?.slug, referralSlug]);
+
+  useEffect(() => {
     const reference = searchParams.get("reference") || searchParams.get("trxref");
     if (!reference || verifyingPayment) return;
     const verify = async () => {
       try {
         setVerifyingPayment(true);
         setError("");
-        await academyFetch("/api/academy/payments/verify", {
+        const payload = await academyFetch("/api/academy/payments/verify", {
           method: "POST",
           body: JSON.stringify({ reference }),
         });
-        setNotice("Payment confirmed. Your Academy access is active.");
+        setNotice(payload.kind === "academy_mrr_purchase"
+          ? "MRR payment confirmed. Create your reseller link or open the Reseller Dashboard."
+          : "Payment confirmed. Your Academy access is active.");
         await load();
         const url = new URL(window.location.href);
         url.searchParams.delete("reference");
         url.searchParams.delete("trxref");
         url.searchParams.delete("purchase");
+        url.searchParams.delete("mrr");
         window.history.replaceState({}, "", url.toString());
       } catch (err) {
         setError(err instanceof Error ? err.message : "Unable to verify payment.");
@@ -132,7 +154,10 @@ export default function AcademyCoursePage() {
     try {
       setCheckingOut(true);
       setError("");
-      const payload = await academyFetch(`/api/academy/courses/${bundle.course.courseId}/checkout`, { method: "POST" });
+      const payload = await academyFetch(`/api/academy/courses/${bundle.course.courseId}/checkout`, {
+        method: "POST",
+        body: JSON.stringify({ resellerSlug: referralSlug || undefined }),
+      });
       if (payload.status === "unlocked" || payload.status === "already_purchased") {
         setNotice(payload.message || "Course access is active.");
         await load();
@@ -160,7 +185,7 @@ export default function AcademyCoursePage() {
         body: JSON.stringify({ courseId: bundle.course.courseId }),
       });
       if (payload.status === "already_purchased" || payload.status === "paid") {
-        setNotice(payload.message || "Master Resell Rights are already active.");
+        setNotice(payload.message || "Master Resell Rights are active. Create your reseller link from this page.");
         await load();
         return;
       }
@@ -191,6 +216,13 @@ export default function AcademyCoursePage() {
     } finally {
       setCreatingResellerLink(false);
     }
+  };
+
+  const copyResellerLink = async () => {
+    const url = String(bundle?.mrrState?.resellerLink?.url || "");
+    if (!url) return;
+    await navigator.clipboard.writeText(url);
+    setNotice("Reseller link copied. Share it anywhere your audience spends time.");
   };
 
   const markAttendance = async (session: AcademyLiveSessionDoc, action: "join" | "replay") => {
@@ -230,9 +262,14 @@ export default function AcademyCoursePage() {
   const isPaidCourse = courseAccess.accessType === "purchase_required";
   const mrrPurchase = bundle.mrrState?.purchase;
   const mrrEligibility = bundle.mrrState?.eligibility;
+  const resellerLink = bundle.mrrState?.resellerLink;
   const mrrPriceCents = Number(mrrEligibility?.priceCents ?? course.mrrPriceCents ?? 0);
   const hasCertificate = Boolean((bundle.certificates || []).find((certificate) => certificate.status === "active"));
   const showMrr = course.mrrEnabled || Boolean(mrrEligibility || mrrPurchase);
+  const mrrStatus = String(mrrPurchase?.status || mrrEligibility?.status || "");
+  const mrrCheckoutInProgress = mrrStatus === "pending";
+  const mrrActive = mrrStatus === "paid" || mrrStatus === "purchased";
+  const resellerLinkUrl = String(resellerLink?.url || "");
   const firstLesson = bundle.lessons.find((lesson) => lesson.status === "published");
   const unlockedTopics = new Set((bundle.progress || []).filter((item) => item.unlocked && item.topicId && !item.lessonId).map((item) => item.topicId as string));
   const passedTopics = new Set((bundle.quizAttempts || []).filter((attempt) => attempt.passed).map((attempt) => attempt.topicId));
@@ -313,21 +350,40 @@ export default function AcademyCoursePage() {
                 <div>
                   <h2 className="flex items-center gap-2 text-2xl font-semibold tracking-tight text-white"><Store className="h-5 w-5 text-[#8B5CF6]" />Master Resell Rights</h2>
                   <p className="mt-1 text-sm leading-6 text-[#BFC6D4]">
-                    {mrrPurchase?.status === "paid"
-                      ? "Your reseller rights are active for this course."
+                    {resellerLinkUrl
+                      ? "Your reseller link is ready. Share it and track sales in the Reseller Dashboard."
+                      : mrrActive
+                        ? "Your reseller rights are active. Create your tracked reseller link next."
+                        : mrrCheckoutInProgress
+                          ? "MRR checkout is in progress. Complete payment or verify the latest Paystack reference."
                       : course.mrrRequiresCertificate !== false && !hasCertificate
                         ? "Complete the course and earn your certificate to unlock reseller-rights checkout."
-                        : "Purchase reseller rights for this course after certification or reserved eligibility."}
+                        : "You are eligible to purchase reseller rights for this course."}
                   </p>
                 </div>
-                {mrrPurchase?.status === "paid" ? (
+                {resellerLinkUrl ? (
+                  <div className="flex flex-wrap gap-2">
+                    <span className="inline-flex h-11 items-center gap-2 rounded-[16px] border border-emerald-400/20 bg-emerald-400/10 px-4 text-sm font-semibold text-emerald-50"><CheckCircle2 className="h-4 w-4" />Link Created</span>
+                    <button onClick={copyResellerLink} className="inline-flex h-11 items-center gap-2 rounded-[16px] border border-white/[0.08] bg-white/[0.04] px-4 text-sm font-semibold text-white/80 hover:bg-white/[0.08]">
+                      <Copy className="h-4 w-4" /> Copy Link
+                    </button>
+                    <Link href="/reseller" className="inline-flex h-11 items-center gap-2 rounded-[16px] bg-gradient-to-r from-[#4F9DFF] via-[#5B5FFF] to-[#8B5CF6] px-4 text-sm font-semibold text-white">
+                      <Share2 className="h-4 w-4" /> Open Reseller Dashboard
+                    </Link>
+                  </div>
+                ) : mrrActive ? (
                   <div className="flex flex-wrap gap-2">
                     <span className="inline-flex h-11 items-center gap-2 rounded-[16px] border border-emerald-400/20 bg-emerald-400/10 px-4 text-sm font-semibold text-emerald-50"><CheckCircle2 className="h-4 w-4" />MRR Active</span>
                     <button onClick={createResellerLink} disabled={creatingResellerLink} className="inline-flex h-11 items-center gap-2 rounded-[16px] border border-white/[0.08] bg-white/[0.04] px-4 text-sm font-semibold text-white/80 hover:bg-white/[0.08] disabled:opacity-60">
                       {creatingResellerLink ? <Loader2 className="h-4 w-4 animate-spin" /> : <Store className="h-4 w-4" />}
-                      Reseller dashboard
+                      Create reseller link
                     </button>
+                    <Link href="/reseller" className="inline-flex h-11 items-center gap-2 rounded-[16px] border border-white/[0.08] bg-white/[0.04] px-4 text-sm font-semibold text-white/80 hover:bg-white/[0.08]">
+                      Reseller dashboard
+                    </Link>
                   </div>
+                ) : mrrCheckoutInProgress ? (
+                  <span className="inline-flex h-11 items-center gap-2 rounded-[16px] border border-amber-400/20 bg-amber-400/10 px-4 text-sm font-semibold text-amber-50"><Loader2 className="h-4 w-4 animate-spin" />Checkout in progress</span>
                 ) : course.mrrRequiresCertificate !== false && !hasCertificate ? (
                   <span className="inline-flex h-11 items-center gap-2 rounded-[16px] border border-white/[0.08] bg-white/[0.04] px-4 text-sm text-white/65"><Lock className="h-4 w-4" />Certificate required</span>
                 ) : (

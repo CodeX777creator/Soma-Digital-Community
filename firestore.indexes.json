@@ -93,6 +93,15 @@
       ]
     },
     {
+      "__comment": "Academy reseller referrals: supports slug + courseId lookup for course reseller links.",
+      "collectionGroup": "resellerLinks",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "slug", "order": "ASCENDING" },
+        { "fieldPath": "courseId", "order": "ASCENDING" }
+      ]
+    },
+    {
       "__comment": "Subscription manager: supports a user's subscriptions ordered by newest created record first.",
       "collectionGroup": "subscriptions",
       "queryScope": "COLLECTION",

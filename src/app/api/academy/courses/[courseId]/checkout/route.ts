@@ -44,6 +44,8 @@ async function getDiscountedPriceCents(userId: string, courseId: string, basePri
 export const POST = createAPIHandler(async (req, context) => {
   const { uid, email } = await requireAuth(req as any);
   const { courseId } = await context.params;
+  const body = await req.json().catch(() => ({}));
+  const resellerSlug = typeof body.resellerSlug === 'string' ? body.resellerSlug.trim().slice(0, 120) : '';
   const courseSnap = await adminDb.collection('academyCourses').doc(courseId).get();
   if (!courseSnap.exists) return apiError('Academy course not found.', { status: 404, code: 'ACADEMY_COURSE_NOT_FOUND' });
 
@@ -86,6 +88,19 @@ export const POST = createAPIHandler(async (req, context) => {
   const frontendUrl = process.env.FRONTEND_URL || process.env.NEXT_PUBLIC_APP_URL || 'https://www.somatoday.com';
   const callbackUrl = `${frontendUrl.replace(/\/$/, '')}/academy/${encodeURIComponent(course.slug)}?purchase=success&courseId=${encodeURIComponent(courseId)}`;
   const checkoutRef = adminDb.collection('academyCourseCheckoutSessions').doc();
+  let resellerUserId = '';
+  if (resellerSlug) {
+    const linkSnap = await adminDb
+      .collection('resellerLinks')
+      .where('slug', '==', resellerSlug)
+      .where('courseId', '==', courseId)
+      .limit(1)
+      .get();
+    const link = linkSnap.docs[0]?.data() || null;
+    if (link?.active !== false && typeof link?.userId === 'string' && link.userId !== uid) {
+      resellerUserId = link.userId;
+    }
+  }
 
   const response = await fetch(`${PAYSTACK_API_BASE_URL}/transaction/initialize`, {
     method: 'POST',
@@ -104,6 +119,8 @@ export const POST = createAPIHandler(async (req, context) => {
         purchaseId,
         userId: uid,
         courseId,
+        resellerSlug: resellerUserId ? resellerSlug : undefined,
+        resellerUserId: resellerUserId || undefined,
       },
     }),
   });
@@ -125,6 +142,8 @@ export const POST = createAPIHandler(async (req, context) => {
     currency: course.currency,
     paystackReference: reference,
     authorizationUrl: payload.data?.authorization_url || null,
+    resellerSlug: resellerUserId ? resellerSlug : null,
+    resellerUserId: resellerUserId || null,
     createdAt: FieldValue.serverTimestamp(),
     updatedAt: FieldValue.serverTimestamp(),
   });
@@ -138,6 +157,8 @@ export const POST = createAPIHandler(async (req, context) => {
     currency: course.currency,
     paystackReference: reference,
     checkoutSessionId: checkoutRef.id,
+    resellerSlug: resellerUserId ? resellerSlug : null,
+    resellerUserId: resellerUserId || null,
     createdAt: FieldValue.serverTimestamp(),
     updatedAt: FieldValue.serverTimestamp(),
   }, { merge: true });

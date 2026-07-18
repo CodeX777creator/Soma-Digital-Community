@@ -1,4 +1,5 @@
 import { estimateTokenCount } from "@/ai/core/tokenizer";
+import { CREATOR_CREDIT_RETAIL_VALUE_USD as CREATOR_CREDIT_RETAIL_VALUE_USD_FROM_CONFIG } from "@/lib/creator-credit-config";
 import type { AIModelRegistryDoc } from "./model-registry";
 import type { MonetizedFeature } from "./types";
 
@@ -39,7 +40,7 @@ export interface UsagePricingQuote {
   explanation: string;
 }
 
-export const CREATOR_CREDIT_RETAIL_VALUE_USD = 0.2;
+export const CREATOR_CREDIT_RETAIL_VALUE_USD = CREATOR_CREDIT_RETAIL_VALUE_USD_FROM_CONFIG;
 
 const DEFAULT_TEXT_INPUT_CREDITS_PER_1K = 0.25;
 const DEFAULT_TEXT_OUTPUT_CREDITS_PER_1K = 1;

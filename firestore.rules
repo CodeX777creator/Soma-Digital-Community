@@ -470,6 +470,12 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    match /resellerLinkClicks/{clickId} {
+      allow read: if isAdmin()
+        || (isAuthed() && resource.data.resellerUserId == request.auth.uid);
+      allow write: if false;
+    }
+
     match /resellerPayoutProfiles/{profileId} {
       allow read: if isAdmin() || isUser(profileId);
       allow write: if false;

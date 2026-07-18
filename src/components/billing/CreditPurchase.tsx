@@ -14,6 +14,8 @@ import { db } from "@/lib/firebase";
 import { doc, onSnapshot } from "firebase/firestore";
 import {
   activeCreditBundles,
+  CREATOR_CREDIT_RETAIL_VALUE_CENTS,
+  CREATOR_CREDIT_RETAIL_VALUE_USD,
   CreatorCreditBundle,
   DEFAULT_CREATOR_CREDIT_CONFIG,
   normalizeCreatorCreditConfig,
@@ -60,7 +62,7 @@ export function CreditPurchase({ isOpen, onClose, onPurchase }: CreditPurchasePr
     } catch (error) {
       toast({
         title: "Purchase Failed",
-        description: "Unable to process payment. Please try again.",
+        description: error instanceof Error ? error.message : "Unable to process payment. Please try again.",
         variant: "destructive",
       });
     } finally {
@@ -94,9 +96,9 @@ export function CreditPurchase({ isOpen, onClose, onPurchase }: CreditPurchasePr
                   <Zap className="w-5 h-5 text-primary" />
                 </div>
                 <div>
-                  <h2 className="text-lg font-bold text-white">Buy AI Credits</h2>
+                  <h2 className="text-lg font-bold text-white">Buy Creator Credits</h2>
                   <p className="text-[10px] text-muted-foreground">
-                    Universal bundles for every plan
+                    1 Creator Credit = ${CREATOR_CREDIT_RETAIL_VALUE_USD.toFixed(2)} retail value
                   </p>
                 </div>
               </div>
@@ -123,7 +125,7 @@ export function CreditPurchase({ isOpen, onClose, onPurchase }: CreditPurchasePr
               </div>
               {tier === 'explorer' && (
                 <p className="text-[10px] text-cyan-400 mt-3">
-                  Buy credits or upgrade when you want monthly included credits.
+                  Buy Creator Credits or upgrade when you want monthly included credits.
                 </p>
               )}
               {tier === 'pro' && (
@@ -201,8 +203,8 @@ export function CreditPurchase({ isOpen, onClose, onPurchase }: CreditPurchasePr
             </Button>
 
             <p className="text-[10px] text-center text-muted-foreground mt-4">
-              Credits never expire. Secure payment processing.
-            </p>
+                  Creator Credits power AI Studio, Mentor, Image, Video, Voice, and other premium generation tools.
+                </p>
           </GlassCard>
         </motion.div>
       </motion.div>
@@ -211,7 +213,7 @@ export function CreditPurchase({ isOpen, onClose, onPurchase }: CreditPurchasePr
 }
 
 function calculateSavings(pkg: CreatorCreditBundle): number {
-  const basePrice = pkg.credits * 10; // $0.10 per credit base
+  const basePrice = pkg.credits * CREATOR_CREDIT_RETAIL_VALUE_CENTS;
   const savings = ((basePrice - pkg.priceCents) / basePrice) * 100;
   return Math.round(savings);
 }

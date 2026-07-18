@@ -155,6 +155,28 @@ export const POST = createAPIHandler(async (req) => {
     updatedAt: FieldValue.serverTimestamp(),
     createdAt: FieldValue.serverTimestamp(),
   }, { merge: true });
+  if (typeof metadata.resellerUserId === 'string' && metadata.resellerUserId && metadata.resellerUserId !== uid) {
+    const grossAmount = paidCents / 100;
+    batch.set(adminDb.collection('resellerSales').doc(`${purchaseId}_${reference}`), {
+      resellerUserId: metadata.resellerUserId,
+      buyerUserId: uid,
+      assetId: courseId,
+      itemType: 'academy_course',
+      purchaseId,
+      grossAmount,
+      commissionBase: 'full_price',
+      commissionableAmount: grossAmount,
+      platformFee: 0,
+      resellerEarnings: grossAmount,
+      commissionType: 'percentage',
+      commissionValue: 100,
+      status: 'payable',
+      provider: 'paystack',
+      paystackReference: reference,
+      createdAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
+    }, { merge: true });
+  }
   if (metadata.checkoutSessionId) {
     batch.set(adminDb.collection('academyCourseCheckoutSessions').doc(String(metadata.checkoutSessionId)), {
       status: 'paid',

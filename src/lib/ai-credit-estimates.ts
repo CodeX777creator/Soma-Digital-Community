@@ -1,4 +1,4 @@
-export const CREATOR_CREDIT_USD_VALUE = 0.2;
+export { CREATOR_CREDIT_RETAIL_VALUE_USD as CREATOR_CREDIT_USD_VALUE } from "@/lib/creator-credit-config";
 
 export function estimateImageCreatorCredits(imageCount = 1, premium = false): number {
   return Math.max(1, Math.ceil(Math.max(1, imageCount) * (premium ? 20 : 10)));

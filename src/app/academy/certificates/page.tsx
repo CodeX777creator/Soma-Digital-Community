@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { Award, ExternalLink, Loader2, ShieldCheck } from "lucide-react";
+import { Award, ExternalLink, Loader2, ShieldCheck, Store } from "lucide-react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import { auth } from "@/lib/firebase";
@@ -43,6 +43,15 @@ export default function AcademyCertificatesPage() {
             </div>
             <h1 className="mt-5 text-3xl font-semibold tracking-tight text-white">Your Academy certificates</h1>
             <p className="mt-3 text-sm leading-6 text-[#BFC6D4]">Completed certifications and public verification links will appear here.</p>
+            <div className="mt-5 flex flex-wrap gap-3">
+              <Link href="/reseller" className="inline-flex h-11 items-center gap-2 rounded-[14px] border border-violet-400/20 bg-violet-400/10 px-4 text-sm font-semibold text-violet-50 hover:bg-violet-400/15">
+                <Store className="h-4 w-4" />
+                Reseller Rights
+              </Link>
+              <Link href="/academy" className="inline-flex h-11 items-center gap-2 rounded-[14px] border border-white/[0.08] bg-white/[0.04] px-4 text-sm font-semibold text-white/75 hover:bg-white/[0.08]">
+                Browse Academy
+              </Link>
+            </div>
           </section>
           {loading ? <div className="flex justify-center py-12 text-[#BFC6D4]"><Loader2 className="mr-2 h-5 w-5 animate-spin" /> Loading certificates</div> : null}
           {!loading && certificates.length ? (
@@ -57,7 +66,15 @@ export default function AcademyCertificatesPage() {
               ))}
             </div>
           ) : null}
-          {!loading && !certificates.length ? <div className="rounded-[22px] border border-dashed border-white/[0.08] bg-[#151A2E]/40 p-10 text-center text-[#BFC6D4]">Certificates will appear after you pass a final Academy exam.</div> : null}
+          {!loading && !certificates.length ? (
+            <div className="rounded-[22px] border border-dashed border-white/[0.08] bg-[#151A2E]/40 p-10 text-center text-[#BFC6D4]">
+              <Award className="mx-auto mb-4 h-8 w-8 text-white/35" />
+              <p>Certificates will appear after you pass a final Academy exam.</p>
+              <Link href="/academy" className="mt-5 inline-flex h-11 items-center rounded-[14px] bg-gradient-to-r from-[#4F9DFF] via-[#5B5FFF] to-[#8B5CF6] px-4 text-sm font-semibold text-white">
+                Continue learning
+              </Link>
+            </div>
+          ) : null}
         </div>
       </AppLayout>
     </ProtectedRoute>

@@ -123,15 +123,17 @@ async function getPaidAcademyCoursePurchase(userId: string, courseId: string) {
 }
 
 async function getAcademyMrrState(userId: string, courseId: string) {
-  const [eligibilitySnap, purchaseSnap, certificateSnap] = await Promise.all([
+  const [eligibilitySnap, purchaseSnap, certificateSnap, linkSnap] = await Promise.all([
     adminDb.collection('academyMrrEligibility').doc(`${userId}_${courseId}`).get(),
     adminDb.collection('academyMrrPurchases').doc(`${userId}_${courseId}`).get(),
     collection('certificates').where('userId', '==', userId).where('courseId', '==', courseId).where('status', '==', 'active').limit(1).get(),
+    adminDb.collection('resellerLinks').doc(`${userId}_academy_${courseId}`).get(),
   ]);
   return {
     eligibility: eligibilitySnap.exists ? serialize({ eligibilityId: eligibilitySnap.id, ...eligibilitySnap.data() } as any) : null,
     purchase: purchaseSnap.exists ? serialize({ purchaseId: purchaseSnap.id, ...purchaseSnap.data() } as any) : null,
     hasCertificate: !certificateSnap.empty,
+    resellerLink: linkSnap.exists ? serialize({ resellerLinkId: linkSnap.id, ...linkSnap.data() } as any) : null,
   };
 }
 

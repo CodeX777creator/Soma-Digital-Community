@@ -85,7 +85,7 @@ export function UsageTracker() {
                 className="h-7 text-[10px] border-primary/30 bg-white/[0.03]"
               >
                 <Plus className="w-3 h-3 mr-1" />
-                Buy Credits
+                Buy Creator Credits
               </Button>
             )}
             {upgradeTarget ? (
@@ -108,7 +108,7 @@ export function UsageTracker() {
           </p>
         </div>
 
-        {/* AI Credits */}
+        {/* Creator Credits */}
         <div className="space-y-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
@@ -153,7 +153,7 @@ export function UsageTracker() {
           {/* Low Credit Warning */}
           {isLowCredits && (
             <div className="mt-3 rounded-lg border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-[10px] text-amber-100">
-              Buy credits or upgrade to keep creating without interruption.
+              Buy Creator Credits or upgrade for monthly included credits.
             </div>
           )}
         </div>

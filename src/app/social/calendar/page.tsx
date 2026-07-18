@@ -1228,11 +1228,11 @@ export default function SocialCalendarPage() {
         icon: BarChart3,
       },
       {
-        label: "AI Credits",
+        label: "Creator Credits",
         value: creditLoading ? "--" : String(creditDashboard?.snapshot.remainingCredits ?? 0),
         helper: creditDashboard?.snapshot.monthlyCreditsGranted
           ? `${creditDashboard.snapshot.monthlyCreditsUsed} used this cycle`
-          : "Buy or upgrade to create",
+          : "Buy Creator Credits or upgrade",
         tone: creditDashboard?.snapshot.remainingCredits ? "text-white" : "text-muted-foreground",
         icon: Sparkles,
       },

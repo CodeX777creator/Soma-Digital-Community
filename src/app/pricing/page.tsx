@@ -202,7 +202,7 @@ export default function PricingPage() {
       <section className="py-24 px-4 bg-white/[0.02]">
         <div className="max-w-4xl mx-auto">
           <div className="text-center mb-12">
-            <h2 className="text-3xl font-bold text-white mb-4">Need More AI Credits?</h2>
+            <h2 className="text-3xl font-bold text-white mb-4">Need More Creator Credits?</h2>
             <p className="text-muted-foreground">
               Run out of your monthly quota? Purchase additional credits anytime.
               Credits never expire, and bundle prices are the same across every plan.

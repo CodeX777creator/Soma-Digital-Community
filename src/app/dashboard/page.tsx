@@ -574,6 +574,7 @@ function DashboardContent() {
                   { title: "Create with AI Studio", type: "AI Studio", href: "/ai/studio", description: "Turn your next idea into content, media, or a campaign." },
                   { title: "Ask AI Mentor", type: "Mentor", href: "/mentor", description: "Get guidance on the next business move." },
                   { title: "Plan content", type: "Scheduler", href: "/social/calendar?mode=scheduler", description: "Schedule content so your business shows up consistently." },
+                  { title: "Founder and MRR progress", type: "Reseller", href: "/reseller", description: "Track reseller rights, links, sales, and payout readiness." },
                 ]).map((item) => (
                   <Link key={item.title} href={item.href} className="rounded-[18px] border border-white/[0.08] bg-[#151A2E]/72 p-5 transition hover:-translate-y-1 hover:bg-[#1A2140]/85">
                     <Badge className="rounded-full bg-white/[0.06] text-[#BFC6D4]">{item.type}</Badge>
@@ -632,7 +633,7 @@ function DashboardContent() {
                   className="h-11 rounded-[16px] bg-gradient-to-r from-[#4F9DFF] via-[#5B5FFF] to-[#8B5CF6] font-medium"
                 >
                   <Plus className="h-4 w-4" />
-                  Buy Credits
+                  Buy Creator Credits
                 </Button>
                 <Button asChild variant="outline" className="h-11 rounded-[16px] border-white/[0.08] bg-white/[0.03]">
                   <Link href="/settings/credits">View History</Link>

@@ -82,7 +82,7 @@ export function UpgradePrompt({
                     onClick={onBuyCredits}
                     className="flex-1 border-white/20 hover:bg-white/10"
                   >
-                    Buy Credits
+                    Buy Creator Credits
                   </Button>
                 )}
                 <Button 

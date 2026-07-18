@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { admin, adminAuth, adminDb } from '@/lib/firebaseAdmin';
 
+const PAYOUT_METHODS = new Set(['bank', 'mpesa', 'paypal', 'paystack', 'mobile_money', 'other']);
+
 async function verifyUser(request: NextRequest) {
   const authHeader = request.headers.get('authorization');
   if (!authHeader?.startsWith('Bearer ')) throw new Error('UNAUTHENTICATED');
@@ -24,9 +26,12 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   try {
     const uid = await verifyUser(request);
     const body = await request.json().catch(() => ({}));
-    const method = typeof body.method === 'string' ? body.method.trim().slice(0, 40) : '';
+    const rawMethod = typeof body.method === 'string' ? body.method.trim().slice(0, 40) : '';
+    const method = PAYOUT_METHODS.has(rawMethod) ? rawMethod : rawMethod ? 'other' : '';
     const accountName = typeof body.accountName === 'string' ? body.accountName.trim().slice(0, 120) : '';
     const accountDetails = typeof body.accountDetails === 'string' ? body.accountDetails.trim().slice(0, 1000) : '';
+    const country = typeof body.country === 'string' ? body.country.trim().slice(0, 80) : '';
+    const currency = typeof body.currency === 'string' ? body.currency.trim().toUpperCase().slice(0, 8) : 'USD';
 
     if (!method || !accountName || !accountDetails) {
       return NextResponse.json({ error: 'Payout method, account name, and account details are required' }, { status: 400 });
@@ -37,6 +42,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       method,
       accountName,
       accountDetails,
+      country,
+      currency: currency || 'USD',
+      status: 'pending_review',
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     }, { merge: true });
 

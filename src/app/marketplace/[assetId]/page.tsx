@@ -79,6 +79,21 @@ export default function MarketplaceAssetDetailPage() {
     };
   }, [assetId, resellerSlug]);
 
+  useEffect(() => {
+    if (!resellerSlug || !assetId) return;
+    void fetch("/api/reseller/click", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        slug: resellerSlug,
+        itemId: assetId,
+        itemType: "marketplace_product",
+        page: typeof window !== "undefined" ? window.location.pathname : `/marketplace/${assetId}`,
+      }),
+      keepalive: true,
+    }).catch(() => undefined);
+  }, [assetId, resellerSlug]);
+
   const included = useMemo(() => {
     const items = ["Protected SDC purchase record", "Product access after verified payment"];
     if (asset?.externalPlatform) items.push(`${asset.externalPlatform} access instructions`);
