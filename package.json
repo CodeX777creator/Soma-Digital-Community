@@ -12,7 +12,8 @@
     "typecheck": "tsc --noEmit",
     "functions:build": "cd functions && npm run build",
     "seed:marketplace": "tsx -r dotenv/config scripts/seedMarketplace.ts",
-    "test:ai-pricing": "tsx scripts/validateAIPricing.ts"
+    "test:ai-pricing": "tsx scripts/validateAIPricing.ts",
+    "test:academy-commerce": "tsx scripts/validateAcademyCommerce.ts"
   },
   "dependencies": {
     "@genkit-ai/google-genai": "^1.28.0",

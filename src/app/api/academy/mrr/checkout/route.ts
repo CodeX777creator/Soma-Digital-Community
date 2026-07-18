@@ -1,4 +1,5 @@
 import { FieldValue } from 'firebase-admin/firestore';
+import { issueAcademyResellerLicense } from '@/academy/commerce';
 import { apiError, apiResponse, createAPIHandler } from '@/lib/api-middleware';
 import { adminDb } from '@/lib/firebaseAdmin';
 import { requireAuth } from '@/lib/serverAuth';
@@ -13,25 +14,35 @@ export const POST = createAPIHandler(async (req) => {
 
   const eligibilityId = `${uid}_${courseId}`;
   const eligibilityRef = adminDb.collection('academyMrrEligibility').doc(eligibilityId);
-  const [eligibilitySnap, certificateSnap, userSnap] = await Promise.all([
+  const [eligibilitySnap, certificateSnap, userSnap, courseSnap] = await Promise.all([
     eligibilityRef.get(),
     adminDb.collection('academyCertificates').where('userId', '==', uid).where('courseId', '==', courseId).where('status', '==', 'active').limit(1).get(),
     adminDb.collection('users').doc(uid).get(),
+    adminDb.collection('academyCourses').doc(courseId).get(),
   ]);
 
-  if (!eligibilitySnap.exists) {
-    return apiError('MRR eligibility was not reserved for this course.', { status: 403, code: 'MRR_NOT_RESERVED' });
-  }
+  if (!courseSnap.exists) return apiError('Academy course not found.', { status: 404, code: 'ACADEMY_COURSE_NOT_FOUND' });
+  const course = courseSnap.data() || {};
+  const mrrEnabled = course.mrrEnabled === true || eligibilitySnap.exists;
+  if (!mrrEnabled) return apiError('Master Resell Rights are not available for this course.', { status: 403, code: 'MRR_NOT_AVAILABLE' });
   const eligibility = eligibilitySnap.data() || {};
   if (eligibility.status === 'purchased') {
     return apiResponse({ status: 'already_purchased', message: 'Master Resell Rights are already active.' });
   }
-  if (eligibility.unlockAfterCertificate !== false && certificateSnap.empty) {
+  const requiresCertificate = eligibility.unlockAfterCertificate !== false && course.mrrRequiresCertificate !== false;
+  if (requiresCertificate && certificateSnap.empty) {
     return apiError('Complete the certification before purchasing Master Resell Rights.', { status: 403, code: 'MRR_CERTIFICATE_REQUIRED' });
   }
 
-  const priceCents = typeof eligibility.priceCents === 'number' && eligibility.priceCents > 0 ? eligibility.priceCents : 999;
-  const currency = typeof eligibility.currency === 'string' && eligibility.currency ? eligibility.currency : (process.env.PAYSTACK_CURRENCY || 'USD');
+  const coursePriceCents = typeof course.mrrPriceCents === 'number' && course.mrrPriceCents > 0 ? course.mrrPriceCents : 999;
+  let priceCents = typeof eligibility.priceCents === 'number' && eligibility.priceCents > 0 ? eligibility.priceCents : coursePriceCents;
+  if (eligibility.discountKind === 'percent') {
+    priceCents = Math.max(0, Math.round(priceCents * (1 - (Number(eligibility.amount) || 0) / 100)));
+  } else if (eligibility.discountKind === 'fixed') {
+    priceCents = Math.max(0, priceCents - Math.round(Number(eligibility.amount) || 0));
+  }
+  const currency = typeof eligibility.currency === 'string' && eligibility.currency ? eligibility.currency : (course.mrrCurrency || process.env.PAYSTACK_CURRENCY || 'USD');
+  const licenseVersion = typeof eligibility.licenseVersion === 'string' && eligibility.licenseVersion ? eligibility.licenseVersion : (course.mrrLicenseVersion || 'sdc-academy-mrr-v1');
   const secretKey = process.env.PAYSTACK_SECRET_KEY;
   if (!secretKey) {
     return apiError('Paystack is not configured for MRR purchases.', { status: 503, code: 'PAYSTACK_NOT_CONFIGURED' });
@@ -47,8 +58,51 @@ export const POST = createAPIHandler(async (req) => {
     return apiResponse({ status: 'already_purchased', message: 'Master Resell Rights are already active.' });
   }
 
+  if (priceCents <= 0) {
+    await purchaseRef.set({
+      purchaseId,
+      userId: uid,
+      courseId,
+      certificateId: certificateSnap.docs[0]?.id || eligibility.certificateId || null,
+      status: 'paid',
+      provider: 'manual',
+      priceCents: 0,
+      currency,
+      licenseVersion,
+      source: 'mrr_discount',
+      paidAt: FieldValue.serverTimestamp(),
+      createdAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
+    }, { merge: true });
+    await eligibilityRef.set({
+      eligibilityId,
+      userId: uid,
+      courseId,
+      status: 'purchased',
+      purchasedAt: FieldValue.serverTimestamp(),
+      purchaseId,
+      priceCents: 0,
+      currency,
+      licenseVersion,
+      updatedAt: FieldValue.serverTimestamp(),
+      createdAt: FieldValue.serverTimestamp(),
+    }, { merge: true });
+    await issueAcademyResellerLicense({
+      userId: uid,
+      courseId,
+      purchaseId,
+      certificateId: certificateSnap.docs[0]?.id || eligibility.certificateId || null,
+      licenseVersion,
+      priceCents: 0,
+      currency,
+      source: 'mrr_discount',
+    });
+    return apiResponse({ purchaseId, status: 'paid', freeByDiscount: true });
+  }
+
   const frontendUrl = process.env.FRONTEND_URL || process.env.NEXT_PUBLIC_APP_URL || 'https://www.somatoday.com';
-  const callbackUrl = `${frontendUrl.replace(/\/$/, '')}/academy/certificates?mrr=success&courseId=${encodeURIComponent(courseId)}`;
+  const courseSlug = String(course.slug || courseId);
+  const callbackUrl = `${frontendUrl.replace(/\/$/, '')}/academy/${encodeURIComponent(courseSlug)}?mrr=success&courseId=${encodeURIComponent(courseId)}`;
   const response = await fetch(`${PAYSTACK_API_BASE_URL}/transaction/initialize`, {
     method: 'POST',
     headers: {
@@ -66,6 +120,8 @@ export const POST = createAPIHandler(async (req) => {
         userId: uid,
         courseId,
         certificateId: certificateSnap.docs[0]?.id || eligibility.certificateId || null,
+        licenseVersion,
+        source: eligibility.source || 'academy_course_mrr',
       },
     }),
   });
@@ -83,6 +139,7 @@ export const POST = createAPIHandler(async (req) => {
     provider: 'paystack',
     priceCents,
     currency,
+    licenseVersion,
     paystackReference: payload.data?.reference || null,
     authorizationUrl: payload.data?.authorization_url || null,
     createdAt: FieldValue.serverTimestamp(),

@@ -1,5 +1,10 @@
 export const ACADEMY_COLLECTIONS = {
   courses: 'academyCourses',
+  coursePurchases: 'academyCoursePurchases',
+  courseCheckoutSessions: 'academyCourseCheckoutSessions',
+  courseEntitlements: 'academyCourseEntitlements',
+  mrrPurchases: 'academyMrrPurchases',
+  mrrEligibility: 'academyMrrEligibility',
   topics: 'academyTopics',
   lessons: 'academyLessons',
   activities: 'academyActivities',
@@ -38,6 +43,12 @@ export type AcademyCourseVisibility = (typeof ACADEMY_COURSE_VISIBILITIES)[numbe
 
 export const ACADEMY_COURSE_LEVELS = ['beginner', 'intermediate', 'advanced', 'all_levels'] as const;
 export type AcademyCourseLevel = (typeof ACADEMY_COURSE_LEVELS)[number];
+
+export const ACADEMY_COURSE_PRICING_TYPES = ['free', 'paid', 'included_with_plan', 'promo_only'] as const;
+export type AcademyCoursePricingType = (typeof ACADEMY_COURSE_PRICING_TYPES)[number];
+
+export const ACADEMY_INCLUDED_PLAN_IDS = ['explorer', 'pro', 'elite', 'enterprise'] as const;
+export type AcademyIncludedPlanId = (typeof ACADEMY_INCLUDED_PLAN_IDS)[number];
 
 export const ACADEMY_TOPIC_UNLOCK_RULES = [
   'immediate',
@@ -131,6 +142,16 @@ export interface AcademyCourseDoc extends AcademyBaseDoc {
   status: AcademyCourseStatus;
   visibility: AcademyCourseVisibility;
   estimatedDuration: number;
+  pricingType: AcademyCoursePricingType;
+  priceCents: number;
+  salePriceCents?: number | null;
+  currency: string;
+  includedPlans?: AcademyIncludedPlanId[];
+  mrrEnabled: boolean;
+  mrrRequiresCertificate: boolean;
+  mrrPriceCents: number;
+  mrrCurrency: string;
+  mrrLicenseVersion: string;
   certificateEnabled: boolean;
   finalExamEnabled: boolean;
   discussionEnabled: boolean;
@@ -142,6 +163,82 @@ export interface AcademyCourseDoc extends AcademyBaseDoc {
   recommendedCourseIds: string[];
   createdBy: string;
   publishedAt?: AcademyTimestamp;
+  metadata?: Record<string, unknown>;
+}
+
+export interface AcademyCoursePurchaseDoc extends AcademyBaseDoc {
+  purchaseId: string;
+  userId: string;
+  courseId: string;
+  status: 'pending' | 'paid' | 'failed' | 'refunded' | 'cancelled';
+  provider: 'paystack' | 'paypal' | 'manual';
+  priceCents: number;
+  currency: string;
+  paystackReference?: string | null;
+  checkoutSessionId?: string | null;
+  paidAt?: AcademyTimestamp;
+  metadata?: Record<string, unknown>;
+}
+
+export interface AcademyCourseCheckoutSessionDoc extends AcademyBaseDoc {
+  checkoutSessionId: string;
+  purchaseId: string;
+  userId: string;
+  email?: string | null;
+  courseId: string;
+  status: 'pending' | 'paid' | 'failed' | 'expired' | 'cancelled';
+  provider: 'paystack' | 'paypal';
+  priceCents: number;
+  currency: string;
+  paystackReference?: string | null;
+  authorizationUrl?: string | null;
+  verifiedAt?: AcademyTimestamp;
+  metadata?: Record<string, unknown>;
+}
+
+export interface AcademyCourseEntitlementDoc extends AcademyBaseDoc {
+  entitlementId: string;
+  userId: string;
+  courseId: string;
+  entitlementType: 'free_course' | 'paid_course' | 'course_discount' | 'manual_access';
+  source: string;
+  status: 'active' | 'expired' | 'revoked' | 'used';
+  pricePaidCents?: number;
+  discountKind?: 'percent' | 'fixed';
+  amount?: number;
+  grantedAt?: AcademyTimestamp;
+  expiresAt?: AcademyTimestamp;
+  metadata?: Record<string, unknown>;
+}
+
+export interface AcademyMrrEligibilityDoc extends AcademyBaseDoc {
+  eligibilityId: string;
+  userId: string;
+  courseId: string;
+  certificateId?: string | null;
+  source: string;
+  status: 'reserved' | 'eligible' | 'purchased' | 'revoked';
+  unlockAfterCertificate?: boolean;
+  priceCents?: number;
+  currency?: string;
+  licenseVersion?: string;
+  purchasedAt?: AcademyTimestamp;
+  metadata?: Record<string, unknown>;
+}
+
+export interface AcademyMrrPurchaseDoc extends AcademyBaseDoc {
+  purchaseId: string;
+  userId: string;
+  courseId: string;
+  certificateId?: string | null;
+  status: 'pending' | 'paid' | 'failed' | 'refunded' | 'cancelled';
+  provider: 'paystack' | 'paypal' | 'manual';
+  priceCents: number;
+  currency: string;
+  licenseVersion: string;
+  paystackReference?: string | null;
+  authorizationUrl?: string | null;
+  paidAt?: AcademyTimestamp;
   metadata?: Record<string, unknown>;
 }
 

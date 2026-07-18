@@ -18,7 +18,7 @@ import {
 import { auth, db } from "@/lib/firebase";
 import { AdminMediaPicker } from "@/components/admin/AdminMediaPicker";
 
-type AssetType = "pdf" | "video" | "template" | "notion" | "link" | "code" | "course";
+type AssetType = "pdf" | "video" | "template" | "notion" | "link" | "code";
 type AssetTier = "free" | "pro" | "elite";
 type LicenseType = "standard" | "mrr";
 type CommissionType = "fixed" | "percentage";
@@ -745,7 +745,7 @@ export default function AdminMarketplacePage() {
                 </select>
               </Field>
 
-              <Field label="Course Value">
+              <Field label="Product Value">
                 <input
                   type="number"
                   min="0"
@@ -753,7 +753,7 @@ export default function AdminMarketplacePage() {
                   value={form.courseValue}
                   onChange={(event) => setForm({ ...form, courseValue: event.target.value })}
                   className="admin-input"
-                  aria-label="Course Value"
+                  aria-label="Product Value"
                   disabled={form.licenseType !== "mrr"}
                 />
               </Field>
@@ -768,7 +768,7 @@ export default function AdminMarketplacePage() {
                 />
                 <span>
                   <span className="block text-sm font-medium">Enable reseller links</span>
-                  <span className="text-xs text-white/45">Buyers with an MRR license can resell this course through SDC.</span>
+                  <span className="text-xs text-white/45">Buyers with an MRR license can resell this product through SDC. Academy courses are managed separately in Academy.</span>
                 </span>
               </label>
 
@@ -792,13 +792,13 @@ export default function AdminMarketplacePage() {
                 />
               </Field>
 
-              <Field label="Course Access Instructions" className="md:col-span-2">
+              <Field label="Product Access Instructions" className="md:col-span-2">
                 <textarea
                   value={form.accessInstructions}
                   onChange={(event) => setForm({ ...form, accessInstructions: event.target.value })}
                   className="admin-input min-h-24 resize-y"
                   placeholder="Shown only after SDC confirms purchase."
-                  aria-label="Course Access Instructions"
+                  aria-label="Product Access Instructions"
                 />
               </Field>
 

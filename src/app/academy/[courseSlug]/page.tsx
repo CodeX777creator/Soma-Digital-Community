@@ -2,8 +2,8 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { useParams } from "next/navigation";
-import { ArrowRight, BookOpen, CalendarDays, CheckCircle2, Clock3, Download, ExternalLink, GraduationCap, Loader2, Lock, PlayCircle, Sparkles, Video } from "lucide-react";
+import { useParams, useSearchParams } from "next/navigation";
+import { ArrowRight, BookOpen, CalendarDays, CheckCircle2, Clock3, CreditCard, Download, ExternalLink, GraduationCap, Loader2, Lock, PlayCircle, Sparkles, Store, Video } from "lucide-react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import { PromoRedeemCard } from "@/components/promos/PromoRedeemCard";
@@ -21,6 +21,18 @@ type Bundle = {
   certificates?: AcademyCertificateDoc[];
   liveSessions?: AcademyLiveSessionDoc[];
   sessionAttendance?: AcademySessionAttendanceDoc[];
+  courseAccess?: {
+    canEnroll: boolean;
+    accessType: string;
+    pricingType: string;
+    effectivePriceCents: number;
+    currency: string;
+    reason?: string;
+  };
+  mrrState?: {
+    eligibility?: Record<string, any> | null;
+    purchase?: Record<string, any> | null;
+  };
 };
 
 async function academyFetch(path: string, options: RequestInit = {}) {
@@ -41,11 +53,17 @@ async function academyFetch(path: string, options: RequestInit = {}) {
 
 export default function AcademyCoursePage() {
   const { courseSlug } = useParams<{ courseSlug: string }>();
+  const searchParams = useSearchParams();
   const [bundle, setBundle] = useState<Bundle | null>(null);
   const [loading, setLoading] = useState(true);
   const [enrolling, setEnrolling] = useState(false);
+  const [checkingOut, setCheckingOut] = useState(false);
+  const [verifyingPayment, setVerifyingPayment] = useState(false);
+  const [buyingMrr, setBuyingMrr] = useState(false);
+  const [creatingResellerLink, setCreatingResellerLink] = useState(false);
   const [joiningSession, setJoiningSession] = useState<string | null>(null);
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
 
   const load = async () => {
     try {
@@ -60,6 +78,33 @@ export default function AcademyCoursePage() {
   };
 
   useEffect(() => { void load(); }, [courseSlug]);
+
+  useEffect(() => {
+    const reference = searchParams.get("reference") || searchParams.get("trxref");
+    if (!reference || verifyingPayment) return;
+    const verify = async () => {
+      try {
+        setVerifyingPayment(true);
+        setError("");
+        await academyFetch("/api/academy/payments/verify", {
+          method: "POST",
+          body: JSON.stringify({ reference }),
+        });
+        setNotice("Payment confirmed. Your Academy access is active.");
+        await load();
+        const url = new URL(window.location.href);
+        url.searchParams.delete("reference");
+        url.searchParams.delete("trxref");
+        url.searchParams.delete("purchase");
+        window.history.replaceState({}, "", url.toString());
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Unable to verify payment.");
+      } finally {
+        setVerifyingPayment(false);
+      }
+    };
+    void verify();
+  }, [searchParams, verifyingPayment]);
 
   const lessonsByTopic = useMemo(() => {
     const map = new Map<string, AcademyLessonDoc[]>();
@@ -79,6 +124,72 @@ export default function AcademyCoursePage() {
       setError(err instanceof Error ? err.message : "Unable to enroll.");
     } finally {
       setEnrolling(false);
+    }
+  };
+
+  const checkoutCourse = async () => {
+    if (!bundle) return;
+    try {
+      setCheckingOut(true);
+      setError("");
+      const payload = await academyFetch(`/api/academy/courses/${bundle.course.courseId}/checkout`, { method: "POST" });
+      if (payload.status === "unlocked" || payload.status === "already_purchased") {
+        setNotice(payload.message || "Course access is active.");
+        await load();
+        return;
+      }
+      if (payload.authorizationUrl) {
+        window.location.href = payload.authorizationUrl;
+        return;
+      }
+      throw new Error("Checkout did not return a payment link.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to start checkout.");
+    } finally {
+      setCheckingOut(false);
+    }
+  };
+
+  const checkoutMrr = async () => {
+    if (!bundle) return;
+    try {
+      setBuyingMrr(true);
+      setError("");
+      const payload = await academyFetch("/api/academy/mrr/checkout", {
+        method: "POST",
+        body: JSON.stringify({ courseId: bundle.course.courseId }),
+      });
+      if (payload.status === "already_purchased" || payload.status === "paid") {
+        setNotice(payload.message || "Master Resell Rights are already active.");
+        await load();
+        return;
+      }
+      if (payload.authorizationUrl) {
+        window.location.href = payload.authorizationUrl;
+        return;
+      }
+      throw new Error("MRR checkout did not return a payment link.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to start MRR checkout.");
+    } finally {
+      setBuyingMrr(false);
+    }
+  };
+
+  const createResellerLink = async () => {
+    if (!bundle) return;
+    try {
+      setCreatingResellerLink(true);
+      setError("");
+      await academyFetch("/api/marketplace/reseller-link", {
+        method: "POST",
+        body: JSON.stringify({ courseId: bundle.course.courseId }),
+      });
+      window.location.href = "/reseller";
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to create reseller link.");
+    } finally {
+      setCreatingResellerLink(false);
     }
   };
 
@@ -109,6 +220,19 @@ export default function AcademyCoursePage() {
   }
 
   const { course, topics, enrollment } = bundle;
+  const courseAccess = bundle.courseAccess || {
+    canEnroll: course.pricingType === "free",
+    accessType: course.pricingType === "free" ? "free" : "purchase_required",
+    pricingType: course.pricingType || "free",
+    effectivePriceCents: course.salePriceCents ?? course.priceCents ?? 0,
+    currency: course.currency || "USD",
+  };
+  const isPaidCourse = courseAccess.accessType === "purchase_required";
+  const mrrPurchase = bundle.mrrState?.purchase;
+  const mrrEligibility = bundle.mrrState?.eligibility;
+  const mrrPriceCents = Number(mrrEligibility?.priceCents ?? course.mrrPriceCents ?? 0);
+  const hasCertificate = Boolean((bundle.certificates || []).find((certificate) => certificate.status === "active"));
+  const showMrr = course.mrrEnabled || Boolean(mrrEligibility || mrrPurchase);
   const firstLesson = bundle.lessons.find((lesson) => lesson.status === "published");
   const unlockedTopics = new Set((bundle.progress || []).filter((item) => item.unlocked && item.topicId && !item.lessonId).map((item) => item.topicId as string));
   const passedTopics = new Set((bundle.quizAttempts || []).filter((attempt) => attempt.passed).map((attempt) => attempt.topicId));
@@ -120,6 +244,8 @@ export default function AcademyCoursePage() {
     <ProtectedRoute>
       <AppLayout>
         <div className="space-y-8">
+          {verifyingPayment ? <div className="rounded-[18px] border border-cyan-400/20 bg-cyan-400/10 p-4 text-sm text-cyan-50"><Loader2 className="mr-2 inline h-4 w-4 animate-spin" />Confirming your Academy payment...</div> : null}
+          {notice ? <div className="rounded-[18px] border border-emerald-400/20 bg-emerald-400/10 p-4 text-sm text-emerald-50">{notice}</div> : null}
           {error ? <div className="rounded-[18px] border border-red-400/20 bg-red-400/10 p-4 text-sm text-red-100">{error}</div> : null}
           <section className="overflow-hidden rounded-[22px] border border-white/[0.08] bg-[#151A2E]/75 shadow-[0_30px_90px_rgba(0,0,0,0.36)]">
             <div className="grid lg:grid-cols-[1fr_420px]">
@@ -129,6 +255,7 @@ export default function AcademyCoursePage() {
                   <div className="flex flex-wrap gap-2">
                     <span className="rounded-full border border-cyan-400/20 bg-cyan-400/10 px-3 py-1 text-xs text-cyan-100">{course.category}</span>
                     <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-xs text-white/50">{course.level}</span>
+                    <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-xs text-white/60">{coursePriceLabel(courseAccess)}</span>
                     {course.certificateEnabled ? <span className="rounded-full border border-emerald-400/20 bg-emerald-400/10 px-3 py-1 text-xs text-emerald-100">Certificate</span> : null}
                   </div>
                   <h1 className="mt-5 max-w-4xl text-4xl font-semibold tracking-tight text-white sm:text-5xl">{course.title}</h1>
@@ -138,11 +265,18 @@ export default function AcademyCoursePage() {
                       <Link href={`/academy/${course.slug}/learn${firstLesson ? `/${firstLesson.lessonId}` : ""}`} className="inline-flex h-12 items-center gap-2 rounded-[16px] bg-gradient-to-r from-[#4F9DFF] via-[#5B5FFF] to-[#8B5CF6] px-5 text-sm font-semibold text-white shadow-[0_18px_45px_rgba(91,95,255,.28)]">
                         Continue Learning <ArrowRight className="h-4 w-4" />
                       </Link>
-                    ) : (
+                    ) : isPaidCourse ? (
+                      <button onClick={checkoutCourse} disabled={checkingOut} className="inline-flex h-12 items-center gap-2 rounded-[16px] bg-gradient-to-r from-[#4F9DFF] via-[#5B5FFF] to-[#8B5CF6] px-5 text-sm font-semibold text-white shadow-[0_18px_45px_rgba(91,95,255,.28)] disabled:opacity-60">
+                        {checkingOut ? <Loader2 className="h-4 w-4 animate-spin" /> : <CreditCard className="h-4 w-4" />}
+                        Buy Course {formatMoney(courseAccess.effectivePriceCents, courseAccess.currency)}
+                      </button>
+                    ) : courseAccess.canEnroll ? (
                       <button onClick={enroll} disabled={enrolling} className="inline-flex h-12 items-center gap-2 rounded-[16px] bg-gradient-to-r from-[#4F9DFF] via-[#5B5FFF] to-[#8B5CF6] px-5 text-sm font-semibold text-white shadow-[0_18px_45px_rgba(91,95,255,.28)] disabled:opacity-60">
                         {enrolling ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-                        Enroll
+                        {courseAccess.accessType === "included_plan" ? "Start Included Course" : "Enroll"}
                       </button>
+                    ) : (
+                      <span className="inline-flex h-12 items-center gap-2 rounded-[16px] border border-white/[0.08] bg-white/[0.04] px-5 text-sm text-white/65"><Lock className="h-4 w-4" />{courseAccess.reason || "Course access required"}</span>
                     )}
                     <Link href="/academy" className="inline-flex h-12 items-center gap-2 rounded-[16px] border border-white/[0.08] bg-white/[0.04] px-5 text-sm text-white/75 hover:bg-white/[0.08]">Browse Academy</Link>
                   </div>
@@ -164,13 +298,46 @@ export default function AcademyCoursePage() {
             <Metric icon={CheckCircle2} label="Progress" value={`${enrollment?.progressPercent || 0}%`} />
           </div>
 
-          {!enrollment ? (
+          {!enrollment && !courseAccess.canEnroll ? (
             <PromoRedeemCard
               source="academy_course"
               title="Have an Academy unlock code?"
               description="Founder and launch campaigns can include Academy course access and future reseller-rights eligibility after certification."
               onRedeemed={() => void load()}
             />
+          ) : null}
+
+          {showMrr ? (
+            <section className="rounded-[22px] border border-white/[0.08] bg-[#151A2E]/72 p-6">
+              <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                <div>
+                  <h2 className="flex items-center gap-2 text-2xl font-semibold tracking-tight text-white"><Store className="h-5 w-5 text-[#8B5CF6]" />Master Resell Rights</h2>
+                  <p className="mt-1 text-sm leading-6 text-[#BFC6D4]">
+                    {mrrPurchase?.status === "paid"
+                      ? "Your reseller rights are active for this course."
+                      : course.mrrRequiresCertificate !== false && !hasCertificate
+                        ? "Complete the course and earn your certificate to unlock reseller-rights checkout."
+                        : "Purchase reseller rights for this course after certification or reserved eligibility."}
+                  </p>
+                </div>
+                {mrrPurchase?.status === "paid" ? (
+                  <div className="flex flex-wrap gap-2">
+                    <span className="inline-flex h-11 items-center gap-2 rounded-[16px] border border-emerald-400/20 bg-emerald-400/10 px-4 text-sm font-semibold text-emerald-50"><CheckCircle2 className="h-4 w-4" />MRR Active</span>
+                    <button onClick={createResellerLink} disabled={creatingResellerLink} className="inline-flex h-11 items-center gap-2 rounded-[16px] border border-white/[0.08] bg-white/[0.04] px-4 text-sm font-semibold text-white/80 hover:bg-white/[0.08] disabled:opacity-60">
+                      {creatingResellerLink ? <Loader2 className="h-4 w-4 animate-spin" /> : <Store className="h-4 w-4" />}
+                      Reseller dashboard
+                    </button>
+                  </div>
+                ) : course.mrrRequiresCertificate !== false && !hasCertificate ? (
+                  <span className="inline-flex h-11 items-center gap-2 rounded-[16px] border border-white/[0.08] bg-white/[0.04] px-4 text-sm text-white/65"><Lock className="h-4 w-4" />Certificate required</span>
+                ) : (
+                  <button onClick={checkoutMrr} disabled={buyingMrr} className="inline-flex h-11 items-center gap-2 rounded-[16px] bg-gradient-to-r from-[#4F9DFF] via-[#5B5FFF] to-[#8B5CF6] px-4 text-sm font-semibold text-white disabled:opacity-60">
+                    {buyingMrr ? <Loader2 className="h-4 w-4 animate-spin" /> : <CreditCard className="h-4 w-4" />}
+                    Buy MRR {formatMoney(mrrPriceCents, course.mrrCurrency || course.currency || "USD")}
+                  </button>
+                )}
+              </div>
+            </section>
           ) : null}
 
           {enrollment && liveSessions.length ? (
@@ -288,6 +455,22 @@ export default function AcademyCoursePage() {
 
 function Metric({ icon: Icon, label, value }: { icon: typeof BookOpen; label: string; value: string | number }) {
   return <div className="rounded-[18px] border border-white/[0.08] bg-[#151A2E]/72 p-5"><Icon className="h-5 w-5 text-[#4F9DFF]" /><p className="mt-4 text-xs uppercase tracking-[0.18em] text-[#7E8799]">{label}</p><p className="mt-2 text-2xl font-semibold text-white">{value}</p></div>;
+}
+
+function formatMoney(cents: number, currency = "USD") {
+  const amount = Math.max(0, Number(cents || 0)) / 100;
+  return new Intl.NumberFormat("en-US", { style: "currency", currency: currency || "USD" }).format(amount);
+}
+
+function coursePriceLabel(access: Bundle["courseAccess"]) {
+  if (!access) return "Academy course";
+  if (access.accessType === "enrolled" || access.accessType === "manual_enrollment") return "Enrolled";
+  if (access.accessType === "free") return "Free";
+  if (access.accessType === "included_plan") return "Included in your plan";
+  if (access.accessType === "promo") return "Promo unlocked";
+  if (access.accessType === "promo_required") return "Promo code required";
+  if (access.accessType === "plan_required") return "Plan access required";
+  return formatMoney(access.effectivePriceCents, access.currency);
 }
 
 function formatSessionTime(value: unknown) {

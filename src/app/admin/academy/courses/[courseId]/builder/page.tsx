@@ -93,6 +93,16 @@ export default function AcademyCourseBuilderPage() {
     nextSteps: "",
     recommendedCourseIds: "",
     status: "draft",
+    pricingType: "free",
+    priceCents: "0",
+    salePriceCents: "",
+    currency: "USD",
+    includedPlans: "",
+    mrrEnabled: false,
+    mrrRequiresCertificate: true,
+    mrrPriceCents: "999",
+    mrrCurrency: "USD",
+    mrrLicenseVersion: "sdc-academy-mrr-v1",
   });
   const [topicForm, setTopicForm] = useState({ title: "", description: "", sortOrder: "0", unlockRule: "topic_quiz_passed", quizRequired: true, dripDelayDays: "" });
   const [lessonForm, setLessonForm] = useState({
@@ -180,6 +190,16 @@ export default function AcademyCourseBuilderPage() {
         nextSteps: (course.nextSteps || []).join("\n"),
         recommendedCourseIds: (course.recommendedCourseIds || []).join(", "),
         status: course.status,
+        pricingType: course.pricingType || "free",
+        priceCents: String(course.priceCents || 0),
+        salePriceCents: course.salePriceCents == null ? "" : String(course.salePriceCents),
+        currency: course.currency || "USD",
+        includedPlans: (course.includedPlans || []).join(", "),
+        mrrEnabled: course.mrrEnabled === true,
+        mrrRequiresCertificate: course.mrrRequiresCertificate !== false,
+        mrrPriceCents: String(course.mrrPriceCents ?? 999),
+        mrrCurrency: course.mrrCurrency || "USD",
+        mrrLicenseVersion: course.mrrLicenseVersion || "sdc-academy-mrr-v1",
       });
       const firstTopic = payload.topics?.[0]?.topicId || "";
       const firstLesson = payload.lessons?.[0]?.lessonId || "";
@@ -224,6 +244,10 @@ export default function AcademyCourseBuilderPage() {
         body: JSON.stringify({
           ...courseForm,
           estimatedDuration: Number(courseForm.estimatedDuration || 0),
+          priceCents: Math.max(0, Math.round(Number(courseForm.priceCents || 0))),
+          salePriceCents: courseForm.salePriceCents.trim() ? Math.max(0, Math.round(Number(courseForm.salePriceCents || 0))) : null,
+          includedPlans: courseForm.includedPlans.split(",").map((item) => item.trim()).filter(Boolean),
+          mrrPriceCents: Math.max(0, Math.round(Number(courseForm.mrrPriceCents || 0))),
           nextSteps: courseForm.nextSteps.split("\n").map((item) => item.trim()).filter(Boolean),
           recommendedCourseIds: courseForm.recommendedCourseIds.split(",").map((item) => item.trim()).filter(Boolean),
         }),
@@ -509,6 +533,47 @@ export default function AcademyCourseBuilderPage() {
               </div>
               <Field label="Certification next steps"><textarea rows={4} className="academy-input resize-none" value={courseForm.nextSteps} onChange={(event) => setCourseForm({ ...courseForm, nextSteps: event.target.value })} placeholder="One step per line" /></Field>
               <Field label="Recommended course IDs"><input className="academy-input" value={courseForm.recommendedCourseIds} onChange={(event) => setCourseForm({ ...courseForm, recommendedCourseIds: event.target.value })} placeholder="courseId1, courseId2" /></Field>
+              <div className="rounded-3xl border border-white/10 bg-black/20 p-4">
+                <div className="mb-3">
+                  <h3 className="text-sm font-semibold text-white">Pricing and access</h3>
+                  <p className="text-xs text-white/50">Courses live in Academy. Marketplace products stay separate.</p>
+                </div>
+                <div className="grid gap-3 md:grid-cols-2">
+                  <Field label="Pricing type">
+                    <select className="academy-input" value={courseForm.pricingType} onChange={(event) => setCourseForm({ ...courseForm, pricingType: event.target.value })}>
+                      <option value="free">Free</option>
+                      <option value="paid">Paid course</option>
+                      <option value="included_with_plan">Included with plan</option>
+                      <option value="promo_only">Promo code only</option>
+                    </select>
+                  </Field>
+                  <Field label="Currency"><input className="academy-input" value={courseForm.currency} onChange={(event) => setCourseForm({ ...courseForm, currency: event.target.value.toUpperCase() })} /></Field>
+                  <Field label="Price in cents"><input type="number" min={0} className="academy-input" value={courseForm.priceCents} onChange={(event) => setCourseForm({ ...courseForm, priceCents: event.target.value })} placeholder="12100 = $121.00" /></Field>
+                  <Field label="Sale price in cents"><input type="number" min={0} className="academy-input" value={courseForm.salePriceCents} onChange={(event) => setCourseForm({ ...courseForm, salePriceCents: event.target.value })} placeholder="Optional" /></Field>
+                  <Field label="Included plan IDs"><input className="academy-input" value={courseForm.includedPlans} onChange={(event) => setCourseForm({ ...courseForm, includedPlans: event.target.value })} placeholder="pro, elite" /></Field>
+                </div>
+              </div>
+              <div className="rounded-3xl border border-white/10 bg-black/20 p-4">
+                <div className="mb-3">
+                  <h3 className="text-sm font-semibold text-white">MRR / Reseller Rights</h3>
+                  <p className="text-xs text-white/50">Set availability, certificate gating, price, and license version per course.</p>
+                </div>
+                <div className="mb-3 grid gap-2 sm:grid-cols-2">
+                  <label className="flex items-center gap-2 rounded-2xl border border-white/10 bg-white/[0.03] px-3 py-2 text-sm text-white/70">
+                    <input type="checkbox" checked={courseForm.mrrEnabled} onChange={(event) => setCourseForm({ ...courseForm, mrrEnabled: event.target.checked })} />
+                    MRR available
+                  </label>
+                  <label className="flex items-center gap-2 rounded-2xl border border-white/10 bg-white/[0.03] px-3 py-2 text-sm text-white/70">
+                    <input type="checkbox" checked={courseForm.mrrRequiresCertificate} onChange={(event) => setCourseForm({ ...courseForm, mrrRequiresCertificate: event.target.checked })} />
+                    Require certificate first
+                  </label>
+                </div>
+                <div className="grid gap-3 md:grid-cols-3">
+                  <Field label="MRR price in cents"><input type="number" min={0} className="academy-input" value={courseForm.mrrPriceCents} onChange={(event) => setCourseForm({ ...courseForm, mrrPriceCents: event.target.value })} placeholder="999 = $9.99" /></Field>
+                  <Field label="MRR currency"><input className="academy-input" value={courseForm.mrrCurrency} onChange={(event) => setCourseForm({ ...courseForm, mrrCurrency: event.target.value.toUpperCase() })} /></Field>
+                  <Field label="License version"><input className="academy-input" value={courseForm.mrrLicenseVersion} onChange={(event) => setCourseForm({ ...courseForm, mrrLicenseVersion: event.target.value })} /></Field>
+                </div>
+              </div>
               <div className="flex justify-end">
                 <button disabled={saving} className="inline-flex h-10 items-center gap-2 rounded-2xl bg-gradient-to-r from-cyan-400 to-violet-500 px-4 text-sm font-semibold text-white disabled:opacity-60">
                   {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}

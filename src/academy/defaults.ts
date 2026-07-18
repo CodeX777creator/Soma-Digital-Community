@@ -1,8 +1,10 @@
 import {
   type AcademyCourseDoc,
   type AcademyCourseLevel,
+  type AcademyCoursePricingType,
   type AcademyCourseStatus,
   type AcademyCourseVisibility,
+  type AcademyIncludedPlanId,
   type AcademyLessonDoc,
   type AcademyLessonStatus,
   type AcademyLessonType,
@@ -36,6 +38,16 @@ export function buildAcademyCourseDraft(input: {
   promoVideoUrl?: string | null;
   nextSteps?: string[];
   recommendedCourseIds?: string[];
+  pricingType?: AcademyCoursePricingType;
+  priceCents?: number;
+  salePriceCents?: number | null;
+  currency?: string;
+  includedPlans?: AcademyIncludedPlanId[];
+  mrrEnabled?: boolean;
+  mrrRequiresCertificate?: boolean;
+  mrrPriceCents?: number;
+  mrrCurrency?: string;
+  mrrLicenseVersion?: string;
 }): AcademyCourseDoc {
   const title = sanitizeAcademyString(input.title, 180);
   return {
@@ -50,6 +62,16 @@ export function buildAcademyCourseDraft(input: {
     status: input.status || 'draft',
     visibility: input.visibility || 'public',
     estimatedDuration: input.estimatedDuration || 0,
+    pricingType: input.pricingType || 'free',
+    priceCents: Math.max(0, Math.round(input.priceCents || 0)),
+    salePriceCents: input.salePriceCents ?? null,
+    currency: input.currency || 'USD',
+    includedPlans: input.includedPlans || [],
+    mrrEnabled: input.mrrEnabled ?? false,
+    mrrRequiresCertificate: input.mrrRequiresCertificate ?? true,
+    mrrPriceCents: Math.max(0, Math.round(input.mrrPriceCents ?? 999)),
+    mrrCurrency: input.mrrCurrency || 'USD',
+    mrrLicenseVersion: input.mrrLicenseVersion || 'sdc-academy-mrr-v1',
     ...DEFAULT_ACADEMY_COURSE_FLAGS,
     nextSteps: input.nextSteps || [],
     recommendedCourseIds: input.recommendedCourseIds || [],

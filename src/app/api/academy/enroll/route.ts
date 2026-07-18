@@ -7,6 +7,17 @@ export const POST = createAPIHandler(async (req) => {
   const body = await req.json();
   const course = body.courseId ? { courseId: String(body.courseId) } : await getPublishedAcademyCourseBySlug(String(body.courseSlug || ''));
   if (!course) return apiError('Academy course not found.', { status: 404, code: 'ACADEMY_COURSE_NOT_FOUND' });
-  const enrollment = await enrollInAcademyCourse(uid, course.courseId);
-  return apiResponse({ enrollment }, { status: 201 });
+  try {
+    const enrollment = await enrollInAcademyCourse(uid, course.courseId);
+    return apiResponse({ enrollment }, { status: 201 });
+  } catch (error) {
+    const code = (error as any)?.code;
+    if (code === 'ACADEMY_PURCHASE_REQUIRED') {
+      return apiError(error instanceof Error ? error.message : 'Purchase required.', { status: 402, code });
+    }
+    if (code === 'ACADEMY_ACCESS_REQUIRED') {
+      return apiError(error instanceof Error ? error.message : 'Academy access required.', { status: 403, code });
+    }
+    throw error;
+  }
 });

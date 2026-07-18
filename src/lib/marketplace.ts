@@ -50,6 +50,13 @@ export interface MarketplaceAssetFilters {
   includeUnpublished?: boolean;
 }
 
+export interface LegacyMarketplaceCourseMove {
+  assetId: string;
+  title: string;
+  academyCourseId: string;
+  redirectUrl: string;
+}
+
 const COLLECTION = "marketplaceAssets";
 
 function isLegacyCourseAsset(asset: MarketplaceAsset) {
@@ -134,6 +141,23 @@ export async function getAssetById(assetId: string): Promise<MarketplaceAsset | 
   if (!assetDoc.exists()) return null;
   const asset = normalizeAsset(assetDoc.id, assetDoc.data());
   return isLegacyCourseAsset(asset) ? null : asset;
+}
+
+export async function getLegacyMarketplaceCourseMove(assetId: string): Promise<LegacyMarketplaceCourseMove | null> {
+  if (!db) throw new Error('Database not initialized');
+  const assetDoc = await getDoc(doc(db, COLLECTION, assetId));
+  if (!assetDoc.exists()) return null;
+  const data = assetDoc.data();
+  const asset = normalizeAsset(assetDoc.id, data);
+  if (!isLegacyCourseAsset(asset) && data.movedToAcademy !== true) return null;
+  const academyCourseId = typeof data.academyCourseId === 'string' ? data.academyCourseId : '';
+  const redirectUrl = typeof data.legacyRedirectUrl === 'string' ? data.legacyRedirectUrl : academyCourseId ? `/academy/${academyCourseId}` : '/academy';
+  return {
+    assetId,
+    title: asset.title,
+    academyCourseId,
+    redirectUrl,
+  };
 }
 
 export function assetTierToSubscriptionPlan(tier: MarketplaceAssetTier): SubscriptionPlan {

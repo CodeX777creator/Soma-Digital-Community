@@ -4,8 +4,10 @@ import {
   ACADEMY_CERTIFICATE_STATUSES,
   ACADEMY_COHORT_STATUSES,
   ACADEMY_COURSE_LEVELS,
+  ACADEMY_COURSE_PRICING_TYPES,
   ACADEMY_COURSE_STATUSES,
   ACADEMY_COURSE_VISIBILITIES,
+  ACADEMY_INCLUDED_PLAN_IDS,
   ACADEMY_ENROLLMENT_STATUSES,
   ACADEMY_IMPORT_STATUSES,
   ACADEMY_LESSON_STATUSES,
@@ -56,6 +58,10 @@ export function isAcademyCourseVisibility(value: unknown): value is AcademyCours
 
 export function isAcademyCourseLevel(value: unknown): value is AcademyCourseLevel {
   return includes(ACADEMY_COURSE_LEVELS, value);
+}
+
+export function isAcademyCoursePricingType(value: unknown) {
+  return includes(ACADEMY_COURSE_PRICING_TYPES, value);
 }
 
 export function isAcademyUnlockRule(value: unknown): value is AcademyUnlockRule {
@@ -158,6 +164,24 @@ export function validateAcademyCourse(input: Partial<AcademyCourseDoc>, options:
 
   if (input.estimatedDuration !== undefined && (!Number.isFinite(input.estimatedDuration) || input.estimatedDuration < 0)) {
     throw new AcademyValidationError('Estimated duration must be a non-negative number.', 'ACADEMY_COURSE_DURATION_INVALID');
+  }
+  if (input.pricingType !== undefined && !isAcademyCoursePricingType(input.pricingType)) {
+    throw new AcademyValidationError('Unsupported course pricing type.', 'ACADEMY_COURSE_PRICING_TYPE_INVALID');
+  }
+  if (input.priceCents !== undefined && (!Number.isFinite(input.priceCents) || input.priceCents < 0)) {
+    throw new AcademyValidationError('Course price must be a non-negative number.', 'ACADEMY_COURSE_PRICE_INVALID');
+  }
+  if (input.salePriceCents !== undefined && input.salePriceCents !== null && (!Number.isFinite(input.salePriceCents) || input.salePriceCents < 0)) {
+    throw new AcademyValidationError('Course sale price must be a non-negative number.', 'ACADEMY_COURSE_SALE_PRICE_INVALID');
+  }
+  if (input.pricingType === 'paid' && !input.priceCents) {
+    throw new AcademyValidationError('Paid courses require a price.', 'ACADEMY_COURSE_PRICE_REQUIRED');
+  }
+  if (input.includedPlans !== undefined && (!Array.isArray(input.includedPlans) || input.includedPlans.some((plan) => !includes(ACADEMY_INCLUDED_PLAN_IDS, plan)))) {
+    throw new AcademyValidationError('Included plans contain an unsupported plan.', 'ACADEMY_COURSE_INCLUDED_PLANS_INVALID');
+  }
+  if (input.mrrPriceCents !== undefined && (!Number.isFinite(input.mrrPriceCents) || input.mrrPriceCents < 0)) {
+    throw new AcademyValidationError('MRR price must be a non-negative number.', 'ACADEMY_COURSE_MRR_PRICE_INVALID');
   }
 }
 

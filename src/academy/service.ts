@@ -2,6 +2,7 @@ import { FieldValue } from 'firebase-admin/firestore';
 import { randomBytes } from 'crypto';
 import { adminDb } from '@/lib/firebaseAdmin';
 import { getXPPolicy, type XPActionKey } from '@/lib/xp-policy';
+import { getEffectiveUserTier } from '@/lib/tier';
 import {
   ACADEMY_COLLECTIONS,
   ACADEMY_FINAL_EXAM_TOPIC_ID,
@@ -88,6 +89,50 @@ function serialize<T extends Record<string, any>>(doc: FirestoreDoc<T>) {
 
 function collection(name: keyof typeof ACADEMY_COLLECTIONS) {
   return adminDb.collection(ACADEMY_COLLECTIONS[name]);
+}
+
+function normalizeAcademyCourseDoc(course: AcademyCourseDoc): AcademyCourseDoc {
+  return {
+    ...course,
+    pricingType: course.pricingType || 'free',
+    priceCents: Number.isFinite(course.priceCents) ? Math.max(0, Math.round(course.priceCents)) : 0,
+    salePriceCents: course.salePriceCents == null ? null : Math.max(0, Math.round(course.salePriceCents)),
+    currency: course.currency || 'USD',
+    includedPlans: Array.isArray(course.includedPlans) ? course.includedPlans : [],
+    mrrEnabled: course.mrrEnabled === true,
+    mrrRequiresCertificate: course.mrrRequiresCertificate !== false,
+    mrrPriceCents: Number.isFinite(course.mrrPriceCents) ? Math.max(0, Math.round(course.mrrPriceCents)) : 999,
+    mrrCurrency: course.mrrCurrency || 'USD',
+    mrrLicenseVersion: course.mrrLicenseVersion || 'sdc-academy-mrr-v1',
+  };
+}
+
+function effectiveCoursePriceCents(course: AcademyCourseDoc) {
+  return course.salePriceCents != null && course.salePriceCents >= 0 ? course.salePriceCents : course.priceCents;
+}
+
+async function getAcademyCourseEntitlement(userId: string, courseId: string) {
+  const snap = await adminDb.collection('academyCourseEntitlements').doc(`${userId}_${courseId}`).get();
+  return snap.exists ? snap.data() || null : null;
+}
+
+async function getPaidAcademyCoursePurchase(userId: string, courseId: string) {
+  const snap = await adminDb.collection('academyCoursePurchases').doc(`${userId}_${courseId}`).get();
+  const data = snap.exists ? snap.data() || null : null;
+  return data?.status === 'paid' || data?.status === 'completed' ? data : null;
+}
+
+async function getAcademyMrrState(userId: string, courseId: string) {
+  const [eligibilitySnap, purchaseSnap, certificateSnap] = await Promise.all([
+    adminDb.collection('academyMrrEligibility').doc(`${userId}_${courseId}`).get(),
+    adminDb.collection('academyMrrPurchases').doc(`${userId}_${courseId}`).get(),
+    collection('certificates').where('userId', '==', userId).where('courseId', '==', courseId).where('status', '==', 'active').limit(1).get(),
+  ]);
+  return {
+    eligibility: eligibilitySnap.exists ? serialize({ eligibilityId: eligibilitySnap.id, ...eligibilitySnap.data() } as any) : null,
+    purchase: purchaseSnap.exists ? serialize({ purchaseId: purchaseSnap.id, ...purchaseSnap.data() } as any) : null,
+    hasCertificate: !certificateSnap.empty,
+  };
 }
 
 function xpEventId(action: XPActionKey, resourceId: string) {
@@ -207,7 +252,7 @@ export async function listAcademyCourses(options: { includeArchived?: boolean; l
   if (!options.includeArchived) query = query.where('status', 'in', ['draft', 'published']);
   const snap = await query.get();
   return snap.docs
-    .map((doc) => serialize({ courseId: doc.id, ...doc.data() } as AcademyCourseDoc))
+    .map((doc) => serialize(normalizeAcademyCourseDoc({ courseId: doc.id, ...doc.data() } as AcademyCourseDoc)))
     .sort((a, b) => dateSortValue(b.updatedAt || b.createdAt) - dateSortValue(a.updatedAt || a.createdAt))
     .slice(0, limit);
 }
@@ -218,7 +263,7 @@ export async function listPublishedAcademyCourses(options: { limit?: number } = 
     .where('status', '==', 'published')
     .get();
   return snap.docs
-    .map((doc) => serialize({ courseId: doc.id, ...doc.data() } as AcademyCourseDoc))
+    .map((doc) => serialize(normalizeAcademyCourseDoc({ courseId: doc.id, ...doc.data() } as AcademyCourseDoc)))
     .sort((a, b) => dateSortValue(b.publishedAt || b.updatedAt) - dateSortValue(a.publishedAt || a.updatedAt))
     .slice(0, limit);
 }
@@ -226,7 +271,7 @@ export async function listPublishedAcademyCourses(options: { limit?: number } = 
 export async function getAcademyCourse(courseId: string) {
   const snap = await collection('courses').doc(courseId).get();
   if (!snap.exists) return null;
-  return serialize({ courseId: snap.id, ...snap.data() } as AcademyCourseDoc);
+  return serialize(normalizeAcademyCourseDoc({ courseId: snap.id, ...snap.data() } as AcademyCourseDoc));
 }
 
 export async function getPublishedAcademyCourseBySlug(slug: string) {
@@ -237,7 +282,7 @@ export async function getPublishedAcademyCourseBySlug(slug: string) {
     .get();
   if (snap.empty) return null;
   const doc = snap.docs[0];
-  return serialize({ courseId: doc.id, ...doc.data() } as AcademyCourseDoc);
+  return serialize(normalizeAcademyCourseDoc({ courseId: doc.id, ...doc.data() } as AcademyCourseDoc));
 }
 
 export async function getAcademyCourseBundleBySlug(slug: string) {
@@ -272,11 +317,89 @@ export async function getAcademyCourseBundle(courseId: string) {
   };
 }
 
+export function getPublicAcademyCourseAccess(course: AcademyCourseDoc) {
+  const normalized = normalizeAcademyCourseDoc(course);
+  const effectivePriceCents = effectiveCoursePriceCents(normalized);
+  return {
+    canEnroll: normalized.pricingType === 'free',
+    accessType: normalized.pricingType === 'free' ? 'free' : 'purchase_required',
+    pricingType: normalized.pricingType,
+    priceCents: normalized.priceCents,
+    salePriceCents: normalized.salePriceCents,
+    effectivePriceCents,
+    currency: normalized.currency,
+    includedPlans: normalized.includedPlans || [],
+    reason: normalized.pricingType === 'free' ? 'Course is free.' : 'Sign in to check your course access.',
+  };
+}
+
+export async function getAcademyCourseAccess(userId: string, course: AcademyCourseDoc) {
+  const normalized = normalizeAcademyCourseDoc(course);
+  const enrollment = await getAcademyEnrollment(userId, normalized.courseId);
+  if (enrollment && enrollment.status !== 'cancelled' && enrollment.status !== 'expired') {
+    return {
+      ...getPublicAcademyCourseAccess(normalized),
+      canEnroll: true,
+      accessType: enrollment.source === 'manual' ? 'manual_enrollment' : 'enrolled',
+      reason: 'Already enrolled.',
+    };
+  }
+
+  if (normalized.pricingType === 'free') {
+    return { ...getPublicAcademyCourseAccess(normalized), canEnroll: true, accessType: 'free', reason: 'Course is free.' };
+  }
+
+  const entitlement = await getAcademyCourseEntitlement(userId, normalized.courseId);
+  if (entitlement?.status === 'active') {
+    return {
+      ...getPublicAcademyCourseAccess(normalized),
+      canEnroll: true,
+      accessType: entitlement.entitlementType === 'course_discount' ? 'discount_entitlement' : 'promo_entitlement',
+      entitlement: serialize({ entitlementId: `${userId}_${normalized.courseId}`, ...entitlement } as any),
+      reason: 'Course access is unlocked for your account.',
+    };
+  }
+
+  const purchase = await getPaidAcademyCoursePurchase(userId, normalized.courseId);
+  if (purchase) {
+    return {
+      ...getPublicAcademyCourseAccess(normalized),
+      canEnroll: true,
+      accessType: 'paid_purchase',
+      purchase: serialize({ purchaseId: `${userId}_${normalized.courseId}`, ...purchase } as any),
+      reason: 'Course purchase is complete.',
+    };
+  }
+
+  if (normalized.pricingType === 'included_with_plan') {
+    const userSnap = await adminDb.collection('users').doc(userId).get();
+    const tier = getEffectiveUserTier(userSnap.data() || {});
+    if ((normalized.includedPlans || []).includes(tier as any)) {
+      return {
+        ...getPublicAcademyCourseAccess(normalized),
+        canEnroll: true,
+        accessType: 'plan_included',
+        userTier: tier,
+        reason: 'Course is included in your plan.',
+      };
+    }
+  }
+
+  const base = getPublicAcademyCourseAccess(normalized);
+  if (normalized.pricingType === 'promo_only') {
+    return { ...base, canEnroll: false, accessType: 'promo_required', reason: 'This course requires an Academy unlock code.' };
+  }
+  if (normalized.pricingType === 'included_with_plan') {
+    return { ...base, canEnroll: false, accessType: 'plan_required', reason: 'Upgrade or use an eligible unlock code to access this course.' };
+  }
+  return { ...base, canEnroll: false, accessType: 'purchase_required', reason: 'Purchase this course to enroll.' };
+}
+
 export async function getLearnerAcademyBundle(slug: string, userId?: string) {
   const bundle = await getAcademyCourseBundleBySlug(slug);
   if (!bundle) return null;
 
-  const [enrollment, progressSnap, quizAttemptsSnap, examAttemptsSnap, certificatesSnap, attendanceSnap] = await Promise.all([
+  const [enrollment, progressSnap, quizAttemptsSnap, examAttemptsSnap, certificatesSnap, attendanceSnap, courseAccess, mrrState] = await Promise.all([
     userId ? getAcademyEnrollment(userId, bundle.course.courseId) : Promise.resolve(null),
     userId
       ? collection('progress').where('userId', '==', userId).where('courseId', '==', bundle.course.courseId).limit(1000).get()
@@ -293,6 +416,8 @@ export async function getLearnerAcademyBundle(slug: string, userId?: string) {
     userId
       ? collection('sessionAttendance').where('userId', '==', userId).where('courseId', '==', bundle.course.courseId).limit(500).get()
       : Promise.resolve(null),
+    userId ? getAcademyCourseAccess(userId, bundle.course) : Promise.resolve(getPublicAcademyCourseAccess(bundle.course)),
+    userId ? getAcademyMrrState(userId, bundle.course.courseId) : Promise.resolve({ eligibility: null, purchase: null, hasCertificate: false }),
   ]);
 
   const progress = progressSnap
@@ -315,6 +440,8 @@ export async function getLearnerAcademyBundle(slug: string, userId?: string) {
     sessionAttendance: attendanceSnap
       ? attendanceSnap.docs.map((doc) => serialize({ attendanceId: doc.id, ...doc.data() } as AcademySessionAttendanceDoc))
       : [],
+    courseAccess,
+    mrrState,
   };
 }
 
@@ -335,6 +462,16 @@ export async function createAcademyCourse(input: Partial<AcademyCourseDoc>, admi
     promoVideoUrl: input.promoVideoUrl,
     nextSteps: input.nextSteps,
     recommendedCourseIds: input.recommendedCourseIds,
+    pricingType: input.pricingType,
+    priceCents: input.priceCents,
+    salePriceCents: input.salePriceCents,
+    currency: input.currency,
+    includedPlans: input.includedPlans,
+    mrrEnabled: input.mrrEnabled,
+    mrrRequiresCertificate: input.mrrRequiresCertificate,
+    mrrPriceCents: input.mrrPriceCents,
+    mrrCurrency: input.mrrCurrency,
+    mrrLicenseVersion: input.mrrLicenseVersion,
   });
 
   const doc = stripUndefined({
@@ -375,12 +512,20 @@ export async function enrollInAcademyCourse(userId: string, courseId: string) {
     return getAcademyEnrollment(userId, courseId);
   }
 
+  const access = await getAcademyCourseAccess(userId, course);
+  if (!access.canEnroll) {
+    const error = new Error(access.reason || 'Academy course access is required before enrollment.');
+    (error as any).code = access.accessType === 'purchase_required' ? 'ACADEMY_PURCHASE_REQUIRED' : 'ACADEMY_ACCESS_REQUIRED';
+    throw error;
+  }
+
   const doc = stripUndefined({
     enrollmentId,
     userId,
     courseId,
     cohortId: null,
     status: 'active',
+    source: access.accessType,
     enrolledAt: now(),
     completedAt: null,
     lastAccessedAt: now(),
@@ -400,7 +545,7 @@ export async function enrollInAcademyCourse(userId: string, courseId: string) {
   return getAcademyEnrollment(userId, courseId);
 }
 
-async function ensureInitialAcademyProgress(userId: string, courseId: string) {
+export async function ensureInitialAcademyProgress(userId: string, courseId: string) {
   const topics = await collection('topics').where('courseId', '==', courseId).orderBy('sortOrder', 'asc').get();
   const firstTopic = topics.docs[0];
   if (!firstTopic) return;
@@ -1735,6 +1880,16 @@ export async function updateAcademyCourse(courseId: string, input: Partial<Acade
     status,
     visibility: input.visibility,
     estimatedDuration: input.estimatedDuration,
+    pricingType: input.pricingType,
+    priceCents: input.priceCents,
+    salePriceCents: input.salePriceCents,
+    currency: input.currency,
+    includedPlans: input.includedPlans,
+    mrrEnabled: input.mrrEnabled,
+    mrrRequiresCertificate: input.mrrRequiresCertificate,
+    mrrPriceCents: input.mrrPriceCents,
+    mrrCurrency: input.mrrCurrency,
+    mrrLicenseVersion: input.mrrLicenseVersion,
     certificateEnabled: input.certificateEnabled,
     finalExamEnabled: input.finalExamEnabled,
     discussionEnabled: input.discussionEnabled,

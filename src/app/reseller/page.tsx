@@ -16,6 +16,8 @@ import { authFetch } from "@/lib/clientApi";
 type ResellerLink = {
   id: string;
   assetId: string;
+  courseId?: string;
+  itemType?: string;
   slug: string;
   url: string;
   active: boolean;
@@ -91,6 +93,8 @@ export default function ResellerDashboardPage() {
           return {
             id: item.id,
             assetId: data.assetId || "",
+            courseId: data.courseId || "",
+            itemType: data.itemType || "marketplace_asset",
             slug: data.slug || "",
             url: data.url || "",
             active: data.active !== false,
@@ -115,14 +119,20 @@ export default function ResellerDashboardPage() {
           } as ResellerSale;
         });
 
-        const assetIds = Array.from(new Set([...nextLinks.map((item) => item.assetId), ...nextSales.map((item) => item.assetId)].filter(Boolean)));
+        const assetIds = Array.from(new Set([...nextLinks.filter((item) => item.itemType !== "academy_course").map((item) => item.assetId), ...nextSales.map((item) => item.assetId)].filter(Boolean)));
+        const courseIds = Array.from(new Set(nextLinks.filter((item) => item.itemType === "academy_course").map((item) => item.courseId || item.assetId).filter(Boolean)));
         const buyerIds = Array.from(new Set(nextSales.map((item) => item.buyerUserId).filter(Boolean)));
 
-        const [assetEntries, buyerEntries] = await Promise.all([
+        const [assetEntries, courseEntries, buyerEntries] = await Promise.all([
           Promise.all(assetIds.map(async (assetId) => {
             const snap = await getDoc(doc(firestore, "marketplaceAssets", assetId));
             const data = snap.data() || {};
-            return [assetId, { title: data.title || "Marketplace course", thumbnailUrl: data.thumbnailUrl || "" }] as const;
+            return [assetId, { title: data.title || "Marketplace product", thumbnailUrl: data.thumbnailUrl || "" }] as const;
+          })),
+          Promise.all(courseIds.map(async (courseId) => {
+            const snap = await getDoc(doc(firestore, "academyCourses", courseId));
+            const data = snap.data() || {};
+            return [courseId, { title: data.title || "Academy course", thumbnailUrl: data.thumbnailUrl || "" }] as const;
           })),
           Promise.all(buyerIds.map(async (buyerId) => {
             const snap = await getDoc(doc(firestore, "users", buyerId));
@@ -134,7 +144,7 @@ export default function ResellerDashboardPage() {
         if (!cancelled) {
           setLinks(nextLinks);
           setSales(nextSales.sort((a, b) => Number(b.createdAt?.seconds || 0) - Number(a.createdAt?.seconds || 0)));
-          setAssets(Object.fromEntries(assetEntries));
+          setAssets(Object.fromEntries([...assetEntries, ...courseEntries]));
           setBuyers(Object.fromEntries(buyerEntries));
           setPayoutMethod(profile.method || "");
           setPayoutName(profile.accountName || "");
@@ -232,13 +242,14 @@ export default function ResellerDashboardPage() {
                   <GlassCard key={link.id} className="p-5">
                     <div className="flex gap-4">
                       <div className="h-16 w-16 shrink-0 overflow-hidden rounded-md bg-white/5">
-                        {assets[link.assetId]?.thumbnailUrl ? (
+                        {assets[link.courseId || link.assetId]?.thumbnailUrl ? (
                           // eslint-disable-next-line @next/next/no-img-element
-                          <img src={assets[link.assetId].thumbnailUrl} alt="" className="h-full w-full object-cover" />
+                          <img src={assets[link.courseId || link.assetId].thumbnailUrl} alt="" className="h-full w-full object-cover" />
                         ) : null}
                       </div>
                       <div className="min-w-0 flex-1">
-                        <p className="font-semibold">{assets[link.assetId]?.title || "MRR course"}</p>
+                        <p className="font-semibold">{assets[link.courseId || link.assetId]?.title || "MRR item"}</p>
+                        <p className="mt-1 text-xs uppercase tracking-wider text-cyan-200/70">{link.itemType === "academy_course" ? "Academy course MRR" : "Marketplace product MRR"}</p>
                         <p className="mt-1 truncate text-sm text-muted-foreground">{link.url}</p>
                         <div className="mt-4 flex flex-wrap gap-2">
                           <Button onClick={() => copyLink(link.url)} size="sm">

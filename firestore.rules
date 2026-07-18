@@ -386,12 +386,27 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    match /academyCoursePurchases/{purchaseId} {
+      allow read: if isAdmin() || (isAuthed() && resource.data.userId == request.auth.uid);
+      allow write: if false;
+    }
+
+    match /academyCourseCheckoutSessions/{checkoutSessionId} {
+      allow read: if isAdmin() || (isAuthed() && resource.data.userId == request.auth.uid);
+      allow write: if false;
+    }
+
     match /academyMrrEligibility/{eligibilityId} {
       allow read: if isAdmin() || (isAuthed() && resource.data.userId == request.auth.uid);
       allow write: if false;
     }
 
     match /academyMrrPurchases/{purchaseId} {
+      allow read: if isAdmin() || (isAuthed() && resource.data.userId == request.auth.uid);
+      allow write: if false;
+    }
+
+    match /academyResellerLicenses/{licenseId} {
       allow read: if isAdmin() || (isAuthed() && resource.data.userId == request.auth.uid);
       allow write: if false;
     }

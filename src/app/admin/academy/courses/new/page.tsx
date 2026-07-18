@@ -37,9 +37,19 @@ export default function NewAcademyCoursePage() {
     estimatedDuration: "0",
     thumbnailUrl: "",
     promoVideoUrl: "",
+    pricingType: "free",
+    priceCents: "0",
+    salePriceCents: "",
+    currency: "USD",
+    includedPlans: "",
+    mrrEnabled: false,
+    mrrRequiresCertificate: true,
+    mrrPriceCents: "999",
+    mrrCurrency: "USD",
+    mrrLicenseVersion: "sdc-academy-mrr-v1",
   });
 
-  const update = (key: keyof typeof form, value: string) => setForm((current) => ({ ...current, [key]: value }));
+  const update = (key: keyof typeof form, value: string | boolean) => setForm((current) => ({ ...current, [key]: value }));
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -51,6 +61,10 @@ export default function NewAcademyCoursePage() {
         body: JSON.stringify({
           ...form,
           estimatedDuration: Number(form.estimatedDuration || 0),
+          priceCents: Math.max(0, Math.round(Number(form.priceCents || 0))),
+          salePriceCents: form.salePriceCents.trim() ? Math.max(0, Math.round(Number(form.salePriceCents || 0))) : null,
+          includedPlans: form.includedPlans.split(",").map((item) => item.trim()).filter(Boolean),
+          mrrPriceCents: Math.max(0, Math.round(Number(form.mrrPriceCents || 0))),
           status: "draft",
         }),
       });
@@ -143,6 +157,48 @@ export default function NewAcademyCoursePage() {
             <Field label="Estimated duration, minutes">
               <input type="number" min={0} value={form.estimatedDuration} onChange={(event) => update("estimatedDuration", event.target.value)} className="academy-input" />
             </Field>
+            <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
+              <p className="text-sm font-semibold text-white">Pricing</p>
+              <p className="mb-3 text-xs text-white/45">Set the commercial model now, or refine it in the builder.</p>
+              <div className="space-y-3">
+                <Field label="Pricing type">
+                  <select value={form.pricingType} onChange={(event) => update("pricingType", event.target.value)} className="academy-input">
+                    <option value="free">Free</option>
+                    <option value="paid">Paid course</option>
+                    <option value="included_with_plan">Included with plan</option>
+                    <option value="promo_only">Promo code only</option>
+                  </select>
+                </Field>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <Field label="Price in cents">
+                    <input type="number" min={0} value={form.priceCents} onChange={(event) => update("priceCents", event.target.value)} placeholder="12100" className="academy-input" />
+                  </Field>
+                  <Field label="Sale cents">
+                    <input type="number" min={0} value={form.salePriceCents} onChange={(event) => update("salePriceCents", event.target.value)} placeholder="Optional" className="academy-input" />
+                  </Field>
+                </div>
+                <Field label="Included plans">
+                  <input value={form.includedPlans} onChange={(event) => update("includedPlans", event.target.value)} placeholder="pro, elite" className="academy-input" />
+                </Field>
+              </div>
+            </div>
+            <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
+              <p className="text-sm font-semibold text-white">MRR / Reseller Rights</p>
+              <p className="mb-3 text-xs text-white/45">The MRR price is configurable per course.</p>
+              <div className="space-y-3">
+                <label className="flex items-center gap-2 text-sm text-white/70">
+                  <input type="checkbox" checked={form.mrrEnabled} onChange={(event) => update("mrrEnabled", event.target.checked)} />
+                  Enable MRR purchase
+                </label>
+                <label className="flex items-center gap-2 text-sm text-white/70">
+                  <input type="checkbox" checked={form.mrrRequiresCertificate} onChange={(event) => update("mrrRequiresCertificate", event.target.checked)} />
+                  Require certificate first
+                </label>
+                <Field label="MRR price in cents">
+                  <input type="number" min={0} value={form.mrrPriceCents} onChange={(event) => update("mrrPriceCents", event.target.value)} placeholder="999" className="academy-input" />
+                </Field>
+              </div>
+            </div>
           </div>
         </div>
         <div className="mt-6 flex justify-end">

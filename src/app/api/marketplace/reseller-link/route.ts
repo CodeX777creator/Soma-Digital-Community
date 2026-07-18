@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { createAcademyResellerLink } from '@/academy/commerce';
 import { admin, adminAuth, adminDb } from '@/lib/firebaseAdmin';
 
 interface ResellerLinkRequest {
   assetId: string;
+  courseId?: string;
 }
 
 async function verifyAuthToken(request: NextRequest): Promise<{ uid: string; email?: string }> {
@@ -75,9 +77,10 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       return NextResponse.json({ error: 'Invalid request body' }, { status: 400 });
     }
 
-    const assetId = body.assetId;
-    if (!assetId || typeof assetId !== 'string') {
-      return NextResponse.json({ error: 'Missing or invalid assetId' }, { status: 400 });
+    const assetId = typeof body.assetId === 'string' ? body.assetId : '';
+    const courseId = typeof body.courseId === 'string' ? body.courseId : '';
+    if (!assetId && !courseId) {
+      return NextResponse.json({ error: 'Missing product or course ID' }, { status: 400 });
     }
 
     let user: { uid: string; email?: string };
@@ -85,6 +88,35 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       user = await verifyAuthToken(request);
     } catch {
       return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
+    }
+
+    if (courseId) {
+      const [courseDoc, licenseDoc] = await Promise.all([
+        adminDb.collection('academyCourses').doc(courseId).get(),
+        adminDb.collection('academyResellerLicenses').doc(`${user.uid}_${courseId}`).get(),
+      ]);
+      if (!courseDoc.exists || courseDoc.data()?.status !== 'published') {
+        return NextResponse.json({ error: 'Academy course not found' }, { status: 404 });
+      }
+      if (!licenseDoc.exists || licenseDoc.data()?.status !== 'active') {
+        return NextResponse.json({ error: 'Academy MRR license required before creating a reseller link' }, { status: 403 });
+      }
+      const course = courseDoc.data() || {};
+      const link = await createAcademyResellerLink({
+        userId: user.uid,
+        courseId,
+        courseTitle: String(course.title || 'Academy course'),
+        courseSlug: String(course.slug || courseId),
+        resalePriceCents: typeof course.priceCents === 'number' ? course.priceCents : 0,
+        baseUrl: getBaseUrl(request),
+      });
+      return NextResponse.json({
+        resellerLink: {
+          slug: link?.slug || '',
+          url: link?.url || '',
+          active: link?.active !== false,
+        },
+      });
     }
 
     const assetDoc = await adminDb.collection('marketplaceAssets').doc(assetId).get();

@@ -12,7 +12,7 @@ import { Button } from "@/components/ui/button";
 import { GlassCard } from "@/components/ui/glass-card";
 import { PromoRedeemCard } from "@/components/promos/PromoRedeemCard";
 import { app } from "@/lib/firebase";
-import { getAssetById, type MarketplaceAsset } from "@/lib/marketplace";
+import { getAssetById, getLegacyMarketplaceCourseMove, type LegacyMarketplaceCourseMove, type MarketplaceAsset } from "@/lib/marketplace";
 import { useAuth } from "@/providers/AuthProvider";
 import { useToast } from "@/hooks/use-toast";
 
@@ -28,6 +28,7 @@ export default function MarketplaceAssetDetailPage() {
   const { user } = useAuth();
   const { toast } = useToast();
   const [asset, setAsset] = useState<MarketplaceAsset | null>(null);
+  const [movedCourse, setMovedCourse] = useState<LegacyMarketplaceCourseMove | null>(null);
   const [loading, setLoading] = useState(true);
   const [checkoutLoading, setCheckoutLoading] = useState(false);
   const [licenseAccepted, setLicenseAccepted] = useState(false);
@@ -43,7 +44,11 @@ export default function MarketplaceAssetDetailPage() {
       setLoading(true);
       try {
         const nextAsset = await getAssetById(assetId);
-        if (!cancelled) setAsset(nextAsset);
+        const moved = nextAsset ? null : await getLegacyMarketplaceCourseMove(assetId);
+        if (!cancelled) {
+          setAsset(nextAsset);
+          setMovedCourse(moved);
+        }
       } catch (error) {
         console.error("Unable to load marketplace product:", error);
       } finally {
@@ -140,8 +145,18 @@ export default function MarketplaceAssetDetailPage() {
       <ProtectedRoute>
         <AppLayout>
           <GlassCard className="p-10 text-center">
-            <p className="font-semibold">Product not found.</p>
-            <Button asChild className="mt-5"><Link href="/marketplace">Back to Marketplace</Link></Button>
+            {movedCourse ? (
+              <>
+                <p className="font-semibold">This course moved to Academy.</p>
+                <p className="mt-2 text-sm text-muted-foreground">{movedCourse.title} now lives with certifications, exams, certificates, and course MRR.</p>
+                <Button asChild className="mt-5"><Link href={movedCourse.redirectUrl}>Open in Academy</Link></Button>
+              </>
+            ) : (
+              <>
+                <p className="font-semibold">Product not found.</p>
+                <Button asChild className="mt-5"><Link href="/marketplace">Back to Marketplace</Link></Button>
+              </>
+            )}
           </GlassCard>
         </AppLayout>
       </ProtectedRoute>

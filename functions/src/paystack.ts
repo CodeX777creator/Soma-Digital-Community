@@ -424,6 +424,148 @@ async function processCreditPurchaseWebhook(eventId: string, eventType: string, 
   return { handled: true, response: { success: true, flow: 'creator_credit_purchase' } };
 }
 
+async function ensureInitialAcademyProgress(userId: string, courseId: string) {
+  const topics = await db.collection('academyTopics').where('courseId', '==', courseId).orderBy('sortOrder', 'asc').limit(1).get();
+  const firstTopic = topics.docs[0];
+  if (!firstTopic) return;
+  await db.collection('academyProgress').doc(`${userId}_${courseId}_${firstTopic.id}`).set({
+    progressId: `${userId}_${courseId}_${firstTopic.id}`,
+    userId,
+    courseId,
+    topicId: firstTopic.id,
+    lessonId: null,
+    completed: false,
+    unlocked: true,
+    score: null,
+    completedAt: null,
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+  }, { merge: true });
+}
+
+async function issueAcademyResellerLicense(input: {
+  userId: string;
+  courseId: string;
+  purchaseId: string;
+  certificateId?: string | null;
+  licenseVersion?: string | null;
+  priceCents?: number | null;
+  currency?: string | null;
+  source?: string;
+}) {
+  const licenseId = `${input.userId}_${input.courseId}`;
+  await db.collection('academyResellerLicenses').doc(licenseId).set({
+    licenseId,
+    userId: input.userId,
+    courseId: input.courseId,
+    purchaseId: input.purchaseId,
+    certificateId: input.certificateId || null,
+    licenseVersion: input.licenseVersion || 'sdc-academy-mrr-v1',
+    priceCents: typeof input.priceCents === 'number' ? input.priceCents : null,
+    currency: input.currency || 'USD',
+    source: input.source || 'academy_mrr_purchase',
+    status: 'active',
+    issuedAt: admin.firestore.FieldValue.serverTimestamp(),
+    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  }, { merge: true });
+}
+
+async function processAcademyCoursePurchaseWebhook(eventId: string, eventType: string, data: any) {
+  if (data?.metadata?.kind !== 'academy_course_purchase') {
+    return { handled: false };
+  }
+
+  const purchaseId = typeof data.metadata.purchaseId === 'string' ? data.metadata.purchaseId : '';
+  const userId = typeof data.metadata.userId === 'string' ? data.metadata.userId : '';
+  const courseId = typeof data.metadata.courseId === 'string' ? data.metadata.courseId : '';
+  if (!purchaseId || !userId || !courseId) {
+    return { handled: true, response: { success: true, ignored: true, reason: 'missing_academy_course_purchase_metadata' } };
+  }
+
+  const purchaseRef = db.collection('academyCoursePurchases').doc(purchaseId);
+  const courseRef = db.collection('academyCourses').doc(courseId);
+  const purchaseSnap = await purchaseRef.get();
+  if (!purchaseSnap.exists) {
+    return { handled: true, response: { success: true, ignored: true, reason: 'academy_course_purchase_not_found' } };
+  }
+  const purchase = purchaseSnap.data() || {};
+  if (purchase.status === 'paid' && eventType === 'charge.success') {
+    return { handled: true, response: { success: true, duplicate: true } };
+  }
+
+  if (eventType !== 'charge.success') {
+    const status = eventType === 'charge.failed' ? 'failed' : eventType.includes('refund') ? 'refunded' : 'ignored';
+    await purchaseRef.set({
+      status,
+      eventType,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    }, { merge: true });
+    if (status === 'refunded') {
+      await db.collection('academyCourseEntitlements').doc(`${userId}_${courseId}`).set({
+        status: 'revoked',
+        revokedAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      }, { merge: true });
+      await db.collection('academyEnrollments').doc(`${userId}_${courseId}`).set({
+        status: 'cancelled',
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      }, { merge: true });
+    }
+    return { handled: true, response: { success: true, ignored: true, reason: 'non_success_academy_course_event' } };
+  }
+
+  const courseSnap = await courseRef.get();
+  const course = courseSnap.data() || {};
+  const paidCents = Math.round((Number(data.amount) || 0) / 100);
+  const currency = data.currency || purchase.currency || course.currency || 'USD';
+
+  await db.runTransaction(async (transaction) => {
+    const freshPurchase = await transaction.get(purchaseRef);
+    if (freshPurchase.data()?.status === 'paid') return;
+    transaction.set(purchaseRef, {
+      status: 'paid',
+      paidAt: admin.firestore.FieldValue.serverTimestamp(),
+      eventId,
+      priceCents: paidCents,
+      currency,
+      paystackReference: data.reference || purchase.paystackReference || null,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    }, { merge: true });
+    transaction.set(db.collection('academyCourseEntitlements').doc(`${userId}_${courseId}`), {
+      entitlementId: `${userId}_${courseId}`,
+      userId,
+      courseId,
+      entitlementType: 'paid_course',
+      source: 'paystack_webhook',
+      status: 'active',
+      pricePaidCents: paidCents,
+      grantedAt: admin.firestore.FieldValue.serverTimestamp(),
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    }, { merge: true });
+    transaction.set(db.collection('academyEnrollments').doc(`${userId}_${courseId}`), {
+      enrollmentId: `${userId}_${courseId}`,
+      userId,
+      courseId,
+      cohortId: null,
+      status: 'active',
+      source: 'paid_purchase',
+      enrolledAt: admin.firestore.FieldValue.serverTimestamp(),
+      completedAt: null,
+      lastAccessedAt: admin.firestore.FieldValue.serverTimestamp(),
+      progressPercent: 0,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    }, { merge: true });
+  });
+
+  await ensureInitialAcademyProgress(userId, courseId);
+  await createAuditLog('academy_course_purchase_verified', userId, purchaseId, { eventId, courseId, paystackReference: data.reference || null, priceCents: paidCents, currency });
+  await createNotification(userId, 'success', 'Academy course unlocked', `Your access to ${course.title || 'this Academy course'} is active.`, `/academy/${course.slug || courseId}`);
+  return { handled: true, response: { success: true, flow: 'academy_course_purchase' } };
+}
+
 async function processAcademyMrrPurchaseWebhook(eventId: string, eventType: string, data: any) {
   if (data?.metadata?.kind !== 'academy_mrr_purchase') {
     return { handled: false };
@@ -448,11 +590,24 @@ async function processAcademyMrrPurchaseWebhook(eventId: string, eventType: stri
   }
 
   if (eventType !== 'charge.success') {
+    const status = eventType === 'charge.failed' ? 'failed' : eventType.includes('refund') ? 'refunded' : 'ignored';
     await purchaseRef.set({
-      status: eventType === 'charge.failed' ? 'failed' : 'ignored',
+      status,
       eventType,
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     }, { merge: true });
+    if (status === 'refunded') {
+      await eligibilityRef.set({
+        status: 'revoked',
+        revokedAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      }, { merge: true });
+      await db.collection('academyResellerLicenses').doc(`${userId}_${courseId}`).set({
+        status: 'revoked',
+        revokedAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      }, { merge: true });
+    }
     return { handled: true, response: { success: true, ignored: true, reason: 'non_success_mrr_event' } };
   }
 
@@ -474,6 +629,17 @@ async function processAcademyMrrPurchaseWebhook(eventId: string, eventType: stri
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     }, { merge: true });
   });
+  await issueAcademyResellerLicense({
+    userId,
+    courseId,
+    purchaseId,
+    certificateId: data.metadata.certificateId || purchase.certificateId || null,
+    licenseVersion: data.metadata.licenseVersion || purchase.licenseVersion || 'sdc-academy-mrr-v1',
+    priceCents: typeof purchase.priceCents === 'number' ? purchase.priceCents : Math.round((Number(data.amount) || 0) / 100),
+    currency: data.currency || purchase.currency || 'USD',
+    source: data.metadata.source || 'paystack_webhook',
+  });
+  await createAuditLog('academy_mrr_purchase_verified', userId, purchaseId, { eventId, courseId, paystackReference: data.reference || null });
 
   await createNotification(
     userId,
@@ -1271,6 +1437,13 @@ export const paystackWebhook = onRequest(
         if (academyMrrResult.handled) {
           await eventRef.update({ status: 'success', flow: 'academy_mrr_purchase' });
           res.status(200).json(academyMrrResult.response || { success: true });
+          return;
+        }
+
+        const academyCourseResult = await processAcademyCoursePurchaseWebhook(eventId, eventType, data);
+        if (academyCourseResult.handled) {
+          await eventRef.update({ status: 'success', flow: 'academy_course_purchase' });
+          res.status(200).json(academyCourseResult.response || { success: true });
           return;
         }
 

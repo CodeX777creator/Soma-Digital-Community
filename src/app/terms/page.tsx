@@ -79,7 +79,7 @@ const sections = [
     iconClass: "text-accent",
     title: "8. Marketplace, Digital Products, and Licenses",
     body: [
-      "The SDC marketplace may offer courses, templates, resources, digital products, tools, bundles, MRR products, resale-enabled products, and related assets. Your right to access or resell a marketplace item depends on the specific license, tier, purchase terms, and product rules shown at the time of access or purchase.",
+      "The SDC Academy offers courses, certifications, exams, certificates, and course-specific reseller rights where enabled. The SDC Marketplace offers non-course products such as templates, resources, digital products, tools, bundles, MRR products, resale-enabled products, and related assets. Your right to access or resell an item depends on the specific license, tier, purchase terms, and product rules shown at the time of access or purchase.",
       "You may not copy, resell, sublicense, distribute, or commercialize marketplace assets unless the applicable product license expressly allows it. Where MRR or resale rights are offered, you must comply with all license terms, pricing restrictions, branding rules, platform policies, and applicable laws.",
     ],
   },
