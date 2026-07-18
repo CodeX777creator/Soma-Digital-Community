@@ -2,6 +2,7 @@ import { FieldValue } from 'firebase-admin/firestore';
 import { apiError, apiResponse, createAPIHandler } from '@/lib/api-middleware';
 import { adminDb } from '@/lib/firebaseAdmin';
 import { requireAuth } from '@/lib/serverAuth';
+import { PromoError, recordFailedPromoRedemption, redeemPromoCode } from '@/promos';
 
 const PAYSTACK_API_BASE_URL = 'https://api.paystack.co';
 
@@ -46,6 +47,7 @@ export const POST = createAPIHandler(async (req, context) => {
   const { courseId } = await context.params;
   const body = await req.json().catch(() => ({}));
   const resellerSlug = typeof body.resellerSlug === 'string' ? body.resellerSlug.trim().slice(0, 120) : '';
+  const promoCode = typeof body.promoCode === 'string' ? body.promoCode.trim() : '';
   const courseSnap = await adminDb.collection('academyCourses').doc(courseId).get();
   if (!courseSnap.exists) return apiError('Academy course not found.', { status: 404, code: 'ACADEMY_COURSE_NOT_FOUND' });
 
@@ -61,6 +63,53 @@ export const POST = createAPIHandler(async (req, context) => {
     return apiResponse({ status: 'already_purchased', purchaseId, message: 'Course purchase is already active.' });
   }
 
+  let promoRedemption: Awaited<ReturnType<typeof redeemPromoCode>> | null = null;
+  if (promoCode) {
+    try {
+      promoRedemption = await redeemPromoCode({
+        code: promoCode,
+        userId: uid,
+        email,
+        surface: 'academy_checkout',
+        context: { courseId, checkoutType: 'academy_course' },
+        metadata: {
+          source: 'academy_checkout',
+          path: `/academy/${course.slug}`,
+        },
+      });
+    } catch (error) {
+      if (error instanceof PromoError) {
+        await recordFailedPromoRedemption({
+          code: promoCode,
+          userId: uid,
+          email,
+          surface: 'academy_checkout',
+          context: { courseId, checkoutType: 'academy_course' },
+          failureReason: error.code,
+          metadata: {
+            source: 'academy_checkout',
+            path: `/academy/${course.slug}`,
+          },
+        }).catch(() => null);
+        return apiError(error.message, { status: error.status, code: error.code });
+      }
+      throw error;
+    }
+  }
+
+  if (promoRedemption?.benefitsGranted.some((benefit) => benefit === `academy_course_free:${courseId}`)) {
+    return apiResponse({
+      status: 'unlocked',
+      purchaseId,
+      freeByPromo: true,
+      message: 'Founder Member Bonus applied. Your Academy course is included.',
+      promo: {
+        code: promoRedemption.code,
+        benefitsGranted: promoRedemption.benefitsGranted,
+      },
+    });
+  }
+
   const priceCents = await getDiscountedPriceCents(uid, courseId, course.effectivePriceCents);
   if (priceCents <= 0) {
     await adminDb.collection('academyCourseEntitlements').doc(purchaseId).set({
@@ -70,13 +119,23 @@ export const POST = createAPIHandler(async (req, context) => {
       courseId,
       entitlementType: 'free_course',
       source: 'course_discount',
+      promoId: promoRedemption?.promoId || null,
+      promoCode: promoRedemption?.code || null,
       status: 'active',
       pricePaidCents: 0,
       grantedAt: FieldValue.serverTimestamp(),
       createdAt: FieldValue.serverTimestamp(),
       updatedAt: FieldValue.serverTimestamp(),
     }, { merge: true });
-    return apiResponse({ status: 'unlocked', purchaseId, freeByDiscount: true });
+    return apiResponse({
+      status: 'unlocked',
+      purchaseId,
+      freeByDiscount: true,
+      promo: promoRedemption ? {
+        code: promoRedemption.code,
+        benefitsGranted: promoRedemption.benefitsGranted,
+      } : null,
+    });
   }
 
   const secretKey = process.env.PAYSTACK_SECRET_KEY;
@@ -121,6 +180,9 @@ export const POST = createAPIHandler(async (req, context) => {
         courseId,
         resellerSlug: resellerUserId ? resellerSlug : undefined,
         resellerUserId: resellerUserId || undefined,
+        promoCode: promoRedemption?.code || undefined,
+        promoId: promoRedemption?.promoId || undefined,
+        promoBenefitsGranted: promoRedemption?.benefitsGranted || undefined,
       },
     }),
   });
@@ -144,6 +206,10 @@ export const POST = createAPIHandler(async (req, context) => {
     authorizationUrl: payload.data?.authorization_url || null,
     resellerSlug: resellerUserId ? resellerSlug : null,
     resellerUserId: resellerUserId || null,
+    promoCode: promoRedemption?.code || null,
+    promoId: promoRedemption?.promoId || null,
+    promoBenefitsGranted: promoRedemption?.benefitsGranted || [],
+    originalPriceCents: course.effectivePriceCents,
     createdAt: FieldValue.serverTimestamp(),
     updatedAt: FieldValue.serverTimestamp(),
   });
@@ -159,6 +225,10 @@ export const POST = createAPIHandler(async (req, context) => {
     checkoutSessionId: checkoutRef.id,
     resellerSlug: resellerUserId ? resellerSlug : null,
     resellerUserId: resellerUserId || null,
+    promoCode: promoRedemption?.code || null,
+    promoId: promoRedemption?.promoId || null,
+    promoBenefitsGranted: promoRedemption?.benefitsGranted || [],
+    originalPriceCents: course.effectivePriceCents,
     createdAt: FieldValue.serverTimestamp(),
     updatedAt: FieldValue.serverTimestamp(),
   }, { merge: true });
@@ -168,6 +238,10 @@ export const POST = createAPIHandler(async (req, context) => {
     checkoutSessionId: checkoutRef.id,
     status: 'pending',
     authorizationUrl: payload.data?.authorization_url || null,
+    promo: promoRedemption ? {
+      code: promoRedemption.code,
+      benefitsGranted: promoRedemption.benefitsGranted,
+    } : null,
   }, { status: 201 });
 }, {
   rateLimit: { windowMs: 60 * 1000, maxRequests: 5 },

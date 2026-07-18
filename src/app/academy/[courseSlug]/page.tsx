@@ -338,6 +338,8 @@ export default function AcademyCoursePage() {
           {!enrollment && !courseAccess.canEnroll ? (
             <PromoRedeemCard
               source="academy_course"
+              surface="academy_course"
+              context={{ courseId: course.courseId }}
               title="Have an Academy unlock code?"
               description="Founder and launch campaigns can include Academy course access and future reseller-rights eligibility after certification."
               onRedeemed={() => void load()}

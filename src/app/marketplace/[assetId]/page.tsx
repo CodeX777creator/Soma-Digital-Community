@@ -248,6 +248,8 @@ export default function MarketplaceAssetDetailPage() {
             <PromoRedeemCard
               compact
               source="marketplace_checkout"
+              surface="marketplace_product"
+              context={{ productId: asset.id }}
               title="Have a product unlock code?"
               description="Apply eligible launch, product, or marketplace campaign benefits before checkout."
               className="mb-4"

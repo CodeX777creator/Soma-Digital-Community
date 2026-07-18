@@ -63,6 +63,7 @@ async function saveGoogleOnboardingData(user: User) {
       body: JSON.stringify({
         code: promoCode.trim(),
         source: "google_redirect_onboarding",
+        surface: "onboarding",
         path: "/open",
       }),
     }).catch((error) => {

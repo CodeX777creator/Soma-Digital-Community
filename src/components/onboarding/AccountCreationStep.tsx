@@ -113,6 +113,7 @@ export function AccountCreationStep() {
           body: JSON.stringify({
             code: promoCode.trim(),
             source: "onboarding",
+            surface: "onboarding",
             path: "/open",
           }),
         });

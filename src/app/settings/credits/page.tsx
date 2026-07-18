@@ -245,6 +245,7 @@ export default function CreditsPage() {
 
                 <PromoRedeemCard
                   source="creator_credits"
+                  surface="creator_credits"
                   title="Have a Creator Credits or founder code?"
                   description="Unlock eligible Creator Credit bonuses, Academy access, or founder campaign benefits."
                   onRedeemed={() => void loadDashboard()}

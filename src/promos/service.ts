@@ -6,11 +6,13 @@ import {
   PROMO_BENEFIT_TYPES,
   PROMO_CAMPAIGN_STATUSES,
   PROMO_COLLECTIONS,
+  PROMO_SURFACES,
   type PromoAudienceRules,
   type PromoBenefit,
   type PromoCampaignDoc,
   type PromoCampaignStatus,
   type PromoRedeemResult,
+  type PromoSurface,
 } from './types';
 
 export class PromoError extends Error {
@@ -32,9 +34,33 @@ type CreatePromoInput = {
   startsAt?: string | Date | null;
   endsAt?: string | Date | null;
   maxRedemptions?: number | null;
+  applicableSurfaces?: PromoSurface[];
+  targetCourseIds?: string[];
+  targetProductIds?: string[];
+  targetPlanIds?: string[];
+  targetCreditBundleIds?: string[];
   audienceRules?: PromoAudienceRules;
   benefits: PromoBenefit[];
   createdBy: string;
+};
+
+export type PromoRedeemContext = {
+  courseId?: string;
+  productId?: string;
+  planId?: string;
+  creditBundleId?: string;
+  checkoutType?: string;
+};
+
+const BENEFIT_SURFACES: Record<PromoBenefit['type'], PromoSurface[]> = {
+  academy_course_free: ['onboarding', 'dashboard', 'academy_course', 'academy_checkout'],
+  academy_course_discount: ['academy_course', 'academy_checkout'],
+  subscription_discount: ['dashboard', 'subscription_checkout'],
+  creator_credit_bonus: ['onboarding', 'dashboard', 'creator_credits'],
+  marketplace_product_free: ['marketplace_product', 'marketplace_checkout'],
+  marketplace_product_discount: ['marketplace_product', 'marketplace_checkout'],
+  mrr_license_unlock: ['onboarding', 'dashboard', 'academy_course', 'academy_checkout', 'mrr_checkout'],
+  mrr_license_discount: ['mrr_checkout'],
 };
 
 export const FOUNDER_CAMPAIGN_TEMPLATE = {
@@ -42,6 +68,8 @@ export const FOUNDER_CAMPAIGN_TEMPLATE = {
   name: 'Founder Member Bonus',
   description: 'First 100 founder members receive the Digital Marketing Certification course and MRR eligibility after certification.',
   maxRedemptions: 100,
+  applicableSurfaces: ['onboarding', 'dashboard', 'academy_course'] as PromoSurface[],
+  targetCourseIds: ['digital-marketing-certification'],
   audienceRules: {
     onePerUser: true,
     onePerEmail: true,
@@ -103,6 +131,88 @@ function assertPositiveNumber(value: unknown, field: string) {
   }
 }
 
+function uniqueStrings(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return Array.from(new Set(value.map((item) => String(item || '').trim()).filter(Boolean)));
+}
+
+function normalizeSurfaces(value: unknown): PromoSurface[] {
+  if (!Array.isArray(value)) return [];
+  return Array.from(new Set(value.filter((surface): surface is PromoSurface => PROMO_SURFACES.includes(surface))));
+}
+
+function inferSurfacesFromBenefits(benefits: PromoBenefit[]) {
+  return Array.from(new Set(benefits.flatMap((benefit) => BENEFIT_SURFACES[benefit.type] || [])));
+}
+
+function deriveTargetsFromBenefits(benefits: PromoBenefit[]) {
+  const courseIds = new Set<string>();
+  const productIds = new Set<string>();
+  const planIds = new Set<string>();
+  for (const benefit of benefits) {
+    if ('courseId' in benefit && benefit.courseId) courseIds.add(benefit.courseId);
+    if ('productId' in benefit && benefit.productId) productIds.add(benefit.productId);
+    if (benefit.type === 'subscription_discount') {
+      for (const planId of benefit.planIds || []) planIds.add(planId);
+    }
+  }
+  return {
+    targetCourseIds: Array.from(courseIds),
+    targetProductIds: Array.from(productIds),
+    targetPlanIds: Array.from(planIds),
+  };
+}
+
+function benefitTargetsMatch(benefit: PromoBenefit, context: PromoRedeemContext) {
+  if ('courseId' in benefit && benefit.courseId && context.courseId && benefit.courseId !== context.courseId) return false;
+  if ('productId' in benefit && benefit.productId && context.productId && benefit.productId !== context.productId) return false;
+  if (benefit.type === 'subscription_discount' && context.planId && benefit.planIds?.length && !benefit.planIds.includes(context.planId)) return false;
+  return true;
+}
+
+function benefitSupportsSurface(benefit: PromoBenefit, surface: PromoSurface) {
+  return (BENEFIT_SURFACES[benefit.type] || []).includes(surface);
+}
+
+function benefitGrantKey(benefit: PromoBenefit, index: number) {
+  if ('courseId' in benefit && benefit.courseId) return `${benefit.type}:${benefit.courseId}`;
+  if ('productId' in benefit && benefit.productId) return `${benefit.type}:${benefit.productId}`;
+  if (benefit.type === 'creator_credit_bonus') return `${benefit.type}:${benefit.credits}`;
+  return `${benefit.type}:${index}`;
+}
+
+function validateBenefitSurfaceCompatibility(benefits: PromoBenefit[], surfaces: PromoSurface[]) {
+  for (const benefit of benefits) {
+    if (!surfaces.some((surface) => benefitSupportsSurface(benefit, surface))) {
+      const allowed = BENEFIT_SURFACES[benefit.type]?.join(', ') || 'a supported surface';
+      throw new PromoError(`${benefit.type} can only be used on: ${allowed}.`, 'PROMO_INVALID_SURFACE', 400);
+    }
+  }
+}
+
+function assertContextTargets(input: {
+  campaign: PromoCampaignDoc;
+  surface: PromoSurface;
+  context: PromoRedeemContext;
+}) {
+  const { campaign, surface, context } = input;
+  if (!campaign.applicableSurfaces?.includes(surface)) {
+    throw new PromoError('This bonus is valid, but it cannot be used here.', 'PROMO_WRONG_SURFACE', 403);
+  }
+  if (campaign.targetCourseIds?.length && context.courseId && !campaign.targetCourseIds.includes(context.courseId)) {
+    throw new PromoError('This Academy bonus is for a different course.', 'PROMO_TARGET_MISMATCH', 403);
+  }
+  if (campaign.targetProductIds?.length && context.productId && !campaign.targetProductIds.includes(context.productId)) {
+    throw new PromoError('This product bonus is for a different Marketplace item.', 'PROMO_TARGET_MISMATCH', 403);
+  }
+  if (campaign.targetPlanIds?.length && context.planId && !campaign.targetPlanIds.includes(context.planId)) {
+    throw new PromoError('This subscription offer is for a different plan.', 'PROMO_TARGET_MISMATCH', 403);
+  }
+  if (campaign.targetCreditBundleIds?.length && context.creditBundleId && !campaign.targetCreditBundleIds.includes(context.creditBundleId)) {
+    throw new PromoError('This Creator Credits offer is for a different bundle.', 'PROMO_TARGET_MISMATCH', 403);
+  }
+}
+
 function validateBenefit(benefit: PromoBenefit) {
   if (!PROMO_BENEFIT_TYPES.includes(benefit.type)) {
     throw new PromoError('Unsupported promo benefit type.', 'PROMO_INVALID_BENEFIT', 400);
@@ -141,6 +251,8 @@ function validateCampaignInput(input: CreatePromoInput) {
     throw new PromoError('At least one promo benefit is required.', 'PROMO_MISSING_BENEFITS', 400);
   }
   input.benefits.forEach(validateBenefit);
+  const surfaces = normalizeSurfaces(input.applicableSurfaces);
+  validateBenefitSurfaceCompatibility(input.benefits, surfaces.length ? surfaces : inferSurfacesFromBenefits(input.benefits));
   if (input.maxRedemptions != null && (!Number.isInteger(input.maxRedemptions) || input.maxRedemptions <= 0)) {
     throw new PromoError('maxRedemptions must be a positive integer.', 'PROMO_INVALID_LIMIT', 400);
   }
@@ -152,6 +264,8 @@ function validateCampaignInput(input: CreatePromoInput) {
 
 export async function createPromoCampaign(input: CreatePromoInput) {
   const normalizedCode = validateCampaignInput(input);
+  const applicableSurfaces = normalizeSurfaces(input.applicableSurfaces);
+  const inferredTargets = deriveTargetsFromBenefits(input.benefits);
   const campaignRef = adminDb.collection(PROMO_COLLECTIONS.campaigns).doc(normalizedCode);
   const existing = await campaignRef.get();
   if (existing.exists) {
@@ -169,6 +283,11 @@ export async function createPromoCampaign(input: CreatePromoInput) {
     endsAt: asTimestamp(input.endsAt),
     maxRedemptions: input.maxRedemptions ?? null,
     redemptionCount: 0,
+    applicableSurfaces: applicableSurfaces.length ? applicableSurfaces : inferSurfacesFromBenefits(input.benefits),
+    targetCourseIds: uniqueStrings(input.targetCourseIds).length ? uniqueStrings(input.targetCourseIds) : inferredTargets.targetCourseIds,
+    targetProductIds: uniqueStrings(input.targetProductIds).length ? uniqueStrings(input.targetProductIds) : inferredTargets.targetProductIds,
+    targetPlanIds: uniqueStrings(input.targetPlanIds).length ? uniqueStrings(input.targetPlanIds) : inferredTargets.targetPlanIds,
+    targetCreditBundleIds: uniqueStrings(input.targetCreditBundleIds),
     audienceRules: {
       onePerUser: true,
       onePerEmail: true,
@@ -190,6 +309,7 @@ export async function createPromoCampaign(input: CreatePromoInput) {
     metadata: {
       status: doc.status,
       benefitTypes: input.benefits.map((benefit) => benefit.type),
+      applicableSurfaces: doc.applicableSurfaces,
       maxRedemptions: doc.maxRedemptions,
     },
   });
@@ -229,10 +349,29 @@ export async function getPromoAnalytics(promoId?: string) {
     listPromoRedemptions({ promoId, limit: 500 }),
   ]);
   const redemptionsByBenefit: Record<string, number> = {};
+  const redemptionsBySurface: Record<string, number> = {};
+  const failedRedemptionsByReason: Record<string, number> = {};
+  let coursesUnlocked = 0;
+  let creditsGranted = 0;
+  let marketplaceProductsClaimed = 0;
+  let mrrEligibilityReserved = 0;
+  let subscriptionDiscountsReserved = 0;
   for (const redemption of redemptions) {
     const benefits = Array.isArray(redemption.benefitsGranted) ? redemption.benefitsGranted : [];
+    const surface = String(redemption.surface || redemption.metadata?.surface || 'unknown');
+    redemptionsBySurface[surface] = (redemptionsBySurface[surface] || 0) + 1;
+    if (redemption.failureReason) {
+      const reason = String(redemption.failureReason);
+      failedRedemptionsByReason[reason] = (failedRedemptionsByReason[reason] || 0) + 1;
+    }
     for (const benefit of benefits) {
-      redemptionsByBenefit[String(benefit).split(':')[0]] = (redemptionsByBenefit[String(benefit).split(':')[0]] || 0) + 1;
+      const benefitType = String(benefit).split(':')[0];
+      redemptionsByBenefit[benefitType] = (redemptionsByBenefit[benefitType] || 0) + 1;
+      if (benefitType === 'academy_course_free') coursesUnlocked += 1;
+      if (benefitType === 'marketplace_product_free') marketplaceProductsClaimed += 1;
+      if (benefitType === 'mrr_license_unlock') mrrEligibilityReserved += 1;
+      if (benefitType === 'subscription_discount') subscriptionDiscountsReserved += 1;
+      if (benefitType === 'creator_credit_bonus') creditsGranted += Number(String(benefit).split(':')[1]) || 0;
     }
   }
   const totalMax = campaigns.reduce((sum, campaign: any) => sum + (typeof campaign?.maxRedemptions === 'number' ? campaign.maxRedemptions : 0), 0);
@@ -241,6 +380,14 @@ export async function getPromoAnalytics(promoId?: string) {
     totalRedemptions: redemptions.length,
     remainingSlots: totalMax > 0 ? Math.max(0, totalMax - totalCount) : null,
     redemptionsByBenefit,
+    redemptionsBySurface,
+    failedRedemptionsByReason,
+    coursesUnlocked,
+    creditsGranted,
+    marketplaceProductsClaimed,
+    mrrEligibilityReserved,
+    subscriptionDiscountsReserved,
+    revenueInfluencedCents: 0,
     failedRedemptions: redemptions.filter((redemption) => redemption.status !== 'redeemed').length,
     campaigns,
     redemptions,
@@ -463,6 +610,8 @@ export async function redeemPromoCode(input: {
   code: string;
   userId: string;
   email?: string;
+  surface?: PromoSurface;
+  context?: PromoRedeemContext;
   metadata?: Record<string, unknown>;
 }): Promise<PromoRedeemResult> {
   const normalizedCode = normalizePromoCode(input.code || '');
@@ -493,7 +642,13 @@ export async function redeemPromoCode(input: {
     }
 
     const campaign = campaignSnap.data() as PromoCampaignDoc;
+    const surface = PROMO_SURFACES.includes(input.surface as PromoSurface) ? input.surface as PromoSurface : 'dashboard';
+    const context = input.context || {};
+    if (!Array.isArray(campaign.applicableSurfaces) || campaign.applicableSurfaces.length === 0) {
+      campaign.applicableSurfaces = inferSurfacesFromBenefits(campaign.benefits || []);
+    }
     assertCampaignRedeemable(campaign);
+    assertContextTargets({ campaign, surface, context });
 
     const profile = userSnap.data() || {};
     const email = (input.email || profile.email || '').toString().trim().toLowerCase();
@@ -507,7 +662,15 @@ export async function redeemPromoCode(input: {
       throw new PromoError('This email has already redeemed this promo code.', 'PROMO_EMAIL_ALREADY_REDEEMED', 409);
     }
 
-    const benefitsGranted = campaign.benefits.map((benefit, index) => grantBenefit(tx, {
+    const applicableBenefits = campaign.benefits.filter((benefit) => benefitSupportsSurface(benefit, surface) && benefitTargetsMatch(benefit, context));
+    if (!applicableBenefits.length) {
+      throw new PromoError('This bonus is valid, but it cannot be used here.', 'PROMO_WRONG_SURFACE', 403);
+    }
+    const benefitsSkipped = campaign.benefits
+      .filter((benefit) => !applicableBenefits.includes(benefit))
+      .map((benefit, index) => benefitGrantKey(benefit, index));
+
+    const benefitsGranted = applicableBenefits.map((benefit, index) => grantBenefit(tx, {
       userId: input.userId,
       email,
       campaign,
@@ -526,7 +689,20 @@ export async function redeemPromoCode(input: {
       status: 'redeemed',
       benefitsGranted,
       failureReason: null,
-      metadata: input.metadata || {},
+      surface,
+      context,
+      surfaceAllowed: true,
+      targetMatched: true,
+      benefitsSkipped,
+      metadata: {
+        ...(input.metadata || {}),
+        source: input.metadata?.source || 'manual',
+        path: input.metadata?.path || null,
+        context,
+        surfaceAllowed: true,
+        targetMatched: true,
+        benefitsSkipped,
+      },
       redeemedAt: now(),
       createdAt: now(),
       updatedAt: now(),
@@ -544,8 +720,13 @@ export async function redeemPromoCode(input: {
       userId: input.userId,
       redemptionId,
       benefitsGranted,
+      benefitsSkipped,
       createdAt: now(),
-      metadata: input.metadata || {},
+      metadata: {
+        ...(input.metadata || {}),
+        surface,
+        context,
+      },
     });
     if (emailLockRef) {
       tx.set(emailLockRef, {
@@ -563,6 +744,61 @@ export async function redeemPromoCode(input: {
       code: campaign.code,
       redemptionId,
       benefitsGranted,
+      surface,
     };
   });
+}
+
+export async function recordFailedPromoRedemption(input: {
+  code: string;
+  userId: string;
+  email?: string;
+  surface?: PromoSurface;
+  context?: PromoRedeemContext;
+  failureReason: string;
+  metadata?: Record<string, unknown>;
+}) {
+  const normalizedCode = normalizePromoCode(input.code || '');
+  if (!normalizedCode || !input.userId) return null;
+  const failureId = `${input.userId}_${normalizedCode}_failed_${Date.now()}`;
+  const campaign = await getPromoCampaign(normalizedCode).catch(() => null);
+  const doc = {
+    redemptionId: failureId,
+    promoId: campaign?.promoId || normalizedCode,
+    code: campaign?.code || input.code,
+    normalizedCode,
+    userId: input.userId,
+    email: (input.email || '').toString().trim().toLowerCase(),
+    status: 'void',
+    benefitsGranted: [],
+    benefitsSkipped: [],
+    failureReason: input.failureReason,
+    surface: input.surface || 'dashboard',
+    context: input.context || {},
+    surfaceAllowed: false,
+    targetMatched: false,
+    metadata: {
+      ...(input.metadata || {}),
+      source: input.metadata?.source || 'manual',
+      path: input.metadata?.path || null,
+      context: input.context || {},
+    },
+    redeemedAt: now(),
+    createdAt: now(),
+    updatedAt: now(),
+  };
+  await adminDb.collection(PROMO_COLLECTIONS.redemptions).doc(failureId).set(doc);
+  await adminDb.collection(PROMO_COLLECTIONS.auditLogs).doc(`${failureId}_failed`).set({
+    action: 'promo_redemption_failed',
+    promoId: doc.promoId,
+    code: doc.code,
+    normalizedCode,
+    actorId: input.userId,
+    userId: input.userId,
+    redemptionId: failureId,
+    failureReason: input.failureReason,
+    createdAt: now(),
+    metadata: doc.metadata,
+  });
+  return doc;
 }

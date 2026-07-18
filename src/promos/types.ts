@@ -26,6 +26,19 @@ export type PromoBenefitType = (typeof PROMO_BENEFIT_TYPES)[number];
 
 export type PromoDiscountKind = 'percent' | 'fixed';
 
+export const PROMO_SURFACES = [
+  'onboarding',
+  'dashboard',
+  'academy_course',
+  'academy_checkout',
+  'mrr_checkout',
+  'creator_credits',
+  'subscription_checkout',
+  'marketplace_product',
+  'marketplace_checkout',
+] as const;
+export type PromoSurface = (typeof PROMO_SURFACES)[number];
+
 export interface PromoAudienceRules {
   newUsersOnly?: boolean;
   onePerUser?: boolean;
@@ -111,6 +124,11 @@ export interface PromoCampaignDoc {
   endsAt?: FirebaseFirestore.Timestamp | Date | string | null;
   maxRedemptions?: number | null;
   redemptionCount: number;
+  applicableSurfaces: PromoSurface[];
+  targetCourseIds?: string[];
+  targetProductIds?: string[];
+  targetPlanIds?: string[];
+  targetCreditBundleIds?: string[];
   audienceRules: PromoAudienceRules;
   benefits: PromoBenefit[];
   createdBy: string;
@@ -127,6 +145,11 @@ export interface PromoRedemptionDoc {
   email: string;
   status: 'redeemed' | 'void' | 'revoked';
   benefitsGranted: string[];
+  benefitsSkipped?: string[];
+  surface?: PromoSurface;
+  context?: Record<string, unknown>;
+  surfaceAllowed?: boolean;
+  targetMatched?: boolean;
   failureReason?: string | null;
   redeemedAt?: FirebaseFirestore.Timestamp | Date | string | null;
   metadata?: Record<string, unknown>;
@@ -137,11 +160,20 @@ export interface PromoRedeemResult {
   code: string;
   redemptionId: string;
   benefitsGranted: string[];
+  surface: PromoSurface;
 }
 
 export interface PromoAnalyticsSummary {
   totalRedemptions: number;
   remainingSlots: number | null;
   redemptionsByBenefit: Record<string, number>;
+  redemptionsBySurface?: Record<string, number>;
+  failedRedemptionsByReason?: Record<string, number>;
+  coursesUnlocked?: number;
+  creditsGranted?: number;
+  marketplaceProductsClaimed?: number;
+  mrrEligibilityReserved?: number;
+  subscriptionDiscountsReserved?: number;
+  revenueInfluencedCents?: number;
   failedRedemptions: number;
 }

@@ -63,6 +63,7 @@ interface CreateAssetPurchaseRequest {
   assetId: string;
   userId: string;
   resellerSlug?: string;
+  promoCode?: string;
   idempotencyKey?: string;
   mrrLicenseAccepted?: boolean;
   mrrLicenseVersion?: string;
@@ -94,6 +95,7 @@ interface CreatorCreditConfig {
 interface CreateCreditPurchaseRequest {
   bundleId: string;
   userId: string;
+  promoCode?: string;
   idempotencyKey?: string;
 }
 
@@ -238,6 +240,128 @@ async function cacheSubscriptionClaim(userId: string, tier: SubscriptionPlan) {
   } catch (error) {
     console.error(`Failed to cache subscription claim for ${userId}:`, error);
   }
+}
+
+function normalizePromoCode(code: unknown): string {
+  return typeof code === 'string' ? code.trim().toUpperCase().replace(/\s+/g, '') : '';
+}
+
+function applyDiscountCents(basePriceCents: number, discountKind: unknown, amount: unknown): number {
+  const numericAmount = Number(amount) || 0;
+  if (discountKind === 'percent') {
+    return Math.max(0, Math.round(basePriceCents * (1 - numericAmount / 100)));
+  }
+  if (discountKind === 'fixed') {
+    return Math.max(0, basePriceCents - Math.round(numericAmount));
+  }
+  return basePriceCents;
+}
+
+async function getMarketplacePromoPrice(input: {
+  userId: string;
+  assetId: string;
+  basePriceCents: number;
+  promoCode?: string;
+}) {
+  const normalizedCode = normalizePromoCode(input.promoCode);
+  let query = db
+    .collection('marketplaceEntitlements')
+    .where('userId', '==', input.userId)
+    .where('productId', '==', input.assetId)
+    .where('status', '==', 'active')
+    .limit(10);
+
+  const snap = await query.get();
+  let priceCents = input.basePriceCents;
+  let freeByPromo = false;
+  let promoId: string | null = null;
+  let promoCode: string | null = null;
+
+  for (const doc of snap.docs) {
+    const data = doc.data() || {};
+    if (normalizedCode && data.normalizedCode !== normalizedCode) continue;
+    if (data.entitlementType === 'free_product') {
+      freeByPromo = true;
+      priceCents = 0;
+      promoId = typeof data.promoId === 'string' ? data.promoId : promoId;
+      promoCode = typeof data.code === 'string' ? data.code : promoCode;
+    }
+    if (data.entitlementType === 'product_discount') {
+      priceCents = Math.min(priceCents, applyDiscountCents(input.basePriceCents, data.discountKind, data.amount));
+      promoId = typeof data.promoId === 'string' ? data.promoId : promoId;
+      promoCode = typeof data.code === 'string' ? data.code : promoCode;
+    }
+  }
+
+  return {
+    priceCents,
+    freeByPromo,
+    promoId,
+    promoCode,
+    originalPriceCents: input.basePriceCents,
+  };
+}
+
+async function getRedeemedPromoForSurface(input: {
+  userId: string;
+  promoCode?: string;
+  surface: string;
+  targetField?: string;
+  targetValue?: string;
+}) {
+  const normalizedCode = normalizePromoCode(input.promoCode);
+  if (!normalizedCode) return null;
+  const snap = await db
+    .collection('promoRedemptions')
+    .where('userId', '==', input.userId)
+    .where('normalizedCode', '==', normalizedCode)
+    .where('status', '==', 'redeemed')
+    .limit(1)
+    .get();
+  if (snap.empty) return null;
+  const data = snap.docs[0].data() || {};
+  const context = data.context && typeof data.context === 'object' ? data.context as Record<string, unknown> : {};
+  if (data.surface && data.surface !== input.surface) return null;
+  if (input.targetField && input.targetValue && context[input.targetField] && context[input.targetField] !== input.targetValue) return null;
+  return {
+    promoId: typeof data.promoId === 'string' ? data.promoId : null,
+    code: typeof data.code === 'string' ? data.code : normalizedCode,
+    benefitsGranted: Array.isArray(data.benefitsGranted) ? data.benefitsGranted : [],
+  };
+}
+
+async function getSubscriptionPromoPrice(input: {
+  userId: string;
+  planId: string;
+  baseAmount: number;
+  promoCode?: string;
+}) {
+  const normalizedCode = normalizePromoCode(input.promoCode);
+  let query = db
+    .collection('subscriptionDiscountEntitlements')
+    .where('userId', '==', input.userId)
+    .where('status', '==', 'active')
+    .limit(10);
+  const snap = await query.get();
+  let amount = input.baseAmount;
+  let promoId: string | null = null;
+  let promoCode: string | null = null;
+
+  for (const doc of snap.docs) {
+    const data = doc.data() || {};
+    if (normalizedCode && data.normalizedCode !== normalizedCode) continue;
+    if (Array.isArray(data.planIds) && data.planIds.length && !data.planIds.includes(input.planId)) continue;
+    amount = Math.min(amount, applyDiscountCents(input.baseAmount, data.discountKind, data.amount));
+    promoId = typeof data.promoId === 'string' ? data.promoId : promoId;
+    promoCode = typeof data.code === 'string' ? data.code : promoCode;
+  }
+
+  return {
+    amount,
+    promoId,
+    promoCode,
+    originalAmount: input.baseAmount,
+  };
 }
 
 const defaultCreditBundles: CreatorCreditBundle[] = [
@@ -894,6 +1018,7 @@ export const createPaystackSubscription = onCall(
     }
 
     const { planId, userId } = data as { planId: SubscriptionPlan; userId: string };
+    const promoCode = normalizePromoCode((data as { promoCode?: string }).promoCode);
     const normalizedPlanId = normalizePlanId(planId);
     const idempotencyKeyParam = (data as { idempotencyKey?: string }).idempotencyKey;
     const idempotencyKey = typeof idempotencyKeyParam === 'string' && idempotencyKeyParam
@@ -921,6 +1046,15 @@ export const createPaystackSubscription = onCall(
 
     if (!amount || !callbackUrl) {
       throw new HttpsError('invalid-argument', 'Invalid Paystack plan configuration');
+    }
+    const promoPricing = await getSubscriptionPromoPrice({
+      userId,
+      planId: normalizedPlanId,
+      baseAmount: amount,
+      promoCode,
+    });
+    if (promoPricing.amount <= 0) {
+      throw new HttpsError('failed-precondition', 'This subscription offer requires manual admin activation.');
     }
 
     if (userId !== context.uid) {
@@ -1006,10 +1140,18 @@ export const createPaystackSubscription = onCall(
         `${PAYSTACK_API_BASE_URL}/transaction/initialize`,
         {
           email,
-          amount,
+          amount: promoPricing.amount,
           currency: paystackCurrency.value(),
           callback_url: callbackUrl,
-          metadata: { planId: normalizedPlanId, userId, provider: 'paystack' },
+          metadata: {
+            planId: normalizedPlanId,
+            userId,
+            provider: 'paystack',
+            promoCode: promoPricing.promoCode || undefined,
+            promoId: promoPricing.promoId || undefined,
+            originalAmount: promoPricing.originalAmount,
+            finalAmount: promoPricing.amount,
+          },
         },
         { headers: getPaystackHeaders(secretKey) }
       );
@@ -1033,6 +1175,10 @@ export const createPaystackSubscription = onCall(
           provider: 'paystack',
           status: 'approval_pending',
           authorizationUrl, // Store for idempotency recovery
+          promoCode: promoPricing.promoCode,
+          promoId: promoPricing.promoId,
+          originalAmount: promoPricing.originalAmount,
+          finalAmount: promoPricing.amount,
           createdAt: admin.firestore.FieldValue.serverTimestamp(),
         }
       );
@@ -1097,6 +1243,13 @@ export const createPaystackAssetPurchase = onCall(
     if (price <= 0) {
       throw new HttpsError('failed-precondition', 'This asset does not require purchase');
     }
+    const promoPricing = await getMarketplacePromoPrice({
+      userId,
+      assetId,
+      basePriceCents: Math.round(price * 100),
+      promoCode: data.promoCode,
+    });
+    const finalPrice = promoPricing.priceCents / 100;
 
     const licenseType = asset.licenseType === 'mrr' ? 'mrr' : 'standard';
     const resaleRights = licenseType === 'mrr' && asset.resaleEnabled === true;
@@ -1127,6 +1280,47 @@ export const createPaystackAssetPurchase = onCall(
         purchaseId,
         authorizationUrl: existingData.authorizationUrl,
         status: 'pending',
+      };
+    }
+
+    if (promoPricing.freeByPromo || promoPricing.priceCents <= 0) {
+      await purchaseRef.set({
+        userId,
+        uid: userId,
+        assetId,
+        assetTitle: typeof asset.title === 'string' ? asset.title : 'Marketplace asset',
+        pricePaid: 0,
+        originalPrice: price,
+        currency: paystackCurrency.value(),
+        provider: 'promo',
+        paystackReference: null,
+        authorizationUrl: null,
+        status: 'paid',
+        licenseType,
+        resaleRights,
+        mrrLicenseAccepted: resaleRights ? true : false,
+        mrrLicenseAcceptedAt: resaleRights ? admin.firestore.FieldValue.serverTimestamp() : null,
+        mrrLicenseVersion: resaleRights
+          ? (typeof data.mrrLicenseVersion === 'string' && data.mrrLicenseVersion ? data.mrrLicenseVersion : 'sdc-mrr-v1')
+          : null,
+        commissionBase: asset.commissionBase === 'course_price' ? 'course_price' : 'full_price',
+        courseValue: typeof asset.courseValue === 'number' ? asset.courseValue : price,
+        externalPlatform: typeof asset.externalPlatform === 'string' ? asset.externalPlatform : '',
+        provisioningStatus: asset.externalPlatform ? 'access_pending' : 'not_required',
+        resellerSlug,
+        resellerUserId: null,
+        promoCode: promoPricing.promoCode,
+        promoId: promoPricing.promoId,
+        promoApplied: true,
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      }, { merge: true });
+
+      return {
+        purchaseId,
+        authorizationUrl: null,
+        status: 'already_owned',
+        message: 'Product unlock applied',
       };
     }
 
@@ -1163,7 +1357,7 @@ export const createPaystackAssetPurchase = onCall(
         `${PAYSTACK_API_BASE_URL}/transaction/initialize`,
         {
           email: userRecord.email,
-          amount: Math.round(price * 100),
+          amount: promoPricing.priceCents,
           currency: paystackCurrency.value(),
           callback_url: callbackUrl,
           metadata: {
@@ -1173,6 +1367,10 @@ export const createPaystackAssetPurchase = onCall(
             userId,
             resellerSlug,
             resellerUserId,
+            promoCode: promoPricing.promoCode,
+            promoId: promoPricing.promoId,
+            originalPriceCents: promoPricing.originalPriceCents,
+            finalPriceCents: promoPricing.priceCents,
           },
         },
         { headers: getPaystackHeaders(secretKey) }
@@ -1191,7 +1389,9 @@ export const createPaystackAssetPurchase = onCall(
         uid: userId,
         assetId,
         assetTitle: typeof asset.title === 'string' ? asset.title : 'Marketplace asset',
-        pricePaid: price,
+        pricePaid: finalPrice,
+        originalPrice: price,
+        discountAmount: Math.max(0, price - finalPrice),
         currency: paystackCurrency.value(),
         provider: 'paystack',
         paystackReference,
@@ -1210,6 +1410,9 @@ export const createPaystackAssetPurchase = onCall(
         provisioningStatus: asset.externalPlatform ? 'access_pending' : 'not_required',
         resellerSlug,
         resellerUserId,
+        promoCode: promoPricing.promoCode,
+        promoId: promoPricing.promoId,
+        promoApplied: Boolean(promoPricing.promoId),
         createdAt: admin.firestore.FieldValue.serverTimestamp(),
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       }, { merge: true });
@@ -1265,6 +1468,13 @@ export const createPaystackCreditPurchase = onCall(
     if (!bundle) {
       throw new HttpsError('not-found', 'Creator Credit bundle is not available');
     }
+    const promoRedemption = await getRedeemedPromoForSurface({
+      userId,
+      promoCode: data.promoCode,
+      surface: 'creator_credits',
+      targetField: 'creditBundleId',
+      targetValue: bundle.id,
+    });
 
     const purchaseId = `${userId}_${bundle.id}_${Date.now()}`;
     const idempotencyKey = data.idempotencyKey || `paystack-credits:${userId}:${bundle.id}`;
@@ -1304,6 +1514,9 @@ export const createPaystackCreditPurchase = onCall(
             bundleId: bundle.id,
             credits: bundle.credits,
             userId,
+            promoCode: promoRedemption?.code || undefined,
+            promoId: promoRedemption?.promoId || undefined,
+            promoBenefitsGranted: promoRedemption?.benefitsGranted || undefined,
           },
         },
         { headers: getPaystackHeaders(secretKey) }
@@ -1328,6 +1541,9 @@ export const createPaystackCreditPurchase = onCall(
         paystackReference,
         authorizationUrl,
         status: 'approval_pending',
+        promoCode: promoRedemption?.code || null,
+        promoId: promoRedemption?.promoId || null,
+        promoBenefitsGranted: promoRedemption?.benefitsGranted || [],
         createdAt: admin.firestore.FieldValue.serverTimestamp(),
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       }, { merge: true });

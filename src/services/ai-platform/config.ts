@@ -31,7 +31,7 @@ export const planCreditProfiles: Record<"explorer" | "pro" | "elite" | "enterpri
     priorityRouting: false,
     concurrentJobLimit: 1,
     dailySpendingLimit: readNumber("AI_EXPLORER_DAILY_LIMIT", 15),
-    monthlyEstimatedAIExpenseCap: readNumber("AI_EXPLORER_MONTHLY_EXPENSE_CAP", 12),
+    monthlyEstimatedAIExpenseCap: readNumber("AI_EXPLORER_MONTHLY_EXPENSE_CAP", 450),
   },
   pro: {
     monthlyCreatorCredits: readNumber("AI_PRO_MONTHLY_CREDITS", DEFAULT_CREATOR_CREDIT_ALLOCATIONS.pro),

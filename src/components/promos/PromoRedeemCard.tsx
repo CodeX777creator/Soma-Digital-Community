@@ -10,6 +10,23 @@ type PromoRedeemCardProps = {
   compact?: boolean;
   defaultCode?: string;
   source?: string;
+  surface?:
+    | "onboarding"
+    | "dashboard"
+    | "academy_course"
+    | "academy_checkout"
+    | "mrr_checkout"
+    | "creator_credits"
+    | "subscription_checkout"
+    | "marketplace_product"
+    | "marketplace_checkout";
+  context?: {
+    courseId?: string;
+    productId?: string;
+    planId?: string;
+    creditBundleId?: string;
+    checkoutType?: string;
+  };
   title?: string;
   description?: string;
   className?: string;
@@ -41,15 +58,31 @@ function friendlyError(code?: string, fallback?: string) {
       return "This campaign is not active yet.";
     case "PROMO_PLAN_NOT_ELIGIBLE":
       return "Your current plan is not eligible for this campaign.";
+    case "PROMO_WRONG_SURFACE":
+      return "This bonus is valid, but it cannot be used here. Try it in the matching area instead.";
+    case "PROMO_TARGET_MISMATCH":
+      return "This bonus is valid, but it is for a different item.";
     default:
       return fallback || "We could not apply that code. Please check it and try again.";
   }
+}
+
+function inferSurface(path?: string): PromoRedeemCardProps["surface"] {
+  if (!path) return "dashboard";
+  if (path === "/open" || path.startsWith("/open?")) return "onboarding";
+  if (path.startsWith("/academy/")) return "academy_course";
+  if (path.startsWith("/marketplace/")) return "marketplace_product";
+  if (path.startsWith("/settings/credits")) return "creator_credits";
+  if (path.startsWith("/settings/billing")) return "subscription_checkout";
+  return "dashboard";
 }
 
 export function PromoRedeemCard({
   compact = false,
   defaultCode = "",
   source = "promo_card",
+  surface,
+  context,
   title = "Founder Member Bonus",
   description = "Enter your invite code to unlock eligible Academy, Creator Credit, subscription, or product benefits.",
   className,
@@ -72,6 +105,8 @@ export function PromoRedeemCard({
         body: JSON.stringify({
           code,
           source,
+          surface: surface || inferSurface(typeof window !== "undefined" ? window.location.pathname : undefined),
+          context,
           path: typeof window !== "undefined" ? window.location.pathname : undefined,
         }),
       });

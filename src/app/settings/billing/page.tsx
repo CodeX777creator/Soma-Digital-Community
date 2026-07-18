@@ -210,6 +210,7 @@ export default function BillingSettingsPage() {
 
           <PromoRedeemCard
             source="billing"
+            surface="subscription_checkout"
             title="Have a plan or founder code?"
             description="Unlock eligible subscription benefits, founder access, Creator Credits, or Academy bonuses before checkout."
           />

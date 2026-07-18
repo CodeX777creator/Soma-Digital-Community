@@ -11,6 +11,8 @@ export const POST = createAPIHandler(async (req) => {
       status: body.status === 'active' ? 'active' : 'draft',
       startsAt: body.startsAt ?? null,
       endsAt: body.endsAt ?? null,
+      applicableSurfaces: Array.isArray(body.applicableSurfaces) && body.applicableSurfaces.length ? body.applicableSurfaces : FOUNDER_CAMPAIGN_TEMPLATE.applicableSurfaces,
+      targetCourseIds: Array.isArray(body.targetCourseIds) && body.targetCourseIds.length ? body.targetCourseIds : FOUNDER_CAMPAIGN_TEMPLATE.targetCourseIds,
       benefits: Array.isArray(body.benefits) && body.benefits.length ? body.benefits : FOUNDER_CAMPAIGN_TEMPLATE.benefits,
       createdBy: entitlements.uid,
     });

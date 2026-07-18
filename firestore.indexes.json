@@ -445,6 +445,35 @@
       ]
     },
     {
+      "__comment": "Promo checkout: supports redeemed promo lookup by user, code, and status.",
+      "collectionGroup": "promoRedemptions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "userId", "order": "ASCENDING" },
+        { "fieldPath": "normalizedCode", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "__comment": "Marketplace promo checkout: supports active marketplace entitlement lookup.",
+      "collectionGroup": "marketplaceEntitlements",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "userId", "order": "ASCENDING" },
+        { "fieldPath": "productId", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "__comment": "Subscription promo checkout: supports active subscription discount lookup.",
+      "collectionGroup": "subscriptionDiscountEntitlements",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "userId", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" }
+      ]
+    },
+    {
       "__comment": "Academy session attendance: supports attendance lookup by userId + courseId.",
       "collectionGroup": "academySessionAttendance",
       "queryScope": "COLLECTION",

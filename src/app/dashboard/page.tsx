@@ -444,6 +444,7 @@ function DashboardContent() {
 
             <PromoRedeemCard
               source="dashboard"
+              surface="dashboard"
               title="Have a founder or launch code?"
               description="Unlock eligible Academy access, Creator Credits, product benefits, or future reseller-rights eligibility from your SDC dashboard."
               onRedeemed={() => {
