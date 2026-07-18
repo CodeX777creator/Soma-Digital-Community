@@ -73,16 +73,56 @@ function inferProvider(modelId: string, ownedBy?: unknown): string {
   return provider || "unknown";
 }
 
-function inferCreditClass(model: { type?: string; tags?: string[]; id?: string }): AIModelCreditClass {
+function maxDefined(...values: Array<number | undefined>) {
+  const defined = values.filter((value): value is number => typeof value === "number" && Number.isFinite(value));
+  return defined.length ? Math.max(...defined) : 0;
+}
+
+function inferCreditClass(model: { type?: string; tags?: string[]; id?: string; pricing?: GatewayModelPricing; contextWindow?: number; maxTokens?: number }): AIModelCreditClass {
   const tags = new Set((model.tags || []).map((tag) => tag.toLowerCase()));
   const id = (model.id || "").toLowerCase();
+  const type = (model.type || "").toLowerCase();
+  const pricing = model.pricing || {};
+
+  const inputPerMillion = (pricing.input || 0) * 1_000_000;
+  const outputPerMillion = (pricing.output || 0) * 1_000_000;
+  const textPriceScore = Math.max(inputPerMillion * 3, outputPerMillion);
+  const mediaUnitPrice = maxDefined(pricing.image, pricing.audio, pricing.video);
+
   if (tags.has("video") || tags.has("video-generation") || id.includes("video") || id.includes("seedance") || id.includes("veo")) {
     return "specialized";
   }
-  if (tags.has("reasoning") || tags.has("thinking") || id.includes("pro") || id.includes("reasoning")) {
+
+  if (
+    pricing.video ||
+    textPriceScore >= 10 ||
+    mediaUnitPrice >= 0.18 ||
+    tags.has("reasoning") ||
+    tags.has("thinking") ||
+    id.includes("reasoning") ||
+    id.includes("opus") ||
+    id.includes("ultra")
+  ) {
     return "premium";
   }
-  if (tags.has("vision") || tags.has("tool-use") || tags.has("file-input")) {
+
+  if (
+    textPriceScore >= 2 ||
+    mediaUnitPrice >= 0.05 ||
+    (model.contextWindow || 0) >= 500_000 ||
+    (model.maxTokens || 0) >= 32_000 ||
+    tags.has("vision") ||
+    tags.has("tool-use") ||
+    tags.has("file-input") ||
+    id.includes("pro") ||
+    id.includes("large") ||
+    id.includes("70b") ||
+    id.includes("120b") ||
+    id.includes("405b") ||
+    type === "image" ||
+    type === "audio" ||
+    type === "speech"
+  ) {
     return "advanced";
   }
   return "standard";
@@ -112,7 +152,25 @@ function normalizeModel(raw: Record<string, unknown>): AIModelRegistryDoc | null
 
   const pricing = raw.pricing && typeof raw.pricing === "object" ? raw.pricing as Record<string, unknown> : {};
   const tags = Array.isArray(raw.tags) ? raw.tags.filter((tag): tag is string => typeof tag === "string") : [];
-  const creditClass = inferCreditClass({ id, type: typeof raw.type === "string" ? raw.type : undefined, tags });
+  const normalizedPricing = {
+    input: normalizeNumber(pricing.input),
+    output: normalizeNumber(pricing.output),
+    inputCacheRead: normalizeNumber(pricing.input_cache_read),
+    inputCacheWrite: normalizeNumber(pricing.input_cache_write),
+    image: normalizeNumber(pricing.image),
+    video: normalizeNumber(pricing.video),
+    audio: normalizeNumber(pricing.audio),
+  };
+  const contextWindow = normalizeNumber(raw.context_window);
+  const maxTokens = normalizeNumber(raw.max_tokens);
+  const creditClass = inferCreditClass({
+    id,
+    type: typeof raw.type === "string" ? raw.type : undefined,
+    tags,
+    pricing: normalizedPricing,
+    contextWindow,
+    maxTokens,
+  });
 
   return {
     id,
@@ -121,17 +179,9 @@ function normalizeModel(raw: Record<string, unknown>): AIModelRegistryDoc | null
     provider: inferProvider(id, raw.owned_by),
     type: typeof raw.type === "string" ? raw.type : "unknown",
     tags,
-    contextWindow: normalizeNumber(raw.context_window),
-    maxTokens: normalizeNumber(raw.max_tokens),
-    pricing: {
-      input: normalizeNumber(pricing.input),
-      output: normalizeNumber(pricing.output),
-      inputCacheRead: normalizeNumber(pricing.input_cache_read),
-      inputCacheWrite: normalizeNumber(pricing.input_cache_write),
-      image: normalizeNumber(pricing.image),
-      video: normalizeNumber(pricing.video),
-      audio: normalizeNumber(pricing.audio),
-    },
+    contextWindow,
+    maxTokens,
+    pricing: normalizedPricing,
     active: true,
     lastSyncedAt: admin.firestore.FieldValue.serverTimestamp(),
     sdcEnabled: true,

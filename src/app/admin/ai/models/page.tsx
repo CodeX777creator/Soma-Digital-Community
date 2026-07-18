@@ -149,6 +149,9 @@ export default function AdminAIModelsPage() {
           <p className="text-xs font-semibold uppercase tracking-[0.24em] text-cyan-200/70">Model Catalog</p>
           <h1 className="mt-2 text-2xl font-semibold">Synced Vercel AI Gateway models</h1>
           <p className="mt-2 text-sm text-white/55">Inspect provider, type, capabilities, pricing, tier access, and SDC class.</p>
+          <p className="mt-2 max-w-3xl text-xs leading-5 text-white/40">
+            Classification uses capability and cost: standard is low-cost everyday work, advanced is medium-cost or long-context/vision/tool-use work, premium is expensive reasoning or high unit-cost media, and specialized is reserved for video-heavy workflows.
+          </p>
         </div>
         <Button onClick={syncModels} disabled={syncing} className="bg-cyan-500 text-slate-950 hover:bg-cyan-400">
           {syncing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
