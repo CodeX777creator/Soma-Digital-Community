@@ -75,6 +75,15 @@
       ]
     },
     {
+      "__comment": "Academy migration: supports legacy course purchase lookup by assetId and paid status.",
+      "collectionGroup": "assetPurchases",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "assetId", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" }
+      ]
+    },
+    {
       "__comment": "Marketplace reseller referrals: supports slug + assetId lookup for reseller links.",
       "collectionGroup": "resellerLinks",
       "queryScope": "COLLECTION",
@@ -403,6 +412,27 @@
       "fields": [
         { "fieldPath": "userId", "order": "ASCENDING" },
         { "fieldPath": "courseId", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "__comment": "Academy MRR gate: supports active certificate lookup by userId, courseId, and status.",
+      "collectionGroup": "academyCertificates",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "userId", "order": "ASCENDING" },
+        { "fieldPath": "courseId", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "__comment": "Academy course checkout: supports active course discount entitlement lookup.",
+      "collectionGroup": "academyCourseEntitlements",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "userId", "order": "ASCENDING" },
+        { "fieldPath": "courseId", "order": "ASCENDING" },
+        { "fieldPath": "entitlementType", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" }
       ]
     },
     {
