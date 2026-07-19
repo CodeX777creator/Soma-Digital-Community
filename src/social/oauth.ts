@@ -68,9 +68,9 @@ const SOCIAL_OAUTH_PROVIDER_RULES: SocialOAuthProviderRule[] = [
   },
   {
     providerId: 'instagram',
-    flowMode: 'pkce-oauth2',
-    supportsRefreshToken: true,
-    requiresPkce: true,
+    flowMode: 'oauth2',
+    supportsRefreshToken: false,
+    requiresPkce: false,
     callbackPath: '/api/social/oauth/instagram/callback',
     defaultScopes: ['instagram_basic', 'instagram_content_publish'],
     authorizationUrl: process.env.SOCIAL_OAUTH_AUTH_URL_INSTAGRAM || null,
