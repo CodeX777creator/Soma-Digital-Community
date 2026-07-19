@@ -69,7 +69,7 @@ const SOCIAL_OAUTH_PROVIDER_RULES: SocialOAuthProviderRule[] = [
   {
     providerId: 'instagram',
     flowMode: 'oauth2',
-    supportsRefreshToken: true,
+    supportsRefreshToken: false,
     requiresPkce: false,
     callbackPath: '/api/social/oauth/instagram/callback',
     defaultScopes: ['instagram_basic', 'instagram_content_publish'],
