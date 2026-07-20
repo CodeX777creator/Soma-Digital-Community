@@ -98,7 +98,7 @@ function requiredPublishScope(platform: SocialPlatform, settings: Record<string,
   if (platform === 'tiktok') {
     return settings.tiktokPublishMode === 'direct' ? 'video.publish' : 'video.upload';
   }
-  if (platform === 'instagram') return 'instagram_content_publish';
+  if (platform === 'instagram') return 'instagram_business_content_publish';
   if (platform === 'facebook') return 'pages_manage_posts';
   if (platform === 'linkedin') return 'w_member_social';
   if (platform === 'x') return 'tweet.write';

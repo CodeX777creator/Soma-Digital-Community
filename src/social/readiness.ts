@@ -36,8 +36,8 @@ const PROVIDER_REQUIREMENTS: Record<SocialPlatform, {
     refreshRecommended: true,
   },
   instagram: {
-    publishScopes: ['instagram_content_publish'],
-    analyticsScopes: ['instagram_basic'],
+    publishScopes: ['instagram_business_content_publish'],
+    analyticsScopes: ['instagram_business_basic', 'instagram_business_manage_insights'],
     requiresProviderAccountId: true,
     refreshRecommended: true,
   },
@@ -154,25 +154,23 @@ async function resolveFacebookIdentity(accessToken: string): Promise<ProviderIde
 
 async function resolveInstagramIdentity(accessToken: string): Promise<ProviderIdentity> {
   const payload = await fetchJson(
-    'https://graph.facebook.com/v20.0/me/accounts?fields=id,name,instagram_business_account{id,username,name}',
+    'https://graph.instagram.com/v23.0/me?fields=id,user_id,username,name,profile_picture_url',
     accessToken
   );
-  const pages = Array.isArray(payload.data) ? payload.data as Record<string, unknown>[] : [];
-  const match = pages.find((page) => page.instagram_business_account && typeof page.instagram_business_account === 'object');
-  const instagram = (match?.instagram_business_account || {}) as Record<string, unknown>;
-  if (!cleanText(instagram.id)) {
-    return { warnings: ['No Instagram professional account was returned. Connect an Instagram Business/Creator account to a Facebook Page.'] };
+  const accountId = cleanText(payload.user_id) || cleanText(payload.id);
+  if (!accountId) {
+    return { warnings: ['No Instagram professional account was returned. Connect an Instagram Business or Creator account.'] };
   }
   return {
-    providerAccountId: cleanText(instagram.id),
-    accountName: cleanText(instagram.name) || cleanText(instagram.username),
-    handle: cleanText(instagram.username),
+    providerAccountId: accountId,
+    accountName: cleanText(payload.name) || cleanText(payload.username),
+    handle: cleanText(payload.username) ? `@${cleanText(payload.username)}` : undefined,
     metadata: {
       providerIdentity: {
-        id: cleanText(instagram.id),
-        username: cleanText(instagram.username),
-        pageId: cleanText(match?.id),
-        pageName: cleanText(match?.name),
+        id: accountId,
+        username: cleanText(payload.username),
+        profilePictureUrl: cleanText(payload.profile_picture_url),
+        loginType: 'instagram_business_login',
       },
     },
   };

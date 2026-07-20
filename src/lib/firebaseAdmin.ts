@@ -75,7 +75,11 @@ function validateAdminConfig(): FirebaseAdminConfig {
   return {
     projectId: projectId.trim(),
     credential,
-    storageBucket: `${projectId.trim()}.appspot.com`,
+    storageBucket: (
+      process.env.FIREBASE_STORAGE_BUCKET
+      || process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET
+      || `${projectId.trim()}.firebasestorage.app`
+    ).trim(),
   };
 }
 

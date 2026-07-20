@@ -46,6 +46,10 @@ function createAssetId(kind: 'image' | 'video'): string {
   return `${kind}_upload_${Date.now()}_${crypto.randomUUID().slice(0, 12)}`;
 }
 
+function createFirebaseDownloadUrl(bucketName: string, storagePath: string, token: string): string {
+  return `https://firebasestorage.googleapis.com/v0/b/${bucketName}/o/${encodeURIComponent(storagePath)}?alt=media&token=${encodeURIComponent(token)}`;
+}
+
 function stripUndefined<T extends Record<string, unknown>>(value: T): T {
   return Object.fromEntries(Object.entries(value).filter(([, entryValue]) => entryValue !== undefined)) as T;
 }
@@ -89,7 +93,9 @@ const handler = createAPIHandler(
     const extension = getExtension(file.name, mimeType);
     const storagePath = `studio/uploads/${entitlements.uid}/${kind}/${assetId}.${extension}`;
     const buffer = Buffer.from(await file.arrayBuffer());
-    const bucketFile = adminStorage.bucket().file(storagePath);
+    const bucket = adminStorage.bucket();
+    const bucketFile = bucket.file(storagePath);
+    const downloadToken = crypto.randomUUID();
 
     await bucketFile.save(buffer, {
       metadata: {
@@ -98,24 +104,13 @@ const handler = createAPIHandler(
           ownerId: entitlements.uid,
           assetId,
           source: 'uploaded',
+          firebaseStorageDownloadTokens: downloadToken,
         },
       },
       resumable: false,
     });
 
-    await bucketFile.setMetadata({
-      metadata: {
-        firebaseStorageDownloadTokens: assetId,
-        ownerId: entitlements.uid,
-        assetId,
-        source: 'uploaded',
-      },
-    });
-
-    const [downloadUrl] = await bucketFile.getSignedUrl({
-      action: 'read',
-      expires: '03-01-2500',
-    });
+    const downloadUrl = createFirebaseDownloadUrl(bucket.name, storagePath, downloadToken);
 
     const now = admin.firestore.FieldValue.serverTimestamp();
     const record = stripUndefined({

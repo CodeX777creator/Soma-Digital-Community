@@ -648,28 +648,28 @@ async function discoverFacebookDestinations(credentials: SocialCredentialPayload
 async function discoverInstagramDestinations(credentials: SocialCredentialPayload): Promise<SocialProviderDestination[]> {
   if (!credentials.accessToken) return [];
   const payload = await fetchProviderJson(
-    'https://graph.facebook.com/v20.0/me/accounts?fields=id,name,instagram_business_account{id,username,name,profile_picture_url}',
+    'https://graph.instagram.com/v23.0/me?fields=id,user_id,username,name,profile_picture_url',
     credentials.accessToken
   );
-  const pages = Array.isArray(payload.data) ? payload.data as Record<string, unknown>[] : [];
-  return pages.flatMap((page) => {
-    const ig = page.instagram_business_account as Record<string, unknown> | undefined;
-    if (!ig || typeof ig.id !== 'string') return [];
-    const username = typeof ig.username === 'string' ? ig.username : undefined;
-    const label = typeof ig.name === 'string' ? ig.name : username || 'Instagram account';
-    return [destinationFromProfile({
-      providerId: 'instagram',
-      providerAccountId: ig.id,
-      label,
-      handle: username ? `@${username}` : label,
-      type: 'profile',
-      metadata: {
-        facebookPageId: page.id || null,
-        facebookPageName: page.name || null,
-        profilePictureUrl: ig.profile_picture_url || null,
-      },
-    })];
-  });
+  const accountId = typeof payload.user_id === 'string'
+    ? payload.user_id
+    : typeof payload.id === 'string'
+      ? payload.id
+      : credentials.externalAccountId;
+  if (!accountId) return [];
+  const username = typeof payload.username === 'string' ? payload.username : undefined;
+  const label = typeof payload.name === 'string' ? payload.name : username || 'Instagram account';
+  return [destinationFromProfile({
+    providerId: 'instagram',
+    providerAccountId: accountId,
+    label,
+    handle: username ? `@${username}` : label,
+    type: 'profile',
+    metadata: {
+      profilePictureUrl: payload.profile_picture_url || null,
+      loginType: 'instagram_business_login',
+    },
+  })];
 }
 
 async function discoverLinkedInDestinations(credentials: SocialCredentialPayload): Promise<SocialProviderDestination[]> {
