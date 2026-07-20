@@ -307,7 +307,8 @@ export function buildOAuthAuthorizationUrl(input: {
   }
   url.searchParams.set('state', input.state);
   url.searchParams.set('redirect_uri', input.callbackUrl);
-  url.searchParams.set('scope', normalizeScopes(input.scopes || rule.defaultScopes).join(rule.providerId === 'tiktok' ? ',' : ' '));
+  const scopeSeparator = rule.providerId === 'tiktok' || rule.providerId === 'instagram' ? ',' : ' ';
+  url.searchParams.set('scope', normalizeScopes(input.scopes || rule.defaultScopes).join(scopeSeparator));
   const codeChallenge = input.codeChallenge?.trim();
   if (codeChallenge) {
     url.searchParams.set('code_challenge', codeChallenge);

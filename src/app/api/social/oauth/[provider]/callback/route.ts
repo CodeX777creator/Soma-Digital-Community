@@ -68,7 +68,12 @@ const handler = createAPIHandler(
     const errorDescription = readQueryOrBody(req, 'error_description', body);
 
     if (!stateValue) {
-      return apiError('OAuth state is required', { status: 400, code: 'INVALID_STATE' });
+      return buildReturnRedirect('/social', {
+        oauth_provider: provider,
+        oauth_status: 'error',
+        oauth_error: 'Please start Instagram connection from Soma so we can verify your session.',
+        oauth_error_code: 'INVALID_STATE',
+      });
     }
 
     const state = verifySocialOAuthState(provider, stateValue);
