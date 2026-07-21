@@ -6,7 +6,7 @@ export const POST = createAPIHandler(async (req) => {
   const entitlements = await requireUserEntitlements(req as any);
   const body = await req.json();
   const surface = PROMO_SURFACES.includes(body.surface) ? body.surface as PromoSurface : 'dashboard';
-  const context = typeof body.context === 'object' && body.context
+  const rawContext = typeof body.context === 'object' && body.context
     ? {
         courseId: typeof body.context.courseId === 'string' ? body.context.courseId : undefined,
         productId: typeof body.context.productId === 'string' ? body.context.productId : undefined,
@@ -15,10 +15,20 @@ export const POST = createAPIHandler(async (req) => {
         checkoutType: typeof body.context.checkoutType === 'string' ? body.context.checkoutType : undefined,
       }
     : {};
-  const metadata = {
+  // Firestore's Admin SDK rejects fields with a literal `undefined` value, and
+  // this object gets written into promoRedemptions / auditLogs docs. Only the
+  // keys that were actually provided should survive, or every redemption that
+  // doesn't supply all five context fields (i.e. almost all of them) 500s.
+  const context = Object.fromEntries(
+    Object.entries(rawContext).filter(([, value]) => value !== undefined)
+  ) as typeof rawContext;
+  const rawMetadata = {
     source: typeof body.source === 'string' ? body.source : 'manual',
     path: typeof body.path === 'string' ? body.path : undefined,
   };
+  const metadata = Object.fromEntries(
+    Object.entries(rawMetadata).filter(([, value]) => value !== undefined)
+  ) as typeof rawMetadata;
   let result;
   try {
     result = await redeemPromoCode({
