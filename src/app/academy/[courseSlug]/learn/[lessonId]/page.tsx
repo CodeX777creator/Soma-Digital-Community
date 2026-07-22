@@ -435,9 +435,7 @@ function LessonContent({ lesson }: { lesson: AcademyLessonDoc }) {
               controls
               preload="metadata"
               playsInline
-              controlsList="nodownload noplaybackrate noremoteplayback"
-              disablePictureInPicture
-              disableRemotePlayback
+              controlsList="nodownload"
               className="h-full w-full bg-black object-contain"
               onLoadedData={() => setVideoReady(true)}
               onCanPlay={() => setVideoReady(true)}

@@ -446,6 +446,15 @@
       ]
     },
     {
+      "__comment": "Academy tutor messages: supports per-session tutor history ordered newest first.",
+      "collectionGroup": "academyTutorMessages",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "sessionId", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+    {
       "__comment": "Academy MRR gate: supports active certificate lookup by userId, courseId, and status.",
       "collectionGroup": "academyCertificates",
       "queryScope": "COLLECTION",
