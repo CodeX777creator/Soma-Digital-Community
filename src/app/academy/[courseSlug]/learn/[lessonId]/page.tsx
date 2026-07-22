@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
 import { ArrowLeft, BookOpen, Bot, CheckCircle2, Image as ImageIcon, Loader2, MessageSquare, PenLine, Sparkles, Video } from "lucide-react";
@@ -398,6 +398,7 @@ function LessonContent({ lesson }: { lesson: AcademyLessonDoc }) {
   const showWritten = (lesson.lessonType === "written" || lesson.lessonType === "mixed" || !showVideo && !showImages) && lesson.writtenContent;
   const [videoReady, setVideoReady] = useState(false);
   const [videoError, setVideoError] = useState("");
+  const videoRef = useRef<HTMLVideoElement | null>(null);
 
   useEffect(() => {
     setVideoReady(false);
@@ -428,19 +429,24 @@ function LessonContent({ lesson }: { lesson: AcademyLessonDoc }) {
               </div>
             ) : null}
             <video
+              ref={videoRef}
               key={lesson.videoUrl || lesson.lessonId}
-              src={lesson.videoUrl || undefined}
               controls
-              preload="metadata"
+              preload="auto"
               playsInline
+              crossOrigin="anonymous"
               className="h-full w-full bg-black object-contain"
               onLoadedData={() => setVideoReady(true)}
               onCanPlay={() => setVideoReady(true)}
               onError={() => {
                 setVideoReady(false);
-                setVideoError("Video playback failed.");
+                const error = videoRef.current?.error;
+                const code = error?.code ? ` (code ${error.code})` : "";
+                setVideoError(`Video playback failed${code}.`);
               }}
-            />
+            >
+              <source src={lesson.videoUrl || undefined} type={inferVideoMimeType(lesson.videoUrl || "")} />
+            </video>
           </div>
         </div>
       ) : null}
@@ -473,6 +479,12 @@ function LessonContent({ lesson }: { lesson: AcademyLessonDoc }) {
       ) : null}
     </div>
   );
+}
+
+function inferVideoMimeType(url: string) {
+  if (/\.webm(\?|$)/i.test(url)) return "video/webm";
+  if (/\.mov(\?|$)/i.test(url)) return "video/quicktime";
+  return "video/mp4";
 }
 
 function ActivityInput({
