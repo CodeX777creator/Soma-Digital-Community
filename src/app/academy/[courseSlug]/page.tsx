@@ -335,10 +335,10 @@ export default function AcademyCoursePage() {
                   </div>
                 </div>
               </div>
-              <div className="min-h-80 border-t border-white/[0.08] bg-gradient-to-br from-[#4F9DFF]/16 to-[#8B5CF6]/14 lg:border-l lg:border-t-0">
+              <div className="flex min-h-80 items-center justify-center border-t border-white/[0.08] bg-gradient-to-br from-[#4F9DFF]/16 to-[#8B5CF6]/14 p-4 lg:min-h-[520px] lg:border-l lg:border-t-0">
                 {course.thumbnailUrl ? (
                   // eslint-disable-next-line @next/next/no-img-element
-                  <img src={course.thumbnailUrl} alt="" className="h-full w-full object-cover" />
+                  <img src={course.thumbnailUrl} alt={`${course.title} course thumbnail`} className="max-h-[520px] w-full rounded-[16px] object-contain" />
                 ) : <div className="flex h-full items-center justify-center"><GraduationCap className="h-16 w-16 text-white/30" /></div>}
               </div>
             </div>
