@@ -6,6 +6,7 @@ import { doc, onSnapshot, FirestoreError } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
 import { dbService, UserProfile } from "@/lib/db";
 import { useUserStore } from "@/store/useUserStore";
+import { useOnboardingStore } from "@/store/useOnboardingStore";
 import { logger, logFirestoreError } from "@/lib/logger";
 import { bootstrapAuthenticatedUser } from "@/lib/auth-bootstrap";
 import { awardXPAction } from "@/lib/xp";
@@ -35,6 +36,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [error, setError] = useState<Error | null>(null);
   const [isRetrying, setIsRetrying] = useState(false);
   const { syncProfile, clearState } = useUserStore();
+  const resetOnboarding = useOnboardingStore((state) => state.reset);
   
   // Refs for cleanup and race condition prevention
   const firestoreUnsubscribeRef = useRef<(() => void) | null>(null);
@@ -168,6 +170,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (isMounted.current) {
           setUserData(null);
           clearState();
+          resetOnboarding();
         }
       }
       
@@ -188,7 +191,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       unsubscribe();
       authUnsubscribeRef.current = null;
     };
-  }, [syncProfile, clearState, handleError]);
+  }, [syncProfile, clearState, resetOnboarding, handleError]);
 
   // Cleanup on unmount
   useEffect(() => {
