@@ -3,6 +3,7 @@ import { requireSubscription } from '@/lib/serverAuth';
 import { apiError, apiResponse, createAPIHandler } from '@/lib/api-middleware';
 import { logger } from '@/lib/logger';
 import {
+  deleteSocialAccount,
   disconnectSocialAccount,
   updateSocialAccount,
 } from '@/social';
@@ -45,6 +46,12 @@ const handler = createAPIHandler(
     }
 
     if (req.method === 'DELETE') {
+      const { searchParams } = new URL(req.url);
+      const permanent = searchParams.get('permanent') === 'true' || searchParams.get('mode') === 'permanent';
+      if (permanent) {
+        await deleteSocialAccount(entitlements.uid, accountId);
+        return apiResponse({ deleted: true });
+      }
       const account = await disconnectSocialAccount(entitlements.uid, accountId);
       return apiResponse({ socialAccount: account });
     }

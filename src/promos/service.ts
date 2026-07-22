@@ -44,6 +44,11 @@ type CreatePromoInput = {
   createdBy: string;
 };
 
+type UpdatePromoInput = Partial<Omit<CreatePromoInput, 'createdBy'>> & {
+  promoId: string;
+  updatedBy: string;
+};
+
 export type PromoRedeemContext = {
   courseId?: string;
   productId?: string;
@@ -314,6 +319,90 @@ export async function createPromoCampaign(input: CreatePromoInput) {
     },
   });
   return doc;
+}
+
+export async function updatePromoCampaign(input: UpdatePromoInput) {
+  const promoId = normalizePromoCode(input.promoId);
+  const snapshot = await adminDb.collection(PROMO_COLLECTIONS.campaigns).doc(promoId).get();
+  if (!snapshot.exists) {
+    throw new PromoError('Promo campaign not found.', 'PROMO_NOT_FOUND', 404);
+  }
+
+  const existing = snapshot.data() as PromoCampaignDoc;
+  const normalizeIdList = (value: unknown) => Array.isArray(value)
+    ? value.map((item) => String(item || '').trim()).filter(Boolean)
+    : [];
+  const merged: CreatePromoInput = {
+    code: input.code ?? existing.code,
+    name: input.name ?? existing.name,
+    description: input.description ?? existing.description ?? '',
+    status: input.status ?? existing.status,
+    maxRedemptions: input.maxRedemptions ?? existing.maxRedemptions ?? null,
+    applicableSurfaces: input.applicableSurfaces ?? existing.applicableSurfaces ?? [],
+    targetCourseIds: input.targetCourseIds ?? existing.targetCourseIds ?? [],
+    targetProductIds: input.targetProductIds ?? existing.targetProductIds ?? [],
+    targetPlanIds: input.targetPlanIds ?? existing.targetPlanIds ?? [],
+    targetCreditBundleIds: input.targetCreditBundleIds ?? existing.targetCreditBundleIds ?? [],
+    audienceRules: input.audienceRules ?? existing.audienceRules ?? {},
+    benefits: input.benefits ?? existing.benefits ?? [],
+    createdBy: existing.createdBy,
+  };
+
+  const normalizedCode = validateCampaignInput(merged);
+  const applicableSurfaces = normalizeSurfaces(merged.applicableSurfaces);
+  const inferredTargets = deriveTargetsFromBenefits(merged.benefits);
+  const targetCourseIds = normalizeIdList(merged.targetCourseIds).length ? normalizeIdList(merged.targetCourseIds) : inferredTargets.targetCourseIds;
+  const targetProductIds = normalizeIdList(merged.targetProductIds).length ? normalizeIdList(merged.targetProductIds) : inferredTargets.targetProductIds;
+  const targetPlanIds = normalizeIdList(merged.targetPlanIds).length ? normalizeIdList(merged.targetPlanIds) : inferredTargets.targetPlanIds;
+  const targetCreditBundleIds = normalizeIdList(merged.targetCreditBundleIds).length ? normalizeIdList(merged.targetCreditBundleIds) : [];
+  validateBenefitSurfaceCompatibility(merged.benefits, applicableSurfaces);
+  merged.benefits.forEach(validateBenefit);
+
+  const next = cleanUndefined({
+    ...existing,
+    promoId: existing.promoId,
+    code: merged.code.trim(),
+    normalizedCode,
+    name: merged.name.trim(),
+    description: merged.description?.trim() || undefined,
+    status: (merged.status ?? existing.status),
+    maxRedemptions: merged.maxRedemptions ?? null,
+    applicableSurfaces,
+    targetCourseIds,
+    targetProductIds,
+    targetPlanIds,
+    targetCreditBundleIds,
+    audienceRules: merged.audienceRules || {},
+    benefits: merged.benefits,
+    updatedAt: now(),
+  }) as PromoCampaignDoc;
+
+  const writeRef = normalizedCode === promoId
+    ? adminDb.collection(PROMO_COLLECTIONS.campaigns).doc(promoId)
+    : adminDb.collection(PROMO_COLLECTIONS.campaigns).doc(normalizedCode);
+
+  await adminDb.runTransaction(async (tx) => {
+    if (normalizedCode !== promoId) {
+      const duplicate = await tx.get(writeRef);
+      if (duplicate.exists) {
+        throw new PromoError('Promo code already exists.', 'PROMO_DUPLICATE_CODE', 409);
+      }
+      tx.delete(adminDb.collection(PROMO_COLLECTIONS.campaigns).doc(promoId));
+    }
+    tx.set(writeRef, next);
+    tx.set(adminDb.collection(PROMO_COLLECTIONS.auditLogs).doc(`${writeRef.id}_updated_${Date.now()}`), {
+      action: 'promo_campaign_updated',
+      promoId: writeRef.id,
+      code: next.code,
+      normalizedCode,
+      actorId: input.updatedBy,
+      before: existing,
+      after: next,
+      createdAt: now(),
+    });
+  });
+
+  return next;
 }
 
 export async function listPromoCampaigns(options: { limit?: number } = {}) {

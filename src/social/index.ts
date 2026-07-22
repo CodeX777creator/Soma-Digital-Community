@@ -1,6 +1,7 @@
 export {
   createSocialAccount,
   disconnectSocialAccount,
+  deleteSocialAccount,
   getSocialHubCapabilities,
   getSocialHubOverview,
   getSocialHubSummary,

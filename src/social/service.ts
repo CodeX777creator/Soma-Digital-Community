@@ -908,6 +908,22 @@ export async function disconnectSocialAccount(ownerId: string, accountId: string
   });
 }
 
+export async function deleteSocialAccount(ownerId: string, accountId: string): Promise<void> {
+  const account = await readSocialAccountOrThrow(ownerId, accountId);
+  await Promise.all([
+    adminDb.collection('socialAccounts').doc(accountId).delete(),
+    adminDb.collection('socialAccountSecrets').doc(accountId).delete().catch(() => null),
+  ]);
+
+  await adminDb.collection('socialAuditLogs').doc().set(stripUndefined({
+    action: 'social_account_deleted',
+    ownerId,
+    accountId,
+    providerId: account.providerId,
+    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+  }));
+}
+
 type ScheduledPostDoc = {
   scheduledPostId: string;
   ownerId: string;

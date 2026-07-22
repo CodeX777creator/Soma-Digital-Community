@@ -364,6 +364,39 @@ export default function SocialHubPage() {
     }
   };
 
+  const deleteAccount = async (accountId: string) => {
+    if (!user || loading) return;
+    if (!window.confirm("Delete this social account permanently? This cannot be undone.")) return;
+
+    try {
+      setLoading(true);
+      const idToken = await user.getIdToken();
+      const response = await fetch(`/api/social/accounts/${accountId}?permanent=true`, {
+        method: 'DELETE',
+        headers: {
+          Authorization: `Bearer ${idToken}`,
+        },
+      });
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        throw new Error(payload.error || 'Unable to delete social account.');
+      }
+      toast({
+        title: 'Social account deleted',
+        description: 'The account and its stored credentials were removed.',
+      });
+      await loadAccounts();
+    } catch (error) {
+      toast({
+        title: 'Delete failed',
+        description: error instanceof Error ? error.message : 'Unable to delete social account.',
+        variant: 'destructive',
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const refreshDestinations = async (accountId: string) => {
     if (!user || loading) return;
 
@@ -627,6 +660,17 @@ export default function SocialHubPage() {
                               onClick={() => disconnectAccount(account.socialAccountId)}
                               disabled={loading}
                               aria-label={`Disconnect ${account.providerLabel}`}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="rounded-2xl text-white/48 hover:text-red-300"
+                              onClick={() => deleteAccount(account.socialAccountId)}
+                              disabled={loading}
+                              aria-label={`Delete ${account.providerLabel} permanently`}
                             >
                               <Trash2 className="h-4 w-4" />
                             </Button>

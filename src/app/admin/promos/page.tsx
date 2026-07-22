@@ -145,6 +145,7 @@ export default function AdminPromosPage() {
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const [editingPromoId, setEditingPromoId] = useState<string | null>(null);
   const [form, setForm] = useState({
     code: "",
     name: "",
@@ -228,6 +229,29 @@ export default function AdminPromosPage() {
     }));
   };
 
+  const startEditPromo = (campaign: any) => {
+    setEditingPromoId(campaign.promoId || campaign.normalizedCode || campaign.code || null);
+    setForm({
+      code: campaign.code || "",
+      name: campaign.name || "",
+      description: campaign.description || "",
+      status: campaign.status || "draft",
+      maxRedemptions: campaign.maxRedemptions?.toString?.() || "",
+      benefitType: campaign.benefits?.[0]?.type || "creator_credit_bonus",
+      courseId: campaign.benefits?.[0]?.courseId || "",
+      productId: campaign.benefits?.[0]?.productId || "",
+      credits: campaign.benefits?.[0]?.credits?.toString?.() || "25",
+      discountKind: campaign.benefits?.[0]?.discountKind || "percent",
+      amount: campaign.benefits?.[0]?.amount?.toString?.() || "10",
+      applicableSurfaces: campaign.applicableSurfaces || ["dashboard", "creator_credits"],
+      targetCourseIds: (campaign.targetCourseIds || []).join(", "),
+      targetProductIds: (campaign.targetProductIds || []).join(", "),
+      targetPlanIds: (campaign.targetPlanIds || []).join(", "),
+      targetCreditBundleIds: (campaign.targetCreditBundleIds || []).join(", "),
+    });
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
   const createPromo = async (event: FormEvent) => {
     event.preventDefault();
     setSaving(true);
@@ -235,8 +259,9 @@ export default function AdminPromosPage() {
     setMessage("");
     try {
       const response = await adminFetch("/api/admin/promos", {
-        method: "POST",
+        method: editingPromoId ? "PATCH" : "POST",
         body: JSON.stringify({
+          ...(editingPromoId ? { promoId: editingPromoId } : {}),
           code: form.code,
           name: form.name,
           description: form.description,
@@ -252,12 +277,13 @@ export default function AdminPromosPage() {
         }),
       });
       const data = await response.json();
-      if (!response.ok) throw new Error(data.error || "Unable to create promo.");
-      setMessage("Promo campaign created.");
+      if (!response.ok) throw new Error(data.error || (editingPromoId ? "Unable to update promo." : "Unable to create promo."));
+      setMessage(editingPromoId ? "Promo campaign updated." : "Promo campaign created.");
+      setEditingPromoId(null);
       setForm((current) => ({ ...current, code: "", name: "", description: "" }));
       await loadPromos();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to create promo.");
+      setError(err instanceof Error ? err.message : editingPromoId ? "Unable to update promo." : "Unable to create promo.");
     } finally {
       setSaving(false);
     }
@@ -471,7 +497,7 @@ export default function AdminPromosPage() {
           </div>
           <Button type="submit" disabled={saving} className="mt-6 h-12 w-full rounded-[14px]">
             {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
-            Create promo
+            {editingPromoId ? "Save changes" : "Create promo"}
           </Button>
         </form>
 
@@ -515,6 +541,13 @@ export default function AdminPromosPage() {
                       <p className="text-xl font-semibold text-white">{campaign.redemptionCount || 0}</p>
                       <p>of {campaign.maxRedemptions || "unlimited"}</p>
                     </div>
+                    <button
+                      type="button"
+                      onClick={() => startEditPromo(campaign)}
+                      className="inline-flex h-10 items-center justify-center rounded-full border border-white/10 bg-white/[0.04] px-4 text-sm font-medium text-white/80 transition hover:border-[#8B5CF6]/40 hover:bg-[#8B5CF6]/10 hover:text-white"
+                    >
+                      Edit
+                    </button>
                   </div>
                 </div>
               ))}

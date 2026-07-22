@@ -2266,10 +2266,17 @@ async function attemptPublish(post: ScheduledPostDoc, account: SocialAccountDoc)
   const providerResponse = responseText.slice(0, 2000);
 
   if (!response.ok) {
+    const providerHint = post.platform === 'tiktok' && response.status === 403
+      ? 'TikTok returned HTTP 403. Check Direct Post approval, content publish permission, app review status, and whether the account can still publish from this app.'
+      : `Publish endpoint rejected the request (${response.status})`;
     return {
       success: false,
-      errorMessage: `Publish endpoint rejected the request (${response.status})`,
-      failureCode: response.status === 429 ? 'PROVIDER_RATE_LIMITED' : 'PROVIDER_ENDPOINT_REJECTED',
+      errorMessage: providerHint,
+      failureCode: response.status === 429
+        ? 'PROVIDER_RATE_LIMITED'
+        : response.status === 403 && post.platform === 'tiktok'
+          ? 'TIKTOK_FORBIDDEN'
+          : 'PROVIDER_ENDPOINT_REJECTED',
       providerResponse,
       retryable: response.status >= 500 || response.status === 429,
       deliveryMode: 'external_endpoint',
