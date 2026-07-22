@@ -98,6 +98,7 @@ export function AIRoadmapStep() {
         Budget: ${budget}
         Available Time: ${availableTime}
       `;
+      const cacheKey = getRoadmapCacheKey(goalsText);
 
       try {
         if (roadmap) {
@@ -109,7 +110,6 @@ export function AIRoadmapStep() {
           return;
         }
 
-        const cacheKey = getRoadmapCacheKey(goalsText);
         const cached = typeof window !== "undefined" ? window.localStorage.getItem(cacheKey) : null;
         if (cached) {
           const parsed = JSON.parse(cached);
@@ -131,21 +131,18 @@ export function AIRoadmapStep() {
         });
 
         if (!response.ok) {
-          if (response.status === 429) {
-            const fallback = buildFallbackRoadmap(goalsText);
-            setRoadmap(fallback);
-            void saveRoadmapDraft(fallback, auth?.currentUser ? "remote" : "local");
-            if (typeof window !== "undefined") {
-              window.localStorage.setItem(cacheKey, JSON.stringify(fallback));
-            }
-            timeoutId = setTimeout(() => {
-              if (!isActive) return;
-              setIsSynthesizing(false);
-              nextStep();
-            }, 1200);
-            return;
+          const fallback = buildFallbackRoadmap(goalsText);
+          setRoadmap(fallback);
+          void saveRoadmapDraft(fallback, auth?.currentUser ? "remote" : "local");
+          if (typeof window !== "undefined") {
+            window.localStorage.setItem(cacheKey, JSON.stringify(fallback));
           }
-          throw new Error("Unable to generate onboarding roadmap preview");
+          timeoutId = setTimeout(() => {
+            if (!isActive) return;
+            setIsSynthesizing(false);
+            nextStep();
+          }, response.status === 429 ? 1200 : 900);
+          return;
         }
 
         const body = await response.json();
@@ -171,6 +168,12 @@ export function AIRoadmapStep() {
         if (!isActive) return;
 
         console.error("AI Error:", error);
+        const fallback = buildFallbackRoadmap(goalsText);
+        setRoadmap(fallback);
+        void saveRoadmapDraft(fallback, auth?.currentUser ? "remote" : "local");
+        if (typeof window !== "undefined") {
+          window.localStorage.setItem(cacheKey, JSON.stringify(fallback));
+        }
         setIsSynthesizing(false);
         nextStep(); // Fallback to next step
       }
