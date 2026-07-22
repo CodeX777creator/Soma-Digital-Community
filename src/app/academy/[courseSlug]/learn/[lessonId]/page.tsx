@@ -491,18 +491,20 @@ function inferVideoMimeType(url: string) {
 function ActivityPrompt({ prompt }: { prompt: string }) {
   const normalized = prompt.replace(/\s+/g, " ").trim();
   const questions = normalized.split(/(?=\d+\.\s)/).map((item) => item.trim()).filter(Boolean);
-  const hasNumberedQuestions = questions.length > 1;
 
   return (
-    <div className="mt-3 rounded-[14px] border border-white/[0.06] bg-white/[0.025] p-3.5">
-      {hasNumberedQuestions ? (
-        <ol className="space-y-2.5">
-          {questions.map((question, index) => {
-            const clean = question.replace(/^\d+\.\s*/, "");
-            return <li key={`${clean}-${index}`} className="flex gap-3 text-sm leading-6 text-[#D8DEEA]"><span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#5B5FFF]/20 text-[11px] font-semibold text-[#AEB4FF]">{index + 1}</span><span>{clean}</span></li>;
-          })}
-        </ol>
-      ) : <p className="mt-2 text-sm leading-6 text-[#D8DEEA]">{normalized}</p>}
+    <div className="mt-3 space-y-4">
+      {questions.map((question, index) => {
+        const clean = question.replace(/^\d+\.\s*/, "");
+        return (
+          <div key={`${clean}-${index}`} className="rounded-[16px] border border-white/[0.08] bg-white/[0.03] p-4">
+            <div className="flex gap-3 text-sm leading-6 text-[#D8DEEA]">
+              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#5B5FFF]/20 text-[11px] font-semibold text-[#AEB4FF]">{index + 1}</span>
+              <span>{clean}</span>
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -522,6 +524,8 @@ function ActivityInput({
   onChange: (value: ActivityResponse) => void;
   onUpload: (file: File | null) => void;
 }) {
+  const promptQuestions = extractActivityQuestions(activity.prompt);
+
   if (activity.activityType === "multiple_choice") {
     return (
       <div className="mt-4 space-y-2">
@@ -566,10 +570,90 @@ function ActivityInput({
     return <input type="url" value={String(value || "")} onChange={(event) => onChange(event.target.value)} placeholder="Paste your link..." className="mt-4 w-full rounded-[16px] border border-white/[0.08] bg-black/20 p-4 text-sm text-white outline-none focus:border-[#5B5FFF]/60" />;
   }
 
-  const rows = activity.activityType === "short_text" ? 3 : 6;
+  if (promptQuestions.length > 1) {
+    const answers = normalizeQuestionAnswers(value, promptQuestions.length);
+    return (
+      <div className="mt-4 space-y-4">
+        {promptQuestions.map((question, index) => (
+          <div key={`${activity.activityId}-${index}`} className="rounded-[16px] border border-white/[0.08] bg-black/20 p-4">
+            <p className="text-sm leading-6 text-[#D8DEEA]">{question}</p>
+            <QuestionAnswerField
+              activity={activity}
+              questionIndex={index}
+              value={answers[index] || ""}
+              onChange={(nextValue) => onChange(updateQuestionAnswer(value, index, nextValue, promptQuestions.length))}
+              onUpload={onUpload}
+              attachments={attachments}
+              uploading={uploading}
+            />
+          </div>
+        ))}
+      </div>
+    );
+  }
+
   return (
     <div className="mt-4 space-y-3">
-      <textarea value={String(value || "")} onChange={(event) => onChange(event.target.value)} rows={rows} placeholder={activity.activityType === "project_submission" ? "Describe your project, links, and what you want reviewed..." : "Write your answer..."} className="w-full rounded-[16px] border border-white/[0.08] bg-black/20 p-4 text-sm text-white outline-none focus:border-[#5B5FFF]/60" />
+      <QuestionAnswerField
+        activity={activity}
+        questionIndex={0}
+        value={value}
+        onChange={onChange}
+        onUpload={onUpload}
+        attachments={attachments}
+        uploading={uploading}
+      />
+    </div>
+  );
+}
+
+function QuestionAnswerField({
+  activity,
+  questionIndex,
+  value,
+  attachments,
+  uploading,
+  onChange,
+  onUpload,
+}: {
+  activity: AcademyActivityDoc;
+  questionIndex: number;
+  value: ActivityResponse;
+  attachments: ActivityAttachment[];
+  uploading: boolean;
+  onChange: (value: ActivityResponse) => void;
+  onUpload: (file: File | null) => void;
+}) {
+  if (activity.activityType === "file_upload") {
+    return (
+      <div className="mt-4 rounded-[16px] border border-white/[0.08] bg-black/20 p-4">
+        <input type="file" disabled={uploading} onChange={(event) => onUpload(event.target.files?.[0] || null)} className="w-full text-sm text-white/50 file:mr-3 file:rounded-xl file:border-0 file:bg-white/[0.08] file:px-3 file:py-2 file:text-sm file:text-white" />
+        <AttachmentList attachments={attachments} />
+      </div>
+    );
+  }
+
+  if (activity.activityType === "multiple_choice") return null;
+  if (activity.activityType === "checkboxes") return null;
+
+  if (activity.activityType === "link_submission") {
+    return <input type="url" value={String(value || "")} onChange={(event) => onChange(event.target.value)} placeholder="Paste your link..." className="mt-4 w-full rounded-[16px] border border-white/[0.08] bg-black/20 p-4 text-sm text-white outline-none focus:border-[#5B5FFF]/60" />;
+  }
+
+  const rows = activity.activityType === "short_text" ? 2 : 6;
+  return (
+    <div className="mt-4 space-y-3">
+      <textarea
+        value={String(value || "")}
+        onChange={(event) => onChange(event.target.value)}
+        rows={rows}
+        placeholder={activity.activityType === "project_submission"
+          ? questionIndex === 0
+            ? "Write your answer..."
+            : "Add any project links, notes, or context here..."
+          : "Write your answer..."}
+        className="w-full rounded-[16px] border border-white/[0.08] bg-black/20 p-4 text-sm text-white outline-none focus:border-[#5B5FFF]/60"
+      />
       {activity.activityType === "project_submission" ? (
         <div className="rounded-[16px] border border-white/[0.08] bg-black/20 p-4">
           <input type="file" disabled={uploading} onChange={(event) => onUpload(event.target.files?.[0] || null)} className="w-full text-sm text-white/50 file:mr-3 file:rounded-xl file:border-0 file:bg-white/[0.08] file:px-3 file:py-2 file:text-sm file:text-white" />
@@ -578,6 +662,30 @@ function ActivityInput({
       ) : null}
     </div>
   );
+}
+
+function extractActivityQuestions(prompt: string) {
+  const normalized = prompt.replace(/\s+/g, " ").trim();
+  const questions = normalized.split(/(?=\d+\.\s)/).map((item) => item.trim()).filter(Boolean);
+  return questions.length ? questions.map((question) => question.replace(/^\d+\.\s*/, "")) : [normalized];
+}
+
+function normalizeQuestionAnswers(value: ActivityResponse | undefined, questionCount: number) {
+  if (Array.isArray(value)) return value.map((item) => String(item || "")).slice(0, questionCount);
+  if (value && typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    return Array.from({ length: questionCount }, (_, index) => String(record[String(index)] || ""));
+  }
+  const text = String(value || "");
+  if (!text.includes("\n")) return Array.from({ length: questionCount }, () => "");
+  return text.split("\n").slice(0, questionCount);
+}
+
+function updateQuestionAnswer(value: ActivityResponse | undefined, index: number, nextValue: ActivityResponse, questionCount: number) {
+  const existing = normalizeQuestionAnswers(value, questionCount);
+  const updated = [...existing];
+  updated[index] = String(nextValue || "");
+  return updated;
 }
 
 function AttachmentList({ attachments }: { attachments: ActivityAttachment[] }) {
@@ -597,6 +705,13 @@ function canSubmitActivity(activity: AcademyActivityDoc, response: ActivityRespo
   if (activity.activityType === "file_upload") return attachments.length > 0;
   if (activity.activityType === "checkboxes") return Array.isArray(response) && response.length > 0;
   if (activity.activityType === "project_submission") return Boolean(String(response || "").trim() || attachments.length);
+  if (activity.prompt && /^\d+\.\s/.test(activity.prompt)) {
+    const questions = extractActivityQuestions(activity.prompt);
+    if (questions.length > 1) {
+      const answers = normalizeQuestionAnswers(response, questions.length);
+      return answers.every((answer) => String(answer || "").trim().length > 0);
+    }
+  }
   return Boolean(String(response || "").trim());
 }
 
