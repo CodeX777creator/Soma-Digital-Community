@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useParams, useSearchParams } from "next/navigation";
+import { onAuthStateChanged } from "firebase/auth";
 import { ArrowRight, BookOpen, CalendarDays, CheckCircle2, Clock3, Copy, CreditCard, Download, ExternalLink, GraduationCap, Loader2, Lock, PlayCircle, Share2, Sparkles, Store, Video } from "lucide-react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
@@ -66,6 +67,7 @@ export default function AcademyCoursePage() {
   const [joiningSession, setJoiningSession] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [authReady, setAuthReady] = useState(false);
   const referralSlug = searchParams.get("ref") || "";
 
   const load = async () => {
@@ -80,7 +82,21 @@ export default function AcademyCoursePage() {
     }
   };
 
-  useEffect(() => { void load(); }, [courseSlug]);
+  useEffect(() => {
+    if (!auth) {
+      setAuthReady(true);
+      return;
+    }
+    const unsubscribe = onAuthStateChanged(auth, () => {
+      setAuthReady(true);
+    });
+    return unsubscribe;
+  }, []);
+
+  useEffect(() => {
+    if (!authReady) return;
+    void load();
+  }, [courseSlug, authReady]);
 
   useEffect(() => {
     const course = bundle?.course;
