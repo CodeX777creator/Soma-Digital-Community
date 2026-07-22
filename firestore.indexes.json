@@ -530,7 +530,9 @@
       "fields": [
         { "fieldPath": "status", "order": "ASCENDING" },
         { "fieldPath": "kind", "order": "ASCENDING" },
-        { "fieldPath": "createdAt", "order": "DESCENDING" }
+         { "fieldPath": "createdAt", "order": "DESCENDING" }
+       ]
+     },
     {
       "collectionGroup": "discussionReplies",
       "queryScope": "COLLECTION",
@@ -541,8 +543,6 @@
         { "fieldPath": "createdAt", "order": "ASCENDING" }
       ]
     }
-  ]
-}
   ],
   "fieldOverrides": []
 }
