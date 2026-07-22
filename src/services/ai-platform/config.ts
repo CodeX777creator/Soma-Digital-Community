@@ -58,7 +58,7 @@ export const planCreditProfiles: Record<"explorer" | "pro" | "elite" | "enterpri
 
 export const monetizationConfig = {
   providerMode: readMode("AI_PROVIDER_MODE", "hybrid"),
-  gatewayBaseURL: process.env.AI_GATEWAY_BASE_URL || "https://api.openai.com/v1",
+  gatewayBaseURL: process.env.AI_GATEWAY_BASE_URL || process.env.VERCEL_AI_GATEWAY_BASE_URL || "https://ai-gateway.vercel.sh/v1",
   gatewayApiKey: process.env.AI_GATEWAY_API_KEY || "",
   byokMasterKey: process.env.AI_PROVIDER_CREDENTIALS_MASTER_KEY || process.env.SOCIAL_CREDENTIALS_MASTER_KEY || "",
   reserveTimeoutMs: readNumber("AI_CREDIT_RESERVATION_TIMEOUT_MS", 10 * 60 * 1000),

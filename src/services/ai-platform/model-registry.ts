@@ -88,6 +88,33 @@ function inferCreditClass(model: { type?: string; tags?: string[]; id?: string; 
   const outputPerMillion = (pricing.output || 0) * 1_000_000;
   const textPriceScore = Math.max(inputPerMillion * 3, outputPerMillion);
   const mediaUnitPrice = maxDefined(pricing.image, pricing.audio, pricing.video);
+  const contextWindow = model.contextWindow || 0;
+  const maxTokens = model.maxTokens || 0;
+  const expensiveKeywords = [
+    "reasoning",
+    "thinking",
+    "opus",
+    "ultra",
+    "pro",
+    "premium",
+    "large",
+    "max",
+    "pro-preview",
+    "preview",
+    "sonnet",
+    "gemini-3",
+    "gpt-5",
+    "claude-4",
+    "nemotron-3",
+    "seedance",
+    "veo",
+    "video",
+    "imagine",
+    "audio",
+    "tts",
+    "dubbing",
+  ];
+  const expensiveKeywordHit = expensiveKeywords.some((keyword) => id.includes(keyword));
 
   if (tags.has("video") || tags.has("video-generation") || id.includes("video") || id.includes("seedance") || id.includes("veo")) {
     return "specialized";
@@ -95,27 +122,29 @@ function inferCreditClass(model: { type?: string; tags?: string[]; id?: string; 
 
   if (
     pricing.video ||
-    textPriceScore >= 10 ||
-    mediaUnitPrice >= 0.18 ||
+    textPriceScore >= 8 ||
+    mediaUnitPrice >= 0.12 ||
     tags.has("reasoning") ||
     tags.has("thinking") ||
     id.includes("reasoning") ||
     id.includes("opus") ||
-    id.includes("ultra")
+    id.includes("ultra") ||
+    id.includes("gpt-5") ||
+    id.includes("claude-4") ||
+    id.includes("gemini-3")
   ) {
     return "premium";
   }
 
   if (
-    textPriceScore >= 2 ||
-    mediaUnitPrice >= 0.05 ||
-    (model.contextWindow || 0) >= 500_000 ||
-    (model.maxTokens || 0) >= 32_000 ||
+    textPriceScore >= 1 ||
+    mediaUnitPrice >= 0.02 ||
+    contextWindow >= 200_000 ||
+    maxTokens >= 8_000 ||
     tags.has("vision") ||
     tags.has("tool-use") ||
     tags.has("file-input") ||
-    id.includes("pro") ||
-    id.includes("large") ||
+    expensiveKeywordHit ||
     id.includes("70b") ||
     id.includes("120b") ||
     id.includes("405b") ||
@@ -123,6 +152,10 @@ function inferCreditClass(model: { type?: string; tags?: string[]; id?: string; 
     type === "audio" ||
     type === "speech"
   ) {
+    return "advanced";
+  }
+
+  if (expensiveKeywordHit || contextWindow >= 100_000 || maxTokens >= 4_000) {
     return "advanced";
   }
   return "standard";
