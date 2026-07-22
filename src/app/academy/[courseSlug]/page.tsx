@@ -301,7 +301,7 @@ export default function AcademyCoursePage() {
           {notice ? <div className="rounded-[18px] border border-emerald-400/20 bg-emerald-400/10 p-4 text-sm text-emerald-50">{notice}</div> : null}
           {error ? <div className="rounded-[18px] border border-red-400/20 bg-red-400/10 p-4 text-sm text-red-100">{error}</div> : null}
           <section className="overflow-hidden rounded-[22px] border border-white/[0.08] bg-[#151A2E]/75 shadow-[0_30px_90px_rgba(0,0,0,0.36)]">
-            <div className="grid items-start lg:grid-cols-[minmax(0,1fr)_minmax(360px,440px)]">
+            <div>
               <div className="relative p-8 lg:p-10">
                 <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_74%_18%,rgba(139,92,246,.3),transparent_34%),radial-gradient(circle_at_12%_0%,rgba(79,157,255,.2),transparent_38%)]" />
                 <div className="relative">
@@ -335,13 +335,13 @@ export default function AcademyCoursePage() {
                   </div>
                 </div>
               </div>
-              <div className="self-start border-t border-white/[0.08] bg-gradient-to-br from-[#4F9DFF]/16 to-[#8B5CF6]/14 p-5 lg:border-l lg:border-t-0 lg:p-6">
+              <div className="border-t border-white/[0.08] bg-gradient-to-br from-[#4F9DFF]/16 to-[#8B5CF6]/14 p-5 sm:p-6">
                 {course.thumbnailUrl ? (
                   // eslint-disable-next-line @next/next/no-img-element
-                  <div className="flex aspect-[4/3] items-center justify-center overflow-hidden rounded-[18px] border border-white/10 bg-[#090B13]/70 shadow-[0_24px_70px_rgba(0,0,0,.28)]">
+                  <div className="mx-auto flex aspect-[16/7] max-h-[430px] items-center justify-center overflow-hidden rounded-[18px] border border-white/10 bg-[#090B13]/70 shadow-[0_24px_70px_rgba(0,0,0,.28)]">
                     <img src={course.thumbnailUrl} alt={`${course.title} course thumbnail`} className="h-full w-full object-contain" />
                   </div>
-                ) : <div className="flex aspect-[4/3] items-center justify-center rounded-[18px] border border-white/10 bg-[#090B13]/50"><GraduationCap className="h-16 w-16 text-white/30" /></div>}
+                ) : <div className="flex aspect-[16/7] max-h-[430px] items-center justify-center rounded-[18px] border border-white/10 bg-[#090B13]/50"><GraduationCap className="h-16 w-16 text-white/30" /></div>}
               </div>
             </div>
           </section>
