@@ -396,11 +396,52 @@ function LessonContent({ lesson }: { lesson: AcademyLessonDoc }) {
   const showVideo = (lesson.lessonType === "video" || lesson.lessonType === "mixed") && lesson.videoUrl;
   const showImages = (lesson.lessonType === "image" || lesson.lessonType === "mixed") && lesson.imageUrls?.length;
   const showWritten = (lesson.lessonType === "written" || lesson.lessonType === "mixed" || !showVideo && !showImages) && lesson.writtenContent;
+  const [videoReady, setVideoReady] = useState(false);
+  const [videoError, setVideoError] = useState("");
+
+  useEffect(() => {
+    setVideoReady(false);
+    setVideoError("");
+  }, [lesson.videoUrl, lesson.lessonId]);
+
   return (
     <div className="space-y-6">
       {showVideo ? (
         <div className="overflow-hidden rounded-[20px] border border-white/[0.08] bg-black">
-          <video src={lesson.videoUrl || undefined} controls className="aspect-video w-full" />
+          <div className="relative aspect-video w-full bg-black">
+            {!videoReady && !videoError ? (
+              <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-white/[0.03] via-white/[0.02] to-black text-sm text-white/50">
+                Loading video...
+              </div>
+            ) : null}
+            {videoError ? (
+              <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-black/90 p-6 text-center">
+                <p className="text-sm font-medium text-white">Video could not be displayed here.</p>
+                <a
+                  href={lesson.videoUrl || undefined}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="rounded-full border border-white/10 bg-white/[0.06] px-4 py-2 text-xs text-white/75 hover:bg-white/[0.1]"
+                >
+                  Open video in new tab
+                </a>
+              </div>
+            ) : null}
+            <video
+              key={lesson.videoUrl || lesson.lessonId}
+              src={lesson.videoUrl || undefined}
+              controls
+              preload="metadata"
+              playsInline
+              className="h-full w-full bg-black object-contain"
+              onLoadedData={() => setVideoReady(true)}
+              onCanPlay={() => setVideoReady(true)}
+              onError={() => {
+                setVideoReady(false);
+                setVideoError("Video playback failed.");
+              }}
+            />
+          </div>
         </div>
       ) : null}
       {showImages ? (
