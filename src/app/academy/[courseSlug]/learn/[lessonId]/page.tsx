@@ -495,9 +495,8 @@ function ActivityPrompt({ prompt }: { prompt: string }) {
 
   return (
     <div className="mt-3 rounded-[14px] border border-white/[0.06] bg-white/[0.025] p-3.5">
-      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#79B8FF]">Your prompt</p>
       {hasNumberedQuestions ? (
-        <ol className="mt-3 space-y-2.5">
+        <ol className="space-y-2.5">
           {questions.map((question, index) => {
             const clean = question.replace(/^\d+\.\s*/, "");
             return <li key={`${clean}-${index}`} className="flex gap-3 text-sm leading-6 text-[#D8DEEA]"><span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#5B5FFF]/20 text-[11px] font-semibold text-[#AEB4FF]">{index + 1}</span><span>{clean}</span></li>;
