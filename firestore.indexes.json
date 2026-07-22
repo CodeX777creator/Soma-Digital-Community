@@ -436,7 +436,7 @@
     },
     {
       "__comment": "Academy lesson discussions: supports lesson-level discussion replies ordered oldest first.",
-      "collectionGroup": "discussionReplies",
+      "collectionGroup": "academyDiscussionReplies",
       "queryScope": "COLLECTION",
       "fields": [
         { "fieldPath": "courseId", "order": "ASCENDING" },

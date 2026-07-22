@@ -31,11 +31,11 @@ function createContentSecurityPolicy(nonce: string): string {
     default-src 'self';
     script-src 'self' 'nonce-${nonce}' 'strict-dynamic'${devScriptPolicy} https://*.paypal.com https://www.paypal.com https://www.sandbox.paypal.com https://*.paystack.co https://js.stripe.com https://www.gstatic.com https://apis.google.com https://accounts.google.com;
     style-src 'self' 'unsafe-inline';
-    img-src 'self' blob: data: https:;
+    img-src 'self' blob: data: https: https://res.cloudinary.com;
     font-src 'self';
     connect-src 'self' https://*.googleapis.com https://*.firebaseio.com https://*.firebaseapp.com https://securetoken.googleapis.com https://identitytoolkit.googleapis.com https://*.cloudfunctions.net https://*.paypal.com https://www.paypal.com https://www.sandbox.paypal.com https://api.paystack.co https://api.moonshot.cn https://api.moonshot.ai wss://*.firebaseio.com;
     frame-src 'self' https://vercel.live/ https://*.firebaseapp.com https://*.web.app https://accounts.google.com https://apis.google.com https://*.paypal.com https://www.paypal.com https://www.sandbox.paypal.com https://*.paystack.co https://js.stripe.com;
-    media-src 'self' https://*.firebasestorage.app https://firebasestorage.googleapis.com;
+    media-src 'self' blob: https://*.firebasestorage.app https://firebasestorage.googleapis.com https://res.cloudinary.com;
     object-src 'none';
     base-uri 'self';
     form-action 'self';
