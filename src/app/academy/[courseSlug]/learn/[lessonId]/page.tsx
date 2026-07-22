@@ -294,7 +294,7 @@ export default function AcademyLessonPage() {
                       <h3 className="font-medium text-white">{activity.title}</h3>
                       <span className="rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1 text-xs text-white/45">{activity.manualReviewRequired ? "Manual review" : "Completion based"}</span>
                     </div>
-                    <p className="mt-2 text-sm leading-6 text-[#BFC6D4]">{activity.prompt}</p>
+                    <ActivityPrompt prompt={activity.prompt} />
                     <ActivityInput
                       activity={activity}
                       value={activityResponses[activity.activityId] || (activity.activityType === "checkboxes" ? [] : "")}
@@ -486,6 +486,26 @@ function inferVideoMimeType(url: string) {
   if (/\.webm(\?|$)/i.test(url)) return "video/webm";
   if (/\.mov(\?|$)/i.test(url)) return "video/quicktime";
   return "video/mp4";
+}
+
+function ActivityPrompt({ prompt }: { prompt: string }) {
+  const normalized = prompt.replace(/\s+/g, " ").trim();
+  const questions = normalized.split(/(?=\d+\.\s)/).map((item) => item.trim()).filter(Boolean);
+  const hasNumberedQuestions = questions.length > 1;
+
+  return (
+    <div className="mt-3 rounded-[14px] border border-white/[0.06] bg-white/[0.025] p-3.5">
+      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#79B8FF]">Your prompt</p>
+      {hasNumberedQuestions ? (
+        <ol className="mt-3 space-y-2.5">
+          {questions.map((question, index) => {
+            const clean = question.replace(/^\d+\.\s*/, "");
+            return <li key={`${clean}-${index}`} className="flex gap-3 text-sm leading-6 text-[#D8DEEA]"><span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#5B5FFF]/20 text-[11px] font-semibold text-[#AEB4FF]">{index + 1}</span><span>{clean}</span></li>;
+          })}
+        </ol>
+      ) : <p className="mt-2 text-sm leading-6 text-[#D8DEEA]">{normalized}</p>}
+    </div>
+  );
 }
 
 function ActivityInput({

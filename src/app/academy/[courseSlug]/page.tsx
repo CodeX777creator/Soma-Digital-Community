@@ -312,7 +312,7 @@ export default function AcademyCoursePage() {
                     {course.certificateEnabled ? <span className="rounded-full border border-emerald-400/20 bg-emerald-400/10 px-3 py-1 text-xs text-emerald-100">Certificate</span> : null}
                   </div>
                   <h1 className="mt-5 max-w-4xl text-4xl font-semibold tracking-tight text-white sm:text-5xl">{course.title}</h1>
-                  <p className="mt-4 max-w-3xl text-base leading-7 text-[#BFC6D4]">{course.description}</p>
+                   <CourseDescription text={course.description} />
                   <div className="mt-7 flex flex-wrap gap-3">
                     {enrollment ? (
                       <Link href={`/academy/${course.slug}/learn${firstLesson ? `/${firstLesson.lessonId}` : ""}`} className="inline-flex h-12 items-center gap-2 rounded-[16px] bg-gradient-to-r from-[#4F9DFF] via-[#5B5FFF] to-[#8B5CF6] px-5 text-sm font-semibold text-white shadow-[0_18px_45px_rgba(91,95,255,.28)]">
@@ -551,6 +551,27 @@ function formatSessionTime(value: unknown) {
   if (!value) return "TBD";
   const date = typeof value === "string" ? new Date(value) : value instanceof Date ? value : null;
   return date && !Number.isNaN(date.getTime()) ? date.toLocaleString() : String(value);
+}
+
+function CourseDescription({ text }: { text: string }) {
+  const normalized = text.replace(/\s+/g, " ").trim();
+  const sections = normalized.split(/\s+\*\s+/).map((item) => item.trim()).filter(Boolean);
+  const intro = sections.shift() || "";
+  const bullets = sections.length ? sections : [];
+
+  return (
+    <div className="mt-5 max-w-3xl space-y-4 text-base leading-7 text-[#BFC6D4]">
+      <p>{intro}</p>
+      {bullets.length ? (
+        <div className="rounded-[18px] border border-white/[0.08] bg-black/20 p-4">
+          <p className="mb-3 text-xs font-semibold uppercase tracking-[0.18em] text-[#79B8FF]">Inside this course</p>
+          <ul className="grid gap-2 sm:grid-cols-2">
+            {bullets.map((item, index) => <li key={`${item}-${index}`} className="flex gap-2 text-sm leading-6 text-[#D8DEEA]"><span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-[#8B5CF6]" />{item}</li>)}
+          </ul>
+        </div>
+      ) : null}
+    </div>
+  );
 }
 
 function buildCalendarUrl(session: AcademyLiveSessionDoc) {
