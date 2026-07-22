@@ -169,7 +169,7 @@ export const POST = createAPIHandler(async (req, context) => {
     },
     body: JSON.stringify({
       email: userEmail,
-      amount: priceCents * 100,
+      amount: priceCents,
       currency: course.currency,
       callback_url: callbackUrl,
       metadata: {
