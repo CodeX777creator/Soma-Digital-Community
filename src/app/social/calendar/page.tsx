@@ -1882,72 +1882,80 @@ export default function SocialCalendarPage() {
   };
 
   const handleMediaUpload = async (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
+    const files = Array.from(event.target.files || []);
     event.target.value = "";
-    if (!file || !user) return;
-
-    const isImage = file.type.startsWith("image/");
-    const isVideo = file.type.startsWith("video/");
-    if (!isImage && !isVideo) {
-      toast({
-        title: "Unsupported file",
-        description: "Upload an image or video file.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    const maxBytes = isImage ? IMAGE_UPLOAD_MAX_BYTES : VIDEO_UPLOAD_MAX_BYTES;
-    if (file.size > maxBytes) {
-      toast({
-        title: "File too large",
-        description: `${isImage ? "Images" : "Videos"} must be ${Math.round(maxBytes / 1024 / 1024)} MB or smaller.`,
-        variant: "destructive",
-      });
-      return;
-    }
-
-    if (isVideo && form.contentType !== "video") {
-      updateField("contentType", "video");
-    }
-    if (isImage && form.contentType === "video") {
-      updateField("contentType", "image");
-    }
+    if (!files.length || !user) return;
 
     try {
       setMediaUploading(true);
       const idToken = await user.getIdToken();
-      const payload = new FormData();
-      payload.append("file", file);
-      payload.append("title", file.name.replace(/\.[^.]+$/, ""));
+      const uploadedIds: string[] = [];
 
-      const response = await fetch("/api/ai/studio/assets/upload", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${idToken}`,
-        },
-        body: payload,
-      });
+      for (const file of files) {
+        const isImage = file.type.startsWith("image/");
+        const isVideo = file.type.startsWith("video/");
+        if (!isImage && !isVideo) {
+          toast({
+            title: "Unsupported file",
+            description: "Upload image or video files only.",
+            variant: "destructive",
+          });
+          continue;
+        }
 
-      if (!response.ok) {
-        throw await parseApiError(response, "Upload failed.");
+        const maxBytes = isImage ? IMAGE_UPLOAD_MAX_BYTES : VIDEO_UPLOAD_MAX_BYTES;
+        if (file.size > maxBytes) {
+          toast({
+            title: "File too large",
+            description: `${isImage ? "Images" : "Videos"} must be ${Math.round(maxBytes / 1024 / 1024)} MB or smaller.`,
+            variant: "destructive",
+          });
+          continue;
+        }
+
+        if (isVideo && form.contentType !== "video") {
+          updateField("contentType", "video");
+        }
+        if (isImage && form.contentType === "video") {
+          updateField("contentType", "image");
+        }
+
+        const payload = new FormData();
+        payload.append("file", file);
+        payload.append("title", file.name.replace(/\.[^.]+$/, ""));
+
+        const response = await fetch("/api/ai/studio/assets/upload", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${idToken}`,
+          },
+          body: payload,
+        });
+
+        if (!response.ok) {
+          throw await parseApiError(response, "Upload failed.");
+        }
+
+        const data = (await response.json()) as StudioAssetUploadResponse;
+        uploadedIds.push(data.asset.assetId);
+        setStudioAssets((current) => [data.asset, ...current.filter((asset) => asset.assetId !== data.asset.assetId)]);
       }
 
-      const data = (await response.json()) as StudioAssetUploadResponse;
-      setStudioAssets((current) => [data.asset, ...current.filter((asset) => asset.assetId !== data.asset.assetId)]);
-      setForm((current) => {
-        const assetIds = splitAssetIds(current.assetIds);
-        const nextIds = assetIds.includes(data.asset.assetId) ? assetIds : [...assetIds, data.asset.assetId];
-        return {
-          ...current,
-          assetIds: nextIds.join(", "),
-        };
-      });
+      if (uploadedIds.length > 0) {
+        setForm((current) => {
+          const assetIds = splitAssetIds(current.assetIds);
+          const nextIds = Array.from(new Set([...assetIds, ...uploadedIds]));
+          return {
+            ...current,
+            assetIds: nextIds.join(", "),
+          };
+        });
 
-      toast({
-        title: "Media uploaded",
-        description: "The asset has been attached to this scheduled post.",
-      });
+        toast({
+          title: "Media uploaded",
+          description: `${uploadedIds.length} asset${uploadedIds.length === 1 ? "" : "s"} attached to this scheduled post.`,
+        });
+      }
     } catch (error) {
       showErrorToast(toast, error, {
         title: "Upload failed",
@@ -3755,6 +3763,7 @@ export default function SocialCalendarPage() {
                               {mediaUploading ? "Uploading" : "Choose file"}
                               <input
                                 type="file"
+                                multiple
                                 accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/webm,video/quicktime"
                                 className="sr-only"
                                 disabled={mediaUploading}

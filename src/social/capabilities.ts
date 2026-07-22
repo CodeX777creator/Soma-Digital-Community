@@ -23,14 +23,14 @@ export interface PlatformCapability {
 
 export const PLATFORM_CAPABILITIES: Record<SocialPlatform, PlatformCapability> = {
   tiktok: {
-    supportedContentTypes: ['video'],
+    supportedContentTypes: ['image', 'carousel', 'video'],
     mediaRequired: true,
-    maxAssets: 1,
-    supportedAssetKinds: ['video'],
+    maxAssets: 10,
+    supportedAssetKinds: ['image', 'video'],
     maxCaptionLength: 2200,
     supportsHashtags: true,
     supportsCTA: true,
-    preferredAspectRatios: ['9:16'],
+    preferredAspectRatios: ['1:1', '4:5', '9:16'],
   },
   instagram: {
     supportedContentTypes: ['image', 'carousel', 'video'],
