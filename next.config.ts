@@ -85,6 +85,10 @@ const nextConfig: NextConfig = {
             key: 'Permissions-Policy',
             value: 'camera=(), microphone=(), geolocation=(), interest-cohort=()',
           },
+          {
+            key: 'Content-Security-Policy',
+            value: "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://accounts.google.com https://www.gstatic.com https://www.googletagmanager.com https://www.google-analytics.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob: https://placehold.co https://images.unsplash.com https://picsum.photos https://firebasestorage.googleapis.com https://*.firebasestorage.app https://res.cloudinary.com; media-src 'self' blob: https://firebasestorage.googleapis.com https://*.firebasestorage.app https://res.cloudinary.com; connect-src 'self' https://firestore.googleapis.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://www.googleapis.com https://api.openai.com https://ai-gateway.vercel.sh https://res.cloudinary.com https://firebasestorage.googleapis.com https://*.firebasestorage.app; font-src 'self' https://fonts.gstatic.com data:; frame-src 'self' https://accounts.google.com https://www.google.com; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none';",
+          },
         ],
       },
       {

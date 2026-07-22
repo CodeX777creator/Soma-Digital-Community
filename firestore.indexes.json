@@ -424,6 +424,28 @@
       ]
     },
     {
+      "__comment": "Academy lesson discussions: supports per-lesson discussion feeds ordered newest first.",
+      "collectionGroup": "academyLessonDiscussions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "courseId", "order": "ASCENDING" },
+        { "fieldPath": "lessonId", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "__comment": "Academy lesson discussions: supports lesson-level discussion replies ordered oldest first.",
+      "collectionGroup": "discussionReplies",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "courseId", "order": "ASCENDING" },
+        { "fieldPath": "lessonId", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "ASCENDING" }
+      ]
+    },
+    {
       "__comment": "Academy MRR gate: supports active certificate lookup by userId, courseId, and status.",
       "collectionGroup": "academyCertificates",
       "queryScope": "COLLECTION",

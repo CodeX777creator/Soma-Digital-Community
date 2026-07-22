@@ -434,7 +434,6 @@ function LessonContent({ lesson }: { lesson: AcademyLessonDoc }) {
               controls
               preload="auto"
               playsInline
-              crossOrigin="anonymous"
               className="h-full w-full bg-black object-contain"
               onLoadedData={() => setVideoReady(true)}
               onCanPlay={() => setVideoReady(true)}
