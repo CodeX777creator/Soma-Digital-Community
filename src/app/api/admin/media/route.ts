@@ -11,6 +11,7 @@ import {
   type AdminMediaAsset,
 } from "@/admin/media";
 import { writeAdminAuditLog } from "@/admin/audit";
+import { optimizeUploadedMedia } from "@/lib/media-optimization";
 
 const ALLOWED_TYPES = [
   /^image\/(png|jpe?g|webp|gif|svg\+xml)$/i,
@@ -121,6 +122,7 @@ async function uploadMedia(req: Request, adminId: string) {
   const linkedEntityId = String(form.get("linkedEntityId") || "");
   const altText = String(form.get("altText") || "");
   const caption = String(form.get("caption") || "");
+  const optimizationProfile = String(form.get("optimizationProfile") || "standard") as "standard" | "high_quality" | "aggressive";
   const contentType = uploadedFile.type || "application/octet-stream";
   const kind = getAdminMediaKind(contentType, uploadedFile.name);
 
@@ -139,14 +141,31 @@ async function uploadMedia(req: Request, adminId: string) {
   const assetRef = adminDb.collection("adminMediaAssets").doc();
   const safeName = sanitizeAdminFileName(uploadedFile.name);
   const root = contextRoot(usageContext, linkedEntityId);
-  const storagePath = `${root}/${assetRef.id}/${Date.now()}-${safeName}`;
+  const originalBuffer = Buffer.from(await uploadedFile.arrayBuffer());
+  const baseName = `${Date.now()}-${safeName.replace(/\.[^.]+$/, "")}`;
+  const optimization = kind === "image" || kind === "video"
+      ? await optimizeUploadedMedia({
+          buffer: originalBuffer,
+          mimeType: contentType,
+          fileName: uploadedFile.name,
+          kind,
+          profile: optimizationProfile,
+        })
+      : null;
+  const storageMimeType = optimization?.mimeType || contentType;
+  const storageExtension = optimization?.extension || safeName.split(".").pop() || "bin";
+  const storagePath = `${root}/${assetRef.id}/${baseName}.${storageExtension}`;
   const token = crypto.randomUUID();
   const bucket = adminStorage.bucket();
-  const buffer = Buffer.from(await uploadedFile.arrayBuffer());
+  const buffer = optimization?.buffer || originalBuffer;
+  const posterStoragePath = kind === "video" && optimization?.thumbnail
+    ? `${root}/${assetRef.id}/${baseName}-poster.${optimization.thumbnailExtension || "jpg"}`
+    : null;
+  const posterToken = posterStoragePath ? crypto.randomUUID() : null;
 
   await bucket.file(storagePath).save(buffer, {
     resumable: false,
-    contentType,
+    contentType: storageMimeType,
     metadata: {
       metadata: {
         firebaseStorageDownloadTokens: token,
@@ -154,25 +173,48 @@ async function uploadMedia(req: Request, adminId: string) {
         usageContext,
         linkedEntityType,
         linkedEntityId,
+        originalFileName: uploadedFile.name,
+        originalSizeBytes: String(uploadedFile.size),
+        optimizedSizeBytes: String(buffer.length),
+        optimizationMode: optimization?.optimizationMode || "passthrough",
+        optimizationProfile,
       },
     },
   });
 
   const downloadUrl = publicDownloadUrl(bucket.name, storagePath, token);
+  let thumbnailUrl: string | null = kind === "image" ? downloadUrl : null;
+  if (posterStoragePath && optimization?.thumbnail && posterToken) {
+    await bucket.file(posterStoragePath).save(optimization.thumbnail, {
+      resumable: false,
+      contentType: optimization.thumbnailMimeType || "image/jpeg",
+      metadata: {
+        metadata: {
+          firebaseStorageDownloadTokens: posterToken,
+          uploadedBy: adminId,
+          usageContext,
+          linkedEntityType,
+          linkedEntityId,
+          variant: "poster",
+        },
+      },
+    });
+    thumbnailUrl = publicDownloadUrl(bucket.name, posterStoragePath, posterToken);
+  }
   const now = FieldValue.serverTimestamp();
   const asset: AdminMediaAsset = {
     assetId: assetRef.id,
     source: "upload",
     kind,
     fileName: uploadedFile.name,
-    contentType,
-    sizeBytes: uploadedFile.size,
+    contentType: storageMimeType,
+    sizeBytes: buffer.length,
     width: null,
     height: null,
-    durationSeconds: null,
+    durationSeconds: optimization?.durationSeconds ?? null,
     storagePath,
     downloadUrl,
-    thumbnailUrl: kind === "image" ? downloadUrl : null,
+    thumbnailUrl,
     altText,
     caption,
     usageContext,
@@ -190,7 +232,7 @@ async function uploadMedia(req: Request, adminId: string) {
     action: "admin_media_uploaded",
     entityType: "adminMediaAsset",
     entityId: assetRef.id,
-    metadata: { usageContext, linkedEntityType, linkedEntityId, kind, sizeBytes: uploadedFile.size, storagePath },
+    metadata: { usageContext, linkedEntityType, linkedEntityId, kind, sizeBytes: buffer.length, originalSizeBytes: uploadedFile.size, storagePath, optimizationMode: optimization?.optimizationMode || "passthrough", optimizationProfile },
   });
 
   return apiResponse({ asset }, { status: 201 });

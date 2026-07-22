@@ -2,6 +2,7 @@ import { apiError, apiResponse, createAPIHandler } from '@/lib/api-middleware';
 import { admin, adminDb, adminStorage } from '@/lib/firebaseAdmin';
 import { requireSubscription } from '@/lib/serverAuth';
 import { sanitizeString } from '@/lib/security';
+import { optimizeUploadedMedia } from '@/lib/media-optimization';
 
 const IMAGE_MAX_BYTES = 10 * 1024 * 1024;
 const VIDEO_MAX_BYTES = 100 * 1024 * 1024;
@@ -90,21 +91,35 @@ const handler = createAPIHandler(
       ? sanitizeString(titleInput, 160)
       : sanitizeString(file.name.replace(/\.[^.]+$/, ''), 160) || `${kind} upload`;
     const assetId = createAssetId(kind);
-    const extension = getExtension(file.name, mimeType);
+    const optimizationProfile = kind === 'video' ? 'high_quality' : 'standard';
+    const originalBuffer = Buffer.from(await file.arrayBuffer());
+    const optimization = await optimizeUploadedMedia({
+      buffer: originalBuffer,
+      mimeType,
+      fileName: file.name,
+      kind,
+      profile: optimizationProfile,
+    });
+    const extension = optimization.extension || getExtension(file.name, mimeType);
     const storagePath = `studio/uploads/${entitlements.uid}/${kind}/${assetId}.${extension}`;
-    const buffer = Buffer.from(await file.arrayBuffer());
+    const buffer = optimization.buffer || originalBuffer;
     const bucket = adminStorage.bucket();
     const bucketFile = bucket.file(storagePath);
     const downloadToken = crypto.randomUUID();
 
     await bucketFile.save(buffer, {
       metadata: {
-        contentType: mimeType,
+        contentType: optimization.mimeType || mimeType,
         metadata: {
           ownerId: entitlements.uid,
           assetId,
           source: 'uploaded',
           firebaseStorageDownloadTokens: downloadToken,
+          originalFileName: file.name,
+          originalSizeBytes: String(file.size),
+          optimizedSizeBytes: String(buffer.length),
+          optimizationMode: optimization.optimizationMode,
+          optimizationProfile,
         },
       },
       resumable: false,
@@ -122,13 +137,13 @@ const handler = createAPIHandler(
       prompt: 'Uploaded media asset',
       promptVersion: 'uploaded-v1',
       storagePath,
-      thumbnail: kind === 'image' ? downloadUrl : '',
+      thumbnail: kind === 'image' ? downloadUrl : optimization.thumbnail ? '' : '',
       posterFrameUrl: kind === 'video' ? '' : undefined,
       provider: 'user-upload',
       model: 'manual-upload',
-      mimeType,
+      mimeType: optimization.mimeType || mimeType,
       fileName: sanitizeString(file.name, 180),
-      fileSizeBytes: file.size,
+      fileSizeBytes: buffer.length,
       visibility: 'private',
       tags: ['uploaded'],
       checksum: '',
@@ -138,6 +153,10 @@ const handler = createAPIHandler(
       metadata: {
         source: 'uploaded',
         uploadedAt: Date.now(),
+        optimizationMode: optimization.optimizationMode,
+        optimizationProfile,
+        originalSizeBytes: file.size,
+        optimizedSizeBytes: buffer.length,
       },
       createdAt: now,
       updatedAt: now,
@@ -156,7 +175,7 @@ const handler = createAPIHandler(
         status: 'completed',
         thumbnail: kind === 'image' ? downloadUrl : undefined,
         downloadUrl,
-        mimeType,
+        mimeType: optimization.mimeType || mimeType,
       },
       limits: {
         imageMaxBytes: IMAGE_MAX_BYTES,
