@@ -58,6 +58,7 @@ export default function MyRoadmap() {
   const [generationError, setGenerationError] = useState<string | null>(null);
   const [roadmapGoal, setRoadmapGoal] = useState("");
   const [activeTab, setActiveTab] = useState<'overview' | 'plan' | 'strategy'>('overview');
+  const [autoGenerateAttempted, setAutoGenerateAttempted] = useState(false);
 
   useEffect(() => {
     if (!user?.uid || !db) {
@@ -126,6 +127,34 @@ export default function MyRoadmap() {
       setGenerating(false);
     }
   };
+
+  useEffect(() => {
+    if (loading || generating || roadmap || autoGenerateAttempted) return;
+
+    const fallbackGoal = [
+      userData?.goal,
+      userData?.businessGoal,
+      userData?.businessGoals,
+      userData?.selectedIdentity,
+      userData?.skillLevel ? `Skill level: ${userData.skillLevel}` : "",
+    ].filter(Boolean).join("\n");
+
+    if (!fallbackGoal.trim()) return;
+
+    setAutoGenerateAttempted(true);
+    setRoadmapGoal(fallbackGoal);
+    void handleGenerateRoadmap();
+  }, [
+    autoGenerateAttempted,
+    generating,
+    loading,
+    roadmap,
+    userData?.businessGoal,
+    userData?.businessGoals,
+    userData?.goal,
+    userData?.selectedIdentity,
+    userData?.skillLevel,
+  ]);
 
   return (
     <ProtectedRoute>

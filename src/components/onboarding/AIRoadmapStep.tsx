@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { useOnboardingStore } from "@/store/useOnboardingStore";
 import { BrainCircuit, ChevronLeft } from "lucide-react";
 import { trackOnboardingEvent } from "@/lib/onboarding-events";
+import { auth } from "@/lib/firebase";
+import { dbService } from "@/lib/db";
 
 const ROADMAP_CACHE_PREFIX = "sdc-onboarding-roadmap:";
 
@@ -42,10 +44,42 @@ function buildFallbackRoadmap(goalsText: string) {
   };
 }
 
+async function persistRoadmapDraft(roadmap: unknown) {
+  const user = auth?.currentUser;
+  if (!user || !roadmap) return;
+
+  try {
+    await dbService.saveRoadmap(user.uid, roadmap);
+  } catch (error) {
+    console.error("Non-critical roadmap draft save failed:", error);
+  }
+}
+
 export function AIRoadmapStep() {
   const { identities, goal, skillLevel, interests, plan, roadmap, setRoadmap, nextStep, prevStep } = useOnboardingStore();
   const [isSynthesizing, setIsSynthesizing] = useState(true);
+  const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "saved-local">("idle");
   const hasStarted = useRef(false);
+
+  async function saveRoadmapDraft(roadmapDraft: unknown, mode: "remote" | "local") {
+    if (!roadmapDraft) return;
+
+    if (mode === "remote") {
+      const user = auth?.currentUser;
+      if (!user) return;
+
+      try {
+        setSaveState("saving");
+        await dbService.saveRoadmap(user.uid, roadmapDraft);
+        setSaveState("saved");
+      } catch (error) {
+        console.error("Non-critical roadmap draft save failed:", error);
+      }
+      return;
+    }
+
+    setSaveState((current) => (current === "saved" ? current : "saved-local"));
+  }
 
   useEffect(() => {
     if (hasStarted.current) return;
@@ -80,6 +114,7 @@ export function AIRoadmapStep() {
         if (cached) {
           const parsed = JSON.parse(cached);
           setRoadmap(parsed);
+          void saveRoadmapDraft(parsed, auth?.currentUser ? "remote" : "local");
           timeoutId = setTimeout(() => {
             if (!isActive) return;
             setIsSynthesizing(false);
@@ -99,6 +134,7 @@ export function AIRoadmapStep() {
           if (response.status === 429) {
             const fallback = buildFallbackRoadmap(goalsText);
             setRoadmap(fallback);
+            void saveRoadmapDraft(fallback, auth?.currentUser ? "remote" : "local");
             if (typeof window !== "undefined") {
               window.localStorage.setItem(cacheKey, JSON.stringify(fallback));
             }
@@ -117,6 +153,7 @@ export function AIRoadmapStep() {
         if (!isActive) return;
 
         setRoadmap(res);
+        void saveRoadmapDraft(res, auth?.currentUser ? "remote" : "local");
         if (typeof window !== "undefined") {
           window.localStorage.setItem(cacheKey, JSON.stringify(res));
         }
@@ -168,6 +205,13 @@ export function AIRoadmapStep() {
       <div className="space-y-2 text-center">
          <p className="text-primary font-bold uppercase tracking-[0.3em] text-sm animate-pulse">Creating Your Plan</p>
          <p className="text-muted-foreground text-sm italic">Our AI is creating your custom {plan} roadmap...</p>
+         {saveState === "saving" ? (
+           <p className="text-xs text-cyan-300/80">Saving roadmap to your profile...</p>
+         ) : saveState === "saved" ? (
+           <p className="text-xs text-emerald-300/80">Roadmap saved to your profile.</p>
+         ) : saveState === "saved-local" ? (
+           <p className="text-xs text-amber-300/80">Roadmap saved locally and will sync when your account is ready.</p>
+         ) : null}
       </div>
     </div>
   );
