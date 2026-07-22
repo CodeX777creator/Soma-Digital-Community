@@ -305,8 +305,12 @@ export default function AcademyCoursePage() {
               <div className="border-b border-white/[0.08] bg-gradient-to-br from-[#4F9DFF]/18 to-[#8B5CF6]/14 p-4 sm:p-5 lg:border-b-0 lg:border-r">
                 {course.thumbnailUrl ? (
                   // eslint-disable-next-line @next/next/no-img-element
-                  <div className="flex h-full min-h-[220px] overflow-hidden rounded-[20px] border border-white/10 bg-[#090B13]/70 shadow-[0_24px_70px_rgba(0,0,0,.28)]">
-                    <img src={course.thumbnailUrl} alt={`${course.title} course thumbnail`} className="h-full w-full object-cover" />
+                  <div className="flex min-h-[220px] items-center justify-center overflow-hidden rounded-[20px] border border-white/10 bg-[#090B13]/70 p-3 shadow-[0_24px_70px_rgba(0,0,0,.28)]">
+                    <img
+                      src={course.thumbnailUrl}
+                      alt={`${course.title} course thumbnail`}
+                      className="h-auto w-auto max-h-[440px] max-w-full rounded-[14px] object-contain"
+                    />
                   </div>
                 ) : (
                   <div className="flex min-h-[220px] items-center justify-center rounded-[20px] border border-white/10 bg-[#090B13]/50">
