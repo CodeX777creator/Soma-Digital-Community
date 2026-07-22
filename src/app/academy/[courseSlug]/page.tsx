@@ -301,9 +301,22 @@ export default function AcademyCoursePage() {
           {notice ? <div className="rounded-[18px] border border-emerald-400/20 bg-emerald-400/10 p-4 text-sm text-emerald-50">{notice}</div> : null}
           {error ? <div className="rounded-[18px] border border-red-400/20 bg-red-400/10 p-4 text-sm text-red-100">{error}</div> : null}
           <section className="overflow-hidden rounded-[22px] border border-white/[0.08] bg-[#151A2E]/75 shadow-[0_30px_90px_rgba(0,0,0,0.36)]">
-            <div>
-              <div className="relative p-8 lg:p-10">
-                <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_74%_18%,rgba(139,92,246,.3),transparent_34%),radial-gradient(circle_at_12%_0%,rgba(79,157,255,.2),transparent_38%)]" />
+            <div className="grid items-stretch lg:grid-cols-[minmax(0,clamp(320px,38vw,540px))_minmax(0,1fr)]">
+              <div className="border-b border-white/[0.08] bg-gradient-to-br from-[#4F9DFF]/18 to-[#8B5CF6]/14 p-4 sm:p-5 lg:border-b-0 lg:border-r">
+                {course.thumbnailUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <div className="flex h-full min-h-[220px] overflow-hidden rounded-[20px] border border-white/10 bg-[#090B13]/70 shadow-[0_24px_70px_rgba(0,0,0,.28)]">
+                    <img src={course.thumbnailUrl} alt={`${course.title} course thumbnail`} className="h-full w-full object-cover" />
+                  </div>
+                ) : (
+                  <div className="flex min-h-[220px] items-center justify-center rounded-[20px] border border-white/10 bg-[#090B13]/50">
+                    <GraduationCap className="h-16 w-16 text-white/30" />
+                  </div>
+                )}
+              </div>
+
+              <div className="relative p-8 sm:p-10 lg:p-12">
+                <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_74%_18%,rgba(139,92,246,.25),transparent_34%),radial-gradient(circle_at_12%_0%,rgba(79,157,255,.18),transparent_38%)]" />
                 <div className="relative">
                   <div className="flex flex-wrap gap-2">
                     <span className="rounded-full border border-cyan-400/20 bg-cyan-400/10 px-3 py-1 text-xs text-cyan-100">{course.category}</span>
@@ -312,7 +325,7 @@ export default function AcademyCoursePage() {
                     {course.certificateEnabled ? <span className="rounded-full border border-emerald-400/20 bg-emerald-400/10 px-3 py-1 text-xs text-emerald-100">Certificate</span> : null}
                   </div>
                   <h1 className="mt-5 max-w-4xl text-4xl font-semibold tracking-tight text-white sm:text-5xl">{course.title}</h1>
-                   <CourseDescription text={course.description} />
+                  <CourseDescription text={course.description} />
                   <div className="mt-7 flex flex-wrap gap-3">
                     {enrollment ? (
                       <Link href={`/academy/${course.slug}/learn${firstLesson ? `/${firstLesson.lessonId}` : ""}`} className="inline-flex h-12 items-center gap-2 rounded-[16px] bg-gradient-to-r from-[#4F9DFF] via-[#5B5FFF] to-[#8B5CF6] px-5 text-sm font-semibold text-white shadow-[0_18px_45px_rgba(91,95,255,.28)]">
@@ -334,14 +347,6 @@ export default function AcademyCoursePage() {
                     <Link href="/academy" className="inline-flex h-12 items-center gap-2 rounded-[16px] border border-white/[0.08] bg-white/[0.04] px-5 text-sm text-white/75 hover:bg-white/[0.08]">Browse Academy</Link>
                   </div>
                 </div>
-              </div>
-              <div className="border-t border-white/[0.08] bg-gradient-to-br from-[#4F9DFF]/16 to-[#8B5CF6]/14 p-5 sm:p-6">
-                {course.thumbnailUrl ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <div className="mx-auto flex aspect-[16/7] max-h-[430px] items-center justify-center overflow-hidden rounded-[18px] border border-white/10 bg-[#090B13]/70 shadow-[0_24px_70px_rgba(0,0,0,.28)]">
-                    <img src={course.thumbnailUrl} alt={`${course.title} course thumbnail`} className="h-full w-full object-contain" />
-                  </div>
-                ) : <div className="flex aspect-[16/7] max-h-[430px] items-center justify-center rounded-[18px] border border-white/10 bg-[#090B13]/50"><GraduationCap className="h-16 w-16 text-white/30" /></div>}
               </div>
             </div>
           </section>
