@@ -70,6 +70,7 @@ export default function AcademyLessonPage() {
   useEffect(() => { void load(); }, [courseSlug]);
 
   const loadInteractions = async () => {
+    if (!auth?.currentUser) return;
     try {
       const [discussionPayload, tutorPayload] = await Promise.all([
         academyFetch(`/api/academy/${courseSlug}/lessons/${lessonId}/discussions`),
@@ -82,7 +83,7 @@ export default function AcademyLessonPage() {
     }
   };
 
-  useEffect(() => { void loadInteractions(); }, [courseSlug, lessonId]);
+  useEffect(() => { void loadInteractions(); }, [courseSlug, lessonId, auth?.currentUser?.uid]);
 
   const lesson = bundle?.lessons.find((item) => item.lessonId === lessonId) || null;
   const topic = lesson ? bundle?.topics.find((item) => item.topicId === lesson.topicId) : null;
@@ -432,8 +433,11 @@ function LessonContent({ lesson }: { lesson: AcademyLessonDoc }) {
               ref={videoRef}
               key={lesson.videoUrl || lesson.lessonId}
               controls
-              preload="auto"
+              preload="metadata"
               playsInline
+              controlsList="nodownload noplaybackrate noremoteplayback"
+              disablePictureInPicture
+              disableRemotePlayback
               className="h-full w-full bg-black object-contain"
               onLoadedData={() => setVideoReady(true)}
               onCanPlay={() => setVideoReady(true)}
