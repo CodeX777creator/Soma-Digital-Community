@@ -531,8 +531,18 @@
         { "fieldPath": "status", "order": "ASCENDING" },
         { "fieldPath": "kind", "order": "ASCENDING" },
         { "fieldPath": "createdAt", "order": "DESCENDING" }
+    {
+      "collectionGroup": "discussionReplies",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "courseId", "order": "ASCENDING" },
+        { "fieldPath": "lessonId", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "ASCENDING" }
       ]
     }
+  ]
+}
   ],
   "fieldOverrides": []
 }
