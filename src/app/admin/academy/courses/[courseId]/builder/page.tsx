@@ -126,6 +126,7 @@ export default function AcademyCourseBuilderPage() {
     title: "",
     prompt: "",
     activityType: "reflection" as AcademyActivityType,
+    qAndAEnabled: false,
     options: "",
     required: true,
     manualReviewRequired: false,
@@ -704,7 +705,14 @@ export default function AcademyCourseBuilderPage() {
               <Field label="Prompt"><textarea required rows={4} className="academy-input resize-none" value={activityForm.prompt} onChange={(event) => setActivityForm({ ...activityForm, prompt: event.target.value })} placeholder="Tell learners exactly what to do." /></Field>
               <div className="grid grid-cols-2 gap-3">
                 <Field label="Type">
-                    <select className="academy-input" value={activityForm.activityType} onChange={(event) => setActivityForm({ ...activityForm, activityType: event.target.value as AcademyActivityType })}>
+                  <select className="academy-input" value={activityForm.activityType} onChange={(event) => {
+                    const activityType = event.target.value as AcademyActivityType;
+                    setActivityForm({
+                      ...activityForm,
+                      activityType,
+                      qAndAEnabled: activityType === "q_and_a",
+                    });
+                  }}>
                       <option value="reflection">Reflection</option>
                       <option value="short_text">Short text</option>
                       <option value="long_text">Long text</option>
@@ -723,6 +731,15 @@ export default function AcademyCourseBuilderPage() {
                   <textarea rows={5} className="academy-input resize-none" value={activityForm.options} onChange={(event) => setActivityForm({ ...activityForm, options: event.target.value })} placeholder="One option per line. Prefix correct answers with *" />
                 </Field>
               ) : null}
+              <Check
+                label="Use Q&A flow"
+                checked={activityForm.qAndAEnabled}
+                onChange={(checked) => setActivityForm({
+                  ...activityForm,
+                  qAndAEnabled: checked,
+                  activityType: checked ? "q_and_a" : activityForm.activityType === "q_and_a" ? "reflection" : activityForm.activityType,
+                })}
+              />
               <div className="grid gap-2 sm:grid-cols-2">
                 <Check label="Required before completion" checked={activityForm.required} onChange={(checked) => setActivityForm({ ...activityForm, required: checked })} />
                 <Check label="Requires manual review" checked={activityForm.manualReviewRequired} onChange={(checked) => setActivityForm({ ...activityForm, manualReviewRequired: checked })} />
@@ -989,7 +1006,13 @@ function EditableActivity({
           <Field label="Prompt"><textarea rows={3} className="academy-input resize-none" value={form.prompt} onChange={(e) => setForm({ ...form, prompt: e.target.value })} /></Field>
           <div className="grid grid-cols-2 gap-2">
             <Field label="Type">
-              <select className="academy-input" value={form.activityType} onChange={(e) => setForm({ ...form, activityType: e.target.value as AcademyActivityType })}>
+              <select className="academy-input" value={form.activityType} onChange={(e) => {
+                const activityType = e.target.value as AcademyActivityType;
+                setForm({
+                  ...form,
+                  activityType,
+                });
+              }}>
                 {["reflection","short_text","long_text","q_and_a","multiple_choice","checkboxes","file_upload","link_submission","project_submission"].map((t) => <option key={t} value={t}>{t}</option>)}
               </select>
             </Field>
@@ -1000,6 +1023,11 @@ function EditableActivity({
               <textarea rows={4} className="academy-input resize-none" value={form.options} onChange={(e) => setForm({ ...form, options: e.target.value })} placeholder="Option A&#10;*Correct option&#10;Option C" />
             </Field>
           )}
+          <Check
+            label="Use Q&A flow"
+            checked={form.activityType === "q_and_a"}
+            onChange={(checked) => setForm({ ...form, activityType: checked ? "q_and_a" : "reflection" as AcademyActivityType })}
+          />
           <div className="grid grid-cols-2 gap-2">
             <Check label="Required" checked={form.required} onChange={(v) => setForm({ ...form, required: v })} />
             <Check label="Manual review" checked={form.manualReviewRequired} onChange={(v) => setForm({ ...form, manualReviewRequired: v })} />

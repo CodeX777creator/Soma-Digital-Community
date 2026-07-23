@@ -288,6 +288,7 @@ export default function AcademyCoursePage() {
   const resellerLinkUrl = String(resellerLink?.url || "");
   const firstLesson = bundle.lessons.find((lesson) => lesson.status === "published");
   const unlockedTopics = new Set((bundle.progress || []).filter((item) => item.unlocked && item.topicId && !item.lessonId).map((item) => item.topicId as string));
+  const completedLessons = new Set((bundle.progress || []).filter((item) => item.lessonId && item.completed).map((item) => item.lessonId as string));
   const passedTopics = new Set((bundle.quizAttempts || []).filter((attempt) => attempt.passed).map((attempt) => attempt.topicId));
   const attendanceBySession = new Map((bundle.sessionAttendance || []).map((attendance) => [attendance.liveSessionId, attendance]));
   const liveSessions = (bundle.liveSessions || []).filter((session) => session.status !== "cancelled");
@@ -488,6 +489,7 @@ export default function AcademyCoursePage() {
                 const topicUnlocked = !enrollment || index === 0 || unlockedTopics.has(topic.topicId);
                 const quizPassed = passedTopics.has(topic.topicId);
                 const drip = dripByTopic.get(topic.topicId);
+                const topicLessons = (lessonsByTopic.get(topic.topicId) || []).slice().sort((a, b) => a.sortOrder - b.sortOrder);
                 const lockCopy = topicUnlocked ? "Available now" : drip?.unlockCondition === "date_based" && drip.availableAt ? `Locked until ${formatSessionTime(drip.availableAt)}` : drip?.unlockCondition === "manual_approval" ? "Waiting for review" : drip?.unlockCondition === "cohort_schedule" ? "Available in your cohort schedule" : "Complete the previous unlock step";
                 return (
                 <div key={topic.topicId} className="rounded-[18px] border border-white/[0.08] bg-[#090B13]/55 p-4">
@@ -501,12 +503,26 @@ export default function AcademyCoursePage() {
                     {!topicUnlocked ? <Lock className="h-4 w-4 text-[#7E8799]" /> : quizPassed ? <CheckCircle2 className="h-4 w-4 text-[#22C55E]" /> : null}
                   </div>
                   <div className="mt-4 space-y-2">
-                    {(lessonsByTopic.get(topic.topicId) || []).map((lesson) => (
-                      <Link key={lesson.lessonId} href={enrollment && topicUnlocked ? `/academy/${course.slug}/learn/${lesson.lessonId}` : "#"} className="flex items-center justify-between gap-3 rounded-[14px] border border-white/[0.06] bg-white/[0.03] px-3 py-3 text-sm text-[#BFC6D4] transition hover:bg-white/[0.06]">
-                        <span>{lesson.title}</span>
-                        <span className="rounded-full border border-white/10 bg-black/20 px-2 py-1 text-xs">{lesson.lessonType}</span>
-                      </Link>
-                    ))}
+                    {topicLessons.map((lesson, lessonIndex) => {
+                      const lessonUnlocked = topicUnlocked && (lessonIndex === 0 || completedLessons.has(topicLessons[lessonIndex - 1]?.lessonId));
+                      return (
+                        <Link
+                          key={lesson.lessonId}
+                          href={enrollment && lessonUnlocked ? `/academy/${course.slug}/learn/${lesson.lessonId}` : "#"}
+                          className={`flex items-center justify-between gap-3 rounded-[14px] border px-3 py-3 text-sm transition ${
+                            lessonUnlocked
+                              ? "border-white/[0.06] bg-white/[0.03] text-[#BFC6D4] hover:bg-white/[0.06]"
+                              : "border-white/[0.05] bg-black/20 text-white/35"
+                          }`}
+                        >
+                          <span>{lesson.title}</span>
+                          <span className="flex items-center gap-2">
+                            <span className="rounded-full border border-white/10 bg-black/20 px-2 py-1 text-xs">{lesson.lessonType}</span>
+                            {!lessonUnlocked ? <Lock className="h-3.5 w-3.5 text-[#7E8799]" /> : completedLessons.has(lesson.lessonId) ? <CheckCircle2 className="h-4 w-4 text-[#22C55E]" /> : null}
+                          </span>
+                        </Link>
+                      );
+                    })}
                     {enrollment ? (
                       <Link href={topicUnlocked ? `/academy/${course.slug}/quiz/${topic.topicId}` : "#"} className="flex items-center justify-between gap-3 rounded-[14px] border border-cyan-400/20 bg-cyan-400/10 px-3 py-3 text-sm text-cyan-100 transition hover:bg-cyan-400/15">
                         <span>{quizPassed ? "Quiz passed" : "Quiz Yourself"}</span>

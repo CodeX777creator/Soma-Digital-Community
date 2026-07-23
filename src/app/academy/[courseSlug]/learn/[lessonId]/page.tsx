@@ -91,7 +91,38 @@ export default function AcademyLessonPage() {
   const activities = bundle?.activities.filter((activity) => activity.lessonId === lessonId) || [];
   const completed = Boolean(bundle?.progress.some((item) => item.lessonId === lessonId && item.completed));
   const currentIndex = topicLessons.findIndex((item) => item.lessonId === lessonId);
+  const previousLesson = currentIndex > 0 ? topicLessons[currentIndex - 1] : null;
+  const previousLessonComplete = !previousLesson || Boolean(bundle?.progress.some((item) => item.lessonId === previousLesson.lessonId && item.completed));
   const nextLesson = currentIndex >= 0 ? topicLessons[currentIndex + 1] : null;
+
+  if (bundle && lesson && auth?.currentUser && currentIndex > 0 && !previousLessonComplete) {
+    return (
+      <ProtectedRoute>
+        <AppLayout>
+          <div className="space-y-6">
+            <section className="rounded-[22px] border border-white/[0.08] bg-[#151A2E]/72 p-6">
+              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[#4F9DFF]">Lesson locked</p>
+              <h1 className="mt-3 text-3xl font-semibold tracking-tight text-white">{lesson.title}</h1>
+              <p className="mt-3 max-w-2xl text-sm leading-6 text-[#BFC6D4]">
+                Complete the previous lesson before opening this one. That keeps the Academy sequence consistent and preserves activity flow.
+              </p>
+              <div className="mt-5 flex flex-wrap gap-3">
+                <Link
+                  href={`/academy/${courseSlug}/learn/${previousLesson?.lessonId || ""}`}
+                  className="inline-flex h-11 items-center gap-2 rounded-[16px] bg-gradient-to-r from-[#4F9DFF] via-[#5B5FFF] to-[#8B5CF6] px-5 text-sm font-semibold text-white"
+                >
+                  Continue previous lesson <ArrowLeft className="h-4 w-4" />
+                </Link>
+                <Link href={`/academy/${courseSlug}`} className="inline-flex h-11 items-center gap-2 rounded-[16px] border border-white/[0.08] bg-white/[0.04] px-5 text-sm text-white/75 hover:bg-white/[0.08]">
+                  Back to curriculum
+                </Link>
+              </div>
+            </section>
+          </div>
+        </AppLayout>
+      </ProtectedRoute>
+    );
+  }
 
   const completeLesson = async () => {
     try {
