@@ -704,15 +704,16 @@ export default function AcademyCourseBuilderPage() {
               <Field label="Prompt"><textarea required rows={4} className="academy-input resize-none" value={activityForm.prompt} onChange={(event) => setActivityForm({ ...activityForm, prompt: event.target.value })} placeholder="Tell learners exactly what to do." /></Field>
               <div className="grid grid-cols-2 gap-3">
                 <Field label="Type">
-                  <select className="academy-input" value={activityForm.activityType} onChange={(event) => setActivityForm({ ...activityForm, activityType: event.target.value as AcademyActivityType })}>
-                    <option value="reflection">Reflection</option>
-                    <option value="short_text">Short text</option>
-                    <option value="long_text">Long text</option>
-                    <option value="multiple_choice">Multiple choice</option>
-                    <option value="checkboxes">Checkboxes</option>
-                    <option value="file_upload">File upload</option>
-                    <option value="link_submission">Link submission</option>
-                    <option value="project_submission">Project submission</option>
+                    <select className="academy-input" value={activityForm.activityType} onChange={(event) => setActivityForm({ ...activityForm, activityType: event.target.value as AcademyActivityType })}>
+                      <option value="reflection">Reflection</option>
+                      <option value="short_text">Short text</option>
+                      <option value="long_text">Long text</option>
+                      <option value="q_and_a">Q&A</option>
+                      <option value="multiple_choice">Multiple choice</option>
+                      <option value="checkboxes">Checkboxes</option>
+                      <option value="file_upload">File upload</option>
+                      <option value="link_submission">Link submission</option>
+                      <option value="project_submission">Project submission</option>
                   </select>
                 </Field>
                 <Field label="Sort"><input type="number" min={0} className="academy-input" value={activityForm.sortOrder} onChange={(event) => setActivityForm({ ...activityForm, sortOrder: event.target.value })} /></Field>
@@ -989,7 +990,7 @@ function EditableActivity({
           <div className="grid grid-cols-2 gap-2">
             <Field label="Type">
               <select className="academy-input" value={form.activityType} onChange={(e) => setForm({ ...form, activityType: e.target.value as AcademyActivityType })}>
-                {["reflection","short_text","long_text","multiple_choice","checkboxes","file_upload","link_submission","project_submission"].map((t) => <option key={t} value={t}>{t}</option>)}
+                {["reflection","short_text","long_text","q_and_a","multiple_choice","checkboxes","file_upload","link_submission","project_submission"].map((t) => <option key={t} value={t}>{t}</option>)}
               </select>
             </Field>
             <Field label="Sort"><input type="number" className="academy-input" value={form.sortOrder} onChange={(e) => setForm({ ...form, sortOrder: e.target.value })} /></Field>

@@ -106,7 +106,7 @@ export default function AcademyLessonPage() {
   };
 
   const submitActivity = async (activity: AcademyActivityDoc) => {
-    const response = activityResponses[activity.activityId] || "";
+    const response = activityResponses[activity.activityId] || (activity.activityType === "checkboxes" || activity.activityType === "q_and_a" ? [] : "");
     const attachments = activityAttachments[activity.activityId] || [];
     try {
       setActivitySaving(activity.activityId);
@@ -115,7 +115,7 @@ export default function AcademyLessonPage() {
         method: "POST",
         body: JSON.stringify({ topicId: activity.topicId, lessonId: activity.lessonId, response, attachments }),
       });
-      setActivityResponses((current) => ({ ...current, [activity.activityId]: activity.activityType === "checkboxes" ? [] : "" }));
+      setActivityResponses((current) => ({ ...current, [activity.activityId]: activity.activityType === "checkboxes" || activity.activityType === "q_and_a" ? [] : "" }));
       setActivityAttachments((current) => ({ ...current, [activity.activityId]: [] }));
       setMessage("Activity submitted.");
     } catch (err) {
@@ -294,15 +294,28 @@ export default function AcademyLessonPage() {
                       <h3 className="font-medium text-white">{activity.title}</h3>
                       <span className="rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1 text-xs text-white/45">{activity.manualReviewRequired ? "Manual review" : "Completion based"}</span>
                     </div>
-                    <ActivityPrompt prompt={activity.prompt} />
-                    <ActivityInput
-                      activity={activity}
-                      value={activityResponses[activity.activityId] || (activity.activityType === "checkboxes" ? [] : "")}
-                      attachments={activityAttachments[activity.activityId] || []}
-                      uploading={activitySaving === activity.activityId}
-                      onChange={(value) => updateActivityResponse(activity.activityId, value)}
-                      onUpload={(file) => uploadActivityFile(activity, file)}
-                    />
+                    {activity.activityType === "q_and_a" ? (
+                      <QuestionAndAnswerFlow
+                        activity={activity}
+                        value={activityResponses[activity.activityId]}
+                        attachments={activityAttachments[activity.activityId] || []}
+                        uploading={activitySaving === activity.activityId}
+                        onChange={(value) => updateActivityResponse(activity.activityId, value)}
+                        onUpload={(file) => uploadActivityFile(activity, file)}
+                      />
+                    ) : (
+                      <>
+                        <ActivityPrompt prompt={activity.prompt} />
+                        <ActivityInput
+                          activity={activity}
+                          value={activityResponses[activity.activityId] || (activity.activityType === "checkboxes" ? [] : "")}
+                          attachments={activityAttachments[activity.activityId] || []}
+                          uploading={activitySaving === activity.activityId}
+                          onChange={(value) => updateActivityResponse(activity.activityId, value)}
+                          onUpload={(file) => uploadActivityFile(activity, file)}
+                        />
+                      </>
+                    )}
                     <button onClick={() => submitActivity(activity)} disabled={activitySaving === activity.activityId || !canSubmitActivity(activity, activityResponses[activity.activityId], activityAttachments[activity.activityId])} className="mt-3 inline-flex rounded-[14px] border border-white/[0.08] bg-white/[0.04] px-4 py-2 text-sm text-white/75 hover:bg-white/[0.08] disabled:text-white/35">
                       {activitySaving === activity.activityId ? "Submitting..." : "Submit activity"}
                     </button>
@@ -607,6 +620,48 @@ function ActivityInput({
   );
 }
 
+function QuestionAndAnswerFlow({
+  activity,
+  value,
+  attachments,
+  uploading,
+  onChange,
+  onUpload,
+}: {
+  activity: AcademyActivityDoc;
+  value: ActivityResponse | undefined;
+  attachments: ActivityAttachment[];
+  uploading: boolean;
+  onChange: (value: ActivityResponse) => void;
+  onUpload: (file: File | null) => void;
+}) {
+  const questions = extractActivityQuestions(activity.prompt);
+  const answers = normalizeQuestionAnswers(value, questions.length);
+
+  return (
+    <div className="mt-4 space-y-4">
+      {questions.map((question, index) => (
+        <div key={`${activity.activityId}-${index}`} className="rounded-[16px] border border-white/[0.08] bg-black/20 p-4">
+          <p className="text-sm font-medium leading-6 text-white">{question}</p>
+          <textarea
+            value={answers[index] || ""}
+            onChange={(event) => onChange(updateQuestionAnswer(value, index, event.target.value, questions.length))}
+            rows={3}
+            placeholder="Write your answer..."
+            className="mt-3 w-full rounded-[16px] border border-white/[0.08] bg-black/20 p-4 text-sm text-white outline-none focus:border-[#5B5FFF]/60"
+          />
+        </div>
+      ))}
+      {activity.activityType === "q_and_a" && activity.manualReviewRequired ? (
+        <div className="rounded-[16px] border border-white/[0.08] bg-black/20 p-4">
+          <input type="file" disabled={uploading} onChange={(event) => onUpload(event.target.files?.[0] || null)} className="w-full text-sm text-white/50 file:mr-3 file:rounded-xl file:border-0 file:bg-white/[0.08] file:px-3 file:py-2 file:text-sm file:text-white" />
+          <AttachmentList attachments={attachments} />
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function QuestionAnswerField({
   activity,
   questionIndex,
@@ -705,7 +760,7 @@ function canSubmitActivity(activity: AcademyActivityDoc, response: ActivityRespo
   if (activity.activityType === "file_upload") return attachments.length > 0;
   if (activity.activityType === "checkboxes") return Array.isArray(response) && response.length > 0;
   if (activity.activityType === "project_submission") return Boolean(String(response || "").trim() || attachments.length);
-  if (activity.prompt && /^\d+\.\s/.test(activity.prompt)) {
+  if (activity.activityType === "q_and_a" && activity.prompt && /^\d+\.\s/.test(activity.prompt)) {
     const questions = extractActivityQuestions(activity.prompt);
     if (questions.length > 1) {
       const answers = normalizeQuestionAnswers(response, questions.length);

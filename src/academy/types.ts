@@ -70,6 +70,7 @@ export const ACADEMY_ACTIVITY_TYPES = [
   'reflection',
   'short_text',
   'long_text',
+  'q_and_a',
   'multiple_choice',
   'checkboxes',
   'file_upload',
