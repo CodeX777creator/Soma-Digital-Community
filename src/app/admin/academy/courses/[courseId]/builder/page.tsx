@@ -130,6 +130,7 @@ export default function AcademyCourseBuilderPage() {
     options: "",
     required: true,
     manualReviewRequired: false,
+    yesNoOption: false,
     sortOrder: "0",
   });
   const [quizForm, setQuizForm] = useState({
@@ -331,6 +332,7 @@ export default function AcademyCourseBuilderPage() {
           options: parseActivityOptions(activityForm.options),
           required: activityForm.required,
           manualReviewRequired: activityForm.manualReviewRequired,
+          yesNoOption: activityForm.yesNoOption,
           sortOrder: Number(activityForm.sortOrder || 0),
         }),
       });
@@ -739,6 +741,11 @@ export default function AcademyCourseBuilderPage() {
                   qAndAEnabled: checked,
                   activityType: checked ? "q_and_a" : activityForm.activityType === "q_and_a" ? "reflection" : activityForm.activityType,
                 })}
+              />
+              <Check
+                label="Yes / No answers"
+                checked={activityForm.yesNoOption}
+                onChange={(checked) => setActivityForm({ ...activityForm, yesNoOption: checked })}
               />
               <div className="grid gap-2 sm:grid-cols-2">
                 <Check label="Required before completion" checked={activityForm.required} onChange={(checked) => setActivityForm({ ...activityForm, required: checked })} />

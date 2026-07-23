@@ -6,6 +6,7 @@ import { auth } from "@/lib/firebase";
 import { dbService } from "@/lib/db";
 
 const ROADMAP_CACHE_PREFIX = "sdc-onboarding-roadmap:";
+const ROADMAP_REQUEST_TIMEOUT_MS = 15_000;
 
 function getRoadmapCacheKey(input: string) {
   let hash = 0;
@@ -87,6 +88,7 @@ export function AIRoadmapStep() {
 
     let isActive = true;
     let timeoutId: ReturnType<typeof setTimeout> | undefined;
+    let abortController: AbortController | undefined;
 
     const handleAISynthesis = async () => {
       const { identities, goal, skillLevel, budget, availableTime, setRoadmap, nextStep } = useOnboardingStore.getState();
@@ -123,12 +125,16 @@ export function AIRoadmapStep() {
           return;
         }
 
+        abortController = new AbortController();
+        const requestTimeoutId = setTimeout(() => abortController?.abort(), ROADMAP_REQUEST_TIMEOUT_MS);
         const response = await fetch("/api/onboarding/roadmap-preview", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           credentials: "same-origin",
+          signal: abortController.signal,
           body: JSON.stringify({ businessGoals: goalsText }),
         });
+        clearTimeout(requestTimeoutId);
 
         if (!response.ok) {
           const fallback = buildFallbackRoadmap(goalsText);
@@ -154,10 +160,10 @@ export function AIRoadmapStep() {
         if (typeof window !== "undefined") {
           window.localStorage.setItem(cacheKey, JSON.stringify(res));
         }
-        await trackOnboardingEvent("onboarding_roadmap_generated", {
+        void trackOnboardingEvent("onboarding_roadmap_generated", {
           source: "onboarding_preview",
           intendedPlan: plan || "explorer",
-        });
+        }).catch((trackingError) => console.warn("Roadmap analytics failed:", trackingError));
         // Hold for dramatic effect
         timeoutId = setTimeout(() => {
           if (!isActive) return;
@@ -184,6 +190,7 @@ export function AIRoadmapStep() {
     return () => {
       isActive = false;
       if (timeoutId) clearTimeout(timeoutId);
+      abortController?.abort();
     };
   }, [identities, goal, skillLevel, interests, plan, roadmap, setRoadmap, nextStep]);
 

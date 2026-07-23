@@ -291,6 +291,7 @@ export interface AcademyActivityDoc extends AcademyBaseDoc {
   title: string;
   prompt: string;
   activityType: AcademyActivityType;
+  yesNoOption?: boolean;
   options?: AcademyActivityOption[];
   required: boolean;
   manualReviewRequired: boolean;
