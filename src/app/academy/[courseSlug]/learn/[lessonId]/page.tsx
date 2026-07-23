@@ -375,28 +375,30 @@ export default function AcademyLessonPage() {
           </main>
 
           <aside className="space-y-4 xl:sticky xl:top-28 xl:self-start">
-            <section className="rounded-[20px] border border-white/[0.08] bg-[#151A2E]/72 p-5">
-              <Bot className="h-5 w-5 text-[#4F9DFF]" />
-              <h3 className="mt-4 font-semibold text-white">AI Tutor</h3>
-              <p className="mt-2 text-sm leading-6 text-[#BFC6D4]">Ask for examples, summaries, explanations, or help applying the lesson.</p>
-              <div className="mt-4 flex flex-wrap gap-2">
-                {["Explain this lesson", "Give me an example", "Quiz me", "Summarize key points", "Help me complete the activity", "Give me a practical business example"].map((prompt) => (
-                  <button key={prompt} onClick={() => askTutor(prompt)} className="rounded-full border border-white/[0.08] bg-white/[0.04] px-3 py-1.5 text-xs text-white/70 hover:bg-white/[0.08]">{prompt}</button>
-                ))}
-              </div>
-              {tutorMessages.length ? (
-                <div className="mt-4 max-h-72 space-y-3 overflow-y-auto pr-1">
-                  {tutorMessages.map((item) => (
-                    <div key={item.tutorMessageId} className={`rounded-[16px] border border-white/[0.08] p-3 text-sm leading-6 ${item.role === "assistant" ? "bg-cyan-400/10 text-cyan-50" : "bg-black/20 text-[#D8DEEA]"}`}>
-                      <p className="mb-1 text-[10px] uppercase tracking-[0.16em] text-white/40">{item.role === "assistant" ? "Soma Tutor" : "You"}</p>
-                      {item.content}
-                    </div>
+            {lesson?.aiTutorEnabled ? (
+              <section className="rounded-[20px] border border-white/[0.08] bg-[#151A2E]/72 p-5">
+                <Bot className="h-5 w-5 text-[#4F9DFF]" />
+                <h3 className="mt-4 font-semibold text-white">AI Tutor</h3>
+                <p className="mt-2 text-sm leading-6 text-[#BFC6D4]">Ask for examples, summaries, explanations, or help applying the lesson.</p>
+                <div className="mt-4 flex flex-wrap gap-2">
+                  {["Explain this lesson", "Give me an example", "Quiz me", "Summarize key points", "Help me complete the activity", "Give me a practical business example"].map((prompt) => (
+                    <button key={prompt} onClick={() => askTutor(prompt)} className="rounded-full border border-white/[0.08] bg-white/[0.04] px-3 py-1.5 text-xs text-white/70 hover:bg-white/[0.08]">{prompt}</button>
                   ))}
                 </div>
-              ) : null}
-              <textarea value={tutorPrompt} onChange={(event) => setTutorPrompt(event.target.value)} rows={3} placeholder="Ask about this lesson..." className="mt-4 w-full rounded-[14px] border border-white/[0.08] bg-black/20 p-3 text-sm text-white outline-none focus:border-[#5B5FFF]/60" />
-              <button onClick={() => askTutor()} disabled={!tutorPrompt.trim()} className="mt-3 h-10 rounded-[14px] border border-white/[0.08] bg-white/[0.04] px-4 text-sm text-white/75 hover:bg-white/[0.08] disabled:text-white/35">Ask Tutor</button>
-            </section>
+                {tutorMessages.length ? (
+                  <div className="mt-4 max-h-72 space-y-3 overflow-y-auto pr-1">
+                    {tutorMessages.map((item) => (
+                      <div key={item.tutorMessageId} className={`rounded-[16px] border border-white/[0.08] p-3 text-sm leading-6 ${item.role === "assistant" ? "bg-cyan-400/10 text-cyan-50" : "bg-black/20 text-[#D8DEEA]"}`}>
+                        <p className="mb-1 text-[10px] uppercase tracking-[0.16em] text-white/40">{item.role === "assistant" ? "Soma Tutor" : "You"}</p>
+                        {item.content}
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+                <textarea value={tutorPrompt} onChange={(event) => setTutorPrompt(event.target.value)} rows={3} placeholder="Ask about this lesson..." className="mt-4 w-full rounded-[14px] border border-white/[0.08] bg-black/20 p-3 text-sm text-white outline-none focus:border-[#5B5FFF]/60" />
+                <button onClick={() => askTutor()} disabled={!tutorPrompt.trim()} className="mt-3 h-10 rounded-[14px] border border-white/[0.08] bg-white/[0.04] px-4 text-sm text-white/75 hover:bg-white/[0.08] disabled:text-white/35">Ask Tutor</button>
+              </section>
+            ) : null}
             <section className="rounded-[20px] border border-white/[0.08] bg-[#151A2E]/72 p-5">
               <MessageSquare className="h-5 w-5 text-[#4F9DFF]" />
               <h3 className="mt-4 font-semibold text-white">Discussion</h3>

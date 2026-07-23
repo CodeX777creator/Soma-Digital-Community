@@ -172,6 +172,9 @@ export default function AcademyCourseBuilderPage() {
   const activityQuestionModes = activityForm.activityType === "q_and_a"
     ? buildQuestionAnswerTypes(activityForm.prompt, activityForm.questionTypes, activityForm.yesNoOption)
     : [];
+  const activityOptionRows = ["multiple_choice", "checkboxes"].includes(activityForm.activityType)
+    ? parseActivityOptionRows(activityForm.options)
+    : [];
 
   const loadBundle = async () => {
     try {
@@ -846,9 +849,78 @@ export default function AcademyCourseBuilderPage() {
                 <Field label="Sort"><input type="number" min={0} className="academy-input" value={activityForm.sortOrder} onChange={(event) => setActivityForm({ ...activityForm, sortOrder: event.target.value })} /></Field>
               </div>
               {["multiple_choice", "checkboxes"].includes(activityForm.activityType) ? (
-                <Field label="Options">
-                  <textarea rows={5} className="academy-input resize-none" value={activityForm.options} onChange={(event) => setActivityForm({ ...activityForm, options: event.target.value })} placeholder="One option per line. Prefix correct answers with *" />
-                </Field>
+                <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-semibold text-white">Options</p>
+                      <p className="text-xs text-white/45">Add options as rows and mark the correct answer(s).</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setActivityForm((current) => ({
+                        ...current,
+                        options: serializeActivityOptionRows(parseActivityOptionRows(current.options).concat({ label: "", isCorrect: false })),
+                      }))}
+                      className="rounded-xl border border-cyan-400/20 bg-cyan-400/10 px-3 py-2 text-xs font-semibold text-cyan-100 hover:bg-cyan-400/15"
+                    >
+                      Add option
+                    </button>
+                  </div>
+                  <div className="mt-4 space-y-3">
+                    {activityOptionRows.length ? activityOptionRows.map((option, index) => (
+                      <div key={`${index}-${option.label}`} className="rounded-2xl border border-white/10 bg-white/[0.03] p-3">
+                        <div className="flex items-start gap-3">
+                          <label className="flex-1 space-y-2">
+                            <span className="text-xs uppercase tracking-[0.18em] text-white/45">Option {index + 1}</span>
+                            <input
+                              className="academy-input"
+                              value={option.label}
+                              onChange={(event) => setActivityForm((current) => {
+                                const rows = parseActivityOptionRows(current.options);
+                                rows[index] = { ...rows[index], label: event.target.value };
+                                return { ...current, options: serializeActivityOptionRows(rows) };
+                              })}
+                              placeholder="Enter option text..."
+                            />
+                          </label>
+                          <button
+                            type="button"
+                            onClick={() => setActivityForm((current) => ({
+                              ...current,
+                              options: serializeActivityOptionRows(parseActivityOptionRows(current.options).filter((_, rowIndex) => rowIndex !== index)),
+                            }))}
+                            className="mt-8 rounded-full border border-white/10 bg-white/[0.04] p-2 text-white/45 hover:text-white"
+                            aria-label={`Remove option ${index + 1}`}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </div>
+                        <label className="mt-3 flex items-center gap-2 text-sm text-white/65">
+                          <input
+                            type="checkbox"
+                            checked={option.isCorrect}
+                            onChange={(event) => setActivityForm((current) => {
+                              const rows = parseActivityOptionRows(current.options);
+                              if (current.activityType === "multiple_choice" && event.target.checked) {
+                                rows.forEach((row, rowIndex) => {
+                                  rows[rowIndex] = { ...row, isCorrect: rowIndex === index };
+                                });
+                              } else {
+                                rows[index] = { ...rows[index], isCorrect: event.target.checked };
+                              }
+                              return { ...current, options: serializeActivityOptionRows(rows, current.activityType === "multiple_choice") };
+                            })}
+                          />
+                          Mark as correct
+                        </label>
+                      </div>
+                    )) : (
+                      <div className="rounded-2xl border border-dashed border-white/10 bg-black/20 p-4 text-sm text-white/45">
+                        Add at least two options to make this activity useful.
+                      </div>
+                    )}
+                  </div>
+                </div>
               ) : null}
               <Check
                 label="Use Q&A flow"
@@ -1180,10 +1252,73 @@ function EditableActivity({
             </Field>
             <Field label="Sort"><input type="number" className="academy-input" value={form.sortOrder} onChange={(e) => setForm({ ...form, sortOrder: e.target.value })} /></Field>
           </div>
-          {["multiple_choice","checkboxes"].includes(form.activityType) && (
-            <Field label="Options (prefix correct with *)">
-              <textarea rows={4} className="academy-input resize-none" value={form.options} onChange={(e) => setForm({ ...form, options: e.target.value })} placeholder="Option A&#10;*Correct option&#10;Option C" />
-            </Field>
+          {["multiple_choice", "checkboxes"].includes(form.activityType) && (
+            <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-sm font-semibold text-white">Options</p>
+                  <p className="text-xs text-white/45">Edit the answer choices directly and mark the correct option(s).</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setForm({ ...form, options: serializeActivityOptionRows(parseActivityOptionRows(form.options).concat({ label: "", isCorrect: false })) })}
+                  className="rounded-xl border border-cyan-400/20 bg-cyan-400/10 px-3 py-2 text-xs font-semibold text-cyan-100 hover:bg-cyan-400/15"
+                >
+                  Add option
+                </button>
+              </div>
+              <div className="mt-4 space-y-3">
+                {parseActivityOptionRows(form.options).length ? parseActivityOptionRows(form.options).map((option, index) => (
+                  <div key={`${index}-${option.label}`} className="rounded-2xl border border-white/10 bg-white/[0.03] p-3">
+                    <div className="flex items-start gap-3">
+                      <label className="flex-1 space-y-2">
+                        <span className="text-xs uppercase tracking-[0.18em] text-white/45">Option {index + 1}</span>
+                        <input
+                          className="academy-input"
+                          value={option.label}
+                          onChange={(event) => {
+                            const rows = parseActivityOptionRows(form.options);
+                            rows[index] = { ...rows[index], label: event.target.value };
+                            setForm({ ...form, options: serializeActivityOptionRows(rows) });
+                          }}
+                          placeholder="Enter option text..."
+                        />
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => setForm({ ...form, options: serializeActivityOptionRows(parseActivityOptionRows(form.options).filter((_, rowIndex) => rowIndex !== index)) })}
+                        className="mt-8 rounded-full border border-white/10 bg-white/[0.04] p-2 text-white/45 hover:text-white"
+                        aria-label={`Remove option ${index + 1}`}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
+                    <label className="mt-3 flex items-center gap-2 text-sm text-white/65">
+                      <input
+                        type="checkbox"
+                        checked={option.isCorrect}
+                        onChange={(event) => {
+                          const rows = parseActivityOptionRows(form.options);
+                          if (form.activityType === "multiple_choice" && event.target.checked) {
+                            rows.forEach((row, rowIndex) => {
+                              rows[rowIndex] = { ...row, isCorrect: rowIndex === index };
+                            });
+                          } else {
+                            rows[index] = { ...rows[index], isCorrect: event.target.checked };
+                          }
+                          setForm({ ...form, options: serializeActivityOptionRows(rows, form.activityType === "multiple_choice") });
+                        }}
+                      />
+                      Mark as correct
+                    </label>
+                  </div>
+                )) : (
+                  <div className="rounded-2xl border border-dashed border-white/10 bg-black/20 p-4 text-sm text-white/45">
+                    Add at least two options to make this activity useful.
+                  </div>
+                )}
+              </div>
+            </div>
           )}
           <Check
             label="Use Q&A flow"
@@ -1506,6 +1641,37 @@ function parseActivityOptions(value: string) {
       return label ? { optionId: `option_${index + 1}`, label, isCorrect } : null;
     })
     .filter(Boolean);
+}
+
+type ActivityOptionRow = { label: string; isCorrect: boolean };
+
+function parseActivityOptionRows(value: string): ActivityOptionRow[] {
+  return value
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const isCorrect = line.startsWith("*");
+      const label = (isCorrect ? line.slice(1) : line).trim();
+      return { label, isCorrect };
+    });
+}
+
+function serializeActivityOptionRows(rows: ActivityOptionRow[], singleCorrect = false) {
+  const normalized = rows
+    .map((row) => ({ label: row.label.trim(), isCorrect: Boolean(row.isCorrect) }))
+    .filter((row) => row.label);
+  if (singleCorrect) {
+    let seenCorrect = false;
+    return normalized
+      .map((row) => {
+        const isCorrect = row.isCorrect && !seenCorrect;
+        if (isCorrect) seenCorrect = true;
+        return `${isCorrect ? "*" : ""}${row.label}`;
+      })
+      .join("\n");
+  }
+  return normalized.map((row) => `${row.isCorrect ? "*" : ""}${row.label}`).join("\n");
 }
 
 function extractActivityQuestions(prompt: string) {
