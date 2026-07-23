@@ -49,6 +49,8 @@ type Bundle = {
   dripSchedules: AcademyDripScheduleDoc[];
 };
 
+type ActivityQuestionMode = "yes_no" | "short_text" | "long_text";
+
 async function adminFetch(path: string, options: RequestInit = {}) {
   const token = await auth?.currentUser?.getIdToken();
   if (!token) throw new Error("Admin session expired.");
@@ -131,6 +133,7 @@ export default function AcademyCourseBuilderPage() {
     required: true,
     manualReviewRequired: false,
     yesNoOption: false,
+    questionTypes: [] as ActivityQuestionMode[],
     sortOrder: "0",
   });
   const [quizForm, setQuizForm] = useState({
@@ -165,6 +168,10 @@ export default function AcademyCourseBuilderPage() {
     availableAt: "",
     delayDays: "",
   });
+  const activityQuestions = activityForm.activityType === "q_and_a" ? extractActivityQuestions(activityForm.prompt) : [];
+  const activityQuestionModes = activityForm.activityType === "q_and_a"
+    ? buildQuestionAnswerTypes(activityForm.prompt, activityForm.questionTypes, activityForm.yesNoOption)
+    : [];
 
   const loadBundle = async () => {
     try {
@@ -333,10 +340,28 @@ export default function AcademyCourseBuilderPage() {
           required: activityForm.required,
           manualReviewRequired: activityForm.manualReviewRequired,
           yesNoOption: activityForm.yesNoOption,
+          metadata: activityForm.activityType === "q_and_a"
+            ? {
+                questionAnswerTypes: buildQuestionAnswerTypes(
+                  activityForm.prompt,
+                  activityForm.questionTypes,
+                  activityForm.yesNoOption,
+                ),
+              }
+            : {},
           sortOrder: Number(activityForm.sortOrder || 0),
         }),
       });
-      setActivityForm((current) => ({ ...current, title: "", prompt: "", options: "", sortOrder: String((bundle?.activities.length || 0) + 1) }));
+      setActivityForm((current) => ({
+        ...current,
+        title: "",
+        prompt: "",
+        options: "",
+        qAndAEnabled: false,
+        yesNoOption: false,
+        questionTypes: [],
+        sortOrder: String((bundle?.activities.length || 0) + 1),
+      }));
       setMessage("Activity added.");
       await loadBundle();
     } catch (err) {
@@ -704,7 +729,99 @@ export default function AcademyCourseBuilderPage() {
                 </select>
               </Field>
               <Field label="Activity title"><input required className="academy-input" value={activityForm.title} onChange={(event) => setActivityForm({ ...activityForm, title: event.target.value })} /></Field>
-              <Field label="Prompt"><textarea required rows={4} className="academy-input resize-none" value={activityForm.prompt} onChange={(event) => setActivityForm({ ...activityForm, prompt: event.target.value })} placeholder="Tell learners exactly what to do." /></Field>
+              {activityForm.activityType === "q_and_a" ? (
+                <div className="space-y-3">
+                  <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-semibold text-white">Questions</p>
+                        <p className="text-xs text-white/45">Build the activity one question at a time. Each line can be Yes / No, Short text, or Long text.</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setActivityForm((current) => {
+                          const currentQuestions = extractActivityQuestions(current.prompt);
+                          const nextQuestions = [...currentQuestions, ""];
+                          const nextTypes: ActivityQuestionMode[] = [...buildQuestionAnswerTypes(current.prompt, current.questionTypes, current.yesNoOption), current.yesNoOption ? "yes_no" : "short_text"];
+                          return {
+                            ...current,
+                            prompt: serializeQuestionPrompt(nextQuestions),
+                            questionTypes: nextTypes,
+                          };
+                        })}
+                        className="rounded-xl border border-cyan-400/20 bg-cyan-400/10 px-3 py-2 text-xs font-semibold text-cyan-100 hover:bg-cyan-400/15"
+                      >
+                        Add question
+                      </button>
+                    </div>
+                    <div className="mt-4 space-y-3">
+                      {activityQuestions.length ? activityQuestions.map((question, index) => (
+                        <div key={`${index}-${question}`} className="rounded-2xl border border-white/10 bg-black/20 p-3">
+                          <div className="flex items-start gap-3">
+                            <div className="min-w-0 flex-1 space-y-2">
+                              <label className="block text-xs uppercase tracking-[0.18em] text-white/45">Question {index + 1}</label>
+                              <input
+                                className="academy-input"
+                                value={question}
+                              onChange={(event) => setActivityForm((current) => {
+                                  const currentQuestions = extractActivityQuestions(current.prompt);
+                                  const nextQuestions = [...currentQuestions];
+                                  nextQuestions[index] = event.target.value;
+                                  return {
+                                    ...current,
+                                    prompt: serializeQuestionPrompt(nextQuestions),
+                                  };
+                                })}
+                                placeholder="Ask something clear and specific..."
+                              />
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => setActivityForm((current) => {
+                                const currentQuestions = extractActivityQuestions(current.prompt);
+                                const nextQuestions = currentQuestions.filter((_, questionIndex) => questionIndex !== index);
+                                const nextTypes = current.questionTypes.filter((_, questionIndex) => questionIndex !== index);
+                                return {
+                                  ...current,
+                                  prompt: serializeQuestionPrompt(nextQuestions),
+                                  questionTypes: nextTypes,
+                                };
+                              })}
+                              className="mt-7 rounded-full border border-white/10 bg-white/[0.04] p-2 text-white/45 hover:text-white"
+                              aria-label={`Remove question ${index + 1}`}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          </div>
+                          <label className="mt-3 block text-xs uppercase tracking-[0.18em] text-white/45">Answer type</label>
+                          <select
+                            className="academy-input mt-2"
+                            value={activityQuestionModes[index] || (activityForm.yesNoOption ? "yes_no" : "short_text")}
+                            onChange={(event) => setActivityForm((current) => {
+                              const nextTypes: ActivityQuestionMode[] = buildQuestionAnswerTypes(current.prompt, current.questionTypes, current.yesNoOption);
+                              nextTypes[index] = event.target.value as ActivityQuestionMode;
+                              return { ...current, questionTypes: nextTypes };
+                            })}
+                          >
+                            <option value="yes_no">Yes / No</option>
+                            <option value="short_text">Short text</option>
+                            <option value="long_text">Long text</option>
+                          </select>
+                        </div>
+                      )) : (
+                        <div className="rounded-2xl border border-dashed border-white/10 bg-black/20 p-4 text-sm text-white/45">
+                          Add your first question to build the activity.
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  <Field label="Prompt preview">
+                    <textarea readOnly rows={Math.max(3, activityQuestions.length + 1)} className="academy-input resize-none opacity-80" value={serializeQuestionPrompt(activityQuestions)} placeholder="Your numbered prompt will appear here." />
+                  </Field>
+                </div>
+              ) : (
+                <Field label="Prompt"><textarea required rows={4} className="academy-input resize-none" value={activityForm.prompt} onChange={(event) => setActivityForm({ ...activityForm, prompt: event.target.value })} placeholder="Tell learners exactly what to do." /></Field>
+              )}
               <div className="grid grid-cols-2 gap-3">
                 <Field label="Type">
                   <select className="academy-input" value={activityForm.activityType} onChange={(event) => {
@@ -743,10 +860,48 @@ export default function AcademyCourseBuilderPage() {
                 })}
               />
               <Check
-                label="Yes / No answers"
+                label="Yes / No per question"
                 checked={activityForm.yesNoOption}
-                onChange={(checked) => setActivityForm({ ...activityForm, yesNoOption: checked })}
+                onChange={(checked) => setActivityForm((current) => ({
+                  ...current,
+                  yesNoOption: checked,
+                  questionTypes: checked ? buildQuestionAnswerTypes(current.prompt, current.questionTypes, true) : current.questionTypes,
+                }))}
               />
+              {activityForm.activityType === "q_and_a" ? (
+                <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-sm font-semibold text-white">Question answer types</p>
+                    <p className="text-xs text-white/45">Set each question to Yes / No or open text.</p>
+                  </div>
+                  <div className="mt-4 space-y-3">
+                    {extractActivityQuestions(activityForm.prompt).map((question, index) => {
+                      const mode = activityForm.questionTypes[index] || (activityForm.yesNoOption ? "yes_no" : "short_text");
+                      return (
+                        <div key={`${index}-${question}`} className="rounded-2xl border border-white/10 bg-white/[0.03] p-3">
+                          <p className="text-sm text-white">{question}</p>
+                          <select
+                            className="academy-input mt-3"
+                            value={mode}
+                            onChange={(event) => {
+                              const next = [...activityForm.questionTypes];
+                              next[index] = event.target.value as ActivityQuestionMode;
+                              setActivityForm({ ...activityForm, questionTypes: next });
+                            }}
+                          >
+                            <option value="yes_no">Yes / No</option>
+                            <option value="short_text">Short text</option>
+                            <option value="long_text">Long text</option>
+                          </select>
+                        </div>
+                      );
+                    })}
+                    {!extractActivityQuestions(activityForm.prompt).length ? (
+                      <p className="text-sm text-white/45">Add a numbered prompt first and the question types will appear here.</p>
+                    ) : null}
+                  </div>
+                </div>
+              ) : null}
               <div className="grid gap-2 sm:grid-cols-2">
                 <Check label="Required before completion" checked={activityForm.required} onChange={(checked) => setActivityForm({ ...activityForm, required: checked })} />
                 <Check label="Requires manual review" checked={activityForm.manualReviewRequired} onChange={(checked) => setActivityForm({ ...activityForm, manualReviewRequired: checked })} />
@@ -1351,6 +1506,24 @@ function parseActivityOptions(value: string) {
       return label ? { optionId: `option_${index + 1}`, label, isCorrect } : null;
     })
     .filter(Boolean);
+}
+
+function extractActivityQuestions(prompt: string) {
+  const normalized = prompt.replace(/\s+/g, " ").trim();
+  const questions = normalized.split(/(?=\d+\.\s)/).map((item) => item.trim()).filter(Boolean);
+  return questions.length ? questions.map((question) => question.replace(/^\d+\.\s*/, "")) : normalized ? [normalized] : [];
+}
+
+function serializeQuestionPrompt(questions: string[]) {
+  return questions
+    .map((question, index) => question.trim() ? `${index + 1}. ${question.trim()}` : "")
+    .filter(Boolean)
+    .join("\n");
+}
+
+function buildQuestionAnswerTypes(prompt: string, questionTypes: ActivityQuestionMode[], defaultYesNo: boolean): ActivityQuestionMode[] {
+  const questions = extractActivityQuestions(prompt);
+  return questions.map((_, index) => (questionTypes[index] || (defaultYesNo ? "yes_no" : "short_text")) as ActivityQuestionMode);
 }
 
 function parseQuizQuestions(value: string) {

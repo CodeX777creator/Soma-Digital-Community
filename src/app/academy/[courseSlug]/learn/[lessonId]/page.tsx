@@ -675,19 +675,43 @@ function QuestionAndAnswerFlow({
 }) {
   const questions = extractActivityQuestions(activity.prompt);
   const answers = normalizeQuestionAnswers(value, questions.length);
+  const questionTypes = getQuestionAnswerTypes(activity, questions.length);
 
   return (
     <div className="mt-4 space-y-4">
       {questions.map((question, index) => (
         <div key={`${activity.activityId}-${index}`} className="rounded-[16px] border border-white/[0.08] bg-black/20 p-4">
           <p className="text-sm font-medium leading-6 text-white">{question}</p>
-          <textarea
-            value={answers[index] || ""}
-            onChange={(event) => onChange(updateQuestionAnswer(value, index, event.target.value, questions.length))}
-            rows={3}
-            placeholder="Write your answer..."
-            className="mt-3 w-full rounded-[16px] border border-white/[0.08] bg-black/20 p-4 text-sm text-white outline-none focus:border-[#5B5FFF]/60"
-          />
+          {questionTypes[index] === "yes_no" ? (
+            <div className="mt-3 grid gap-2 sm:grid-cols-2">
+              {["Yes", "No"].map((choice) => (
+                <label
+                  key={`${activity.activityId}-${index}-${choice}`}
+                  className={`flex cursor-pointer items-center gap-3 rounded-[14px] border px-4 py-3 text-sm transition ${
+                    answers[index] === choice
+                      ? "border-cyan-400/50 bg-cyan-400/10 text-white"
+                      : "border-white/[0.08] bg-black/20 text-[#D8DEEA] hover:border-white/[0.14]"
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name={`${activity.activityId}-${index}`}
+                    checked={answers[index] === choice}
+                    onChange={() => onChange(updateQuestionAnswer(value, index, choice, questions.length))}
+                  />
+                  <span className="font-medium">{choice}</span>
+                </label>
+              ))}
+            </div>
+          ) : (
+            <textarea
+              value={answers[index] || ""}
+              onChange={(event) => onChange(updateQuestionAnswer(value, index, event.target.value, questions.length))}
+              rows={questionTypes[index] === "long_text" ? 6 : 3}
+              placeholder="Write your answer..."
+              className="mt-3 w-full rounded-[16px] border border-white/[0.08] bg-black/20 p-4 text-sm text-white outline-none focus:border-[#5B5FFF]/60"
+            />
+          )}
         </div>
       ))}
       {activity.activityType === "q_and_a" && activity.manualReviewRequired ? (
@@ -761,6 +785,17 @@ function extractActivityQuestions(prompt: string) {
   const normalized = prompt.replace(/\s+/g, " ").trim();
   const questions = normalized.split(/(?=\d+\.\s)/).map((item) => item.trim()).filter(Boolean);
   return questions.length ? questions.map((question) => question.replace(/^\d+\.\s*/, "")) : [normalized];
+}
+
+function getQuestionAnswerTypes(activity: AcademyActivityDoc, questionCount: number) {
+  const raw = activity.metadata?.questionAnswerTypes;
+  if (Array.isArray(raw) && raw.length) {
+    return Array.from({ length: questionCount }, (_, index) => {
+      const value = String(raw[index] || raw[raw.length - 1] || "").toLowerCase();
+      return value === "yes_no" || value === "long_text" ? value : "short_text";
+    });
+  }
+  return Array.from({ length: questionCount }, () => (activity.yesNoOption ? "yes_no" : "short_text"));
 }
 
 function normalizeQuestionAnswers(value: ActivityResponse | undefined, questionCount: number) {
