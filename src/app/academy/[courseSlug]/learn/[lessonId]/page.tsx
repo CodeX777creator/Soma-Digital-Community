@@ -90,12 +90,19 @@ export default function AcademyLessonPage() {
   const topicLessons = useMemo(() => bundle?.lessons.filter((item) => item.topicId === lesson?.topicId && item.status === "published").sort((a, b) => a.sortOrder - b.sortOrder) || [], [bundle?.lessons, lesson?.topicId]);
   const activities = bundle?.activities.filter((activity) => activity.lessonId === lessonId) || [];
   const completed = Boolean(bundle?.progress.some((item) => item.lessonId === lessonId && item.completed));
+  const topicIndex = bundle?.topics.findIndex((item) => item.topicId === lesson?.topicId) ?? -1;
+  const completedTopics = new Set((bundle?.progress || []).filter((item) => item.topicId && !item.lessonId && item.completed).map((item) => item.topicId as string));
   const currentIndex = topicLessons.findIndex((item) => item.lessonId === lessonId);
   const previousLesson = currentIndex > 0 ? topicLessons[currentIndex - 1] : null;
   const previousLessonComplete = !previousLesson || Boolean(bundle?.progress.some((item) => item.lessonId === previousLesson.lessonId && item.completed));
+  const previousTopic = topicIndex > 0 ? bundle?.topics[topicIndex - 1] || null : null;
+  const previousTopicLessons = previousTopic ? (bundle?.lessons.filter((item) => item.topicId === previousTopic.topicId && item.status === "published").sort((a, b) => a.sortOrder - b.sortOrder) || []) : [];
+  const previousTopicLessonsComplete = !previousTopic || previousTopicLessons.every((item) => bundle?.progress.some((progress) => progress.lessonId === item.lessonId && progress.completed));
+  const previousTopicComplete = !previousTopic || completedTopics.has(previousTopic.topicId);
+  const topicReady = topicIndex <= 0 || (previousTopicLessonsComplete && previousTopicComplete);
   const nextLesson = currentIndex >= 0 ? topicLessons[currentIndex + 1] : null;
 
-  if (bundle && lesson && auth?.currentUser && currentIndex > 0 && !previousLessonComplete) {
+  if (bundle && lesson && auth?.currentUser && ((currentIndex > 0 && !previousLessonComplete) || (topicIndex > 0 && !topicReady))) {
     return (
       <ProtectedRoute>
         <AppLayout>

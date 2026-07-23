@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
-import { ArrowLeft, CheckCircle2, ClipboardCheck, Loader2, MessageSquareWarning, RotateCcw } from "lucide-react";
+import { ArrowLeft, CheckCircle2, ClipboardCheck, ExternalLink, Loader2, MessageSquareWarning, RotateCcw } from "lucide-react";
 import { auth } from "@/lib/firebase";
 import type { AcademyActivityDoc, AcademyActivitySubmissionDoc, AcademyLessonDoc } from "@/academy";
 
@@ -137,12 +137,31 @@ export default function AcademyCourseReviewsPage() {
             return (
               <article key={submission.submissionId} className="rounded-3xl border border-white/10 bg-[#0d1018] p-5 shadow-2xl shadow-black/20">
                 <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-                  <div>
+                  <div className="space-y-2">
                     <p className="text-xs uppercase tracking-[0.18em] text-cyan-200">{submission.status}</p>
                     <h2 className="mt-2 text-lg font-semibold text-white">{submission.activity?.title || "Activity submission"}</h2>
                     <p className="mt-1 text-sm text-white/45">{submission.lesson?.title || submission.lessonId} - Student {submission.userId}</p>
+                    <div className="flex flex-wrap items-center gap-2 text-xs">
+                      <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-white/55">
+                        Lesson ID: {submission.lessonId}
+                      </span>
+                      <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-white/55">
+                        Submission ID: {submission.submissionId}
+                      </span>
+                    </div>
                   </div>
-                  <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-xs text-white/50">{formatDate(submission.submittedAt)}</span>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-xs text-white/50">{formatDate(submission.submittedAt)}</span>
+                    <Link
+                      href={`/admin/academy/courses/${courseId}/builder?lessonId=${submission.lessonId}`}
+                      className="inline-flex items-center gap-1 rounded-full border border-cyan-400/20 bg-cyan-400/10 px-3 py-1 text-xs font-medium text-cyan-100 transition hover:bg-cyan-400/15"
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      <ExternalLink className="h-3.5 w-3.5" />
+                      Open in builder
+                    </Link>
+                  </div>
                 </div>
 
                 <div className="mt-4 rounded-2xl border border-white/10 bg-black/20 p-4">
@@ -187,6 +206,13 @@ export default function AcademyCourseReviewsPage() {
                       Save
                     </button>
                   </div>
+                </div>
+
+                <div className="mt-4 rounded-2xl border border-white/10 bg-cyan-400/5 p-4 text-sm text-white/65">
+                  <p className="font-medium text-cyan-100">Manual review context</p>
+                  <p className="mt-1 leading-6">
+                    When this activity is set to manual review, the learner can continue only after the submission is approved or marked as reviewed. This submission is already queued here so you can open the lesson, check the answer, and resolve it without leaving the review screen.
+                  </p>
                 </div>
               </article>
             );

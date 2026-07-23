@@ -289,7 +289,7 @@ export default function AcademyCoursePage() {
   const firstLesson = bundle.lessons.find((lesson) => lesson.status === "published");
   const unlockedTopics = new Set((bundle.progress || []).filter((item) => item.unlocked && item.topicId && !item.lessonId).map((item) => item.topicId as string));
   const completedLessons = new Set((bundle.progress || []).filter((item) => item.lessonId && item.completed).map((item) => item.lessonId as string));
-  const passedTopics = new Set((bundle.quizAttempts || []).filter((attempt) => attempt.passed).map((attempt) => attempt.topicId));
+  const completedTopics = new Set((bundle.progress || []).filter((item) => item.topicId && !item.lessonId && item.completed).map((item) => item.topicId as string));
   const attendanceBySession = new Map((bundle.sessionAttendance || []).map((attendance) => [attendance.liveSessionId, attendance]));
   const liveSessions = (bundle.liveSessions || []).filter((session) => session.status !== "cancelled");
   const dripByTopic = new Map((bundle.dripSchedules || []).filter((schedule) => schedule.topicId).map((schedule) => [schedule.topicId as string, schedule]));
@@ -486,11 +486,23 @@ export default function AcademyCoursePage() {
             <h2 className="text-2xl font-semibold tracking-tight text-white">Course curriculum</h2>
             <div className="mt-5 space-y-4">
               {topics.map((topic, index) => {
-                const topicUnlocked = !enrollment || index === 0 || unlockedTopics.has(topic.topicId);
-                const quizPassed = passedTopics.has(topic.topicId);
+                const previousTopic = index > 0 ? topics[index - 1] : null;
+                const previousTopicLessons = previousTopic ? (lessonsByTopic.get(previousTopic.topicId) || []).slice().sort((a, b) => a.sortOrder - b.sortOrder) : [];
+                const previousTopicLessonsComplete = !previousTopic || previousTopicLessons.every((lesson) => completedLessons.has(lesson.lessonId));
+                const previousTopicComplete = !previousTopic || completedTopics.has(previousTopic.topicId);
+                const topicUnlocked = !enrollment || index === 0 || (previousTopicLessonsComplete && previousTopicComplete);
+                const quizPassed = completedTopics.has(topic.topicId);
                 const drip = dripByTopic.get(topic.topicId);
                 const topicLessons = (lessonsByTopic.get(topic.topicId) || []).slice().sort((a, b) => a.sortOrder - b.sortOrder);
-                const lockCopy = topicUnlocked ? "Available now" : drip?.unlockCondition === "date_based" && drip.availableAt ? `Locked until ${formatSessionTime(drip.availableAt)}` : drip?.unlockCondition === "manual_approval" ? "Waiting for review" : drip?.unlockCondition === "cohort_schedule" ? "Available in your cohort schedule" : "Complete the previous unlock step";
+                const lockCopy = topicUnlocked
+                  ? "Available now"
+                  : drip?.unlockCondition === "date_based" && drip.availableAt
+                    ? `Locked until ${formatSessionTime(drip.availableAt)}`
+                    : drip?.unlockCondition === "manual_approval"
+                      ? "Waiting for review"
+                      : drip?.unlockCondition === "cohort_schedule"
+                        ? "Available in your cohort schedule"
+                        : "Complete the previous topic lessons and quiz";
                 return (
                 <div key={topic.topicId} className="rounded-[18px] border border-white/[0.08] bg-[#090B13]/55 p-4">
                   <div className="flex items-start justify-between gap-3">
