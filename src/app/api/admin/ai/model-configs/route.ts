@@ -37,6 +37,7 @@ const TASKS: AIRequestTask[] = [
 
 const PLANS: CreatorPlan[] = ["explorer", "pro", "elite", "enterprise"];
 const QUALITY_MODES: AIQualityMode[] = ["economy", "balanced", "premium", "cinematic", "auto"];
+const DEFAULT_TIERS: CreatorPlan[] = ["explorer", "pro", "elite", "enterprise"];
 
 function parseConfig(body: Record<string, unknown>): AIModelFeatureConfigDoc | null {
   const featureKey = typeof body.featureKey === "string" && TASKS.includes(body.featureKey as AIRequestTask)
@@ -73,7 +74,24 @@ export const GET = createAPIHandler(
   async (req) => {
     await requireRole(req as any, "admin");
     const snapshot = await adminDb.collection("aiModelFeatureConfigs").get();
-    const configs = snapshot.docs.map((doc) => doc.data());
+    const configs = snapshot.docs.map((doc) => {
+      const data = doc.data() as Partial<AIModelFeatureConfigDoc> & Record<string, unknown>;
+      const allowedTiers = Array.isArray(data.allowedTiers)
+        ? data.allowedTiers.filter((tier): tier is CreatorPlan => typeof tier === "string" && DEFAULT_TIERS.includes(tier as CreatorPlan))
+        : [];
+      return {
+        ...data,
+        featureKey: typeof data.featureKey === "string" ? data.featureKey : doc.id,
+        defaultModelId: typeof data.defaultModelId === "string" ? data.defaultModelId : "",
+        fallbackModelIds: Array.isArray(data.fallbackModelIds) ? data.fallbackModelIds.filter((item): item is string => typeof item === "string") : [],
+        requiredCapabilities: Array.isArray(data.requiredCapabilities) ? data.requiredCapabilities.filter((item): item is string => typeof item === "string") : [],
+        allowedTiers: allowedTiers.length ? allowedTiers : DEFAULT_TIERS,
+        defaultQualityMode: typeof data.defaultQualityMode === "string" && QUALITY_MODES.includes(data.defaultQualityMode as AIQualityMode)
+          ? data.defaultQualityMode
+          : "balanced",
+        active: data.active !== false,
+      };
+    });
     return apiResponse({ configs });
   },
   {

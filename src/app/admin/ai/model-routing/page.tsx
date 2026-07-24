@@ -20,6 +20,9 @@ const FEATURES = [
 
 const PLANS = ["explorer", "pro", "elite", "enterprise"];
 const QUALITY = ["economy", "balanced", "premium", "cinematic", "auto"];
+const DEFAULT_TIERS = ["explorer", "pro", "elite", "enterprise"];
+const PREMIUM_TIERS = ["pro", "elite", "enterprise"];
+const ELITE_TIERS = ["elite", "enterprise"];
 
 type Config = {
   featureKey: string;
@@ -50,10 +53,33 @@ function normalizeConfig(raw: unknown): Config | null {
     defaultModelId: typeof value.defaultModelId === "string" ? value.defaultModelId : "",
     fallbackModelIds: normalizeStringArray(value.fallbackModelIds),
     requiredCapabilities: normalizeStringArray(value.requiredCapabilities),
-    allowedTiers: normalizeStringArray(value.allowedTiers),
+    allowedTiers: (() => {
+      const tiers = normalizeStringArray(value.allowedTiers);
+      return tiers.length ? tiers : DEFAULT_TIERS;
+    })(),
     defaultQualityMode: typeof value.defaultQualityMode === "string" ? value.defaultQualityMode : "balanced",
     active: value.active !== false,
     updatedAt: value.updatedAt as Config["updatedAt"],
+  };
+}
+
+function getTierPreset(allowedTiers: string[]) {
+  const tiers = allowedTiers.join(",");
+  if (tiers === DEFAULT_TIERS.join(",")) return "all";
+  if (tiers === PREMIUM_TIERS.join(",")) return "pro_plus";
+  if (tiers === ELITE_TIERS.join(",")) return "elite_plus";
+  return "custom";
+}
+
+function applyTierPreset(preset: "all" | "pro_plus" | "elite_plus", current: Config) {
+  return {
+    ...current,
+    allowedTiers:
+      preset === "all"
+        ? DEFAULT_TIERS
+        : preset === "pro_plus"
+          ? PREMIUM_TIERS
+          : ELITE_TIERS,
   };
 }
 
@@ -363,6 +389,7 @@ export default function AdminAIModelRoutingPage() {
                 <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
                   <p className="text-[11px] uppercase tracking-[0.16em] text-white/35">Tiers</p>
                   <p className="mt-1 text-sm text-white">{formatCommaList(selectedConfig?.allowedTiers, "All tiers")}</p>
+                  <p className="mt-1 text-xs text-white/40">Preset: {selectedConfig ? getTierPreset(selectedConfig.allowedTiers) : "all"}</p>
                 </div>
               </div>
               {getRoutingWarnings(selectedFeature, selectedConfig || undefined, models).length ? (
@@ -400,7 +427,30 @@ export default function AdminAIModelRoutingPage() {
             </div>
 
             <div className="mt-5">
-              <p className="mb-2 text-sm text-white/70">Allowed tiers</p>
+              <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                <p className="text-sm text-white/70">Allowed tiers</p>
+                <p className="text-xs text-white/40">Use the preset buttons to switch between all-tier and premium-only configs.</p>
+              </div>
+              <div className="mb-3 flex flex-wrap gap-2">
+                {[
+                  { key: "all", label: "All tiers" },
+                  { key: "pro_plus", label: "Pro +" },
+                  { key: "elite_plus", label: "Elite +" },
+                ].map((preset) => {
+                  const activePreset = selectedConfig ? getTierPreset(draft.allowedTiers) : "all";
+                  const isSelected = activePreset === preset.key;
+                  return (
+                    <button
+                      key={preset.key}
+                      type="button"
+                      onClick={() => setDraft((current) => applyTierPreset(preset.key as "all" | "pro_plus" | "elite_plus", current))}
+                      className={`rounded-full px-3 py-1 text-sm transition-colors ${isSelected ? "bg-cyan-400/15 text-cyan-100" : "bg-white/[0.05] text-white/45 hover:bg-white/[0.08] hover:text-white"}`}
+                    >
+                      {preset.label}
+                    </button>
+                  );
+                })}
+              </div>
               <div className="flex flex-wrap gap-2">
                 {PLANS.map((plan) => {
                   const safeTiers = Array.isArray(draft.allowedTiers) ? draft.allowedTiers : [];
