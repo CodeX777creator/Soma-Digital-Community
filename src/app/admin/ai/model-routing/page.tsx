@@ -23,6 +23,7 @@ const QUALITY = ["economy", "balanced", "premium", "cinematic", "auto"];
 const DEFAULT_TIERS = ["explorer", "pro", "elite", "enterprise"];
 const PREMIUM_TIERS = ["pro", "elite", "enterprise"];
 const ELITE_TIERS = ["elite", "enterprise"];
+type TierScope = "all" | "pro_plus" | "elite_plus";
 
 type Config = {
   featureKey: string;
@@ -30,9 +31,11 @@ type Config = {
   fallbackModelIds: string[];
   requiredCapabilities: string[];
   allowedTiers: string[];
+  tierScope: TierScope;
   premiumDefaultModelId: string;
   premiumFallbackModelIds: string[];
   premiumAllowedTiers: string[];
+  premiumTierScope: Exclude<TierScope, "all">;
   defaultQualityMode: string;
   premiumQualityMode: string;
   active: boolean;
@@ -61,11 +64,28 @@ function normalizeConfig(raw: unknown): Config | null {
       const tiers = normalizeStringArray(value.allowedTiers);
       return tiers.length ? tiers : DEFAULT_TIERS;
     })(),
+    tierScope: (() => {
+      if (typeof value.tierScope === "string" && ["all", "pro_plus", "elite_plus"].includes(value.tierScope)) {
+        return value.tierScope as TierScope;
+      }
+      const tiers = normalizeStringArray(value.allowedTiers);
+      if (tiers.join(",") === PREMIUM_TIERS.join(",")) return "pro_plus";
+      if (tiers.join(",") === ELITE_TIERS.join(",")) return "elite_plus";
+      return "all";
+    })(),
     premiumDefaultModelId: typeof value.premiumDefaultModelId === "string" ? value.premiumDefaultModelId : "",
     premiumFallbackModelIds: normalizeStringArray(value.premiumFallbackModelIds),
     premiumAllowedTiers: (() => {
       const tiers = normalizeStringArray(value.premiumAllowedTiers);
       return tiers.length ? tiers : PREMIUM_TIERS;
+    })(),
+    premiumTierScope: (() => {
+      if (typeof value.premiumTierScope === "string" && ["pro_plus", "elite_plus"].includes(value.premiumTierScope)) {
+        return value.premiumTierScope as Exclude<TierScope, "all">;
+      }
+      const tiers = normalizeStringArray(value.premiumAllowedTiers);
+      if (tiers.join(",") === ELITE_TIERS.join(",")) return "elite_plus";
+      return "pro_plus";
     })(),
     defaultQualityMode: typeof value.defaultQualityMode === "string" ? value.defaultQualityMode : "balanced",
     premiumQualityMode: typeof value.premiumQualityMode === "string" ? value.premiumQualityMode : "premium",
@@ -74,15 +94,16 @@ function normalizeConfig(raw: unknown): Config | null {
   };
 }
 
-function getTierPreset(allowedTiers: string[]) {
-  const tiers = allowedTiers.join(",");
+function getTierPreset(allowedTiers: string[] | TierScope) {
+  const tiers = Array.isArray(allowedTiers) ? allowedTiers.join(",") : allowedTiers;
+  if (tiers === "all") return "all";
   if (tiers === DEFAULT_TIERS.join(",")) return "all";
   if (tiers === PREMIUM_TIERS.join(",")) return "pro_plus";
   if (tiers === ELITE_TIERS.join(",")) return "elite_plus";
   return "custom";
 }
 
-function applyTierPreset(preset: "all" | "pro_plus" | "elite_plus", current: Config) {
+function applyTierPreset(preset: TierScope, current: Config) {
   return {
     ...current,
     allowedTiers:
@@ -90,11 +111,12 @@ function applyTierPreset(preset: "all" | "pro_plus" | "elite_plus", current: Con
         ? DEFAULT_TIERS
         : preset === "pro_plus"
           ? PREMIUM_TIERS
-        : ELITE_TIERS,
+          : ELITE_TIERS,
+    tierScope: preset,
   };
 }
 
-function getTierScopeLabel(allowedTiers: string[], fallback: string) {
+function getTierScopeLabel(allowedTiers: string[] | TierScope, fallback: string) {
   const preset = getTierPreset(allowedTiers);
   if (preset === "all") return "All tiers";
   if (preset === "pro_plus") return "Pro +";
@@ -106,6 +128,7 @@ function applyPremiumTierPreset(preset: "pro_plus" | "elite_plus", current: Conf
   return {
     ...current,
     premiumAllowedTiers: preset === "pro_plus" ? PREMIUM_TIERS : ELITE_TIERS,
+    premiumTierScope: preset,
   };
 }
 
@@ -220,9 +243,11 @@ function emptyConfig(featureKey = "chat"): Config {
     fallbackModelIds: [],
     requiredCapabilities: [],
     allowedTiers: ["explorer", "pro", "elite", "enterprise"],
+    tierScope: "all",
     premiumDefaultModelId: "",
     premiumFallbackModelIds: [],
     premiumAllowedTiers: ELITE_TIERS,
+    premiumTierScope: "elite_plus",
     defaultQualityMode: "balanced",
     premiumQualityMode: "premium",
     active: true,
@@ -344,8 +369,8 @@ export default function AdminAIModelRoutingPage() {
                       </td>
                       <td className="border-t border-white/10 px-4 py-3">
                         <div className="space-y-1">
-                          <p className="text-white/70">{getTierScopeLabel(row.config?.allowedTiers || DEFAULT_TIERS, "All tiers")}</p>
-                          <p className="text-xs text-white/40">Premium: {getTierScopeLabel(row.config?.premiumAllowedTiers || PREMIUM_TIERS, "Pro +")}</p>
+                          <p className="text-white/70">{row.config?.tierScope ? getTierScopeLabel(row.config.tierScope, "All tiers") : getTierScopeLabel(row.config?.allowedTiers || DEFAULT_TIERS, "All tiers")}</p>
+                          <p className="text-xs text-white/40">Premium: {row.config?.premiumTierScope ? getTierScopeLabel(row.config.premiumTierScope, "Pro +") : getTierScopeLabel(row.config?.premiumAllowedTiers || PREMIUM_TIERS, "Pro +")}</p>
                         </div>
                       </td>
                       <td className="border-t border-white/10 px-4 py-3">
@@ -526,7 +551,7 @@ export default function AdminAIModelRoutingPage() {
                     { key: "pro_plus", label: "Pro +" },
                     { key: "elite_plus", label: "Elite +" },
                   ].map((preset) => {
-                    const activePreset = getTierPreset(draft.premiumAllowedTiers);
+                    const activePreset = draft.premiumTierScope;
                     const isSelected = activePreset === preset.key;
 
                     return (
@@ -555,7 +580,7 @@ export default function AdminAIModelRoutingPage() {
                   { key: "pro_plus", label: "Pro +" },
                   { key: "elite_plus", label: "Elite +" },
                 ].map((preset) => {
-                  const activePreset = selectedConfig ? getTierPreset(draft.allowedTiers) : "all";
+                  const activePreset = selectedConfig ? draft.tierScope : "all";
                   const isSelected = activePreset === preset.key;
                   return (
                     <button

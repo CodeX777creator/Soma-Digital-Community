@@ -44,9 +44,11 @@ export interface AIModelFeatureConfigDoc {
   fallbackModelIds: string[];
   requiredCapabilities: string[];
   allowedTiers: CreatorPlan[];
+  tierScope?: "all" | "pro_plus" | "elite_plus";
   premiumDefaultModelId?: string;
   premiumFallbackModelIds?: string[];
   premiumAllowedTiers?: CreatorPlan[];
+  premiumTierScope?: "pro_plus" | "elite_plus";
   defaultQualityMode: AIQualityMode;
   active: boolean;
   updatedAt?: unknown;
