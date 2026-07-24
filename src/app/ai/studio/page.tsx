@@ -1127,12 +1127,12 @@ export default function AIStudioPage() {
                           placeholder="Goal, e.g. educate, sell, announce"
                           className="h-11 rounded-2xl border-white/[0.08] bg-[#090B13]/70 text-white placeholder:text-[#7E8799]"
                         />
-                        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-                          <Button type="submit" disabled={generating || loading || isCreditBlocked} className="h-11 w-full min-w-0 flex-1 rounded-2xl bg-gradient-to-br from-[#5B5FFF] via-[#8B5CF6] to-[#4F9DFF] shadow-[0_18px_45px_rgba(91,95,255,0.35)] whitespace-normal sm:w-auto">
+                        <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+                          <Button type="submit" disabled={generating || loading || isCreditBlocked} className="h-11 w-full min-w-max flex-shrink-0 rounded-2xl bg-gradient-to-br from-[#5B5FFF] via-[#8B5CF6] to-[#4F9DFF] shadow-[0_18px_45px_rgba(91,95,255,0.35)] sm:w-auto">
                             {generating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
                             {isCreditBlocked ? "Add credits to generate" : "Generate"}
                           </Button>
-                          <Button type="button" variant="outline" onClick={() => setShowAdvancedComposer((value) => !value)} className="h-11 w-full shrink-0 rounded-2xl border-white/[0.08] bg-white/[0.04] sm:w-auto">
+                          <Button type="button" variant="outline" onClick={() => setShowAdvancedComposer((value) => !value)} className="h-11 w-full shrink-0 rounded-2xl border-white/[0.08] bg-white/[0.04] sm:w-auto sm:flex-none">
                             Advanced
                           </Button>
                         </div>
@@ -1216,7 +1216,7 @@ export default function AIStudioPage() {
 
           <section className="grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
             <div className="rounded-[18px] border border-white/[0.08] bg-[#151A2E]/70 p-5 shadow-[0_18px_60px_rgba(0,0,0,0.24)]">
-              <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+              <div className="flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-start sm:justify-between sm:gap-6">
                 <div>
                   <div className="inline-flex items-center gap-2 rounded-full border border-[#4F9DFF]/20 bg-[#4F9DFF]/10 px-3 py-1 text-xs text-[#BFC6D4]">
                     <Sparkles className="h-3.5 w-3.5 text-[#4F9DFF]" />
@@ -1232,7 +1232,7 @@ export default function AIStudioPage() {
                 <Button
                   type="button"
                   onClick={() => applyCreationIntent(CREATION_INTENTS[0])}
-                  className="rounded-2xl bg-gradient-to-br from-[#5B5FFF] via-[#8B5CF6] to-[#4F9DFF]"
+                  className="w-full rounded-2xl bg-gradient-to-br from-[#5B5FFF] via-[#8B5CF6] to-[#4F9DFF] sm:w-auto sm:flex-none sm:shrink-0 sm:min-w-max"
                 >
                   <Sparkles className="h-4 w-4" />
                   Generate today's content
@@ -1472,12 +1472,12 @@ export default function AIStudioPage() {
                       </div>
                     </div>
 
-                    <div className="flex flex-wrap items-center gap-2">
-                      <Button type="submit" disabled={generating || loading || isCreditBlocked}>
+                    <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+                      <Button type="submit" disabled={generating || loading || isCreditBlocked} className="w-full min-w-max flex-shrink-0 sm:w-auto">
                         {generating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
                         {isCreditBlocked ? "Add credits to generate" : "Generate with details"}
                       </Button>
-                      <Button type="button" variant="outline" onClick={() => setComposer(DEFAULT_COMPOSER_STATE)} disabled={generating}>
+                      <Button type="button" variant="outline" onClick={() => setComposer(DEFAULT_COMPOSER_STATE)} disabled={generating} className="w-full shrink-0 sm:w-auto sm:flex-none">
                         Reset details
                       </Button>
                     </div>
