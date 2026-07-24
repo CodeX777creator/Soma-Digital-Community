@@ -44,6 +44,9 @@ export interface AIModelFeatureConfigDoc {
   fallbackModelIds: string[];
   requiredCapabilities: string[];
   allowedTiers: CreatorPlan[];
+  premiumDefaultModelId?: string;
+  premiumFallbackModelIds?: string[];
+  premiumAllowedTiers?: CreatorPlan[];
   defaultQualityMode: AIQualityMode;
   active: boolean;
   updatedAt?: unknown;
@@ -177,6 +180,41 @@ function defaultTierAccess(creditClass: AIModelCreditClass): CreatorPlan[] {
   if (creditClass === "specialized") return ["elite", "enterprise"];
   if (creditClass === "premium" || creditClass === "advanced") return ["pro", "elite", "enterprise"];
   return DEFAULT_TIER_ACCESS;
+}
+
+function isTierAllowed(tier: CreatorPlan, allowedTiers?: CreatorPlan[]) {
+  const tiers = Array.isArray(allowedTiers) && allowedTiers.length ? allowedTiers : DEFAULT_TIER_ACCESS;
+  return tiers.includes(tier);
+}
+
+function selectPreferredRoute(
+  inputTier: CreatorPlan,
+  config: AIModelFeatureConfigDoc | null,
+): { modelId: string; fallbackModelIds: string[]; source: "feature_config" | "fallback"; isPremium: boolean } | null {
+  if (!config || config.active === false) return null;
+
+  const premiumAllowed = isTierAllowed(inputTier, config.premiumAllowedTiers);
+  const baseAllowed = isTierAllowed(inputTier, config.allowedTiers);
+
+  if (premiumAllowed && config.premiumDefaultModelId) {
+    return {
+      modelId: config.premiumDefaultModelId,
+      fallbackModelIds: config.premiumFallbackModelIds || [],
+      source: "feature_config",
+      isPremium: true,
+    };
+  }
+
+  if (baseAllowed && config.defaultModelId) {
+    return {
+      modelId: config.defaultModelId,
+      fallbackModelIds: config.fallbackModelIds || [],
+      source: "feature_config",
+      isPremium: false,
+    };
+  }
+
+  return null;
 }
 
 function normalizeModel(raw: Record<string, unknown>): AIModelRegistryDoc | null {
@@ -333,14 +371,15 @@ export async function resolveConfiguredModelRoute(input: {
   fallbackModelId: string;
 }): Promise<ResolvedModelRoute> {
   const featureConfig = await getAIModelFeatureConfig(input.featureKey);
-  if (featureConfig?.defaultModelId && featureConfig.allowedTiers.includes(input.userTier)) {
-    const model = await getAIModel(featureConfig.defaultModelId);
+  const preferredRoute = selectPreferredRoute(input.userTier, featureConfig);
+  if (preferredRoute) {
+    const model = await getAIModel(preferredRoute.modelId);
     if (!model || (model.sdcEnabled !== false && model.tierAccess.includes(input.userTier))) {
       return {
-        providerId: modelIdToProviderId(featureConfig.defaultModelId),
-        modelId: featureConfig.defaultModelId,
-        fallbackModelIds: featureConfig.fallbackModelIds || [],
-        source: "feature_config",
+        providerId: modelIdToProviderId(preferredRoute.modelId),
+        modelId: preferredRoute.modelId,
+        fallbackModelIds: preferredRoute.fallbackModelIds,
+        source: preferredRoute.source,
         model,
         featureConfig,
       };

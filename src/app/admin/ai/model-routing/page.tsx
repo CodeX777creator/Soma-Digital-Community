@@ -30,7 +30,11 @@ type Config = {
   fallbackModelIds: string[];
   requiredCapabilities: string[];
   allowedTiers: string[];
+  premiumDefaultModelId: string;
+  premiumFallbackModelIds: string[];
+  premiumAllowedTiers: string[];
   defaultQualityMode: string;
+  premiumQualityMode: string;
   active: boolean;
   updatedAt?: string | Date | { toDate?: () => Date; seconds?: number } | null;
 };
@@ -57,7 +61,14 @@ function normalizeConfig(raw: unknown): Config | null {
       const tiers = normalizeStringArray(value.allowedTiers);
       return tiers.length ? tiers : DEFAULT_TIERS;
     })(),
+    premiumDefaultModelId: typeof value.premiumDefaultModelId === "string" ? value.premiumDefaultModelId : "",
+    premiumFallbackModelIds: normalizeStringArray(value.premiumFallbackModelIds),
+    premiumAllowedTiers: (() => {
+      const tiers = normalizeStringArray(value.premiumAllowedTiers);
+      return tiers.length ? tiers : PREMIUM_TIERS;
+    })(),
     defaultQualityMode: typeof value.defaultQualityMode === "string" ? value.defaultQualityMode : "balanced",
+    premiumQualityMode: typeof value.premiumQualityMode === "string" ? value.premiumQualityMode : "premium",
     active: value.active !== false,
     updatedAt: value.updatedAt as Config["updatedAt"],
   };
@@ -194,7 +205,11 @@ function emptyConfig(featureKey = "chat"): Config {
     fallbackModelIds: [],
     requiredCapabilities: [],
     allowedTiers: ["explorer", "pro", "elite", "enterprise"],
+    premiumDefaultModelId: "",
+    premiumFallbackModelIds: [],
+    premiumAllowedTiers: ["pro", "elite", "enterprise"],
     defaultQualityMode: "balanced",
+    premiumQualityMode: "premium",
     active: true,
   };
 }
@@ -294,7 +309,7 @@ export default function AdminAIModelRoutingPage() {
                 <thead>
                   <tr className="text-left text-[11px] uppercase tracking-[0.18em] text-white/35">
                     <th className="px-4 py-3">Feature</th>
-                    <th className="px-4 py-3">Default model</th>
+                    <th className="px-4 py-3">Routes</th>
                     <th className="px-4 py-3">Tiers</th>
                     <th className="px-4 py-3">Quality</th>
                     <th className="px-4 py-3">Last saved</th>
@@ -306,9 +321,24 @@ export default function AdminAIModelRoutingPage() {
                   {routingRows.map((row) => (
                     <tr key={row.feature} className="border-t border-white/10 text-sm text-white/75">
                       <td className="border-t border-white/10 px-4 py-3 capitalize">{row.feature.replace(/_/g, " ")}</td>
-                      <td className="border-t border-white/10 px-4 py-3">{row.config?.defaultModelId || "Not set"}</td>
-                      <td className="border-t border-white/10 px-4 py-3">{formatCommaList(row.config?.allowedTiers, "All tiers")}</td>
-                      <td className="border-t border-white/10 px-4 py-3">{row.config?.defaultQualityMode || "balanced"}</td>
+                      <td className="border-t border-white/10 px-4 py-3">
+                        <div className="space-y-1">
+                          <p className="text-white">{row.config?.defaultModelId || "Not set"}</p>
+                          <p className="text-xs text-white/40">Premium: {row.config?.premiumDefaultModelId || "Not set"}</p>
+                        </div>
+                      </td>
+                      <td className="border-t border-white/10 px-4 py-3">
+                        <div className="space-y-1">
+                          <p className="text-white/70">{formatCommaList(row.config?.allowedTiers, "All tiers")}</p>
+                          <p className="text-xs text-white/40">Premium: {formatCommaList(row.config?.premiumAllowedTiers, "Pro+")}</p>
+                        </div>
+                      </td>
+                      <td className="border-t border-white/10 px-4 py-3">
+                        <div className="space-y-1">
+                          <p className="text-white/70">{row.config?.defaultQualityMode || "balanced"}</p>
+                          <p className="text-xs text-white/40">Premium: {row.config?.premiumQualityMode || "premium"}</p>
+                        </div>
+                      </td>
                       <td className="border-t border-white/10 px-4 py-3 text-white/50">{formatTimestamp(row.lastSaved)}</td>
                       <td className="border-t border-white/10 px-4 py-3">
                         {row.warnings.length ? (
@@ -377,14 +407,26 @@ export default function AdminAIModelRoutingPage() {
                   </button>
                 </div>
               </div>
-              <div className="mt-4 grid gap-3 md:grid-cols-3">
+              <div className="mt-4 grid gap-3 md:grid-cols-2">
                 <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
-                  <p className="text-[11px] uppercase tracking-[0.16em] text-white/35">Default model</p>
+                  <p className="text-[11px] uppercase tracking-[0.16em] text-white/35">Base route</p>
                   <p className="mt-1 text-sm text-white">{selectedConfig?.defaultModelId || "Not set"}</p>
+                  <p className="mt-1 text-xs text-white/40">All-tier route for explorer, pro, elite, and enterprise.</p>
                 </div>
                 <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
-                  <p className="text-[11px] uppercase tracking-[0.16em] text-white/35">Fallbacks</p>
+                  <p className="text-[11px] uppercase tracking-[0.16em] text-white/35">Premium override</p>
+                  <p className="mt-1 text-sm text-white">{selectedConfig?.premiumDefaultModelId || "Not set"}</p>
+                  <p className="mt-1 text-xs text-white/40">Used for Pro+ or Enterprise+ based on the selected premium tiers.</p>
+                </div>
+              </div>
+              <div className="mt-3 grid gap-3 md:grid-cols-3">
+                <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
+                  <p className="text-[11px] uppercase tracking-[0.16em] text-white/35">Base fallbacks</p>
                   <p className="mt-1 text-sm text-white">{selectedConfig?.fallbackModelIds?.length ? selectedConfig.fallbackModelIds.length : 0} selected</p>
+                </div>
+                <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
+                  <p className="text-[11px] uppercase tracking-[0.16em] text-white/35">Premium fallbacks</p>
+                  <p className="mt-1 text-sm text-white">{selectedConfig?.premiumFallbackModelIds?.length ? selectedConfig.premiumFallbackModelIds.length : 0} selected</p>
                 </div>
                 <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
                   <p className="text-[11px] uppercase tracking-[0.16em] text-white/35">Tiers</p>
@@ -403,14 +445,14 @@ export default function AdminAIModelRoutingPage() {
             </div>
             <div className="grid gap-4 md:grid-cols-2">
               <label className="space-y-2 text-sm">
-                <span className="text-white/70">Default model</span>
+                <span className="text-white/70">Base default model</span>
                 <select value={draft.defaultModelId} onChange={(event) => setDraft({ ...draft, defaultModelId: event.target.value })} className="h-11 w-full rounded-xl border border-white/10 bg-[#090B13] px-3 text-white">
                   <option value="">Choose model</option>
                   {models.map((model) => <option key={model.id} value={model.id}>{model.id}</option>)}
                 </select>
               </label>
               <label className="space-y-2 text-sm">
-                <span className="text-white/70">Default quality</span>
+                <span className="text-white/70">Base default quality</span>
                 <select value={draft.defaultQualityMode} onChange={(event) => setDraft({ ...draft, defaultQualityMode: event.target.value })} className="h-11 w-full rounded-xl border border-white/10 bg-[#090B13] px-3 text-white">
                   {QUALITY.map((quality) => <option key={quality} value={quality}>{quality}</option>)}
                 </select>
@@ -424,6 +466,69 @@ export default function AdminAIModelRoutingPage() {
                 selectedIds={draft.fallbackModelIds} 
                 onChange={(ids) => setDraft({ ...draft, fallbackModelIds: ids })} 
               />
+            </div>
+
+            <div className="mt-6 rounded-2xl border border-white/10 bg-black/20 p-4">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <p className="text-xs uppercase tracking-[0.2em] text-cyan-200/70">Premium override</p>
+                  <p className="mt-1 text-sm text-white/70">This lane activates for Pro, Elite, or Enterprise depending on the premium tier selection below.</p>
+                </div>
+                <span className="rounded-full border border-cyan-400/20 bg-cyan-500/10 px-3 py-1 text-xs text-cyan-100">
+                  {draft.premiumDefaultModelId ? "Configured" : "Not configured"}
+                </span>
+              </div>
+              <div className="mt-4 grid gap-4 md:grid-cols-2">
+                <label className="space-y-2 text-sm">
+                  <span className="text-white/70">Premium default model</span>
+                  <select value={draft.premiumDefaultModelId} onChange={(event) => setDraft({ ...draft, premiumDefaultModelId: event.target.value })} className="h-11 w-full rounded-xl border border-white/10 bg-[#090B13] px-3 text-white">
+                    <option value="">Choose model</option>
+                    {models.map((model) => <option key={`premium-${model.id}`} value={model.id}>{model.id}</option>)}
+                  </select>
+                </label>
+                <label className="space-y-2 text-sm">
+                  <span className="text-white/70">Premium quality</span>
+                  <select value={draft.premiumQualityMode} onChange={(event) => setDraft({ ...draft, premiumQualityMode: event.target.value })} className="h-11 w-full rounded-xl border border-white/10 bg-[#090B13] px-3 text-white">
+                    {QUALITY.map((quality) => <option key={`premium-${quality}`} value={quality}>{quality}</option>)}
+                  </select>
+                </label>
+              </div>
+              <div className="mt-4 block space-y-2 text-sm">
+                <span className="text-white/70">Premium fallback model IDs</span>
+                <MultiModelSelect
+                  models={models}
+                  selectedIds={draft.premiumFallbackModelIds}
+                  onChange={(ids) => setDraft({ ...draft, premiumFallbackModelIds: ids })}
+                />
+              </div>
+              <div className="mt-5">
+                <p className="mb-2 text-sm text-white/70">Premium tier scope</p>
+                <div className="flex flex-wrap gap-2">
+                  {PLANS.map((plan) => {
+                    const safeTiers = Array.isArray(draft.premiumAllowedTiers) ? draft.premiumAllowedTiers : [];
+                    const isAllowed = safeTiers.includes(plan);
+
+                    return (
+                      <button
+                        key={`premium-${plan}`}
+                        type="button"
+                        onClick={() => setDraft((current) => {
+                          const currentTiers = Array.isArray(current.premiumAllowedTiers) ? current.premiumAllowedTiers : [];
+                          return {
+                            ...current,
+                            premiumAllowedTiers: currentTiers.includes(plan)
+                              ? currentTiers.filter((item) => item !== plan)
+                              : [...currentTiers, plan],
+                          };
+                        })}
+                        className={`rounded-full px-3 py-1 text-sm ${isAllowed ? "bg-cyan-400/15 text-cyan-100" : "bg-white/[0.05] text-white/45"}`}
+                      >
+                        {plan}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
             </div>
 
             <div className="mt-5">
@@ -494,24 +599,29 @@ export default function AdminAIModelRoutingPage() {
 
 function getRoutingWarnings(featureKey: string, config: Config | undefined, models: Model[]) {
   const warnings: string[] = [];
-  if (!config?.defaultModelId) {
-    warnings.push("No default model selected");
-    return warnings;
-  }
-
-  const model = models.find((item) => item.id === config.defaultModelId);
-  if (!model) {
-    warnings.push("Default model is not available in the synced catalog");
-    return warnings;
-  }
-
   const expectedTypes = FEATURE_TYPE_HINTS[featureKey] || [];
-  if (expectedTypes.length && !expectedTypes.some((type) => model.type?.toLowerCase() === type)) {
-    warnings.push(`Model type ${model.type || "unknown"} may not suit this feature`);
-  }
 
-  if (config.allowedTiers && config.allowedTiers.length === 0) {
-    warnings.push("No tiers are allowed for this routing config");
+  const validateRoute = (label: string, modelId?: string, tiers?: string[]) => {
+    if (!modelId) {
+      warnings.push(`${label} model not selected`);
+      return;
+    }
+    const model = models.find((item) => item.id === modelId);
+    if (!model) {
+      warnings.push(`${label} model is not available in the synced catalog`);
+      return;
+    }
+    if (expectedTypes.length && !expectedTypes.some((type) => model.type?.toLowerCase() === type)) {
+      warnings.push(`${label} model type ${model.type || "unknown"} may not suit this feature`);
+    }
+    if (tiers && tiers.length === 0) {
+      warnings.push(`${label} has no tiers configured`);
+    }
+  };
+
+  validateRoute("Base", config?.defaultModelId, config?.allowedTiers);
+  if (config?.premiumDefaultModelId || config?.premiumFallbackModelIds?.length) {
+    validateRoute("Premium", config.premiumDefaultModelId, config.premiumAllowedTiers);
   }
 
   return warnings;

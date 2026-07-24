@@ -38,6 +38,14 @@ const TASKS: AIRequestTask[] = [
 const PLANS: CreatorPlan[] = ["explorer", "pro", "elite", "enterprise"];
 const QUALITY_MODES: AIQualityMode[] = ["economy", "balanced", "premium", "cinematic", "auto"];
 const DEFAULT_TIERS: CreatorPlan[] = ["explorer", "pro", "elite", "enterprise"];
+const PREMIUM_TIERS: CreatorPlan[] = ["pro", "elite", "enterprise"];
+
+function normalizeTiers(value: unknown, fallback: CreatorPlan[]) {
+  const tiers = Array.isArray(value)
+    ? value.filter((tier): tier is CreatorPlan => typeof tier === "string" && PLANS.includes(tier as CreatorPlan))
+    : [];
+  return tiers.length > 0 ? tiers : fallback;
+}
 
 function parseConfig(body: Record<string, unknown>): AIModelFeatureConfigDoc | null {
   const featureKey = typeof body.featureKey === "string" && TASKS.includes(body.featureKey as AIRequestTask)
@@ -48,9 +56,6 @@ function parseConfig(body: Record<string, unknown>): AIModelFeatureConfigDoc | n
     : null;
   if (!featureKey || !defaultModelId) return null;
 
-  const allowedTiers = Array.isArray(body.allowedTiers)
-    ? body.allowedTiers.filter((tier): tier is CreatorPlan => typeof tier === "string" && PLANS.includes(tier as CreatorPlan))
-    : PLANS;
   const defaultQualityMode = typeof body.defaultQualityMode === "string" && QUALITY_MODES.includes(body.defaultQualityMode as AIQualityMode)
     ? body.defaultQualityMode as AIQualityMode
     : "balanced";
@@ -64,7 +69,14 @@ function parseConfig(body: Record<string, unknown>): AIModelFeatureConfigDoc | n
     requiredCapabilities: Array.isArray(body.requiredCapabilities)
       ? body.requiredCapabilities.filter((item): item is string => typeof item === "string" && item.trim().length > 0)
       : [],
-    allowedTiers: allowedTiers.length > 0 ? allowedTiers : PLANS,
+    allowedTiers: normalizeTiers(body.allowedTiers, DEFAULT_TIERS),
+    premiumDefaultModelId: typeof body.premiumDefaultModelId === "string" && body.premiumDefaultModelId.trim()
+      ? body.premiumDefaultModelId.trim()
+      : undefined,
+    premiumFallbackModelIds: Array.isArray(body.premiumFallbackModelIds)
+      ? body.premiumFallbackModelIds.filter((item): item is string => typeof item === "string" && item.trim().length > 0)
+      : [],
+    premiumAllowedTiers: normalizeTiers(body.premiumAllowedTiers, PREMIUM_TIERS),
     defaultQualityMode,
     active: body.active !== false,
   };
@@ -76,16 +88,16 @@ export const GET = createAPIHandler(
     const snapshot = await adminDb.collection("aiModelFeatureConfigs").get();
     const configs = snapshot.docs.map((doc) => {
       const data = doc.data() as Partial<AIModelFeatureConfigDoc> & Record<string, unknown>;
-      const allowedTiers = Array.isArray(data.allowedTiers)
-        ? data.allowedTiers.filter((tier): tier is CreatorPlan => typeof tier === "string" && DEFAULT_TIERS.includes(tier as CreatorPlan))
-        : [];
       return {
         ...data,
         featureKey: typeof data.featureKey === "string" ? data.featureKey : doc.id,
         defaultModelId: typeof data.defaultModelId === "string" ? data.defaultModelId : "",
         fallbackModelIds: Array.isArray(data.fallbackModelIds) ? data.fallbackModelIds.filter((item): item is string => typeof item === "string") : [],
         requiredCapabilities: Array.isArray(data.requiredCapabilities) ? data.requiredCapabilities.filter((item): item is string => typeof item === "string") : [],
-        allowedTiers: allowedTiers.length ? allowedTiers : DEFAULT_TIERS,
+        allowedTiers: normalizeTiers(data.allowedTiers, DEFAULT_TIERS),
+        premiumDefaultModelId: typeof data.premiumDefaultModelId === "string" ? data.premiumDefaultModelId : undefined,
+        premiumFallbackModelIds: Array.isArray(data.premiumFallbackModelIds) ? data.premiumFallbackModelIds.filter((item): item is string => typeof item === "string") : [],
+        premiumAllowedTiers: normalizeTiers(data.premiumAllowedTiers, PREMIUM_TIERS),
         defaultQualityMode: typeof data.defaultQualityMode === "string" && QUALITY_MODES.includes(data.defaultQualityMode as AIQualityMode)
           ? data.defaultQualityMode
           : "balanced",
