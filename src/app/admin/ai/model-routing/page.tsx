@@ -90,7 +90,22 @@ function applyTierPreset(preset: "all" | "pro_plus" | "elite_plus", current: Con
         ? DEFAULT_TIERS
         : preset === "pro_plus"
           ? PREMIUM_TIERS
-          : ELITE_TIERS,
+        : ELITE_TIERS,
+  };
+}
+
+function getTierScopeLabel(allowedTiers: string[], fallback: string) {
+  const preset = getTierPreset(allowedTiers);
+  if (preset === "all") return "All tiers";
+  if (preset === "pro_plus") return "Pro +";
+  if (preset === "elite_plus") return "Elite +";
+  return fallback;
+}
+
+function applyPremiumTierPreset(preset: "pro_plus" | "elite_plus", current: Config) {
+  return {
+    ...current,
+    premiumAllowedTiers: preset === "pro_plus" ? PREMIUM_TIERS : ELITE_TIERS,
   };
 }
 
@@ -207,7 +222,7 @@ function emptyConfig(featureKey = "chat"): Config {
     allowedTiers: ["explorer", "pro", "elite", "enterprise"],
     premiumDefaultModelId: "",
     premiumFallbackModelIds: [],
-    premiumAllowedTiers: ["pro", "elite", "enterprise"],
+    premiumAllowedTiers: ELITE_TIERS,
     defaultQualityMode: "balanced",
     premiumQualityMode: "premium",
     active: true,
@@ -329,8 +344,8 @@ export default function AdminAIModelRoutingPage() {
                       </td>
                       <td className="border-t border-white/10 px-4 py-3">
                         <div className="space-y-1">
-                          <p className="text-white/70">{formatCommaList(row.config?.allowedTiers, "All tiers")}</p>
-                          <p className="text-xs text-white/40">Premium: {formatCommaList(row.config?.premiumAllowedTiers, "Pro+")}</p>
+                          <p className="text-white/70">{getTierScopeLabel(row.config?.allowedTiers || DEFAULT_TIERS, "All tiers")}</p>
+                          <p className="text-xs text-white/40">Premium: {getTierScopeLabel(row.config?.premiumAllowedTiers || PREMIUM_TIERS, "Pro +")}</p>
                         </div>
                       </td>
                       <td className="border-t border-white/10 px-4 py-3">
@@ -502,28 +517,26 @@ export default function AdminAIModelRoutingPage() {
                 />
               </div>
               <div className="mt-5">
-                <p className="mb-2 text-sm text-white/70">Premium tier scope</p>
+                <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                  <p className="text-sm text-white/70">Premium tier scope</p>
+                  <p className="text-xs text-white/40">Choose one premium lane: Pro + or Elite +.</p>
+                </div>
                 <div className="flex flex-wrap gap-2">
-                  {PLANS.map((plan) => {
-                    const safeTiers = Array.isArray(draft.premiumAllowedTiers) ? draft.premiumAllowedTiers : [];
-                    const isAllowed = safeTiers.includes(plan);
+                  {[
+                    { key: "pro_plus", label: "Pro +" },
+                    { key: "elite_plus", label: "Elite +" },
+                  ].map((preset) => {
+                    const activePreset = getTierPreset(draft.premiumAllowedTiers);
+                    const isSelected = activePreset === preset.key;
 
                     return (
                       <button
-                        key={`premium-${plan}`}
+                        key={`premium-${preset.key}`}
                         type="button"
-                        onClick={() => setDraft((current) => {
-                          const currentTiers = Array.isArray(current.premiumAllowedTiers) ? current.premiumAllowedTiers : [];
-                          return {
-                            ...current,
-                            premiumAllowedTiers: currentTiers.includes(plan)
-                              ? currentTiers.filter((item) => item !== plan)
-                              : [...currentTiers, plan],
-                          };
-                        })}
-                        className={`rounded-full px-3 py-1 text-sm ${isAllowed ? "bg-cyan-400/15 text-cyan-100" : "bg-white/[0.05] text-white/45"}`}
+                        onClick={() => setDraft((current) => applyPremiumTierPreset(preset.key as "pro_plus" | "elite_plus", current))}
+                        className={`rounded-full px-3 py-1 text-sm transition-colors ${isSelected ? "bg-cyan-400/15 text-cyan-100" : "bg-white/[0.05] text-white/45 hover:bg-white/[0.08] hover:text-white"}`}
                       >
-                        {plan}
+                        {preset.label}
                       </button>
                     );
                   })}
