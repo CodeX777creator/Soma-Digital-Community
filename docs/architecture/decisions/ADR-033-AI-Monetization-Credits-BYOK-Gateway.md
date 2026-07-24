@@ -26,10 +26,20 @@ We introduced a shared AI monetization layer under `src/services/ai-platform` th
 
 Existing AI generation paths now call into the shared gateway rather than duplicating billing logic.
 
+The gateway now also acts as the policy boundary for:
+
+- synced model catalog reads
+- feature-to-model routing
+- credit-class classification
+- provider fallback selection
+- admin-managed pricing and routing metadata
+
+The admin console is the supported place to review and edit routing state.
+
 ## Consequences
 
 - Credit accounting becomes auditable and reusable across all AI features.
 - Provider switching can happen without changing product code.
 - BYOK support can be enabled per user and per provider safely.
 - The system now has a single place to enforce cost controls and future routing rules.
-
+- The system keeps AI routing visible and editable without hardcoding model choices in the product UI.

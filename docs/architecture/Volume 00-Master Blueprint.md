@@ -101,6 +101,14 @@ Provider Routing
 
 BYOK
 
+Admin Console
+
+Model Registry
+
+Routing Config
+
+Policy Engine
+
 Mission:
 
 Give every entrepreneur access to world-class AI.
@@ -154,6 +162,34 @@ Planning
 Mission:
 
 Run an entire business from one dashboard.
+
+---
+
+# Current Platform Shape
+
+SDC now ships as a premium operating system with five visible control planes:
+
+1. Public acquisition and onboarding
+2. AI Gateway and admin routing
+3. Academy certification and learner progression
+4. Creator Credits and monetization
+5. Scheduler, marketplace, reseller, and social publishing
+
+The admin experience must always expose:
+
+- the synced AI model catalog
+- model routing summaries with saved state and warnings
+- pricing and credit controls
+- Academy course, review, and certification operations
+- promo scope and entitlement controls
+
+The learner experience must always expose:
+
+- guided Academy progression
+- lesson discussions
+- activities with completion or manual review
+- AI tutor access when enabled
+- certificate-gated MRR eligibility
 
 ---
 

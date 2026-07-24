@@ -34,6 +34,29 @@ The provider list must be extensible.
 
 ---
 
+# 17.1 Model Registry and Admin Routing
+
+SDC maintains a synced AI model registry sourced from the AI Gateway catalog.
+
+The admin console must expose:
+
+* the synced model list
+* pricing metadata
+* capability tags
+* context window and token limits
+* SDC credit class classification
+* feature-to-model routing assignments
+* fallback chains
+* tier restrictions
+* last saved timestamps
+* routing warnings when a selected model no longer matches a feature's requirements
+
+Model routing should remain editable from the admin panel without code changes.
+
+The catalog should be treated as the source of truth for available models, while SDC stores its own feature routing and pricing policy separately.
+
+---
+
 ## Connection Workflow
 
 ```text
@@ -192,6 +215,15 @@ Enterprise:
 ```
 
 Rules are loaded from configuration, not source code.
+
+Model classification guidance:
+
+* Standard: low-cost general purpose models
+* Advanced: balanced or long-context models with moderate cost
+* Premium: expensive reasoning or high-output models
+* Specialized: video-heavy, media-heavy, or domain-specific models
+
+This classification is a policy decision based on cost, capability, and expected use case. It should be visible in the admin console and reviewed whenever the model catalog sync changes.
 
 ---
 

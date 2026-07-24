@@ -33,3 +33,11 @@ Migration plan
 Risk assessment
 
 Wait for approval before implementation.
+
+For AI, Academy, and monetization audits, also verify:
+
+- model catalog sync and routing config visibility in the admin panel
+- credit accounting and fallback behavior
+- Academy gating, discussions, tutor history, and manual review flows
+- Firestore indexes for all multi-filter and sorted queries
+- documentation alignment across architecture, decisions, prompts, and README

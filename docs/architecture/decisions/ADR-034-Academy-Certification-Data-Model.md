@@ -56,3 +56,4 @@ academyImports
 - Add server-side service functions for course authoring and learner progression.
 - Add admin builder UI and learner Academy routes.
 - Add certificate issuing service and public verification route.
+- Keep lesson progression, discussion feeds, tutor history, and manual review queues backed by indexed Firestore queries so the learner and admin views stay stable at scale.
