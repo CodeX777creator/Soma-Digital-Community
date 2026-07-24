@@ -1127,12 +1127,12 @@ export default function AIStudioPage() {
                           placeholder="Goal, e.g. educate, sell, announce"
                           className="h-11 rounded-2xl border-white/[0.08] bg-[#090B13]/70 text-white placeholder:text-[#7E8799]"
                         />
-                        <div className="flex gap-2">
-                          <Button type="submit" disabled={generating || loading || isCreditBlocked} className="h-11 flex-1 rounded-2xl bg-gradient-to-br from-[#5B5FFF] via-[#8B5CF6] to-[#4F9DFF] shadow-[0_18px_45px_rgba(91,95,255,0.35)]">
+                        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                          <Button type="submit" disabled={generating || loading || isCreditBlocked} className="h-11 w-full min-w-0 flex-1 rounded-2xl bg-gradient-to-br from-[#5B5FFF] via-[#8B5CF6] to-[#4F9DFF] shadow-[0_18px_45px_rgba(91,95,255,0.35)] whitespace-normal sm:w-auto">
                             {generating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
                             {isCreditBlocked ? "Add credits to generate" : "Generate"}
                           </Button>
-                          <Button type="button" variant="outline" onClick={() => setShowAdvancedComposer((value) => !value)} className="h-11 rounded-2xl border-white/[0.08] bg-white/[0.04]">
+                          <Button type="button" variant="outline" onClick={() => setShowAdvancedComposer((value) => !value)} className="h-11 w-full shrink-0 rounded-2xl border-white/[0.08] bg-white/[0.04] sm:w-auto">
                             Advanced
                           </Button>
                         </div>
