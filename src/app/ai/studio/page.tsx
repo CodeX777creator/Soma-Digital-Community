@@ -1038,15 +1038,15 @@ export default function AIStudioPage() {
                         </div>
                       </div>
 
-                      <div className="mt-4 rounded-2xl border border-white/[0.08] bg-[#090B13]/60 p-4">
-                        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                      <div className="mt-4 w-full min-w-0 rounded-2xl border border-white/[0.08] bg-[#090B13]/60 p-4">
+                        <div className="flex flex-col gap-3 md:flex-row md:flex-wrap md:items-center md:justify-between md:gap-4">
                           <div>
                             <p className="text-sm font-medium text-white">Choose destination</p>
                             <p className="mt-1 text-xs text-[#7E8799]">
                               Select one or more connected accounts. Soma will adapt the content for each platform.
                             </p>
                           </div>
-                          <Button asChild type="button" variant="outline" className="rounded-2xl border-white/[0.08] bg-white/[0.04]">
+                          <Button asChild type="button" variant="outline" className="w-full max-w-full rounded-2xl border-white/[0.08] bg-white/[0.04] md:w-auto md:flex-none">
                             <Link href="/social">
                               <Link2 className="h-4 w-4" />
                               Connect accounts
@@ -1054,12 +1054,12 @@ export default function AIStudioPage() {
                           </Button>
                         </div>
 
-                        <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                        <div className="mt-4 grid min-w-0 gap-3 sm:grid-cols-1 md:grid-cols-2 xl:grid-cols-3">
                           {SOCIAL_PLATFORMS.map((platform) => {
                             const accounts = accountsByPlatform[platform] || [];
                             const hasAccounts = accounts.length > 0;
                             return (
-                              <div key={platform} className="rounded-2xl border border-white/[0.08] bg-white/[0.03] p-3">
+                              <div key={platform} className="min-w-0 rounded-2xl border border-white/[0.08] bg-white/[0.03] p-3">
                                 <div className="flex items-start justify-between gap-3">
                                   <div>
                                     <p className="text-sm font-medium text-white">{formatPlatform(platform)}</p>
@@ -1127,24 +1127,24 @@ export default function AIStudioPage() {
                           placeholder="Goal, e.g. educate, sell, announce"
                           className="h-11 rounded-2xl border-white/[0.08] bg-[#090B13]/70 text-white placeholder:text-[#7E8799]"
                         />
-                        <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
-                          <Button type="submit" disabled={generating || loading || isCreditBlocked} className="h-11 w-full min-w-max flex-shrink-0 rounded-2xl bg-gradient-to-br from-[#5B5FFF] via-[#8B5CF6] to-[#4F9DFF] shadow-[0_18px_45px_rgba(91,95,255,0.35)] sm:w-auto">
+                        <div className="flex flex-col gap-2 md:flex-row md:flex-wrap md:items-center">
+                          <Button type="submit" disabled={generating || loading || isCreditBlocked} className="h-11 w-full max-w-full flex-shrink-0 rounded-2xl bg-gradient-to-br from-[#5B5FFF] via-[#8B5CF6] to-[#4F9DFF] shadow-[0_18px_45px_rgba(91,95,255,0.35)] md:w-auto">
                             {generating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
                             {isCreditBlocked ? "Add credits to generate" : "Generate"}
                           </Button>
-                          <Button type="button" variant="outline" onClick={() => setShowAdvancedComposer((value) => !value)} className="h-11 w-full shrink-0 rounded-2xl border-white/[0.08] bg-white/[0.04] sm:w-auto sm:flex-none">
+                          <Button type="button" variant="outline" onClick={() => setShowAdvancedComposer((value) => !value)} className="h-11 w-full max-w-full shrink-0 rounded-2xl border-white/[0.08] bg-white/[0.04] md:w-auto md:flex-none">
                             Advanced
                           </Button>
                         </div>
                       </div>
 
                       <div className={cn(
-                        "mt-4 flex flex-col gap-3 rounded-2xl border p-4 text-sm sm:flex-row sm:items-center sm:justify-between",
+                        "mt-4 flex w-full min-w-0 flex-col gap-3 rounded-2xl border p-4 text-sm sm:flex-row sm:flex-wrap sm:items-center sm:justify-between",
                         isCreditBlocked
                           ? "border-[#F59E0B]/30 bg-[#F59E0B]/10 text-[#FDE7BD]"
                           : "border-white/[0.08] bg-white/[0.03] text-[#BFC6D4]"
                       )}>
-                        <div>
+                        <div className="min-w-0">
                           <span className="font-medium text-white">This will use {estimatedCredits} Creator Credits.</span>{" "}
                           {isCreditBlocked
                             ? "Buy Creator Credits, upgrade for monthly credits, or use your own provider key if BYOK is enabled."
@@ -1152,17 +1152,17 @@ export default function AIStudioPage() {
                               ? "Reusing cached work costs 0 credits and still appears in your history."
                               : "Credits are reserved first and refunded automatically if generation fails."}
                         </div>
-                        <div className="flex flex-wrap gap-2">
-                          <Button asChild type="button" variant="outline" size="sm" className="rounded-xl border-white/[0.08] bg-white/[0.04]">
+                        <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap">
+                          <Button asChild type="button" variant="outline" size="sm" className="w-full max-w-full rounded-xl border-white/[0.08] bg-white/[0.04] sm:w-auto sm:flex-none">
                             <Link href="/settings/credits">
                               <CreditCard className="h-4 w-4" />
                               Buy Creator Credits
                             </Link>
                           </Button>
-                          <Button asChild type="button" variant="outline" size="sm" className="rounded-xl border-white/[0.08] bg-white/[0.04]">
+                          <Button asChild type="button" variant="outline" size="sm" className="w-full max-w-full rounded-xl border-white/[0.08] bg-white/[0.04] sm:w-auto sm:flex-none">
                             <Link href="/settings/billing">Upgrade or Manage</Link>
                           </Button>
-                          <Button asChild type="button" variant="outline" size="sm" className="rounded-xl border-white/[0.08] bg-white/[0.04]">
+                          <Button asChild type="button" variant="outline" size="sm" className="w-full max-w-full rounded-xl border-white/[0.08] bg-white/[0.04] sm:w-auto sm:flex-none">
                             <Link href="/settings">Use BYOK</Link>
                           </Button>
                         </div>
@@ -1215,7 +1215,7 @@ export default function AIStudioPage() {
           </section>
 
           <section className="grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
-            <div className="rounded-[18px] border border-white/[0.08] bg-[#151A2E]/70 p-5 shadow-[0_18px_60px_rgba(0,0,0,0.24)]">
+            <div className="w-full min-w-0 rounded-[18px] border border-white/[0.08] bg-[#151A2E]/70 p-5 shadow-[0_18px_60px_rgba(0,0,0,0.24)]">
               <div className="flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-start sm:justify-between sm:gap-6">
                 <div>
                   <div className="inline-flex items-center gap-2 rounded-full border border-[#4F9DFF]/20 bg-[#4F9DFF]/10 px-3 py-1 text-xs text-[#BFC6D4]">
@@ -1232,7 +1232,7 @@ export default function AIStudioPage() {
                 <Button
                   type="button"
                   onClick={() => applyCreationIntent(CREATION_INTENTS[0])}
-                  className="w-full rounded-2xl bg-gradient-to-br from-[#5B5FFF] via-[#8B5CF6] to-[#4F9DFF] sm:w-auto sm:flex-none sm:shrink-0 sm:min-w-max"
+                  className="w-full max-w-full rounded-2xl bg-gradient-to-br from-[#5B5FFF] via-[#8B5CF6] to-[#4F9DFF] md:w-auto md:flex-none md:shrink-0"
                 >
                   <Sparkles className="h-4 w-4" />
                   Generate today's content
@@ -1252,7 +1252,7 @@ export default function AIStudioPage() {
               </div>
             </div>
 
-            <div className="rounded-[18px] border border-white/[0.08] bg-[#090B13]/70 p-5 shadow-[0_18px_60px_rgba(0,0,0,0.24)]">
+            <div className="w-full min-w-0 rounded-[18px] border border-white/[0.08] bg-[#090B13]/70 p-5 shadow-[0_18px_60px_rgba(0,0,0,0.24)]">
               <p className="text-sm font-medium text-white">Contextual AI actions</p>
               <div className="mt-4 grid gap-2">
                 {CONTEXTUAL_ACTIONS.map((action) => (
@@ -1293,7 +1293,7 @@ export default function AIStudioPage() {
           </section>
 
           <section className="space-y-4">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+            <div className="flex flex-col gap-3 md:flex-row md:flex-wrap md:items-end md:justify-between">
               <div>
                 <h2 className="text-xl font-semibold tracking-tight text-white">Specialized studios</h2>
                 <p className="mt-1 text-sm text-[#BFC6D4]">Use these when the output needs a dedicated image, video, voice, publishing, or automation workspace.</p>
@@ -1385,7 +1385,7 @@ export default function AIStudioPage() {
           <div className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
             <section className="space-y-6">
               <GlassCard className="p-5">
-                <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+                <div className="flex flex-col gap-4 md:flex-row md:flex-wrap md:items-end md:justify-between">
                   <div>
                     <div className="flex items-center gap-2">
                       <FileText className="h-4 w-4 text-primary" />
@@ -1472,12 +1472,12 @@ export default function AIStudioPage() {
                       </div>
                     </div>
 
-                    <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
-                      <Button type="submit" disabled={generating || loading || isCreditBlocked} className="w-full min-w-max flex-shrink-0 sm:w-auto">
+                    <div className="flex flex-col gap-2 md:flex-row md:flex-wrap md:items-center">
+                      <Button type="submit" disabled={generating || loading || isCreditBlocked} className="w-full max-w-full flex-shrink-0 md:w-auto">
                         {generating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
                         {isCreditBlocked ? "Add credits to generate" : "Generate with details"}
                       </Button>
-                      <Button type="button" variant="outline" onClick={() => setComposer(DEFAULT_COMPOSER_STATE)} disabled={generating} className="w-full shrink-0 sm:w-auto sm:flex-none">
+                      <Button type="button" variant="outline" onClick={() => setComposer(DEFAULT_COMPOSER_STATE)} disabled={generating} className="w-full max-w-full shrink-0 md:w-auto md:flex-none">
                         Reset details
                       </Button>
                     </div>
@@ -1575,7 +1575,7 @@ export default function AIStudioPage() {
 
             <aside className="space-y-6">
               <GlassCard className="p-5 lg:sticky lg:top-24">
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div className="flex flex-col gap-3 md:flex-row md:flex-wrap md:items-start md:justify-between">
                   <div className="flex items-center gap-2">
                     <Sparkles className="h-4 w-4 text-primary" />
                     <h2 className="text-sm font-semibold uppercase tracking-wide">Output workspace</h2>
