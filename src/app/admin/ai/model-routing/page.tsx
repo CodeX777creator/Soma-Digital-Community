@@ -42,7 +42,7 @@ type Config = {
   updatedAt?: string | Date | { toDate?: () => Date; seconds?: number } | null;
 };
 
-type Model = { id: string; name: string; type: string; provider: string };
+type Model = { id: string; name: string; type: string; provider: string; tags?: string[] };
 
 function normalizeStringArray(value: unknown) {
   return Array.isArray(value)
@@ -153,6 +153,34 @@ const FEATURE_TYPE_HINTS: Record<string, string[]> = {
   vision: ["vision"],
   speech_to_text: ["speech", "audio"],
 };
+
+const FEATURE_MODEL_HINTS: Record<string, string[]> = {
+  image_generation: ["image", "imagen", "flux", "recraft", "vision"],
+  video_generation: ["video", "veo", "seedance", "sora", "kling", "luma", "runway"],
+  audio_generation: ["tts", "audio", "speech", "voice", "grok-tts", "eleven", "whisper"],
+  speech_to_text: ["transcribe", "transcription", "whisper", "speech", "audio"],
+  vision: ["vision", "multimodal", "image"],
+  document_analysis: ["vision", "multimodal", "document", "pdf", "ocr"],
+  translation: ["translate", "translation", "language"],
+  chat: ["gpt", "gemini", "claude", "qwen", "llama", "mistral", "grok"],
+};
+
+function normalizeText(value: string | undefined | null) {
+  return (value || "").toLowerCase();
+}
+
+function hasStrongCapabilityMatch(featureKey: string, model: Model) {
+  const expectedTypes = FEATURE_TYPE_HINTS[featureKey] || [];
+  const hints = FEATURE_MODEL_HINTS[featureKey] || [];
+  const type = normalizeText(model.type);
+  const id = normalizeText(model.id);
+  const name = normalizeText(model.name);
+  const tags = Array.isArray(model.tags) ? model.tags.map((tag) => normalizeText(tag)) : [];
+
+  if (expectedTypes.includes(type)) return true;
+  if (hints.some((hint) => id.includes(hint) || name.includes(hint) || tags.some((tag) => tag.includes(hint)))) return true;
+  return false;
+}
 
 async function adminFetch(path: string, init?: RequestInit) {
   const token = await getAuth().currentUser?.getIdToken();
@@ -649,7 +677,7 @@ function getRoutingWarnings(featureKey: string, config: Config | undefined, mode
       warnings.push(`${label} model is not available in the synced catalog`);
       return;
     }
-    if (expectedTypes.length && !expectedTypes.some((type) => model.type?.toLowerCase() === type)) {
+    if (expectedTypes.length && !hasStrongCapabilityMatch(featureKey, model)) {
       warnings.push(`${label} model type ${model.type || "unknown"} may not suit this feature`);
     }
     if (tiers && tiers.length === 0) {
