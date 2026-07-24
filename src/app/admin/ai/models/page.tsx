@@ -142,6 +142,26 @@ export default function AdminAIModelsPage() {
     });
   }, [models, query, sort]);
 
+  const summary = useMemo(() => {
+    const counts = models.reduce<Record<string, number>>((acc, model) => {
+      const key = model.creditClass || "standard";
+      acc[key] = (acc[key] || 0) + 1;
+      return acc;
+    }, {});
+    const providerCounts = models.reduce<Record<string, number>>((acc, model) => {
+      const key = model.provider || "unknown";
+      acc[key] = (acc[key] || 0) + 1;
+      return acc;
+    }, {});
+    const topProviders = Object.entries(providerCounts).sort((a, b) => b[1] - a[1]).slice(0, 4);
+    return {
+      total: models.length,
+      enabled: models.filter((model) => model.sdcEnabled !== false).length,
+      counts,
+      topProviders,
+    };
+  }, [models]);
+
   return (
     <div className="space-y-6">
       <section className="flex flex-col gap-4 rounded-2xl border border-white/10 bg-white/[0.035] p-5 md:flex-row md:items-center md:justify-between">
@@ -160,6 +180,30 @@ export default function AdminAIModelsPage() {
       </section>
 
       {error ? <div className="rounded-xl border border-red-400/25 bg-red-500/10 px-4 py-3 text-sm text-red-100">{error}</div> : null}
+
+      <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+        <StatCard label="Total models" value={summary.total} note="Synced catalog entries" />
+        <StatCard label="Enabled" value={summary.enabled} note="Available for SDC routing" />
+        <StatCard label="Standard" value={summary.counts.standard || 0} note="Low-cost general-purpose models" />
+        <StatCard label="Advanced" value={summary.counts.advanced || 0} note="Mid-cost, long-context, or tool-use models" />
+        <StatCard label="Premium / Specialized" value={(summary.counts.premium || 0) + (summary.counts.specialized || 0)} note="High-cost or media-heavy models" />
+      </section>
+
+      <section className="rounded-2xl border border-white/10 bg-white/[0.035] p-4">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-cyan-200/70">Top providers</p>
+            <p className="mt-1 text-sm text-white/50">Where the catalog is concentrated right now.</p>
+          </div>
+        </div>
+        <div className="mt-4 flex flex-wrap gap-2">
+          {summary.topProviders.length ? summary.topProviders.map(([provider, count]) => (
+            <span key={provider} className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-xs text-white/70">
+              {provider} · {count}
+            </span>
+          )) : <span className="text-sm text-white/45">No providers yet.</span>}
+        </div>
+      </section>
 
       <section className="rounded-2xl border border-white/10 bg-white/[0.035]">
         <div className="flex flex-col gap-3 border-b border-white/10 p-4 md:flex-row md:items-center md:justify-between">
@@ -224,6 +268,16 @@ export default function AdminAIModelsPage() {
           </div>
         )}
       </section>
+    </div>
+  );
+}
+
+function StatCard({ label, value, note }: { label: string; value: number; note: string }) {
+  return (
+    <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-4">
+      <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-white/40">{label}</p>
+      <p className="mt-3 text-3xl font-semibold text-white">{value}</p>
+      <p className="mt-2 text-xs leading-5 text-white/45">{note}</p>
     </div>
   );
 }

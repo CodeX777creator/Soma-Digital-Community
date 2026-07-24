@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { getAuth } from "firebase/auth";
 import { Loader2, Route, Save, Search, Check, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -29,9 +29,21 @@ type Config = {
   allowedTiers: string[];
   defaultQualityMode: string;
   active: boolean;
+  updatedAt?: string | Date | { toDate?: () => Date; seconds?: number } | null;
 };
 
 type Model = { id: string; name: string; type: string; provider: string };
+
+const FEATURE_TYPE_HINTS: Record<string, string[]> = {
+  chat: ["language"],
+  image_generation: ["image"],
+  video_generation: ["video"],
+  audio_generation: ["speech", "audio"],
+  document_analysis: ["language", "vision"],
+  translation: ["language"],
+  vision: ["vision"],
+  speech_to_text: ["speech", "audio"],
+};
 
 async function adminFetch(path: string, init?: RequestInit) {
   const token = await getAuth().currentUser?.getIdToken();
@@ -135,6 +147,17 @@ export default function AdminAIModelRoutingPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const selectedConfig = useMemo(() => configs.find((config) => config.featureKey === selectedFeature) || null, [configs, selectedFeature]);
+  const hasChanges = useMemo(() => JSON.stringify(draft) !== JSON.stringify({ ...emptyConfig(selectedFeature), ...(selectedConfig || {}) }), [draft, selectedConfig, selectedFeature]);
+  const routingRows = useMemo(() => FEATURES.map((feature) => {
+    const config = configs.find((item) => item.featureKey === feature) || null;
+    return {
+      feature,
+      config,
+      lastSaved: config?.updatedAt || null,
+      warnings: getRoutingWarnings(feature, config || undefined, models),
+    };
+  }), [configs, models]);
 
   const load = async () => {
     setLoading(true);
@@ -157,9 +180,8 @@ export default function AdminAIModelRoutingPage() {
   }, []);
 
   useEffect(() => {
-    const existing = configs.find((config) => config.featureKey === selectedFeature);
-    setDraft({ ...emptyConfig(selectedFeature), ...(existing || {}) });
-  }, [configs, selectedFeature]);
+    setDraft({ ...emptyConfig(selectedFeature), ...(selectedConfig || {}) });
+  }, [selectedConfig, selectedFeature]);
 
   const save = async () => {
     setSaving(true);
@@ -196,7 +218,63 @@ export default function AdminAIModelRoutingPage() {
       {loading ? (
         <div className="flex items-center gap-2 text-sm text-white/55"><Loader2 className="h-4 w-4 animate-spin" /> Loading routing config</div>
       ) : (
-        <section className="grid gap-5 xl:grid-cols-[280px_1fr]">
+        <section className="space-y-5">
+          <div className="overflow-hidden rounded-2xl border border-white/10 bg-white/[0.035]">
+            <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.24em] text-cyan-200/70">All routing configs</p>
+                <p className="mt-1 text-sm text-white/50">A quick scan of every feature assignment, its saved model, and any rule warnings.</p>
+              </div>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="min-w-[900px] w-full border-separate border-spacing-0">
+                <thead>
+                  <tr className="text-left text-[11px] uppercase tracking-[0.18em] text-white/35">
+                    <th className="px-4 py-3">Feature</th>
+                    <th className="px-4 py-3">Default model</th>
+                    <th className="px-4 py-3">Tiers</th>
+                    <th className="px-4 py-3">Quality</th>
+                    <th className="px-4 py-3">Last saved</th>
+                    <th className="px-4 py-3">Warnings</th>
+                    <th className="px-4 py-3">Edit</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {routingRows.map((row) => (
+                    <tr key={row.feature} className="border-t border-white/10 text-sm text-white/75">
+                      <td className="border-t border-white/10 px-4 py-3 capitalize">{row.feature.replace(/_/g, " ")}</td>
+                      <td className="border-t border-white/10 px-4 py-3">{row.config?.defaultModelId || "Not set"}</td>
+                      <td className="border-t border-white/10 px-4 py-3">{row.config?.allowedTiers?.join(", ") || "All tiers"}</td>
+                      <td className="border-t border-white/10 px-4 py-3">{row.config?.defaultQualityMode || "balanced"}</td>
+                      <td className="border-t border-white/10 px-4 py-3 text-white/50">{formatTimestamp(row.lastSaved)}</td>
+                      <td className="border-t border-white/10 px-4 py-3">
+                        {row.warnings.length ? (
+                          <div className="flex flex-wrap gap-2">
+                            {row.warnings.map((warning) => (
+                              <span key={warning} className="rounded-full border border-amber-400/20 bg-amber-500/10 px-2.5 py-1 text-[11px] text-amber-100">{warning}</span>
+                            ))}
+                          </div>
+                        ) : (
+                          <span className="text-white/45">None</span>
+                        )}
+                      </td>
+                      <td className="border-t border-white/10 px-4 py-3">
+                        <button
+                          type="button"
+                          onClick={() => setSelectedFeature(row.feature)}
+                          className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-xs text-white/70 hover:bg-white/[0.08] hover:text-white"
+                        >
+                          Edit
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <section className="grid gap-5 xl:grid-cols-[280px_1fr]">
           <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-3">
             {FEATURES.map((feature) => (
               <button
@@ -205,12 +283,60 @@ export default function AdminAIModelRoutingPage() {
                 onClick={() => setSelectedFeature(feature)}
                 className={`mb-1 block w-full rounded-xl px-3 py-2 text-left text-sm ${selectedFeature === feature ? "bg-cyan-400/10 text-cyan-100" : "text-white/60 hover:bg-white/[0.06]"}`}
               >
-                {feature.replace(/_/g, " ")}
+                <span className="block">{feature.replace(/_/g, " ")}</span>
+                <span className="mt-1 block text-[11px] text-white/40">
+                  {configs.find((config) => config.featureKey === feature)?.defaultModelId || "No model set yet"}
+                </span>
               </button>
             ))}
           </div>
 
           <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-5">
+            <div className="mb-4 rounded-2xl border border-white/10 bg-black/20 p-4">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <p className="text-xs uppercase tracking-[0.2em] text-white/40">Saved config</p>
+                  <p className="mt-1 text-sm text-white/80">
+                    {selectedConfig ? `Loaded from ${selectedFeature.replace(/_/g, " ")}` : "No saved config yet for this feature"}
+                  </p>
+                  <p className="mt-1 text-xs text-white/40">Last saved: {formatTimestamp(selectedConfig?.updatedAt)}</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className={`rounded-full px-3 py-1 text-xs ${selectedConfig?.active ? "bg-emerald-500/10 text-emerald-100" : "bg-white/[0.05] text-white/45"}`}>
+                    {selectedConfig?.active ? "Active" : "Inactive"}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setDraft({ ...emptyConfig(selectedFeature), ...(selectedConfig || {}) })}
+                    className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-xs text-white/65 hover:bg-white/[0.08] hover:text-white"
+                  >
+                    Reset to saved
+                  </button>
+                </div>
+              </div>
+              <div className="mt-4 grid gap-3 md:grid-cols-3">
+                <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
+                  <p className="text-[11px] uppercase tracking-[0.16em] text-white/35">Default model</p>
+                  <p className="mt-1 text-sm text-white">{selectedConfig?.defaultModelId || "Not set"}</p>
+                </div>
+                <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
+                  <p className="text-[11px] uppercase tracking-[0.16em] text-white/35">Fallbacks</p>
+                  <p className="mt-1 text-sm text-white">{selectedConfig?.fallbackModelIds?.length ? selectedConfig.fallbackModelIds.length : 0} selected</p>
+                </div>
+                <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
+                  <p className="text-[11px] uppercase tracking-[0.16em] text-white/35">Tiers</p>
+                  <p className="mt-1 text-sm text-white">{selectedConfig?.allowedTiers?.join(", ") || "All tiers"}</p>
+                </div>
+              </div>
+              {getRoutingWarnings(selectedFeature, selectedConfig || undefined, models).length ? (
+                <div className="mt-4 rounded-xl border border-amber-400/20 bg-amber-500/10 p-3 text-sm text-amber-50">
+                  <p className="font-medium">Routing warnings</p>
+                  <ul className="mt-2 list-disc space-y-1 pl-5 text-xs text-amber-100/90">
+                    {getRoutingWarnings(selectedFeature, selectedConfig || undefined, models).map((warning) => <li key={warning}>{warning}</li>)}
+                  </ul>
+                </div>
+              ) : null}
+            </div>
             <div className="grid gap-4 md:grid-cols-2">
               <label className="space-y-2 text-sm">
                 <span className="text-white/70">Default model</span>
@@ -266,14 +392,59 @@ export default function AdminAIModelRoutingPage() {
             </div>
 
             <div className="mt-6 flex justify-end">
-              <Button onClick={save} disabled={saving || !draft.defaultModelId} className="bg-cyan-500 text-slate-950 hover:bg-cyan-400">
+              <Button onClick={save} disabled={saving || !draft.defaultModelId || !hasChanges} className="bg-cyan-500 text-slate-950 hover:bg-cyan-400">
                 {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
                 Save routing
               </Button>
             </div>
           </div>
+          </section>
         </section>
       )}
     </div>
   );
+}
+
+function getRoutingWarnings(featureKey: string, config: Config | undefined, models: Model[]) {
+  const warnings: string[] = [];
+  if (!config?.defaultModelId) {
+    warnings.push("No default model selected");
+    return warnings;
+  }
+
+  const model = models.find((item) => item.id === config.defaultModelId);
+  if (!model) {
+    warnings.push("Default model is not available in the synced catalog");
+    return warnings;
+  }
+
+  const expectedTypes = FEATURE_TYPE_HINTS[featureKey] || [];
+  if (expectedTypes.length && !expectedTypes.some((type) => model.type?.toLowerCase() === type)) {
+    warnings.push(`Model type ${model.type || "unknown"} may not suit this feature`);
+  }
+
+  if (config.allowedTiers && config.allowedTiers.length === 0) {
+    warnings.push("No tiers are allowed for this routing config");
+  }
+
+  return warnings;
+}
+
+function formatTimestamp(value: Config["updatedAt"]) {
+  if (!value) return "—";
+  const date = value instanceof Date
+    ? value
+    : typeof value === "string"
+      ? new Date(value)
+      : typeof value === "object" && typeof value.toDate === "function"
+        ? value.toDate()
+        : typeof value === "object" && typeof value.seconds === "number"
+          ? new Date(value.seconds * 1000)
+          : null;
+
+  if (!date || Number.isNaN(date.getTime())) return "—";
+  return new Intl.DateTimeFormat("en", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(date);
 }
