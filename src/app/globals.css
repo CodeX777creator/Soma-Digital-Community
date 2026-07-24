@@ -39,11 +39,42 @@
   * {
     @apply border-border;
   }
+  html,
+  body,
+  #__next {
+    width: 100%;
+    max-width: 100%;
+    overflow-x: clip;
+  }
+  *,
+  *::before,
+  *::after {
+    min-width: 0;
+    box-sizing: border-box;
+  }
   body {
     @apply bg-background text-foreground selection:bg-primary/30 antialiased font-body;
   }
   h1, h2, h3, h4, h5, h6 {
     @apply font-headline tracking-tight;
+  }
+  img,
+  video,
+  canvas,
+  svg {
+    max-width: 100%;
+    height: auto;
+  }
+  p,
+  span,
+  a,
+  li,
+  label,
+  button,
+  input,
+  select,
+  textarea {
+    overflow-wrap: anywhere;
   }
 }
 

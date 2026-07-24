@@ -16,7 +16,7 @@ export const GlassCard = ({
   return (
     <div
       className={cn(
-        "glass-card rounded-2xl p-6 transition-all duration-300 hover:border-[#8B5CF6]/25",
+        "glass-card min-w-0 max-w-full rounded-2xl p-6 transition-all duration-300 hover:border-[#8B5CF6]/25",
         glow && "blue-glow",
         className
       )}
