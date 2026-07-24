@@ -34,6 +34,40 @@ type Config = {
 
 type Model = { id: string; name: string; type: string; provider: string };
 
+function normalizeStringArray(value: unknown) {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === "string" && item.trim().length > 0)
+    : [];
+}
+
+function normalizeConfig(raw: unknown): Config | null {
+  if (!raw || typeof raw !== "object") return null;
+  const value = raw as Record<string, unknown>;
+  const featureKey = typeof value.featureKey === "string" ? value.featureKey : "";
+  if (!featureKey) return null;
+  return {
+    featureKey,
+    defaultModelId: typeof value.defaultModelId === "string" ? value.defaultModelId : "",
+    fallbackModelIds: normalizeStringArray(value.fallbackModelIds),
+    requiredCapabilities: normalizeStringArray(value.requiredCapabilities),
+    allowedTiers: normalizeStringArray(value.allowedTiers),
+    defaultQualityMode: typeof value.defaultQualityMode === "string" ? value.defaultQualityMode : "balanced",
+    active: value.active !== false,
+    updatedAt: value.updatedAt as Config["updatedAt"],
+  };
+}
+
+function formatCommaList(value: unknown, fallback: string) {
+  if (Array.isArray(value)) {
+    const items = value.filter((item): item is string => typeof item === "string" && item.trim().length > 0);
+    return items.length ? items.join(", ") : fallback;
+  }
+  if (typeof value === "string" && value.trim().length > 0) {
+    return value;
+  }
+  return fallback;
+}
+
 const FEATURE_TYPE_HINTS: Record<string, string[]> = {
   chat: ["language"],
   image_generation: ["image"],
@@ -161,15 +195,18 @@ export default function AdminAIModelRoutingPage() {
 
   const load = async () => {
     setLoading(true);
-    const [configRes, modelRes] = await Promise.all([
-      adminFetch("/api/admin/ai/model-configs"),
-      adminFetch("/api/admin/ai/models?limit=500"),
-    ]);
-    const configData = await configRes.json();
-    const modelData = await modelRes.json();
-    setConfigs(configData.configs || []);
-    setModels(modelData.models || []);
-    setLoading(false);
+    try {
+      const [configRes, modelRes] = await Promise.all([
+        adminFetch("/api/admin/ai/model-configs"),
+        adminFetch("/api/admin/ai/models?limit=500"),
+      ]);
+      const configData = await configRes.json();
+      const modelData = await modelRes.json();
+      setConfigs(Array.isArray(configData.configs) ? configData.configs.map(normalizeConfig).filter((item: Config | null): item is Config => Boolean(item)) : []);
+      setModels(Array.isArray(modelData.models) ? modelData.models : []);
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
@@ -244,7 +281,7 @@ export default function AdminAIModelRoutingPage() {
                     <tr key={row.feature} className="border-t border-white/10 text-sm text-white/75">
                       <td className="border-t border-white/10 px-4 py-3 capitalize">{row.feature.replace(/_/g, " ")}</td>
                       <td className="border-t border-white/10 px-4 py-3">{row.config?.defaultModelId || "Not set"}</td>
-                      <td className="border-t border-white/10 px-4 py-3">{row.config?.allowedTiers?.join(", ") || "All tiers"}</td>
+                      <td className="border-t border-white/10 px-4 py-3">{formatCommaList(row.config?.allowedTiers, "All tiers")}</td>
                       <td className="border-t border-white/10 px-4 py-3">{row.config?.defaultQualityMode || "balanced"}</td>
                       <td className="border-t border-white/10 px-4 py-3 text-white/50">{formatTimestamp(row.lastSaved)}</td>
                       <td className="border-t border-white/10 px-4 py-3">
@@ -325,7 +362,7 @@ export default function AdminAIModelRoutingPage() {
                 </div>
                 <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
                   <p className="text-[11px] uppercase tracking-[0.16em] text-white/35">Tiers</p>
-                  <p className="mt-1 text-sm text-white">{selectedConfig?.allowedTiers?.join(", ") || "All tiers"}</p>
+                  <p className="mt-1 text-sm text-white">{formatCommaList(selectedConfig?.allowedTiers, "All tiers")}</p>
                 </div>
               </div>
               {getRoutingWarnings(selectedFeature, selectedConfig || undefined, models).length ? (

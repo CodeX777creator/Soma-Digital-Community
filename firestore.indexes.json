@@ -435,8 +435,30 @@
       ]
     },
     {
+      "__comment": "Lesson discussions: supports per-lesson discussion feeds ordered newest first.",
+      "collectionGroup": "lessonDiscussions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "courseId", "order": "ASCENDING" },
+        { "fieldPath": "lessonId", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+    {
       "__comment": "Academy lesson discussions: supports lesson-level discussion replies ordered oldest first.",
       "collectionGroup": "academyDiscussionReplies",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "courseId", "order": "ASCENDING" },
+        { "fieldPath": "lessonId", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "__comment": "Lesson discussions: supports lesson-level discussion replies ordered oldest first.",
+      "collectionGroup": "discussionReplies",
       "queryScope": "COLLECTION",
       "fields": [
         { "fieldPath": "courseId", "order": "ASCENDING" },
@@ -452,6 +474,43 @@
       "fields": [
         { "fieldPath": "sessionId", "order": "ASCENDING" },
         { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "__comment": "Tutor messages: supports per-session tutor history ordered newest first.",
+      "collectionGroup": "tutorMessages",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "sessionId", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "__comment": "Activity submissions: supports admin review queues ordered by submission time.",
+      "collectionGroup": "activitySubmissions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "courseId", "order": "ASCENDING" },
+        { "fieldPath": "submittedAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "__comment": "Activity submissions: supports admin review queues filtered by status and ordered by submission time.",
+      "collectionGroup": "activitySubmissions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "courseId", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "submittedAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "__comment": "Activity submissions: supports learner submission history ordered newest first.",
+      "collectionGroup": "activitySubmissions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "userId", "order": "ASCENDING" },
+        { "fieldPath": "submittedAt", "order": "DESCENDING" }
       ]
     },
     {
