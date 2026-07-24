@@ -399,45 +399,47 @@ export default function AcademyLessonPage() {
                 <button onClick={() => askTutor()} disabled={!tutorPrompt.trim()} className="mt-3 h-10 rounded-[14px] border border-white/[0.08] bg-white/[0.04] px-4 text-sm text-white/75 hover:bg-white/[0.08] disabled:text-white/35">Ask Tutor</button>
               </section>
             ) : null}
-            <section className="rounded-[20px] border border-white/[0.08] bg-[#151A2E]/72 p-5">
-              <MessageSquare className="h-5 w-5 text-[#4F9DFF]" />
-              <h3 className="mt-4 font-semibold text-white">Discussion</h3>
-              <p className="mt-2 text-sm leading-6 text-[#BFC6D4]">Ask questions and learn with other students.</p>
-              <textarea value={discussionBody} onChange={(event) => setDiscussionBody(event.target.value)} rows={3} placeholder="Share a question or reflection..." className="mt-4 w-full rounded-[14px] border border-white/[0.08] bg-black/20 p-3 text-sm text-white outline-none focus:border-[#5B5FFF]/60" />
-              <button onClick={postDiscussion} disabled={!discussionBody.trim()} className="mt-3 h-10 rounded-[14px] border border-white/[0.08] bg-white/[0.04] px-4 text-sm text-white/75 hover:bg-white/[0.08] disabled:text-white/35">Post Discussion</button>
-              <div className="mt-5 space-y-4">
-                {discussions.length ? discussions.map((discussion) => (
-                  <div key={discussion.discussionId} className="rounded-[16px] border border-white/[0.08] bg-black/20 p-3">
-                    <div className="flex items-start justify-between gap-3">
-                      <p className="text-sm leading-6 text-[#D8DEEA]">{discussion.body}</p>
-                      {discussion.pinned ? <span className="rounded-full border border-[#8B5CF6]/20 bg-[#8B5CF6]/10 px-2 py-1 text-[10px] text-violet-100">Pinned</span> : null}
-                    </div>
-                    <div className="mt-3 flex gap-2">
-                      <button onClick={() => reactToDiscussion(discussion.discussionId, "helpful")} className="text-xs text-cyan-100 hover:text-white">Helpful {discussion.helpfulCount || 0}</button>
-                      <button onClick={() => reactToDiscussion(discussion.discussionId, "report")} className="text-xs text-white/35 hover:text-amber-100">Report</button>
-                    </div>
-                    {discussion.replies?.length ? (
-                      <div className="mt-3 space-y-2 border-l border-white/10 pl-3">
-                        {discussion.replies.map((reply) => (
-                          <div key={reply.replyId} className="rounded-[12px] bg-white/[0.03] p-2 text-xs leading-5 text-[#BFC6D4]">
-                            {reply.pinned ? <span className="mb-1 block text-[10px] uppercase tracking-[0.14em] text-violet-100">Instructor pinned</span> : null}
-                            {reply.body}
-                            <div className="mt-2 flex gap-2">
-                              <button onClick={() => reactToDiscussion(discussion.discussionId, "helpful", reply.replyId)} className="text-[11px] text-cyan-100 hover:text-white">Helpful {reply.helpfulCount || 0}</button>
-                              <button onClick={() => reactToDiscussion(discussion.discussionId, "report", reply.replyId)} className="text-[11px] text-white/35 hover:text-amber-100">Report</button>
-                            </div>
-                          </div>
-                        ))}
+            {lesson?.discussionEnabled ? (
+              <section className="rounded-[20px] border border-white/[0.08] bg-[#151A2E]/72 p-5">
+                <MessageSquare className="h-5 w-5 text-[#4F9DFF]" />
+                <h3 className="mt-4 font-semibold text-white">Discussion</h3>
+                <p className="mt-2 text-sm leading-6 text-[#BFC6D4]">Ask questions and learn with other students.</p>
+                <textarea value={discussionBody} onChange={(event) => setDiscussionBody(event.target.value)} rows={3} placeholder="Share a question or reflection..." className="mt-4 w-full rounded-[14px] border border-white/[0.08] bg-black/20 p-3 text-sm text-white outline-none focus:border-[#5B5FFF]/60" />
+                <button onClick={postDiscussion} disabled={!discussionBody.trim()} className="mt-3 h-10 rounded-[14px] border border-white/[0.08] bg-white/[0.04] px-4 text-sm text-white/75 hover:bg-white/[0.08] disabled:text-white/35">Post Discussion</button>
+                <div className="mt-5 space-y-4">
+                  {discussions.length ? discussions.map((discussion) => (
+                    <div key={discussion.discussionId} className="rounded-[16px] border border-white/[0.08] bg-black/20 p-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <p className="text-sm leading-6 text-[#D8DEEA]">{discussion.body}</p>
+                        {discussion.pinned ? <span className="rounded-full border border-[#8B5CF6]/20 bg-[#8B5CF6]/10 px-2 py-1 text-[10px] text-violet-100">Pinned</span> : null}
                       </div>
-                    ) : null}
-                    <div className="mt-3 flex gap-2">
-                      <input value={replyBodies[discussion.discussionId] || ""} onChange={(event) => setReplyBodies((current) => ({ ...current, [discussion.discussionId]: event.target.value }))} placeholder="Reply..." className="min-w-0 flex-1 rounded-[12px] border border-white/[0.08] bg-black/20 px-3 py-2 text-xs text-white outline-none focus:border-[#5B5FFF]/60" />
-                      <button onClick={() => postReply(discussion.discussionId)} disabled={!replyBodies[discussion.discussionId]?.trim()} className="rounded-[12px] border border-white/[0.08] bg-white/[0.04] px-3 text-xs text-white/70 disabled:text-white/30">Reply</button>
+                      <div className="mt-3 flex gap-2">
+                        <button onClick={() => reactToDiscussion(discussion.discussionId, "helpful")} className="text-xs text-cyan-100 hover:text-white">Helpful {discussion.helpfulCount || 0}</button>
+                        <button onClick={() => reactToDiscussion(discussion.discussionId, "report")} className="text-xs text-white/35 hover:text-amber-100">Report</button>
+                      </div>
+                      {discussion.replies?.length ? (
+                        <div className="mt-3 space-y-2 border-l border-white/10 pl-3">
+                          {discussion.replies.map((reply) => (
+                            <div key={reply.replyId} className="rounded-[12px] bg-white/[0.03] p-2 text-xs leading-5 text-[#BFC6D4]">
+                              {reply.pinned ? <span className="mb-1 block text-[10px] uppercase tracking-[0.14em] text-violet-100">Instructor pinned</span> : null}
+                              {reply.body}
+                              <div className="mt-2 flex gap-2">
+                                <button onClick={() => reactToDiscussion(discussion.discussionId, "helpful", reply.replyId)} className="text-[11px] text-cyan-100 hover:text-white">Helpful {reply.helpfulCount || 0}</button>
+                                <button onClick={() => reactToDiscussion(discussion.discussionId, "report", reply.replyId)} className="text-[11px] text-white/35 hover:text-amber-100">Report</button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      ) : null}
+                      <div className="mt-3 flex gap-2">
+                        <input value={replyBodies[discussion.discussionId] || ""} onChange={(event) => setReplyBodies((current) => ({ ...current, [discussion.discussionId]: event.target.value }))} placeholder="Reply..." className="min-w-0 flex-1 rounded-[12px] border border-white/[0.08] bg-black/20 px-3 py-2 text-xs text-white outline-none focus:border-[#5B5FFF]/60" />
+                        <button onClick={() => postReply(discussion.discussionId)} disabled={!replyBodies[discussion.discussionId]?.trim()} className="rounded-[12px] border border-white/[0.08] bg-white/[0.04] px-3 text-xs text-white/70 disabled:text-white/30">Reply</button>
+                      </div>
                     </div>
-                  </div>
-                )) : <p className="rounded-[14px] border border-dashed border-white/[0.08] p-3 text-xs text-white/45">No lesson discussion yet. Start the first thread.</p>}
-              </div>
-            </section>
+                  )) : <p className="rounded-[14px] border border-dashed border-white/[0.08] p-3 text-xs text-white/45">No lesson discussion yet. Start the first thread.</p>}
+                </div>
+              </section>
+            ) : null}
             <ToolCard icon={GraduationIcon} title="Certification Path" description={`${bundle.enrollment?.progressPercent || 0}% complete. Finish topics, quizzes, and final exam to earn your certificate.`} action="View Progress" />
           </aside>
         </div>

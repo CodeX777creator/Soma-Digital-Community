@@ -91,6 +91,14 @@ function collection(name: keyof typeof ACADEMY_COLLECTIONS) {
   return adminDb.collection(ACADEMY_COLLECTIONS[name]);
 }
 
+async function getAcademyLessonForCourse(courseId: string, lessonId: string) {
+  const snap = await collection('lessons').doc(lessonId).get();
+  if (!snap.exists) throw new Error('Academy lesson not found');
+  const lesson = { lessonId: snap.id, ...snap.data() } as AcademyLessonDoc;
+  if (lesson.courseId !== courseId) throw new Error('Academy lesson mismatch');
+  return lesson;
+}
+
 function normalizeAcademyCourseDoc(course: AcademyCourseDoc): AcademyCourseDoc {
   return {
     ...course,
@@ -1397,6 +1405,8 @@ export async function reviewAcademyActivitySubmission(submissionId: string, revi
 }
 
 export async function listAcademyLessonDiscussions(courseId: string, lessonId: string) {
+  const lesson = await getAcademyLessonForCourse(courseId, lessonId);
+  if (lesson.discussionEnabled === false) return [];
   const [discussionSnap, repliesSnap] = await Promise.all([
     collection('lessonDiscussions')
     .where('courseId', '==', courseId)
@@ -1434,6 +1444,10 @@ export async function createAcademyLessonDiscussion(input: {
 }) {
   const enrollment = await getAcademyEnrollment(input.userId, input.courseId);
   if (!enrollment) throw new Error('Academy enrollment required');
+  if (input.lessonId) {
+    const lesson = await getAcademyLessonForCourse(input.courseId, input.lessonId);
+    if (lesson.discussionEnabled === false) throw new Error('Academy discussions are disabled for this lesson');
+  }
   const ref = collection('lessonDiscussions').doc();
   const doc = stripUndefined({
     discussionId: ref.id,
@@ -1494,6 +1508,13 @@ export async function createAcademyDiscussionReply(input: {
   if (!discussionSnap.exists) throw new Error('Academy discussion not found');
   const discussion = { discussionId: discussionSnap.id, ...discussionSnap.data() } as AcademyLessonDiscussionDoc;
   if (discussion.courseId !== input.courseId) throw new Error('Academy discussion mismatch');
+  if (discussion.lessonId) {
+    const lesson = await getAcademyLessonForCourse(input.courseId, discussion.lessonId);
+    if (lesson.discussionEnabled === false) throw new Error('Academy discussions are disabled for this lesson');
+  } else if (input.lessonId) {
+    const lesson = await getAcademyLessonForCourse(input.courseId, input.lessonId);
+    if (lesson.discussionEnabled === false) throw new Error('Academy discussions are disabled for this lesson');
+  }
   const ref = collection('discussionReplies').doc();
   const doc = stripUndefined({
     replyId: ref.id,
@@ -1523,6 +1544,8 @@ export async function reactToAcademyDiscussion(input: {
 }) {
   const enrollment = await getAcademyEnrollment(input.userId, input.courseId);
   if (!enrollment) throw new Error('Academy enrollment required');
+  const lesson = input.lessonId ? await getAcademyLessonForCourse(input.courseId, input.lessonId) : null;
+  if (lesson && lesson.discussionEnabled === false) throw new Error('Academy discussions are disabled for this lesson');
   const targetId = input.replyId || input.discussionId;
   if (!targetId) throw new Error('Discussion target required');
   const reactionId = `${input.userId}_${targetId}_${input.reactionType}`;
@@ -1593,6 +1616,7 @@ export async function createAcademyTutorTurn(input: {
   ]);
   const topic = topicSnap?.exists ? ({ topicId: topicSnap.id, ...topicSnap.data() } as AcademyTopicDoc) : null;
   const lesson = lessonSnap?.exists ? ({ lessonId: lessonSnap.id, ...lessonSnap.data() } as AcademyLessonDoc) : null;
+  if (lesson && lesson.aiTutorEnabled === false) throw new Error('Academy AI tutor is disabled for this lesson');
   const user = userSnap.exists ? userSnap.data() || {} : {};
   const recentHistory = recentSnap.docs
     .map((doc) => doc.data() as AcademyTutorMessageDoc)
@@ -1700,6 +1724,10 @@ export async function listAcademyTutorMessages(input: {
   courseId: string;
   lessonId?: string | null;
 }) {
+  if (input.lessonId) {
+    const lesson = await getAcademyLessonForCourse(input.courseId, input.lessonId);
+    if (lesson.aiTutorEnabled === false) return [];
+  }
   const sessionId = `${input.userId}_${input.courseId}_${input.lessonId || 'course'}`;
   const snap = await collection('tutorMessages')
     .where('sessionId', '==', sessionId)

@@ -548,13 +548,13 @@ export default function AcademyCourseBuilderPage() {
               </div>
               <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
                 {[
-                  ["certificateEnabled", "Certificates"],
-                  ["finalExamEnabled", "Final exam"],
-                  ["discussionEnabled", "Discussions"],
-                  ["aiTutorEnabled", "AI tutor"],
-                  ["cohortEnabled", "Cohorts"],
-                  ["dripEnabled", "Drip release"],
-                  ["manualReviewEnabled", "Manual review"],
+                  ["certificateEnabled", "Issue certificates"],
+                  ["finalExamEnabled", "Require final exam"],
+                  ["discussionEnabled", "Enable learner discussions"],
+                  ["aiTutorEnabled", "Show AI tutor"],
+                  ["cohortEnabled", "Allow cohorts"],
+                  ["dripEnabled", "Use drip release"],
+                  ["manualReviewEnabled", "Allow manual review"],
                 ].map(([key, label]) => (
                   <label key={key} className="flex items-center gap-2 rounded-2xl border border-white/10 bg-white/[0.03] px-3 py-2 text-sm text-white/70">
                     <input type="checkbox" checked={Boolean(courseForm[key as keyof typeof courseForm])} onChange={(event) => setCourseForm({ ...courseForm, [key]: event.target.checked })} />
@@ -715,10 +715,10 @@ export default function AcademyCourseBuilderPage() {
                 <Field label="Status"><select className="academy-input" value={lessonForm.status} onChange={(event) => setLessonForm({ ...lessonForm, status: event.target.value })}><option value="draft">Draft</option><option value="published">Published</option><option value="archived">Archived</option></select></Field>
               </div>
               <div className="grid gap-2 sm:grid-cols-3">
-                <Check label="Activity" checked={lessonForm.activityRequired} onChange={(checked) => setLessonForm({ ...lessonForm, activityRequired: checked })} />
-                <Check label="Discussion" checked={lessonForm.discussionEnabled} onChange={(checked) => setLessonForm({ ...lessonForm, discussionEnabled: checked })} />
-                <Check label="AI Tutor" checked={lessonForm.aiTutorEnabled} onChange={(checked) => setLessonForm({ ...lessonForm, aiTutorEnabled: checked })} />
-              </div>
+                  <Check label="Require activity completion" checked={lessonForm.activityRequired} onChange={(checked) => setLessonForm({ ...lessonForm, activityRequired: checked })} />
+                  <Check label="Show discussions" checked={lessonForm.discussionEnabled} onChange={(checked) => setLessonForm({ ...lessonForm, discussionEnabled: checked })} />
+                  <Check label="Show AI tutor" checked={lessonForm.aiTutorEnabled} onChange={(checked) => setLessonForm({ ...lessonForm, aiTutorEnabled: checked })} />
+                </div>
               <SubmitButton saving={saving}>Add Lesson</SubmitButton>
             </form>
           </Panel>
