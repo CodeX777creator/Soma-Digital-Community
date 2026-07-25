@@ -6,6 +6,7 @@ import { DEFAULT_POST_CHANNEL, isPostChannel } from '@/lib/communityChannels';
 import { apiResponse, apiError, createAPIHandler, getClientIP } from '@/lib/api-middleware';
 import { logger } from '@/lib/logger';
 import { sanitizeString, validateUrl } from '@/lib/security';
+import { awardXPForUser } from '@/lib/server/xp-service';
 import type { PostType } from '@/lib/db';
 
 type CreateCommunityPostRequest = {
@@ -221,6 +222,20 @@ const handler = createAPIHandler(
     });
 
     logger.info('Post created', { postId: postRef.id, authorId: uid, type });
+
+    try {
+      await awardXPForUser({
+        userId: uid,
+        action: 'community_post_created',
+        resourceId: postRef.id,
+        metadata: { postType: type, tagCount: tags.length },
+      });
+    } catch (error) {
+      logger.error('Failed to award community post XP', error instanceof Error ? error : undefined, {
+        userId: uid,
+        postId: postRef.id,
+      });
+    }
 
     return apiResponse({ id: postRef.id }, { status: 201 });
   },

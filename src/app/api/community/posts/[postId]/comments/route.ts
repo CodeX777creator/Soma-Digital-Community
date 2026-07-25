@@ -4,6 +4,8 @@ import { adminAuth, adminDb } from "@/lib/firebaseAdmin";
 import { requireAuth } from "@/lib/serverAuth";
 import { apiError, apiResponse, createAPIHandler } from "@/lib/api-middleware";
 import { sanitizeString } from "@/lib/security";
+import { awardXPForUser } from "@/lib/server/xp-service";
+import { logger } from "@/lib/logger";
 
 const handler = createAPIHandler(
   async (req: NextRequest, context) => {
@@ -109,6 +111,22 @@ const handler = createAPIHandler(
         createdBy: uid,
         readAt: null,
         createdAt: FieldValue.serverTimestamp(),
+      });
+    }
+
+    try {
+      await awardXPForUser({
+        userId: uid,
+        action: parentId ? "community_reply_created" : "community_comment_created",
+        resourceId: commentRef.id,
+        metadata: parentId ? { postId, parentCommentId: parentId } : { postId },
+      });
+    } catch (error) {
+      logger.error("Failed to award community comment XP", error instanceof Error ? error : undefined, {
+        userId: uid,
+        postId,
+        commentId: commentRef.id,
+        parentId,
       });
     }
 

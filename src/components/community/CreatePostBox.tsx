@@ -13,7 +13,6 @@ import { UserAvatar } from "@/components/ui/user-avatar";
 import { authFetch, parseApiError } from "@/lib/clientApi";
 import { toAppError } from "@/lib/errors";
 import { logger } from "@/lib/logger";
-import { awardXPAction } from "@/lib/xp";
 import { CommunityChannel, DEFAULT_POST_CHANNEL, getChannelLabel, POST_CHANNELS, PostChannel } from "@/lib/communityChannels";
 import { getDownloadURL, ref, uploadBytes, uploadBytesResumable } from "firebase/storage";
 import { storage } from "@/lib/firebase";
@@ -158,12 +157,7 @@ export function CreatePostBox({ selectedChannel = "all" }: CreatePostBoxProps) {
       }
 
       const result = await response.json();
-      await awardXPAction('community_post_created', {
-        resourceId: result.id,
-        metadata: { postType, tagCount: tags.length },
-      });
-
-      setContent("");
+        setContent("");
       setTags([]);
       setChannel(DEFAULT_POST_CHANNEL);
       setPostType("insight");

@@ -6,7 +6,6 @@ import { Send, ChevronDown, CornerDownRight, MessageCircle, Smile, ImageIcon, St
 import { Comment, postService } from "@/lib/db";
 import { useAuth } from "@/providers/AuthProvider";
 import { cn } from "@/lib/utils";
-import { awardXPAction } from "@/lib/xp";
 import { normalizeDate } from "@/lib/date-utils";
 import { logger } from "@/lib/logger";
 
@@ -292,7 +291,7 @@ function CommentItem({
     
     setSubmitting(true);
     try {
-      const replyId = await postService.addReply(postId, comment.id, user.uid, {
+        await postService.addReply(postId, comment.id, user.uid, {
         name: userData?.name || user.displayName || "Anonymous",
         photoURL: user.photoURL || undefined,
         tier: userData?.tier || 'explorer',
@@ -304,11 +303,6 @@ function CommentItem({
       setIsReplying(false);
       setShowReplies(true);
       
-      // Award XP for replying
-      await awardXPAction('community_reply_created', {
-        resourceId: replyId,
-        metadata: { postId, parentCommentId: comment.id },
-      });
     } catch (err) {
       logger.warn('Failed to add reply', { error: err instanceof Error ? err.message : String(err), postId });
     } finally {
@@ -485,17 +479,13 @@ export function CommentThread({ postId, initialCount }: CommentThreadProps) {
     setInput("");
     
     try {
-      const commentId = await postService.addComment(postId, user.uid, {
+        await postService.addComment(postId, user.uid, {
         name: userData?.name || user.displayName || "Anonymous",
         photoURL: user.photoURL || undefined,
         tier: userData?.tier || 'explorer',
       }, optimisticComment.content, null, (commentGif || commentSticker) ? { type: (commentGif || commentSticker)!.mediaType, url: (commentGif || commentSticker)!.url, previewUrl: (commentGif || commentSticker)!.previewUrl, alt: (commentGif || commentSticker)!.title } : undefined);
 
-      await awardXPAction('community_comment_created', {
-        resourceId: commentId,
-        metadata: { postId },
-      });
-      setCommentGif(null);
+        setCommentGif(null);
       setCommentSticker(null);
     } catch (err) {
       logger.warn('[CommentThread] Failed to add comment', { error: err instanceof Error ? err.message : String(err), postId });

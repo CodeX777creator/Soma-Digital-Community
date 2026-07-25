@@ -592,8 +592,17 @@
          { "fieldPath": "createdAt", "order": "DESCENDING" }
        ]
      },
-    {
-      "collectionGroup": "discussionReplies",
+     {
+       "__comment": "XP daily-cap checks: supports action and date filtering for a user's XP events.",
+       "collectionGroup": "xpEvents",
+       "queryScope": "COLLECTION",
+       "fields": [
+         { "fieldPath": "action", "order": "ASCENDING" },
+         { "fieldPath": "dateString", "order": "ASCENDING" }
+       ]
+     },
+     {
+       "collectionGroup": "discussionReplies",
       "queryScope": "COLLECTION",
       "fields": [
         { "fieldPath": "courseId", "order": "ASCENDING" },

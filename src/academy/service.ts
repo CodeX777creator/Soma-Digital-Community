@@ -1,7 +1,8 @@
 import { FieldValue } from 'firebase-admin/firestore';
 import { randomBytes } from 'crypto';
 import { adminDb } from '@/lib/firebaseAdmin';
-import { getXPPolicy, type XPActionKey } from '@/lib/xp-policy';
+import type { XPActionKey } from '@/lib/xp-policy';
+import { awardXPForUser } from '@/lib/server/xp-service';
 import { getEffectiveUserTier } from '@/lib/tier';
 import {
   ACADEMY_COLLECTIONS,
@@ -145,50 +146,18 @@ async function getAcademyMrrState(userId: string, courseId: string) {
   };
 }
 
-function xpEventId(action: XPActionKey, resourceId: string) {
-  return `${action}_${resourceId.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 180)}`;
-}
-
 async function awardAcademyXP(input: {
   userId: string;
   action: XPActionKey;
   resourceId: string;
   metadata?: Record<string, unknown>;
 }) {
-  const policy = getXPPolicy(input.action);
-  if (!policy?.xp || policy.xp <= 0) return { awarded: false, xp: 0 };
-  const eventRef = adminDb.collection('users').doc(input.userId).collection('xpEvents').doc(xpEventId(input.action, input.resourceId));
-  const userRef = adminDb.collection('users').doc(input.userId);
-  const publicProfileRef = adminDb.collection('publicProfiles').doc(input.userId);
-  let awarded = false;
-  await adminDb.runTransaction(async (tx) => {
-    const existing = await tx.get(eventRef);
-    if (existing.exists) return;
-    const timestamp = now();
-    tx.set(eventRef, {
-      action: input.action,
-      type: policy.eventType,
-      xp: policy.xp,
-      resourceId: input.resourceId,
-      metadata: input.metadata || {},
-      source: 'academy_service',
-      dateString: new Date().toISOString().slice(0, 10),
-      createdAt: timestamp,
-    });
-    tx.set(userRef, { xp: FieldValue.increment(policy.xp), updatedAt: timestamp }, { merge: true });
-    tx.set(publicProfileRef, { xp: FieldValue.increment(policy.xp), updatedAt: timestamp }, { merge: true });
-    awarded = true;
-  });
-  if (awarded && policy.notification) {
-    await createAcademyUserNotification(input.userId, {
-      type: policy.notification.type,
-      title: policy.notification.title,
-      body: policy.notification.body(policy.xp),
-      linkUrl: policy.notification.linkUrl,
-      metadata: { ...input.metadata, xp: policy.xp, resourceId: input.resourceId },
-    });
-  }
-  return { awarded, xp: awarded ? policy.xp : 0 };
+  return awardXPForUser({
+    userId: input.userId,
+    action: input.action,
+    resourceId: input.resourceId,
+    metadata: input.metadata,
+  }, { notify: false });
 }
 
 async function createAcademyUserNotification(userId: string, input: {
