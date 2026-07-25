@@ -36,6 +36,26 @@ type CreditAccountDoc = {
   lastUpdatedAt?: admin.firestore.Timestamp | admin.firestore.FieldValue;
 };
 
+function stripUndefined<T>(value: T): T {
+  if (Array.isArray(value)) {
+    return value.map((item) => stripUndefined(item)) as T;
+  }
+
+  if (value && typeof value === "object") {
+    if (value instanceof admin.firestore.FieldValue || value instanceof admin.firestore.Timestamp) {
+      return value;
+    }
+
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>)
+        .filter(([, item]) => item !== undefined)
+        .map(([key, item]) => [key, stripUndefined(item)])
+    ) as T;
+  }
+
+  return value;
+}
+
 function normalizeCreatorPlan(plan: CreatorPlan | string | undefined): CreatorPlan {
   if (plan === "pro" || plan === "elite" || plan === "enterprise") return plan;
   return "explorer";
@@ -345,7 +365,7 @@ export async function reserveCredits(context: AIExecutionContext, credits: numbe
       }, { merge: true });
     }
 
-    transaction.set(ledgerRef().doc(leaseId), {
+    transaction.set(ledgerRef().doc(leaseId), stripUndefined({
       entryId: leaseId,
       userId: context.userId,
       periodId,
@@ -379,7 +399,7 @@ export async function reserveCredits(context: AIExecutionContext, credits: numbe
         ? context.metadata.modelPricingSnapshot as Record<string, unknown>
         : undefined,
       metadata: context.metadata,
-    } satisfies CreditLedgerEntry);
+    } satisfies CreditLedgerEntry));
   });
 
   logger.info("[Creator Credits] Reserved credits", {
@@ -438,7 +458,7 @@ export async function finalizeCredits(lease: AIExecutionLease, input: {
     const includedRefunded = Math.max(0, includedReserved - includedCharged);
     const purchasedRefunded = Math.max(0, purchasedReserved - purchasedCharged);
 
-    transaction.set(ledgerDoc, {
+    transaction.set(ledgerDoc, stripUndefined({
       ...ledger,
       modelId: input.modelId,
       providerId: input.providerId as any,
@@ -463,7 +483,7 @@ export async function finalizeCredits(lease: AIExecutionLease, input: {
         ...(ledger.metadata || {}),
         ...(input.metadata || {}),
       },
-    } satisfies CreditLedgerEntry, { merge: true });
+    } satisfies CreditLedgerEntry), { merge: true });
 
     if (lease.billingSource === "sdc_credits") {
       transaction.set(accountDoc, {
@@ -495,7 +515,7 @@ export async function refundCredits(lease: AIExecutionLease, reason: string, met
     const ledger = snap.data() as CreditLedgerEntry;
     const includedReserved = Math.max(0, lease.includedCreditsReserved || 0);
     const purchasedReserved = Math.max(0, lease.purchasedCreditsReserved || 0);
-    transaction.set(ledgerDoc, {
+    transaction.set(ledgerDoc, stripUndefined({
       ...ledger,
       creditsRefunded: lease.creditsReserved,
       creditsCharged: 0,
@@ -505,7 +525,7 @@ export async function refundCredits(lease: AIExecutionLease, reason: string, met
         ...(ledger.metadata || {}),
         ...(metadata || {}),
       },
-    } satisfies CreditLedgerEntry, { merge: true });
+    } satisfies CreditLedgerEntry), { merge: true });
 
     if (lease.billingSource === "sdc_credits" && lease.creditsReserved > 0) {
       transaction.set(accountDoc, {
@@ -561,8 +581,9 @@ export async function recordSkippedCredits(
     },
   };
 
-  await ledgerRef().doc(entryId).set(entry);
-  return entry;
+  const sanitizedEntry = stripUndefined(entry);
+  await ledgerRef().doc(entryId).set(sanitizedEntry);
+  return sanitizedEntry;
 }
 
 export async function getCreatorCreditDashboard(userId: string, plan: CreatorPlan, providerMode: ProviderMode) {
