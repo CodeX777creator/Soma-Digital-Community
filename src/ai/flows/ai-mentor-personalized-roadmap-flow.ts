@@ -112,7 +112,7 @@ export async function generatePersonalizedRoadmap(
       ],
       maxOutputTokens: 1800,
     }, {
-      userId: input.userId || 'anonymous',
+      userId: input.userId || 'onboarding_anonymous',
       task: 'roadmap_generation',
       feature: 'chat',
       modality: 'text',
@@ -121,6 +121,10 @@ export async function generatePersonalizedRoadmap(
       providerMode: 'hybrid',
       allowByok: true,
       requestId: `roadmap_${startTime}`,
+      metadata: {
+        billingSource: input.userId ? undefined : 'onboarding_allowance',
+        allowance: input.userId ? undefined : 'free_onboarding',
+      },
     });
 
     const output = PersonalizedRoadmapOutputSchema.parse(extractJsonObject<PersonalizedRoadmapOutput>(result.text));

@@ -4,7 +4,7 @@ import type { AIQualityMode } from "@/ai/platform/orchestrator";
 export type CreatorPlan = "explorer" | "pro" | "elite" | "enterprise";
 export type LegacyCreatorTier = CreatorPlan | "free";
 export type RoutingCreatorPlan = "explorer" | "pro" | "elite";
-export type BillingSource = "sdc_credits" | "byok";
+export type BillingSource = "sdc_credits" | "byok" | "onboarding_allowance";
 export type CreditStatus = "reserved" | "charged" | "refunded" | "failed" | "skipped";
 export type ProviderMode = "credits" | "byok" | "hybrid";
 

@@ -40,7 +40,8 @@ async function reserveForContext(context: AIExecutionContext, estimatedCostUsd: 
     ? Math.max(0, Math.floor(context.metadata.creditOverride))
     : null;
   const credits = creditOverride ?? pricingQuote?.credits ?? await estimateCreditCost(plan, context.feature);
-  const providerConnection = context.allowByok
+  const isOnboardingAllowance = context.metadata?.billingSource === "onboarding_allowance";
+  const providerConnection = context.allowByok && !isOnboardingAllowance
     ? await getProviderConnection(context.userId, route.providerId)
     : null;
   const useByok = Boolean(
@@ -50,6 +51,11 @@ async function reserveForContext(context: AIExecutionContext, estimatedCostUsd: 
     providerConnection.enabled &&
     providerConnection.verified
   );
+  const billingSource = isOnboardingAllowance
+    ? "onboarding_allowance"
+    : useByok
+      ? "byok"
+      : "sdc_credits";
   const lease = await reserveCredits(
     {
       ...context,
@@ -81,9 +87,9 @@ async function reserveForContext(context: AIExecutionContext, estimatedCostUsd: 
         } : {}),
       },
     },
-    useByok ? 0 : credits,
+    billingSource === "sdc_credits" ? credits : 0,
     estimatedCostUsd,
-    useByok ? "byok" : "sdc_credits"
+    billingSource
   );
 
   return {
@@ -228,9 +234,9 @@ export async function executeMonetizedTextRequest(
       outputTokens: response.usage?.outputTokens,
       maxOutputTokens: response.usage?.outputTokens || pricingQuote.outputTokens,
     });
-    const creditsCharged = lease.billingSource === "byok"
-      ? 0
-      : Math.min(lease.creditsReserved, actualPricingQuote.credits);
+    const creditsCharged = lease.billingSource === "sdc_credits"
+      ? Math.min(lease.creditsReserved, actualPricingQuote.credits)
+      : 0;
 
     await finalizeCredits(lease, {
       durationMs: response.durationMs,
@@ -354,7 +360,7 @@ export async function* executeMonetizedTextStream(
     const durationMs = Date.now() - startedAt;
     await finalizeCredits(lease, {
       durationMs,
-      creditsCharged: lease.billingSource === "byok" ? 0 : lease.creditsReserved,
+      creditsCharged: lease.billingSource === "sdc_credits" ? lease.creditsReserved : 0,
       actualCostUsd: durationMs / 1000,
       modelId,
       providerId,
@@ -373,7 +379,7 @@ export async function* executeMonetizedTextStream(
       responsePlanProviderId: providerId,
       responsePlanModelId: modelId,
       actualCostUsd: durationMs / 1000,
-      creditsCharged: lease.billingSource === "byok" ? 0 : lease.creditsReserved,
+      creditsCharged: lease.billingSource === "sdc_credits" ? lease.creditsReserved : 0,
       creditsRefunded: 0,
     });
     completed = true;
@@ -436,7 +442,7 @@ export async function executeMonetizedImageRequest(
     });
     await finalizeCredits(lease, {
       durationMs: response.durationMs,
-      creditsCharged: lease.billingSource === "byok" ? 0 : lease.creditsReserved,
+      creditsCharged: lease.billingSource === "sdc_credits" ? lease.creditsReserved : 0,
       actualCostUsd: response.durationMs / 1000,
       modelId: response.plan.modelId,
       providerId: response.plan.providerId,
@@ -451,7 +457,7 @@ export async function executeMonetizedImageRequest(
       responsePlanProviderId: response.plan.providerId,
       responsePlanModelId: response.plan.modelId,
       actualCostUsd: response.durationMs / 1000,
-      creditsCharged: lease.billingSource === "byok" ? 0 : lease.creditsReserved,
+      creditsCharged: lease.billingSource === "sdc_credits" ? lease.creditsReserved : 0,
       creditsRefunded: 0,
     });
     return {
@@ -459,7 +465,7 @@ export async function executeMonetizedImageRequest(
       billing: {
         source: lease.billingSource,
         creditsReserved: lease.creditsReserved,
-        creditsCharged: lease.billingSource === "byok" ? 0 : lease.creditsReserved,
+         creditsCharged: lease.billingSource === "sdc_credits" ? lease.creditsReserved : 0,
         creditsRefunded: 0,
         requestId: lease.requestId,
         pricing: pricingMetadata(pricingQuote),
@@ -511,7 +517,7 @@ export async function executeMonetizedVideoRequest(
     });
     await finalizeCredits(lease, {
       durationMs: response.durationMs,
-      creditsCharged: lease.billingSource === "byok" ? 0 : lease.creditsReserved,
+       creditsCharged: lease.billingSource === "sdc_credits" ? lease.creditsReserved : 0,
       actualCostUsd: response.durationMs / 1000,
       modelId: response.plan.modelId,
       providerId: response.plan.providerId,
@@ -526,7 +532,7 @@ export async function executeMonetizedVideoRequest(
       responsePlanProviderId: response.plan.providerId,
       responsePlanModelId: response.plan.modelId,
       actualCostUsd: response.durationMs / 1000,
-      creditsCharged: lease.billingSource === "byok" ? 0 : lease.creditsReserved,
+       creditsCharged: lease.billingSource === "sdc_credits" ? lease.creditsReserved : 0,
       creditsRefunded: 0,
     });
     return {
@@ -534,7 +540,7 @@ export async function executeMonetizedVideoRequest(
       billing: {
         source: lease.billingSource,
         creditsReserved: lease.creditsReserved,
-        creditsCharged: lease.billingSource === "byok" ? 0 : lease.creditsReserved,
+         creditsCharged: lease.billingSource === "sdc_credits" ? lease.creditsReserved : 0,
         creditsRefunded: 0,
         requestId: lease.requestId,
         pricing: pricingMetadata(pricingQuote),
@@ -599,7 +605,7 @@ export async function recordMonetizedUsageCharge(
 
   await finalizeCredits(lease, {
     durationMs,
-    creditsCharged: lease.billingSource === "byok" ? 0 : lease.creditsReserved,
+    creditsCharged: lease.billingSource === "sdc_credits" ? lease.creditsReserved : 0,
     actualCostUsd: input.actualCostUsd ?? input.estimatedCostUsd,
     modelId,
     providerId,
@@ -619,14 +625,14 @@ export async function recordMonetizedUsageCharge(
     responsePlanProviderId: providerId,
     responsePlanModelId: modelId,
     actualCostUsd: input.actualCostUsd ?? input.estimatedCostUsd,
-    creditsCharged: lease.billingSource === "byok" ? 0 : lease.creditsReserved,
+    creditsCharged: lease.billingSource === "sdc_credits" ? lease.creditsReserved : 0,
     creditsRefunded: 0,
   });
 
   return {
     billing: {
       creditsReserved: lease.creditsReserved,
-      creditsCharged: lease.billingSource === "byok" ? 0 : lease.creditsReserved,
+    creditsCharged: lease.billingSource === "sdc_credits" ? lease.creditsReserved : 0,
       creditsRefunded: 0,
       billingSource: lease.billingSource,
     },
@@ -661,7 +667,7 @@ export async function executeMonetizedAudioRequest(
     });
     await finalizeCredits(lease, {
       durationMs: response.durationMs,
-      creditsCharged: lease.billingSource === "byok" ? 0 : lease.creditsReserved,
+    creditsCharged: lease.billingSource === "sdc_credits" ? lease.creditsReserved : 0,
       actualCostUsd: response.durationMs / 1000,
       modelId: response.plan.modelId,
       providerId: response.plan.providerId,
@@ -676,7 +682,7 @@ export async function executeMonetizedAudioRequest(
       responsePlanProviderId: response.plan.providerId,
       responsePlanModelId: response.plan.modelId,
       actualCostUsd: response.durationMs / 1000,
-      creditsCharged: lease.billingSource === "byok" ? 0 : lease.creditsReserved,
+    creditsCharged: lease.billingSource === "sdc_credits" ? lease.creditsReserved : 0,
       creditsRefunded: 0,
     });
     return {
@@ -684,7 +690,7 @@ export async function executeMonetizedAudioRequest(
       billing: {
         source: lease.billingSource,
         creditsReserved: lease.creditsReserved,
-        creditsCharged: lease.billingSource === "byok" ? 0 : lease.creditsReserved,
+    creditsCharged: lease.billingSource === "sdc_credits" ? lease.creditsReserved : 0,
         creditsRefunded: 0,
         requestId: lease.requestId,
         pricing: pricingMetadata(pricingQuote),

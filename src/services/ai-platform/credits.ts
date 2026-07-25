@@ -315,12 +315,13 @@ export async function reserveCredits(context: AIExecutionContext, credits: numbe
 
   await adminDb.runTransaction(async (transaction) => {
     const snap = await transaction.get(accountRefDoc);
-    if (!snap.exists) {
+    if (!snap.exists && billingSource !== "onboarding_allowance") {
       throw new Error("Credit account missing");
     }
 
-    const data = snap.data() as CreditAccountDoc;
+    const data = snap.exists ? snap.data() as CreditAccountDoc : null;
     if (billingSource === "sdc_credits") {
+      if (!data) throw new Error("Credit account missing");
       const includedAvailable = Math.max(
         0,
         safeCount(data.monthlyCreditsGranted) - safeCount(data.monthlyCreditsUsed) - safeCount(data.monthlyCreditsReserved)
@@ -338,7 +339,7 @@ export async function reserveCredits(context: AIExecutionContext, credits: numbe
         remainingCredits: admin.firestore.FieldValue.increment(-credits),
         lastUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
       }, { merge: true });
-    } else {
+    } else if (billingSource === "byok") {
       transaction.set(accountRefDoc, {
         lastUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
       }, { merge: true });
