@@ -67,7 +67,7 @@ function modelMultiplier(model?: AIModelRegistryDoc | null): number {
 }
 
 function isReasoningModel(model?: AIModelRegistryDoc | null): boolean {
-  const tags = model?.tags || [];
+  const tags = Array.isArray(model?.tags) ? model.tags : [];
   return tags.includes("reasoning") || tags.includes("thinking") || model?.creditClass === "premium" || model?.creditClass === "specialized";
 }
 

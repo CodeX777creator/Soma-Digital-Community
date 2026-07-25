@@ -66,6 +66,20 @@ export interface ResolvedModelRoute {
 
 const MODEL_REGISTRY_URL = "https://ai-gateway.vercel.sh/v1/models";
 const DEFAULT_TIER_ACCESS: CreatorPlan[] = ["explorer", "pro", "elite", "enterprise"];
+const DEFAULT_PREMIUM_TIER_ACCESS: CreatorPlan[] = ["pro", "elite", "enterprise"];
+
+function stringArray(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === "string")
+    : [];
+}
+
+function creatorPlanArray(value: unknown, fallback: CreatorPlan[]): CreatorPlan[] {
+  const plans = stringArray(value).filter((item): item is CreatorPlan =>
+    (DEFAULT_TIER_ACCESS as string[]).includes(item)
+  );
+  return plans.length ? plans : fallback;
+}
 
 function normalizeNumber(value: unknown): number | undefined {
   const parsed = typeof value === "string" ? Number(value) : typeof value === "number" ? value : NaN;
@@ -343,19 +357,63 @@ export async function listAIModels(limit = 250): Promise<AIModelRegistryDoc[]> {
     .limit(Math.min(Math.max(limit, 1), 500))
     .get();
 
-  return snapshot.docs.map((doc) => doc.data() as AIModelRegistryDoc);
+  return snapshot.docs.map((doc) => {
+    const data = doc.data() as Record<string, unknown>;
+    return {
+      ...data,
+      id: typeof data.id === "string" && data.id.trim() ? data.id : doc.id.replace(/__/g, "/"),
+      name: typeof data.name === "string" ? data.name : doc.id,
+      provider: typeof data.provider === "string" ? data.provider : "unknown",
+      type: typeof data.type === "string" ? data.type : "unknown",
+      tags: stringArray(data.tags),
+      pricing: data.pricing && typeof data.pricing === "object" ? data.pricing as GatewayModelPricing : {},
+      active: data.active !== false,
+      sdcEnabled: data.sdcEnabled !== false,
+      tierAccess: creatorPlanArray(data.tierAccess, DEFAULT_TIER_ACCESS),
+      creditClass: data.creditClass === "advanced" || data.creditClass === "premium" || data.creditClass === "specialized"
+        ? data.creditClass
+        : "standard",
+      creditMultiplier: typeof data.creditMultiplier === "number" && data.creditMultiplier > 0 ? data.creditMultiplier : 1,
+      recommendedFor: stringArray(data.recommendedFor),
+    } as AIModelRegistryDoc;
+  });
 }
 
 export async function getAIModel(modelId: string): Promise<AIModelRegistryDoc | null> {
   const snap = await modelRef(modelId).get();
-  return snap.exists ? snap.data() as AIModelRegistryDoc : null;
+  if (!snap.exists) return null;
+  const data = snap.data() as Record<string, unknown>;
+  return {
+    ...data,
+    id: typeof data.id === "string" && data.id.trim() ? data.id : modelId,
+    name: typeof data.name === "string" ? data.name : modelId,
+    provider: typeof data.provider === "string" ? data.provider : "unknown",
+    type: typeof data.type === "string" ? data.type : "unknown",
+    tags: stringArray(data.tags),
+    pricing: data.pricing && typeof data.pricing === "object" ? data.pricing as GatewayModelPricing : {},
+    active: data.active !== false,
+    sdcEnabled: data.sdcEnabled !== false,
+    tierAccess: creatorPlanArray(data.tierAccess, DEFAULT_TIER_ACCESS),
+    creditClass: data.creditClass === "advanced" || data.creditClass === "premium" || data.creditClass === "specialized"
+      ? data.creditClass
+      : "standard",
+    creditMultiplier: typeof data.creditMultiplier === "number" && data.creditMultiplier > 0 ? data.creditMultiplier : 1,
+    recommendedFor: stringArray(data.recommendedFor),
+  } as AIModelRegistryDoc;
 }
 
 export async function getAIModelFeatureConfig(featureKey: AIRequestTask): Promise<AIModelFeatureConfigDoc | null> {
   const snap = await featureConfigRef(featureKey).get();
   if (!snap.exists) return null;
   const data = snap.data() as AIModelFeatureConfigDoc;
-  return data.active === false ? null : data;
+  return data.active === false ? null : {
+    ...data,
+    fallbackModelIds: stringArray(data.fallbackModelIds),
+    requiredCapabilities: stringArray(data.requiredCapabilities),
+    allowedTiers: creatorPlanArray(data.allowedTiers, DEFAULT_TIER_ACCESS),
+    premiumFallbackModelIds: stringArray(data.premiumFallbackModelIds),
+    premiumAllowedTiers: creatorPlanArray(data.premiumAllowedTiers, DEFAULT_PREMIUM_TIER_ACCESS),
+  };
 }
 
 export async function upsertAIModelFeatureConfig(config: AIModelFeatureConfigDoc): Promise<void> {
@@ -376,7 +434,8 @@ export async function resolveConfiguredModelRoute(input: {
   const preferredRoute = selectPreferredRoute(input.userTier, featureConfig);
   if (preferredRoute) {
     const model = await getAIModel(preferredRoute.modelId);
-    if (!model || (model.sdcEnabled !== false && model.tierAccess.includes(input.userTier))) {
+    const modelTierAccess = model?.tierAccess || DEFAULT_TIER_ACCESS;
+    if (model && model.sdcEnabled !== false && modelTierAccess.includes(input.userTier)) {
       return {
         providerId: modelIdToProviderId(preferredRoute.modelId),
         modelId: preferredRoute.modelId,
@@ -400,8 +459,8 @@ export async function resolveConfiguredModelRoute(input: {
   const allowedTypes = modalityTypes[input.modality] || [input.modality];
   const compatible = models.find((model) => (
     model.sdcEnabled !== false &&
-    model.tierAccess.includes(input.userTier) &&
-    (allowedTypes.includes(model.type) || model.tags.includes(input.modality) || model.tags.includes(`${input.modality}-generation`))
+    (model.tierAccess || DEFAULT_TIER_ACCESS).includes(input.userTier) &&
+    (allowedTypes.includes(model.type) || (model.tags || []).includes(input.modality) || (model.tags || []).includes(`${input.modality}-generation`))
   ));
 
   if (compatible) {
