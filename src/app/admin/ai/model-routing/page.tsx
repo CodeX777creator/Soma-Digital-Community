@@ -9,6 +9,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 
 const FEATURES = [
   "chat",
+  "roadmap_generation",
   "image_generation",
   "video_generation",
   "audio_generation",
@@ -145,6 +146,7 @@ function formatCommaList(value: unknown, fallback: string) {
 
 const FEATURE_TYPE_HINTS: Record<string, string[]> = {
   chat: ["language"],
+  roadmap_generation: ["language"],
   image_generation: ["image"],
   video_generation: ["video"],
   audio_generation: ["speech", "audio"],
@@ -163,6 +165,7 @@ const FEATURE_MODEL_HINTS: Record<string, string[]> = {
   document_analysis: ["vision", "multimodal", "document", "pdf", "ocr"],
   translation: ["translate", "translation", "language"],
   chat: ["gpt", "gemini", "claude", "qwen", "llama", "mistral", "grok"],
+  roadmap_generation: ["gpt", "gemini", "claude", "qwen", "llama", "mistral", "grok", "nemotron"],
 };
 
 function normalizeText(value: string | undefined | null) {

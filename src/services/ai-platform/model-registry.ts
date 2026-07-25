@@ -447,33 +447,10 @@ export async function resolveConfiguredModelRoute(input: {
     }
   }
 
-  const models = await listAIModels(200);
-  const modalityTypes: Record<AIModality, string[]> = {
-    text: ["language", "text"],
-    image: ["image"],
-    video: ["video"],
-    audio: ["audio", "speech"],
-    embedding: ["embedding", "embeddings"],
-    rerank: ["rerank", "reranker"],
-  };
-  const allowedTypes = modalityTypes[input.modality] || [input.modality];
-  const compatible = models.find((model) => (
-    model.sdcEnabled !== false &&
-    (model.tierAccess || DEFAULT_TIER_ACCESS).includes(input.userTier) &&
-    (allowedTypes.includes(model.type) || (model.tags || []).includes(input.modality) || (model.tags || []).includes(`${input.modality}-generation`))
-  ));
-
-  if (compatible) {
-    return {
-      providerId: modelIdToProviderId(compatible.id),
-      modelId: compatible.id,
-      fallbackModelIds: [],
-      source: "model_registry",
-      model: compatible,
-      featureConfig,
-    };
-  }
-
+  // The synchronized catalog is for discovery, validation, and pricing only.
+  // Never select an arbitrary catalog model at runtime: routing must come from
+  // the admin feature config or the approved emergency fallback supplied by
+  // the task orchestrator.
   return {
     providerId: "vercel-ai-gateway",
     modelId: input.fallbackModelId,
