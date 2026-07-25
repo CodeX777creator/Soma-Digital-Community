@@ -108,6 +108,14 @@ const BEHAVIORAL_CONFIG = {
   characterRepetitionThreshold: 4,
 };
 
+function collectMatches(input: string, pattern: RegExp): RegExpMatchArray[] {
+  const globalPattern = pattern.flags.includes('g')
+    ? pattern
+    : new RegExp(pattern.source, `${pattern.flags}g`);
+
+  return Array.from(input.matchAll(globalPattern));
+}
+
 /**
  * Calculate similarity between two strings
  */
@@ -372,7 +380,7 @@ export function detectInjection(
   // Pattern-based detection
   if (finalConfig.enablePatternDetection) {
     for (const { pattern, type, severity, description } of INJECTION_PATTERNS) {
-      const matches = Array.from(input.matchAll(pattern));
+      const matches = collectMatches(input, pattern);
       for (const match of matches) {
         threats.push({
           type,

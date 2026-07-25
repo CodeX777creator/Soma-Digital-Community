@@ -11,6 +11,14 @@
 
 import { logger } from '@/lib/logger';
 
+function collectMatches(input: string, pattern: RegExp): RegExpMatchArray[] {
+  const globalPattern = pattern.flags.includes('g')
+    ? pattern
+    : new RegExp(pattern.source, `${pattern.flags}g`);
+
+  return Array.from(input.matchAll(globalPattern));
+}
+
 export interface UserMemory {
   userId: string;
   extractedInsights: Insight[];
@@ -86,7 +94,7 @@ export function extractInsights(
     ];
 
     for (const { pattern, type } of goalPatterns) {
-      const matches = Array.from(message.matchAll(pattern));
+      const matches = collectMatches(message, pattern);
       for (const match of matches) {
         const content = match[1]?.trim();
         if (content && content.length > 5 && content.length < 200) {
