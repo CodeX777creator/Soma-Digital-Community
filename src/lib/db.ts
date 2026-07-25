@@ -66,6 +66,10 @@ export interface Comment {
   authorAvatar: string;
   authorTier: 'explorer' | 'pro' | 'elite';
   content: string;
+  mediaType?: 'gif' | 'sticker';
+  mediaUrl?: string;
+  mediaPreviewUrl?: string;
+  mediaAlt?: string;
   parentId?: string | null; // For reply threading
   replyCount?: number;
   createdAt: any;
@@ -174,11 +178,12 @@ export const postService = {
     userId: string,
     userData: { name: string; photoURL?: string; tier: string },
     content: string,
-    parentId?: string | null
+    parentId?: string | null,
+    media?: { type: 'gif' | 'sticker'; url: string; previewUrl?: string; alt?: string }
   ): Promise<string> {
     const response = await authFetch(`/api/community/posts/${postId}/comments`, {
       method: 'POST',
-      body: JSON.stringify({ content, parentId: parentId || null }),
+      body: JSON.stringify({ content, parentId: parentId || null, media }),
     });
     const body = await (await requireOk(response, 'Unable to add comment')).json();
     return body.id;
@@ -190,9 +195,10 @@ export const postService = {
     parentCommentId: string,
     userId: string,
     userData: { name: string; photoURL?: string; tier: string },
-    content: string
+    content: string,
+    media?: { type: 'gif' | 'sticker'; url: string; previewUrl?: string; alt?: string }
   ): Promise<string> {
-    return this.addComment(postId, userId, userData, content, parentCommentId);
+    return this.addComment(postId, userId, userData, content, parentCommentId, media);
   },
 
   // Get replies for a specific comment

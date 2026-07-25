@@ -14,11 +14,31 @@ const handler = createAPIHandler(
     const parentId = typeof body?.parentId === "string" && body.parentId.trim()
       ? body.parentId.trim()
       : null;
+    const media = body?.media && typeof body.media === "object" ? body.media as Record<string, unknown> : null;
+    const mediaUrl = typeof media?.url === "string" ? media.url.trim() : "";
+    const mediaPreviewUrl = typeof media?.previewUrl === "string" ? media.previewUrl.trim() : mediaUrl;
+    const mediaAlt = typeof media?.alt === "string" ? sanitizeString(media.alt, 160) : "Community GIF";
+    const isAllowedGifUrl = (value: string) => {
+      try {
+        const url = new URL(value);
+        return url.protocol === "https:" && (
+          url.hostname === "media.giphy.com" ||
+          url.hostname.endsWith(".giphy.com") ||
+          url.hostname === "media.tenor.com" ||
+          url.hostname.endsWith(".tenor.com")
+        );
+      } catch {
+        return false;
+      }
+    };
+    const safeMedia = (media?.type === "gif" || media?.type === "sticker") && isAllowedGifUrl(mediaUrl)
+      ? { type: media.type, url: mediaUrl, previewUrl: isAllowedGifUrl(mediaPreviewUrl) ? mediaPreviewUrl : mediaUrl, alt: mediaAlt }
+      : null;
 
     if (!postId) {
       return apiError("Missing post id", { status: 400, code: "MISSING_POST_ID" });
     }
-    if (!content) {
+    if (!content && !safeMedia) {
       return apiError("Comment content is required", { status: 400, code: "MISSING_CONTENT" });
     }
 
@@ -62,6 +82,12 @@ const handler = createAPIHandler(
         authorAvatar: userData.photoURL || userData.avatarURL || userData.avatarUrl || authUser?.photoURL || "",
         authorTier,
         content,
+        ...(safeMedia ? {
+          mediaType: safeMedia.type,
+          mediaUrl: safeMedia.url,
+          mediaPreviewUrl: safeMedia.previewUrl,
+          mediaAlt: safeMedia.alt,
+        } : {}),
         parentId,
         replyCount: 0,
         createdAt: FieldValue.serverTimestamp(),
