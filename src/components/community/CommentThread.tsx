@@ -241,17 +241,17 @@ function SelectedGifPreview({ gif, onRemove }: { gif: SelectedGif; onRemove: () 
 function ComposerTools({ onEmoji, onSelectGif, onToggleGif, gifOpen, onSelectSticker, onToggleSticker, stickerOpen, disabled }: { onEmoji: (emoji: string) => void; onSelectGif: (gif: SelectedGif) => void; onToggleGif: () => void; gifOpen: boolean; onSelectSticker: (sticker: SelectedGif) => void; onToggleSticker: () => void; stickerOpen: boolean; disabled?: boolean }) {
   const [emojiOpen, setEmojiOpen] = useState(false);
   return (
-    <div className="relative flex shrink-0 items-center gap-1">
+      <div className="relative flex min-w-0 max-w-full flex-wrap items-center gap-1">
       {emojiOpen ? <EmojiMenu onSelect={(emoji) => { onEmoji(emoji); setEmojiOpen(false); }} /> : null}
       {gifOpen ? <GifMenu onSelect={(gif) => { onSelectGif(gif); onToggleGif(); }} onClose={onToggleGif} /> : null}
       {stickerOpen ? <GifMenu kind="sticker" onSelect={(sticker) => { onSelectSticker(sticker); onToggleSticker(); }} onClose={onToggleSticker} /> : null}
-      <button type="button" disabled={disabled} onClick={() => setEmojiOpen((value) => !value)} className="flex h-7 items-center gap-1 rounded-lg px-2 text-white/45 hover:bg-white/10 hover:text-white disabled:opacity-30" aria-label="Add emoji" title="Add emoji">
+        <button type="button" disabled={disabled} onClick={() => setEmojiOpen((value) => !value)} className="flex h-7 shrink-0 items-center gap-1 whitespace-nowrap rounded-lg px-2 text-white/45 hover:bg-white/10 hover:text-white disabled:opacity-30" aria-label="Add emoji" title="Add emoji">
         <Smile className="h-3.5 w-3.5" /><span className="sr-only">Emoji</span>
       </button>
-      <button type="button" disabled={disabled} onClick={onToggleGif} className="flex h-7 items-center gap-1 rounded-lg px-2 text-[10px] font-semibold text-white/45 hover:bg-white/10 hover:text-white disabled:opacity-30" aria-label="Add GIF" title="Add GIF">
+        <button type="button" disabled={disabled} onClick={onToggleGif} className="flex h-7 shrink-0 items-center gap-1 whitespace-nowrap rounded-lg px-2 text-[10px] font-semibold text-white/45 hover:bg-white/10 hover:text-white disabled:opacity-30" aria-label="Add GIF" title="Add GIF">
         <ImageIcon className="h-3.5 w-3.5" /> GIF
       </button>
-      <button type="button" disabled={disabled} onClick={onToggleSticker} className="flex h-7 items-center gap-1 rounded-lg px-2 text-[10px] font-semibold text-white/45 hover:bg-white/10 hover:text-white disabled:opacity-30" aria-label="Add sticker" title="Add sticker">
+        <button type="button" disabled={disabled} onClick={onToggleSticker} className="flex h-7 shrink-0 items-center gap-1 whitespace-nowrap rounded-lg px-2 text-[10px] font-semibold text-white/45 hover:bg-white/10 hover:text-white disabled:opacity-30" aria-label="Add sticker" title="Add sticker">
         <Sticker className="h-3.5 w-3.5" /> Sticker
       </button>
     </div>
@@ -378,9 +378,9 @@ function CommentItem({
             animate={{ opacity: 1, height: "auto" }}
             exit={{ opacity: 0, height: 0 }}
             onSubmit={handleReply}
-            className="relative mt-2 ml-2 flex items-center gap-2"
+            className="relative mt-2 ml-2 grid w-full min-w-0 grid-cols-[minmax(0,1fr)_auto] gap-2"
           >
-            <div className="min-w-0 flex-1 rounded-xl border border-white/10 bg-white/[0.04] px-3 focus-within:border-primary/40">
+            <div className="col-start-1 row-start-1 min-w-0 rounded-xl border border-white/10 bg-white/[0.04] px-3 focus-within:border-primary/40">
               <input
                 value={replyInput}
                 onChange={e => setReplyInput(e.target.value)}
@@ -391,32 +391,34 @@ function CommentItem({
               {replyGif ? <SelectedGifPreview gif={replyGif} onRemove={() => setReplyGif(null)} /> : null}
               {replySticker ? <SelectedGifPreview gif={replySticker} onRemove={() => setReplySticker(null)} /> : null}
             </div>
-            <ComposerTools
-              onEmoji={(emoji) => setReplyInput((value) => `${value}${emoji}`)}
-              onSelectGif={setReplyGif}
-              onToggleGif={() => setReplyGifOpen((value) => !value)}
-              gifOpen={replyGifOpen}
-              onSelectSticker={setReplySticker}
-              onToggleSticker={() => setReplyStickerOpen((value) => !value)}
-              stickerOpen={replyStickerOpen}
-              disabled={submitting}
-            />
             <button
               type="submit"
               disabled={(!replyInput.trim() && !replyGif && !replySticker) || submitting}
               aria-label="Send reply"
-              className="w-7 h-7 rounded-lg bg-primary disabled:opacity-30 flex items-center justify-center transition-all hover:bg-primary/90"
+              className="col-start-2 row-start-1 flex h-8 w-8 shrink-0 items-center justify-center self-center rounded-lg bg-primary transition-all hover:bg-primary/90 disabled:opacity-30"
             >
               <Send className="w-3 h-3 text-white" />
             </button>
-            <button
-              type="button"
-              onClick={() => setIsReplying(false)}
-              aria-label="Cancel reply"
-              className="text-[10px] text-muted-foreground hover:text-white"
-            >
-              Cancel
-            </button>
+            <div className="col-span-2 row-start-2 flex min-w-0 flex-wrap items-center justify-between gap-2 border-t border-white/5 pt-1">
+              <ComposerTools
+                onEmoji={(emoji) => setReplyInput((value) => `${value}${emoji}`)}
+                onSelectGif={setReplyGif}
+                onToggleGif={() => setReplyGifOpen((value) => !value)}
+                gifOpen={replyGifOpen}
+                onSelectSticker={setReplySticker}
+                onToggleSticker={() => setReplyStickerOpen((value) => !value)}
+                stickerOpen={replyStickerOpen}
+                disabled={submitting}
+              />
+              <button
+                type="button"
+                onClick={() => setIsReplying(false)}
+                aria-label="Cancel reply"
+                className="shrink-0 whitespace-nowrap px-1 text-[10px] text-muted-foreground hover:text-white"
+              >
+                Cancel
+              </button>
+            </div>
           </motion.form>
         )}
         
