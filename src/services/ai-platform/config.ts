@@ -14,6 +14,17 @@ function readMode(name: string, fallback: ProviderMode): ProviderMode {
   return fallback;
 }
 
+function normalizeGatewayBaseURL(value?: string): string {
+  let baseURL = (value || "https://ai-gateway.vercel.sh/v1").replace(/\/+$/, "");
+  if (baseURL.endsWith("/v1/ai")) {
+    baseURL = baseURL.slice(0, -3);
+  }
+  if (!/\/v1$/i.test(baseURL)) {
+    baseURL = `${baseURL}/v1`;
+  }
+  return baseURL;
+}
+
 export const creatorCreditPolicies: Record<MonetizedFeature, CreatorCreditPolicy> = {
   chat: { feature: "chat", monthlyLimit: 100, concurrentLimit: 2, byokEligible: true },
   image_generation: { feature: "image_generation", monthlyLimit: 20, concurrentLimit: 2, byokEligible: true },
@@ -58,7 +69,7 @@ export const planCreditProfiles: Record<"explorer" | "pro" | "elite" | "enterpri
 
 export const monetizationConfig = {
   providerMode: readMode("AI_PROVIDER_MODE", "hybrid"),
-  gatewayBaseURL: process.env.AI_GATEWAY_BASE_URL || process.env.VERCEL_AI_GATEWAY_BASE_URL || "https://ai-gateway.vercel.sh/v1",
+  gatewayBaseURL: normalizeGatewayBaseURL(process.env.AI_GATEWAY_BASE_URL || process.env.VERCEL_AI_GATEWAY_BASE_URL),
   gatewayApiKey: process.env.AI_GATEWAY_API_KEY || "",
   byokMasterKey: process.env.AI_PROVIDER_CREDENTIALS_MASTER_KEY || process.env.SOCIAL_CREDENTIALS_MASTER_KEY || "",
   reserveTimeoutMs: readNumber("AI_CREDIT_RESERVATION_TIMEOUT_MS", 10 * 60 * 1000),
