@@ -5,6 +5,7 @@ import {
   getDoc, 
   addDoc, 
   query, 
+  where,
   orderBy, 
   getDocs, 
   updateDoc, 
@@ -120,17 +121,41 @@ export const postService = {
   ): () => void {
     if (!db) throw new Error('Database not initialized');
     const postsRef = collection(db, 'posts');
-    const q = query(postsRef, orderBy('createdAt', 'desc'), firestoreLimit(postLimit));
-    return onSnapshot(q, (snap: QuerySnapshot<DocumentData>) => {
-      const posts = snap.docs.map(d => ({ id: d.id, ...d.data() } as Post));
-      // Sort: pinned first, then by time
-      posts.sort((a, b) => {
-        if (a.isPinned && !b.isPinned) return -1;
-        if (!a.isPinned && b.isPinned) return 1;
-        return 0;
+      const recentQuery = query(postsRef, orderBy('createdAt', 'desc'), firestoreLimit(postLimit));
+      const pinnedQuery = query(
+        postsRef,
+        where('isPinned', '==', true),
+        orderBy('createdAt', 'desc'),
+        firestoreLimit(50),
+      );
+      let recentPosts: Post[] = [];
+      let pinnedPosts: Post[] = [];
+
+      const emit = () => {
+        const merged = new Map<string, Post>();
+        [...pinnedPosts, ...recentPosts].forEach((post) => merged.set(post.id, post));
+        const posts = [...merged.values()];
+        posts.sort((a, b) => {
+          if (a.isPinned && !b.isPinned) return -1;
+          if (!a.isPinned && b.isPinned) return 1;
+          return 0;
+        });
+        callback(posts);
+      };
+
+      const unsubscribeRecent = onSnapshot(recentQuery, (snap: QuerySnapshot<DocumentData>) => {
+        recentPosts = snap.docs.map(d => ({ id: d.id, ...d.data() } as Post));
+        emit();
       });
-      callback(posts);
-    });
+      const unsubscribePinned = onSnapshot(pinnedQuery, (snap: QuerySnapshot<DocumentData>) => {
+        pinnedPosts = snap.docs.map(d => ({ id: d.id, ...d.data() } as Post));
+        emit();
+      });
+
+      return () => {
+        unsubscribeRecent();
+        unsubscribePinned();
+      };
   },
 
   async getPost(postId: string): Promise<Post | null> {

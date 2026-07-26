@@ -6,10 +6,10 @@ import { AppLayout } from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import {
-  Users, Trophy, Sparkles, MessageSquare,
+  Users, Trophy, Sparkles, MessageSquare, BookOpen,
   Cpu, Loader2, Briefcase,
-  CalendarDays, Hash, Heart, ImageIcon, BarChart3, Filter,
-  UserPlus, Crown, Bell, Video,
+  CalendarDays, Hash, Heart, ImageIcon, BarChart3, Filter, Pin,
+  UserPlus, Crown, Bell,
 } from "lucide-react";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import { PostCardOptimized } from "@/components/community/PostCardOptimized";
@@ -27,16 +27,18 @@ import { normalizeDate } from "@/lib/date-utils";
 
 
 const CHANNEL_NAV = [
-  { ...COMMUNITY_CHANNELS[0], icon: <Users className="w-4 h-4 text-primary" /> },
-  { ...COMMUNITY_CHANNELS[1], icon: <MessageSquare className="w-4 h-4 text-primary" /> },
-  { ...COMMUNITY_CHANNELS[2], icon: <Trophy className="w-4 h-4 text-yellow-500" /> },
-  { ...COMMUNITY_CHANNELS[3], icon: <Sparkles className="w-4 h-4 text-accent" /> },
-  { ...COMMUNITY_CHANNELS[4], icon: <Briefcase className="w-4 h-4 text-emerald-400" /> },
-  { ...COMMUNITY_CHANNELS[5], icon: <Cpu className="w-4 h-4 text-purple-400" /> },
+  { ...COMMUNITY_CHANNELS.find((channel) => channel.id === "all")!, icon: <Users className="w-4 h-4 text-primary" /> },
+  { ...COMMUNITY_CHANNELS.find((channel) => channel.id === "general")!, icon: <MessageSquare className="w-4 h-4 text-primary" /> },
+  { ...COMMUNITY_CHANNELS.find((channel) => channel.id === "introduction")!, icon: <BookOpen className="w-4 h-4 text-cyan-400" /> },
+  { ...COMMUNITY_CHANNELS.find((channel) => channel.id === "showcase")!, icon: <Trophy className="w-4 h-4 text-yellow-500" /> },
+  { ...COMMUNITY_CHANNELS.find((channel) => channel.id === "questions")!, icon: <Sparkles className="w-4 h-4 text-accent" /> },
+  { ...COMMUNITY_CHANNELS.find((channel) => channel.id === "jobs")!, icon: <Briefcase className="w-4 h-4 text-emerald-400" /> },
+  { ...COMMUNITY_CHANNELS.find((channel) => channel.id === "ai-mentor")!, icon: <Cpu className="w-4 h-4 text-purple-400" /> },
 ];
 
 const CHANNEL_MATCHERS: Record<Exclude<CommunityChannel, "all">, string[]> = {
   general: ["general"],
+  introduction: ["introduction", "intro"],
   showcase: ["showcase", "win"],
   questions: ["questions", "question"],
   jobs: ["jobs", "job"],
@@ -94,6 +96,7 @@ export default function CommunityPage() {
   const [posts, setPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeChannel, setActiveChannel] = useState<CommunityChannel>("all");
+  const [pinnedExpanded, setPinnedExpanded] = useState(false);
   const [editModalPost, setEditModalPost] = useState<Post | null>(null);
   const [followingIds, setFollowingIds] = useState<Set<string>>(new Set());
   const [hiddenPostIds, setHiddenPostIds] = useState<Set<string>>(new Set());
@@ -144,7 +147,7 @@ export default function CommunityPage() {
 
   // Derived: win posts from today
   const visiblePosts = posts.filter(p => !p.deleted && !hiddenPostIds.has(p.id));
-  const founderWins = visiblePosts.filter(p => p.type === "win").slice(0, 5);
+  const founderWins = visiblePosts.filter(p => p.type === "win" && !p.isPinned).slice(0, 5);
   const tagCounts = visiblePosts.reduce<Record<string, number>>((acc, post) => {
     if (post.deleted) return acc;
     post.tags?.forEach((tag) => {
@@ -153,7 +156,13 @@ export default function CommunityPage() {
     return acc;
   }, {});
   const trendingTags = Object.entries(tagCounts).sort((a, b) => b[1] - a[1]).slice(0, 8);
-  const sortedPosts = [...visiblePosts].sort((a, b) => postTimestamp(b) - postTimestamp(a));
+  const pinnedPosts = [...visiblePosts]
+    .filter((post) => post.isPinned)
+    .sort((a, b) => postTimestamp(b) - postTimestamp(a));
+  const visiblePinnedPosts = pinnedExpanded ? pinnedPosts : pinnedPosts.slice(0, 3);
+  const sortedPosts = [...visiblePosts]
+    .filter((post) => !post.isPinned)
+    .sort((a, b) => postTimestamp(b) - postTimestamp(a));
   const filteredPosts = sortedPosts.filter((post) => matchesChannel(post, activeChannel));
   const activePosts = visiblePosts;
   const channelCounts = CHANNEL_NAV.reduce<Record<CommunityChannel, number>>((acc, channel) => {
@@ -303,7 +312,6 @@ export default function CommunityPage() {
                 {[
                   ["Photo/Video", ImageIcon],
                   ["Poll", BarChart3],
-                  ["Live Video", Video],
                   ["Event", CalendarDays],
                 ].map(([label, Icon]) => {
                   const ActionIcon = Icon as typeof ImageIcon;
@@ -338,6 +346,40 @@ export default function CommunityPage() {
                 <Filter className="h-4 w-4" />
               </Button>
             </div>
+
+            {pinnedPosts.length > 0 && (
+              <section className="space-y-3" aria-labelledby="pinned-community-messages">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-primary">
+                    <Pin className="h-3.5 w-3.5 fill-current" />
+                    <h2 id="pinned-community-messages">Pinned messages</h2>
+                  </div>
+                  {pinnedPosts.length > 3 && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      onClick={() => setPinnedExpanded((expanded) => !expanded)}
+                      className="h-8 shrink-0 rounded-lg px-2 text-xs text-[#BFC6D4] hover:text-white"
+                    >
+                      {pinnedExpanded ? "Show fewer" : `Show all ${pinnedPosts.length}`}
+                    </Button>
+                  )}
+                </div>
+                <div className="space-y-4">
+                  <AnimatePresence initial={false}>
+                    {visiblePinnedPosts.map((post) => (
+                      <PostCardOptimized
+                        key={`pinned-${post.id}`}
+                        post={post}
+                        onEdit={handleEditPost}
+                        onDelete={handleDeletePost}
+                        onHide={handleHidePost}
+                      />
+                    ))}
+                  </AnimatePresence>
+                </div>
+              </section>
+            )}
 
             {founderWins.length > 0 && (
               <section className="flex gap-4 overflow-x-auto pb-1">

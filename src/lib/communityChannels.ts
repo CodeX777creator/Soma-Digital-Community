@@ -1,6 +1,7 @@
 export const COMMUNITY_CHANNELS = [
   { id: "all", label: "All" },
   { id: "general", label: "General" },
+  { id: "introduction", label: "Introduction" },
   { id: "showcase", label: "Showcase" },
   { id: "questions", label: "Questions" },
   { id: "jobs", label: "Jobs" },
@@ -12,6 +13,7 @@ export type PostChannel = Exclude<CommunityChannel, "all">;
 
 export const POST_CHANNELS = [
   { id: "general", label: "General" },
+  { id: "introduction", label: "Introduction" },
   { id: "showcase", label: "Showcase" },
   { id: "questions", label: "Questions" },
   { id: "jobs", label: "Jobs" },
