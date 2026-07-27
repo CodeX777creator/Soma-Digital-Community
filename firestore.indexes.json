@@ -602,6 +602,25 @@
        ]
      },
      {
+       "__comment": "Academy manual reviews: supports course review queues ordered by submission time.",
+       "collectionGroup": "academyActivitySubmissions",
+       "queryScope": "COLLECTION",
+       "fields": [
+         { "fieldPath": "courseId", "order": "ASCENDING" },
+         { "fieldPath": "submittedAt", "order": "DESCENDING" }
+       ]
+     },
+     {
+       "__comment": "Academy manual review filters: supports status-filtered review queues by submission time.",
+       "collectionGroup": "academyActivitySubmissions",
+       "queryScope": "COLLECTION",
+       "fields": [
+         { "fieldPath": "courseId", "order": "ASCENDING" },
+         { "fieldPath": "status", "order": "ASCENDING" },
+         { "fieldPath": "submittedAt", "order": "DESCENDING" }
+       ]
+     },
+     {
        "collectionGroup": "discussionReplies",
       "queryScope": "COLLECTION",
       "fields": [
