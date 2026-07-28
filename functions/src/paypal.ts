@@ -27,9 +27,9 @@ type SubscriptionStatus = 'active' | 'cancelled' | 'past_due' | 'expired' | 'sus
 
 interface CreateSubscriptionRequest {
   planId: SubscriptionPlan;
-  userId: string;
   returnUrl?: string;
   cancelUrl?: string;
+  idempotencyKey?: string;
 }
 
 interface CreateSubscriptionResponse {
@@ -225,8 +225,8 @@ async function cacheSubscriptionClaim(userId: string, tier: SubscriptionPlan): P
 function assertCreateSubscriptionRequest(
   data: Partial<CreateSubscriptionRequest>
 ): asserts data is CreateSubscriptionRequest {
-  if (!data.planId || !data.userId) {
-    throw new HttpsError('invalid-argument', 'planId and userId are required');
+  if (!data.planId) {
+    throw new HttpsError('invalid-argument', 'planId is required');
   }
 }
 
@@ -337,7 +337,8 @@ export const createPayPalSubscription = onCall<CreateSubscriptionRequest>(
 
     assertCreateSubscriptionRequest(data);
 
-    const { planId, userId } = data;
+    const { planId } = data;
+    const userId = context.uid;
     const PAYPAL_PLANS = getPayPalPlans();
     const planPayPalId = PAYPAL_PLANS[planId];
 
@@ -345,9 +346,6 @@ export const createPayPalSubscription = onCall<CreateSubscriptionRequest>(
       throw new HttpsError('invalid-argument', 'Invalid plan ID');
     }
 
-    if (userId !== context.uid) {
-      throw new HttpsError('permission-denied', 'Cannot create subscription for another user');
-    }
 
     try {
       const token = await getPayPalAccessToken();
@@ -734,10 +732,7 @@ export const checkSubscriptionStatus = onCall(
     if (!context?.uid) {
       throw new HttpsError('unauthenticated', 'User not authenticated');
     }
-    const { userId } = request.data as { userId: string };
-    if (userId !== context.uid) {
-      throw new HttpsError('permission-denied', 'Cannot check another user\'s subscription');
-    }
+    const userId = context.uid;
     try {
       const userRef = db.collection('users').doc(userId);
       const userDoc = await userRef.get();

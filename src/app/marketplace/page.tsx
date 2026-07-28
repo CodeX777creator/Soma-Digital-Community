@@ -7,20 +7,29 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Search, Download, Star, Filter, ShoppingBag, Lock } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { getMarketplaceAssets, MarketplaceAsset } from "@/lib/marketplace";
 import { getPlanLabel, getUpgradeLabel, getUpgradeTarget } from "@/lib/plan-ui";
 import { useUserStore } from "@/store/useUserStore";
 
-import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 
 export default function MarketplacePage() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const { tier } = useUserStore();
   const [filter, setFilter] = useState("All Assets");
   const [searchTerm, setSearchTerm] = useState("");
   const [assets, setAssets] = useState<MarketplaceAsset[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
+
+  useEffect(() => {
+    const legacyAsset = searchParams.get("asset");
+    if (!legacyAsset) return;
+    const ref = searchParams.get("ref");
+    router.replace(`/marketplace/${encodeURIComponent(legacyAsset)}${ref ? `?ref=${encodeURIComponent(ref)}` : ""}`);
+  }, [router, searchParams]);
 
   useEffect(() => {
     let cancelled = false;
@@ -63,7 +72,6 @@ export default function MarketplacePage() {
   const planLabel = getPlanLabel(tier);
 
   return (
-    <ProtectedRoute>
       <AppLayout>
         <div className="flex flex-col gap-8 animate-in fade-in duration-700">
         <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
@@ -141,7 +149,6 @@ export default function MarketplacePage() {
         </div>
       </div>
     </AppLayout>
-    </ProtectedRoute>
   );
 }
 

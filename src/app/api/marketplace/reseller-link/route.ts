@@ -149,23 +149,29 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
     const titleSlug = buildSlug(typeof asset.title === 'string' ? asset.title : assetId) || 'asset';
     const userSlug = user.uid.slice(0, 8).toLowerCase();
-    const randomSuffix = Math.random().toString(36).slice(2, 8);
-    const slug = `${titleSlug}-${userSlug}-${randomSuffix}`;
+    const slug = `${titleSlug}-${userSlug}-${assetId.slice(0, 8).toLowerCase()}`;
     const baseUrl = getBaseUrl(request);
-    const url = `${baseUrl}/marketplace?asset=${encodeURIComponent(assetId)}&ref=${encodeURIComponent(slug)}`;
+    const url = `${baseUrl}/marketplace/${encodeURIComponent(assetId)}?ref=${encodeURIComponent(slug)}`;
 
-    await linkRef.set({
+    await adminDb.runTransaction(async (transaction) => {
+      const latest = await transaction.get(linkRef);
+      if (latest.exists) return;
+      transaction.set(linkRef, {
       userId: user.uid,
       assetId,
       slug,
       url,
+      canonicalUrl: url,
       active: true,
+      status: 'active',
+      itemType: 'marketplace_product',
       licenseType: 'mrr',
-      resalePrice: typeof asset.resalePrice === 'number' ? asset.resalePrice : asset.price || 0,
+      resalePriceCents: Math.round((typeof asset.resalePrice === 'number' ? asset.resalePrice : asset.price || 0) * 100),
       resellerCommissionType: asset.resellerCommissionType === 'fixed' ? 'fixed' : 'percentage',
       resellerCommissionValue: typeof asset.resellerCommissionValue === 'number' ? asset.resellerCommissionValue : 0,
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
     });
 
     return NextResponse.json({

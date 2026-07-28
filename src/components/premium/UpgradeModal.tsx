@@ -14,6 +14,8 @@ import { CheckCircle2, Zap, Sparkles, Rocket, Target, ShieldCheck } from "lucide
 import { PayPalSubscribeButtons } from "./PayPalSubscribeButtons";
 import { PaystackSubscribeButtons } from "./PaystackSubscribeButtons";
 
+const PLAN_PRICES = { pro: 97, elite: 297 } as const;
+
 interface UpgradeModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -42,6 +44,12 @@ export const UpgradeModal = ({ open, onOpenChange, onSuccess, initialPlan = null
 
   const handleCancel = () => {
     setSelectedPlan(null);
+    setPaymentProvider('paypal');
+  };
+
+  const handleOpenChange = (nextOpen: boolean) => {
+    if (!nextOpen) handleCancel();
+    onOpenChange(nextOpen);
   };
 
   const modalTitle = initialPlan
@@ -49,7 +57,7 @@ export const UpgradeModal = ({ open, onOpenChange, onSuccess, initialPlan = null
     : 'Choose Your Membership';
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="max-w-4xl bg-[#020617] border-white/10 p-0 overflow-hidden rounded-[2.5rem]">
         <div className="sr-only">
           <DialogTitle>{modalTitle}</DialogTitle>
@@ -97,7 +105,7 @@ export const UpgradeModal = ({ open, onOpenChange, onSuccess, initialPlan = null
                         <p className="text-xs text-muted-foreground">Perfect for growing businesses.</p>
                       </div>
                       <div className="text-right">
-                        <p className="text-2xl font-bold">$97</p>
+                        <p className="text-2xl font-bold">${PLAN_PRICES.pro}</p>
                         <p className="text-[10px] uppercase font-bold text-primary">Monthly</p>
                       </div>
                     </button>
@@ -111,7 +119,7 @@ export const UpgradeModal = ({ open, onOpenChange, onSuccess, initialPlan = null
                         <p className="text-xs text-muted-foreground">For high-performance leaders.</p>
                       </div>
                       <div className="text-right">
-                        <p className="text-2xl font-bold">$297</p>
+                        <p className="text-2xl font-bold">${PLAN_PRICES.elite}</p>
                         <p className="text-[10px] uppercase font-bold text-muted-foreground">Monthly</p>
                       </div>
                     </button>
@@ -119,7 +127,7 @@ export const UpgradeModal = ({ open, onOpenChange, onSuccess, initialPlan = null
 
                  <div className="mt-4">
                    <p className="text-[10px] text-center text-muted-foreground">
-                     Cancel anytime. 30-day high-performance guarantee.
+                     Cancel anytime.
                    </p>
                  </div>
                </>
@@ -138,7 +146,7 @@ export const UpgradeModal = ({ open, onOpenChange, onSuccess, initialPlan = null
                      {selectedPlan === 'pro' ? 'Pro Member' : 'Elite Soma'}
                    </h3>
                    <p className="text-2xl font-bold">
-                     {selectedPlan === 'pro' ? '$97' : '$297'}
+                     {selectedPlan === 'pro' ? `$${PLAN_PRICES.pro}` : `$${PLAN_PRICES.elite}`}
                      <span className="text-sm font-normal text-muted-foreground ml-2">/month</span>
                    </p>
                  </div>

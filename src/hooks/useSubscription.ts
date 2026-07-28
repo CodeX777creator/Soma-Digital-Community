@@ -11,7 +11,7 @@ export type SubscriptionPlan = "explorer" | PaidSubscriptionPlan;
 
 interface CreatePayPalSubscriptionRequest {
   planId: PaidSubscriptionPlan;
-  userId: string;
+  idempotencyKey: string;
 }
 
 interface CreatePayPalSubscriptionResponse {
@@ -20,7 +20,7 @@ interface CreatePayPalSubscriptionResponse {
 
 interface CreatePaystackSubscriptionRequest {
   planId: PaidSubscriptionPlan;
-  userId: string;
+  idempotencyKey: string;
 }
 
 interface CreatePaystackSubscriptionResponse {
@@ -31,7 +31,6 @@ interface CreatePaystackSubscriptionResponse {
 }
 
 interface CheckSubscriptionStatusRequest {
-  userId: string;
 }
 
 interface CheckSubscriptionStatusResponse {
@@ -81,17 +80,12 @@ interface UseSubscriptionResult {
 }
 
 function getFriendlyErrorMessage(error: unknown, fallback: string): string {
-  if (error instanceof Error && error.message.trim().length > 0) {
-    return error.message;
-  }
-
-  if (typeof error === "object" && error !== null && "message" in error) {
-    const message = (error as { message?: unknown }).message;
-    if (typeof message === "string" && message.trim().length > 0) {
-      return message;
-    }
-  }
-
+  const code = typeof error === "object" && error !== null && "code" in error
+    ? String((error as { code?: unknown }).code)
+    : "";
+  if (code.includes("unauthenticated")) return "Please sign in to manage your subscription.";
+  if (code.includes("already-exists") || code.includes("aborted")) return "Your checkout is already being prepared. Please try again shortly.";
+  if (code.includes("failed-precondition")) return "This subscription is not available right now. Please try again shortly.";
   return fallback;
 }
 
@@ -159,16 +153,18 @@ export function useSubscription(): UseSubscriptionResult {
 
       try {
         assertPaidPlan(planId);
-        const currentUser = requireCurrentUser();
+        requireCurrentUser();
         const createSubscription = httpsCallable<
           CreatePayPalSubscriptionRequest,
           CreatePayPalSubscriptionResponse
         >(functions, "createPayPalSubscription");
 
-        const result = await createSubscription({
-          planId,
-          userId: currentUser.uid,
-        });
+        const currentUser = requireCurrentUser();
+        const storageKey = `sdc:paypal-checkout:${currentUser.uid}:${planId}`;
+        const existingKey = typeof window !== "undefined" ? window.sessionStorage.getItem(storageKey) : null;
+        const idempotencyKey = existingKey || `${crypto.randomUUID()}`;
+        if (!existingKey && typeof window !== "undefined") window.sessionStorage.setItem(storageKey, idempotencyKey);
+        const result = await createSubscription({ planId, idempotencyKey });
 
         if (!result.data.approvalUrl) {
           throw new Error("PayPal did not return an approval link. Please try again.");
@@ -206,10 +202,11 @@ export function useSubscription(): UseSubscriptionResult {
           CreatePaystackSubscriptionResponse
         >(functions, "createPaystackSubscription");
 
-        const result = await createSubscription({
-          planId,
-          userId: currentUser.uid,
-        });
+        const storageKey = `sdc:paystack-checkout:${currentUser.uid}:${planId}`;
+        const existingKey = typeof window !== "undefined" ? window.sessionStorage.getItem(storageKey) : null;
+        const idempotencyKey = existingKey || `${crypto.randomUUID()}`;
+        if (!existingKey && typeof window !== "undefined") window.sessionStorage.setItem(storageKey, idempotencyKey);
+        const result = await createSubscription({ planId, idempotencyKey });
 
         if (!result.data.authorizationUrl) {
           if (result.data.status === "already_active") {
@@ -240,13 +237,13 @@ export function useSubscription(): UseSubscriptionResult {
     setError(null);
 
     try {
-      const currentUser = requireCurrentUser();
+      requireCurrentUser();
       const checkStatus = httpsCallable<CheckSubscriptionStatusRequest, CheckSubscriptionStatusResponse>(
         functions,
         "checkSubscriptionStatus"
       );
 
-      const result = await checkStatus({ userId: currentUser.uid });
+      const result = await checkStatus({});
       const status = {
         tier: result.data.tier,
         expiresAt: normalizeExpiresAt(result.data.expiresAt),
@@ -271,7 +268,7 @@ export function useSubscription(): UseSubscriptionResult {
     setError(null);
 
     try {
-      const currentUser = requireCurrentUser();
+      requireCurrentUser();
       
       // If no subscriptionId provided, check status first to find active subscription
       let targetSubscriptionId = subscriptionId;
@@ -282,7 +279,7 @@ export function useSubscription(): UseSubscriptionResult {
           functions,
           "checkSubscriptionStatus"
         );
-        const statusResult = await checkStatus({ userId: currentUser.uid });
+        const statusResult = await checkStatus({});
         targetSubscriptionId = statusResult.data.subscriptionId;
         provider = statusResult.data.provider || 'paypal';
       }

@@ -621,6 +621,44 @@
        ]
      },
      {
+       "__comment": "Marketplace purchase history and entitlement queries.",
+       "collectionGroup": "marketplacePurchases",
+       "queryScope": "COLLECTION",
+       "fields": [
+         { "fieldPath": "userId", "order": "ASCENDING" },
+         { "fieldPath": "createdAt", "order": "DESCENDING" }
+       ]
+     },
+     {
+       "__comment": "Marketplace product sales and reseller attribution.",
+       "collectionGroup": "marketplacePurchases",
+       "queryScope": "COLLECTION",
+       "fields": [
+         { "fieldPath": "productId", "order": "ASCENDING" },
+         { "fieldPath": "status", "order": "ASCENDING" },
+         { "fieldPath": "createdAt", "order": "DESCENDING" }
+       ]
+     },
+     {
+       "__comment": "Reseller links and click reporting.",
+       "collectionGroup": "resellerLinks",
+       "queryScope": "COLLECTION",
+       "fields": [
+         { "fieldPath": "userId", "order": "ASCENDING" },
+         { "fieldPath": "status", "order": "ASCENDING" },
+         { "fieldPath": "updatedAt", "order": "DESCENDING" }
+       ]
+     },
+     {
+       "__comment": "Marketplace click tracking by reseller slug.",
+       "collectionGroup": "resellerLinkClicks",
+       "queryScope": "COLLECTION",
+       "fields": [
+         { "fieldPath": "slug", "order": "ASCENDING" },
+         { "fieldPath": "createdAt", "order": "DESCENDING" }
+       ]
+     },
+     {
        "collectionGroup": "discussionReplies",
       "queryScope": "COLLECTION",
       "fields": [

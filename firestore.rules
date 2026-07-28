@@ -712,6 +712,48 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // Marketplace commerce is server-owned. Public catalog reads are limited to published products;
+    // purchases, entitlements, reseller links, and commissions are never client-writable.
+    match /marketplaceAssets/{assetId} {
+      allow read: if resource.data.published == true && resource.data.type != 'course' && resource.data.category != 'course' && resource.data.category != 'courses';
+      allow write: if isAdmin();
+    }
+
+    match /marketplacePurchases/{purchaseId} {
+      allow read: if isAdmin() || (isAuthed() && resource.data.userId == request.auth.uid);
+      allow write: if false;
+    }
+
+    match /marketplaceEntitlements/{entitlementId} {
+      allow read: if isAdmin() || (isAuthed() && resource.data.userId == request.auth.uid);
+      allow write: if false;
+    }
+
+    match /marketplaceDownloadEvents/{eventId} {
+      allow read: if isAdmin() || (isAuthed() && resource.data.userId == request.auth.uid);
+      allow write: if false;
+    }
+
+    match /assetPurchases/{purchaseId} {
+      allow read: if isAdmin() || (isAuthed() && resource.data.userId == request.auth.uid);
+      allow write: if false;
+    }
+
+    match /resellerLinks/{linkId} {
+      allow read: if isAdmin() || (isAuthed() && resource.data.userId == request.auth.uid);
+      allow write: if false;
+    }
+
+    match /resellerLinkClicks/{clickId} {
+      allow read: if isAdmin() || (isAuthed() && resource.data.resellerUserId == request.auth.uid);
+      allow write: if false;
+    }
+
+    match /resellerSales/{saleId} {
+      allow read: if isAdmin() || (isAuthed() && (resource.data.resellerUserId == request.auth.uid || resource.data.buyerUserId == request.auth.uid));
+      allow write: if false;
+    }
+
     match /admin/{document=**} {
       allow read: if isAdmin();
       allow write: if isAdmin();

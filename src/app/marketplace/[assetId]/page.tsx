@@ -6,7 +6,6 @@ import { useParams, useSearchParams } from "next/navigation";
 import { getFunctions, httpsCallable } from "firebase/functions";
 import { CheckCircle2, Copy, ExternalLink, Loader2, ShieldCheck, ShoppingBag } from "lucide-react";
 import { AppLayout } from "@/components/layout/AppLayout";
-import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { GlassCard } from "@/components/ui/glass-card";
@@ -117,9 +116,13 @@ export default function MarketplaceAssetDetailPage() {
     try {
       const functions = getFunctions(app);
       const createPurchase = httpsCallable(functions, "createPaystackAssetPurchase");
+      const keyName = `sdc:marketplace-checkout:${user.uid}:${asset.id}`;
+      const existingKey = window.sessionStorage.getItem(keyName);
+      const idempotencyKey = existingKey || crypto.randomUUID();
+      if (!existingKey) window.sessionStorage.setItem(keyName, idempotencyKey);
       const result = await createPurchase({
         assetId: asset.id,
-        userId: user.uid,
+        idempotencyKey,
         resellerSlug: resellerSlug || undefined,
         mrrLicenseAccepted: isMrr ? true : undefined,
         mrrLicenseVersion: isMrr ? MRR_LICENSE_VERSION : undefined,
@@ -131,7 +134,7 @@ export default function MarketplaceAssetDetailPage() {
       }
       toast({ title: data.status === "already_owned" ? "Already owned" : "Purchase ready", description: data.message || asset.title });
     } catch (error) {
-      toast({ title: "Checkout unavailable", description: error instanceof Error ? error.message : "Please try again." });
+      toast({ title: "Checkout unavailable", description: "We could not start checkout. Please try again shortly." });
     } finally {
       setCheckoutLoading(false);
     }
@@ -144,20 +147,17 @@ export default function MarketplaceAssetDetailPage() {
 
   if (loading) {
     return (
-      <ProtectedRoute>
         <AppLayout>
           <GlassCard className="p-10 text-center text-muted-foreground">
             <Loader2 className="mx-auto mb-3 h-5 w-5 animate-spin text-primary" />
             Loading product
           </GlassCard>
         </AppLayout>
-      </ProtectedRoute>
     );
   }
 
   if (!asset) {
     return (
-      <ProtectedRoute>
         <AppLayout>
           <GlassCard className="p-10 text-center">
             {movedCourse ? (
@@ -174,12 +174,10 @@ export default function MarketplaceAssetDetailPage() {
             )}
           </GlassCard>
         </AppLayout>
-      </ProtectedRoute>
     );
   }
 
   return (
-    <ProtectedRoute>
       <AppLayout>
         <div className="grid gap-8 lg:grid-cols-[1fr_380px]">
           <section className="space-y-6">
@@ -297,6 +295,5 @@ export default function MarketplaceAssetDetailPage() {
           </aside>
         </div>
       </AppLayout>
-    </ProtectedRoute>
   );
 }

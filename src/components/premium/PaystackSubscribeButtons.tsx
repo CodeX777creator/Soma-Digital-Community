@@ -17,7 +17,6 @@ interface PaystackSubscribeButtonsProps {
 export function PaystackSubscribeButtons({
   planId,
   planName,
-  onSuccess,
   onError,
   onCancel,
 }: PaystackSubscribeButtonsProps) {
@@ -36,10 +35,10 @@ export function PaystackSubscribeButtons({
 
     try {
       await initializePaystackTransaction(planId);
-      // Redirect happens in the hook, success callback is handled on return
-      onSuccess?.();
+      // The browser is redirected to Paystack here. Payment success is confirmed
+      // only by the server webhook and the post-return subscription refresh.
     } catch (err: unknown) {
-      const errorMsg = err instanceof Error ? err.message : 'Failed to initialize Paystack checkout. Please try again.';
+      const errorMsg = 'We could not start Paystack checkout. Please try again.';
       setLocalError(errorMsg);
       onError?.(errorMsg);
       toast({

@@ -26,6 +26,13 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     if (link.active === false || typeof link.userId !== 'string') {
       return NextResponse.json({ reseller: null });
     }
+    const productSnap = await adminDb.collection('marketplaceAssets').doc(assetId).get();
+    if (!productSnap.exists || productSnap.data()?.published === false) return NextResponse.json({ reseller: null });
+    const purchaseSnap = await adminDb.collection('assetPurchases').doc(`${link.userId}_${assetId}`).get();
+    const purchase = purchaseSnap.data() || {};
+    if (purchase.status !== 'paid' || purchase.licenseType !== 'mrr' || purchase.resaleRights !== true) {
+      return NextResponse.json({ reseller: null });
+    }
 
     const userSnap = await adminDb.collection('users').doc(link.userId).get();
     const user = userSnap.data() || {};

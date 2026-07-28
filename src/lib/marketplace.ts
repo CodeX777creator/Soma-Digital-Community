@@ -11,7 +11,8 @@ import {
 import { db } from "@/lib/firebase";
 import type { SubscriptionPlan } from "@/lib/entitlements";
 
-export type MarketplaceAssetType = "pdf" | "video" | "template" | "notion" | "link" | "code" | "course";
+export type MarketplaceAssetType = "pdf" | "video" | "template" | "notion" | "link" | "code" | "external_course" | "course";
+export type MarketplaceDeliveryType = "download" | "external_access" | "hybrid";
 export type MarketplaceAssetTier = "free" | "pro" | "elite";
 export type MarketplaceLicenseType = "standard" | "mrr";
 export type MarketplaceCommissionBase = "full_price" | "course_price";
@@ -39,6 +40,12 @@ export interface MarketplaceAsset {
   accessInstructions: string;
   websiteOnboardingInstructions: string;
   published: boolean;
+  slug: string;
+  deliveryType: MarketplaceDeliveryType;
+  pricingType: "free" | "paid" | "included_with_plan" | "promo_only";
+  currency: string;
+  mrrPrice: number | null;
+  mrrLicenseVersion: string | null;
   createdAt: Timestamp | null;
   updatedAt: Timestamp | null;
 }
@@ -90,12 +97,27 @@ function normalizeAsset(id: string, data: Record<string, any>): MarketplaceAsset
     accessInstructions: typeof data.accessInstructions === "string" ? data.accessInstructions : "",
     websiteOnboardingInstructions: typeof data.websiteOnboardingInstructions === "string" ? data.websiteOnboardingInstructions : "",
     published: data.published !== false,
+    slug: typeof data.slug === "string" ? data.slug : id,
+    deliveryType: data.deliveryType === "external_access" || data.deliveryType === "hybrid" ? data.deliveryType : "download",
+    pricingType: data.pricingType === "included_with_plan" || data.pricingType === "promo_only" ? data.pricingType : data.price > 0 ? "paid" : "free",
+    currency: typeof data.currency === "string" ? data.currency : "USD",
+    mrrPrice: typeof data.mrrPrice === "number" ? data.mrrPrice : null,
+    mrrLicenseVersion: typeof data.mrrLicenseVersion === "string" ? data.mrrLicenseVersion : null,
     createdAt: data.createdAt || null,
     updatedAt: data.updatedAt || null,
   };
 }
 
 export async function getMarketplaceAssets(filters: MarketplaceAssetFilters = {}): Promise<MarketplaceAsset[]> {
+  if (typeof window !== "undefined") {
+    const params = new URLSearchParams();
+    if (filters.category && filters.category !== "All Assets") params.set("category", filters.category);
+    if (filters.tier) params.set("tier", filters.tier);
+    const response = await fetch(`/api/marketplace?${params.toString()}`, { cache: "no-store" });
+    if (!response.ok) throw new Error("Unable to load Marketplace products.");
+    const payload = await response.json();
+    return Array.isArray(payload.assets) ? payload.assets : [];
+  }
   if (!db) throw new Error('Database not initialized');
   const constraints = [];
 
@@ -137,10 +159,10 @@ export async function getAssetById(assetId: string): Promise<MarketplaceAsset | 
   }
 
   if (!db) throw new Error('Database not initialized');
-  const assetDoc = await getDoc(doc(db, COLLECTION, assetId));
-  if (!assetDoc.exists()) return null;
-  const asset = normalizeAsset(assetDoc.id, assetDoc.data());
-  return isLegacyCourseAsset(asset) ? null : asset;
+  const response = await fetch(`/api/marketplace/${encodeURIComponent(assetId)}`, { cache: "no-store" });
+  if (!response.ok) return null;
+  const payload = await response.json();
+  return payload.asset || null;
 }
 
 export async function getLegacyMarketplaceCourseMove(assetId: string): Promise<LegacyMarketplaceCourseMove | null> {

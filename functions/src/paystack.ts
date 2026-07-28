@@ -23,8 +23,8 @@ const paystackSecretKey = defineSecret('PAYSTACK_SECRET_KEY');
 const paystackCurrency = defineString('PAYSTACK_CURRENCY', { default: 'USD' });
 const frontendUrl = defineString('FRONTEND_URL', { default: 'https://soma-digital-community.vercel.app' });
 const paystackAmountExplorer = defineInt('PAYSTACK_AMOUNT_EXPLORER', { default: 0 });
-const paystackAmountPro = defineInt('PAYSTACK_AMOUNT_PRO', { default: 970000 });
-const paystackAmountElite = defineInt('PAYSTACK_AMOUNT_ELITE', { default: 2970000 });
+const paystackAmountPro = defineInt('PAYSTACK_AMOUNT_PRO', { default: 9700 });
+const paystackAmountElite = defineInt('PAYSTACK_AMOUNT_ELITE', { default: 29700 });
 
 const PAYSTACK_API_BASE_URL = 'https://api.paystack.co';
 
@@ -61,7 +61,6 @@ interface InitializeTransactionResponse {
 
 interface CreateAssetPurchaseRequest {
   assetId: string;
-  userId: string;
   resellerSlug?: string;
   promoCode?: string;
   idempotencyKey?: string;
@@ -498,6 +497,20 @@ async function processCreditPurchaseWebhook(eventId: string, eventType: string, 
     return { handled: true, response: { success: true, ignored: true, reason: 'non_success_credit_event' } };
   }
 
+  const expectedAmount = typeof purchase.pricePaid === 'number' ? Math.round(purchase.pricePaid * 100) : null;
+  const receivedAmount = typeof data?.amount === 'number' ? data.amount : null;
+  const expectedCurrency = typeof purchase.currency === 'string' ? purchase.currency : null;
+  const receivedCurrency = typeof data?.currency === 'string' ? data.currency : null;
+  if ((expectedAmount !== null && receivedAmount !== expectedAmount) || (expectedCurrency && receivedCurrency && expectedCurrency !== receivedCurrency)) {
+    await purchaseRef.set({ status: 'failed', failureReason: 'payment_mismatch', updatedAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true });
+    await archiveWebhookEvent(eventId, eventType, String(data?.reference || purchaseId), data, false, 'payment_mismatch');
+    return { handled: true, response: { success: false, rejected: true, reason: 'payment_mismatch' } };
+  }
+  if (purchase.userId !== userId || purchase.assetId !== assetId) {
+    await archiveWebhookEvent(eventId, eventType, String(data?.reference || purchaseId), data, false, 'purchase_metadata_mismatch');
+    return { handled: true, response: { success: false, rejected: true, reason: 'purchase_metadata_mismatch' } };
+  }
+
   const credits = typeof purchase.credits === 'number' && Number.isFinite(purchase.credits) ? purchase.credits : Number(data.metadata.credits || 0);
   if (credits <= 0) {
     await purchaseRef.set({
@@ -821,6 +834,31 @@ async function processAssetPurchaseWebhook(
     updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     paystackReference: data?.reference || purchase.paystackReference || null,
   }, { merge: true });
+  await db.collection('marketplacePurchases').doc(purchaseId).set({
+    purchaseId,
+    userId,
+    productId: assetId,
+    provider: 'paystack',
+    providerReference: data?.reference || null,
+    amountCents: receivedAmount,
+    currency: receivedCurrency || expectedCurrency || paystackCurrency.value(),
+    licenseType: purchase.licenseType === 'mrr' ? 'mrr' : 'standard',
+    promoId: purchase.promoId || null,
+    resellerSlug: purchase.resellerSlug || null,
+    status: 'paid',
+    createdAt: purchase.createdAt || admin.firestore.FieldValue.serverTimestamp(),
+    paidAt: admin.firestore.FieldValue.serverTimestamp(),
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  }, { merge: true });
+  await db.collection('marketplaceEntitlements').doc(`${userId}_${assetId}`).set({
+    userId,
+    productId: assetId,
+    purchaseId,
+    accessType: 'purchase',
+    status: 'active',
+    grantedAt: admin.firestore.FieldValue.serverTimestamp(),
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  }, { merge: true });
 
   if (resellerUserId) {
     const assetSnap = await db.collection('marketplaceAssets').doc(assetId).get();
@@ -1017,7 +1055,8 @@ export const createPaystackSubscription = onCall(
       throw new HttpsError('failed-precondition', 'Paystack secret key is not configured');
     }
 
-    const { planId, userId } = data as { planId: SubscriptionPlan; userId: string };
+    const { planId } = data as { planId: SubscriptionPlan };
+    const userId = context.uid;
     const promoCode = normalizePromoCode((data as { promoCode?: string }).promoCode);
     const normalizedPlanId = normalizePlanId(planId);
     const idempotencyKeyParam = (data as { idempotencyKey?: string }).idempotencyKey;
@@ -1222,16 +1261,10 @@ export const createPaystackAssetPurchase = onCall(
     }
 
     const assetId = typeof data.assetId === 'string' ? data.assetId : '';
-    const userId = typeof data.userId === 'string' ? data.userId : '';
+    const userId = context.uid;
     const resellerSlug = typeof data.resellerSlug === 'string' ? data.resellerSlug : null;
 
-    if (!assetId || !userId) {
-      throw new HttpsError('invalid-argument', 'assetId and userId are required');
-    }
-
-    if (userId !== context.uid) {
-      throw new HttpsError('permission-denied', 'Cannot create purchase for another user');
-    }
+    if (!assetId) throw new HttpsError('invalid-argument', 'assetId is required');
 
     const assetSnap = await db.collection('marketplaceAssets').doc(assetId).get();
     if (!assetSnap.exists || assetSnap.data()?.published === false) {
@@ -1254,7 +1287,10 @@ export const createPaystackAssetPurchase = onCall(
     const licenseType = asset.licenseType === 'mrr' ? 'mrr' : 'standard';
     const resaleRights = licenseType === 'mrr' && asset.resaleEnabled === true;
     if (resaleRights && data.mrrLicenseAccepted !== true) {
-      throw new HttpsError('failed-precondition', 'You must accept the MRR license agreement before purchasing this course.');
+      throw new HttpsError('failed-precondition', 'You must accept the MRR license agreement before purchasing this product.');
+    }
+    if (resaleRights && data.mrrLicenseVersion !== (typeof asset.mrrLicenseVersion === 'string' && asset.mrrLicenseVersion ? asset.mrrLicenseVersion : 'sdc-mrr-v1')) {
+      throw new HttpsError('failed-precondition', 'The current MRR license must be accepted before purchasing this product.');
     }
 
     const purchaseId = `${userId}_${assetId}`;
@@ -1314,6 +1350,15 @@ export const createPaystackAssetPurchase = onCall(
         promoApplied: true,
         createdAt: admin.firestore.FieldValue.serverTimestamp(),
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      }, { merge: true });
+      await db.collection('marketplacePurchases').doc(purchaseId).set({
+        purchaseId, userId, productId: assetId, provider: 'promo', amountCents: 0,
+        currency: paystackCurrency.value(), licenseType, promoId: promoPricing.promoId || null,
+        status: 'paid', createdAt: admin.firestore.FieldValue.serverTimestamp(), paidAt: admin.firestore.FieldValue.serverTimestamp(),
+      }, { merge: true });
+      await db.collection('marketplaceEntitlements').doc(`${userId}_${assetId}`).set({
+        userId, productId: assetId, purchaseId, accessType: 'promo', status: 'active',
+        grantedAt: admin.firestore.FieldValue.serverTimestamp(),
       }, { merge: true });
 
       return {

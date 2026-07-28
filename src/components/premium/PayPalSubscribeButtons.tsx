@@ -24,6 +24,7 @@ export function PayPalSubscribeButtons({
 }: PayPalSubscribeButtonsProps) {
   const {
     createPayPalSubscription,
+    checkSubscriptionStatus,
     paypalLoading: loading,
     paypalError: error,
     setPaypalError: setError,
@@ -39,32 +40,41 @@ export function PayPalSubscribeButtons({
     const subscriptionSuccess = params.get('subscription');
     
     if (subscriptionSuccess === 'success') {
-      toast({
-        title: 'Subscription activated!',
-        description: `You are now on the ${planName} plan.`,
-      });
-      
-      // Clear the URL parameter
-      window.history.replaceState({}, document.title, window.location.pathname);
-      
-      // Refresh user token and call success callback
-      refreshUserToken().then(() => {
-        onSuccess?.();
-      });
+      let attempts = 0;
+      const confirm = async () => {
+        attempts += 1;
+        const status = await checkSubscriptionStatus();
+        if (status.tier === planId) {
+          toast({ title: 'Subscription activated!', description: `You are now on the ${planName} plan.` });
+          window.history.replaceState({}, document.title, window.location.pathname);
+          await refreshUserToken();
+          onSuccess?.();
+          return;
+        }
+        if (attempts < 5) {
+          window.setTimeout(() => void confirm(), 2000);
+          return;
+        }
+        setLocalError('PayPal is still confirming your payment. Please refresh shortly.');
+      };
+      void confirm().catch(() => setLocalError('PayPal is still confirming your payment. Please refresh shortly.'));
     } else if (subscriptionSuccess === 'cancelled') {
       setLocalError('Subscription was cancelled. Please try again.');
     }
-  }, [planName, onSuccess, refreshUserToken, toast]);
+  }, [checkSubscriptionStatus, planId, planName, onSuccess, refreshUserToken, toast]);
 
   const handleCreateSubscription = async () => {
     setLocalError(null);
     setError(null);
 
-    const result = await createPayPalSubscription(planId);
-    if (!result?.approvalUrl) {
-      const errorMsg = error || 'Failed to create subscription. Please try again.';
+    try {
+      const result = await createPayPalSubscription(planId);
+      if (!result?.approvalUrl) throw new Error('Checkout link unavailable');
+    } catch {
+      const errorMsg = 'We could not start PayPal checkout. Please try again.';
       setLocalError(errorMsg);
       onError?.(errorMsg);
+      toast({ title: 'Checkout failed', description: errorMsg, variant: 'destructive' });
     }
   };
 

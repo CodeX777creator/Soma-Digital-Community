@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { adminAuth, adminDb } from '@/lib/firebaseAdmin';
+import { adminAuth, adminDb, adminStorage } from '@/lib/firebaseAdmin';
 import { getEffectiveUserTier } from '@/lib/tier';
 
 // Tier hierarchy: higher number = more access
@@ -192,7 +192,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
     const requiredTier = normalizeAssetTier(asset.tier);
     const assetUrl = typeof asset.assetUrl === 'string' ? asset.assetUrl : '';
-    if (!assetUrl) {
+    const storagePath = typeof asset.storagePath === 'string' ? asset.storagePath : '';
+    if (!assetUrl && !storagePath && !asset.externalAccessUrl) {
       return NextResponse.json(
         { error: 'Asset file is not configured yet', accessGranted: false },
         { status: 409 }
@@ -271,7 +272,23 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     const externalAccessUrl = typeof asset.externalAccessUrl === 'string' && asset.externalAccessUrl
       ? asset.externalAccessUrl
       : '';
-    const finalAssetUrl = externalAccessUrl || assetUrl;
+    let finalAssetUrl = externalAccessUrl || assetUrl;
+    if (!externalAccessUrl && storagePath) {
+      const [signedUrl] = await adminStorage.bucket().file(storagePath).getSignedUrl({
+        action: 'read',
+        expires: Date.now() + 15 * 60 * 1000,
+      });
+      finalAssetUrl = signedUrl;
+    }
+    await adminDb.collection('marketplaceDownloadEvents').add({
+      userId: user.uid,
+      productId: assetId,
+      purchaseId: purchase?.purchaseId || purchase?.id || null,
+      assetId,
+      requestedAt: new Date(),
+      userAgent: request.headers.get('user-agent') || null,
+      status: 'granted',
+    });
     
     return NextResponse.json(
       {
