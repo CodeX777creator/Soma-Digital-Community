@@ -4,6 +4,8 @@ const nextConfig: NextConfig = {
   // Production optimizations
   reactStrictMode: true,
   poweredByHeader: false,
+  // Keep browser source maps private; upload build artifacts to error monitoring instead.
+  productionBrowserSourceMaps: false,
   
   // TypeScript and ESLint
   typescript: {
@@ -181,6 +183,15 @@ const nextConfig: NextConfig = {
       {
         source: '/academy/:courseSlug/exam/:path*',
         headers: [{ key: 'X-Robots-Tag', value: 'noindex, nofollow, noarchive' }],
+      },
+      {
+        source: '/_next/static/:path*',
+        headers: [
+          {
+            key: 'Cache-Control',
+            value: 'public, max-age=31536000, immutable',
+          },
+        ],
       },
       {
         source: '/sw.js',

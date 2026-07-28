@@ -401,7 +401,7 @@ function DashboardContent() {
                       <p className="mt-2 text-sm text-[#BFC6D4]">
                         {summaryLoading ? "Loading roadmap signal" : nextRoadmapStep?.label || "AI Business Roadmap"}
                       </p>
-                      <Progress value={roadmapProgress} className="mt-4 h-2" />
+                      <Progress value={roadmapProgress} aria-label="Roadmap progress" className="mt-4 h-2" />
                     </Link>
                     <Link href="/ai/studio" className="rounded-[18px] border border-white/[0.08] bg-[#090B13]/60 p-5 transition hover:bg-white/[0.06]">
                       <div className="flex items-center justify-between">
@@ -416,7 +416,7 @@ function DashboardContent() {
                         <Target className="h-4 w-4 text-[#4F9DFF]" />
                       </div>
                       <p className="mt-2 text-sm text-[#BFC6D4]">{missionProgress}% completed</p>
-                      <Progress value={missionProgress} className="mt-4 h-2" />
+                      <Progress value={missionProgress} aria-label="Daily goal progress" className="mt-4 h-2" />
                     </div>
                   </div>
                 </div>
@@ -471,7 +471,7 @@ function DashboardContent() {
                     </div>
                     <span className="text-sm text-white">{roadmapProgress}%</span>
                   </div>
-                  <Progress value={roadmapProgress} className="mt-4 h-2" />
+                  <Progress value={roadmapProgress} aria-label="Roadmap progress" className="mt-4 h-2" />
                   <div className="mt-5 space-y-3">
                     {(summary?.roadmap.steps || []).map((item) => (
                       <Link key={item.id} href={item.href} className="flex items-center justify-between gap-3 rounded-[14px] px-2 py-1.5 text-sm transition hover:bg-white/[0.04]">
@@ -507,7 +507,7 @@ function DashboardContent() {
                       <p className="text-xs uppercase tracking-[0.18em] text-cyan-100">Continue learning</p>
                       <h3 className="mt-2 font-semibold text-white">{summary.academy.continueLearning.courseTitle}</h3>
                       <p className="mt-1 text-sm text-[#BFC6D4]">{summary.academy.continueLearning.nextLessonTitle || "Open course"}</p>
-                      <Progress value={summary.academy.continueLearning.progressPercent} className="mt-4 h-2" />
+                    <Progress value={summary.academy.continueLearning.progressPercent} aria-label="Course learning progress" className="mt-4 h-2" />
                     </Link>
                   ) : (
                     <Link href="/academy" className="block rounded-[16px] border border-dashed border-white/[0.08] p-4 text-sm text-[#BFC6D4] hover:bg-white/[0.04]">

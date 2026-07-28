@@ -234,7 +234,7 @@ export default function CreditsPage() {
                     </div>
                   </div>
                   <div className="mt-6">
-                    <Progress value={remainingPercent} />
+                    <Progress value={remainingPercent} aria-label="Remaining Creator Credits" />
                   </div>
                   <div className="mt-4 grid gap-3 sm:grid-cols-3">
                     <BalanceTile label="Purchased credits" value={purchasedCredits} />

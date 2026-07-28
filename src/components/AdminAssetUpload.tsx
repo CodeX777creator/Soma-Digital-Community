@@ -138,7 +138,7 @@ export function AdminAssetUpload({ assetId, onUploaded }: AdminAssetUploadProps)
 
       {uploading && (
         <div className="space-y-2">
-          <Progress value={progress} className="h-2 bg-white/10" />
+          <Progress value={progress} aria-label={`Upload progress: ${progress}%`} className="h-2 bg-white/10" />
           <p className="text-xs text-muted-foreground">{progress}% uploaded</p>
         </div>
       )}

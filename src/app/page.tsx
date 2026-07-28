@@ -27,6 +27,7 @@ import {
   Zap,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { IconButton } from "@/components/ui/icon-button";
 import { Progress } from "@/components/ui/progress";
 import { useAuth } from "@/providers/AuthProvider";
 import { getPlanLabel, getUpgradeTarget } from "@/lib/plan-ui";
@@ -140,6 +141,8 @@ function ProductPreview() {
                 key={tab.id}
                 type="button"
                 onClick={() => setActive(tab.id)}
+                aria-label={tab.label}
+                aria-pressed={active === tab.id}
                 className={cn(
                   "flex items-center justify-center gap-2 rounded-[16px] border px-3 py-3 text-xs font-medium transition",
                   active === tab.id
@@ -160,11 +163,14 @@ function ProductPreview() {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-xs uppercase tracking-[0.22em] text-[#7E8799]">AI prompt</p>
-                  <h3 className="mt-2 text-lg font-medium text-white">Create today&apos;s campaign</h3>
-                </div>
-                <Button size="icon" className="rounded-[16px] bg-gradient-to-r from-[#5B5FFF] to-[#8B5CF6]">
-                  <ArrowRight className="h-4 w-4" />
-                </Button>
+                   <p className="mt-2 text-lg font-medium text-white">Create today&apos;s campaign</p>
+                 </div>
+                 <IconButton
+                   label="Open campaign creator"
+                   className="rounded-[16px] bg-gradient-to-r from-[#5B5FFF] to-[#8B5CF6]"
+                 >
+                   <ArrowRight className="h-4 w-4" />
+                 </IconButton>
               </div>
               <div className="mt-4 grid gap-2 sm:grid-cols-3">
                 {[
@@ -188,7 +194,7 @@ function ProductPreview() {
                 </div>
                 <span className="text-sm text-[#BFC6D4]">62%</span>
               </div>
-              <Progress value={62} className="mt-4 h-2" />
+               <Progress value={62} aria-label="Foundation Builder roadmap progress" className="mt-4 h-2" />
               <div className="mt-4 space-y-2">
                 {["Clarify offer", "Create content engine", "Schedule first campaign"].map((item, index) => (
                   <div key={item} className="flex items-center gap-2 text-sm text-[#BFC6D4]">
@@ -388,7 +394,7 @@ export default function Home() {
       <section id="product" className="relative z-10 border-y border-white/[0.06] bg-[#111827]/45 py-20">
         <div className="mx-auto max-w-7xl px-5 sm:px-8">
           <div className="max-w-3xl">
-            <p className="text-sm font-semibold uppercase tracking-[0.24em] text-[#8B5CF6]">One connected ecosystem</p>
+             <p className="text-sm font-semibold uppercase tracking-[0.24em] text-[#A5B4FC]">One connected ecosystem</p>
             <h2 className="mt-4 text-3xl font-semibold tracking-tight text-white sm:text-5xl">
               Workflows, not isolated tools.
             </h2>
@@ -482,7 +488,7 @@ export default function Home() {
       <section id="answers" className="relative z-10 border-y border-white/[0.06] bg-[#111827]/35 py-20">
         <div className="mx-auto max-w-5xl px-5 sm:px-8">
           <div className="max-w-3xl">
-            <p className="text-sm font-semibold uppercase tracking-[0.24em] text-[#8B5CF6]">Straight answers</p>
+             <p className="text-sm font-semibold uppercase tracking-[0.24em] text-[#A5B4FC]">Straight answers</p>
             <h2 className="mt-4 text-3xl font-semibold tracking-tight text-white sm:text-5xl">Everything you need to know before you start.</h2>
             <p className="mt-4 text-base leading-7 text-[#BFC6D4]">Clear answers about the SDC operating system, its tools, and how each part supports your next business move.</p>
           </div>
@@ -548,11 +554,14 @@ export default function Home() {
       <footer className="relative z-10 border-t border-white/[0.06] px-5 py-8 sm:px-8">
         <div className="mx-auto flex max-w-7xl flex-col gap-4 text-sm text-[#7E8799] sm:flex-row sm:items-center sm:justify-between">
           <p>© {new Date().getFullYear()} Soma Digital Community. All rights reserved.</p>
-          <div className="flex gap-5">
-            <Link href="/terms" className="hover:text-white">Terms</Link>
-            <Link href="/privacy" className="hover:text-white">Privacy</Link>
-            <Link href="/login" className="hover:text-white">Login</Link>
-          </div>
+           <nav aria-label="Footer navigation" className="flex flex-wrap gap-x-5 gap-y-2">
+             <Link href="/blog" className="hover:text-white">Blog</Link>
+             <Link href="/case-studies" className="hover:text-white">Case Studies</Link>
+             <Link href="/contact" className="hover:text-white">Contact</Link>
+             <Link href="/terms" className="hover:text-white">Terms</Link>
+             <Link href="/privacy" className="hover:text-white">Privacy</Link>
+             <Link href="/login" className="hover:text-white">Login</Link>
+           </nav>
         </div>
       </footer>
     </main>
