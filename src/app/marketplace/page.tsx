@@ -70,6 +70,7 @@ export default function MarketplacePage() {
   });
   const upgradeTarget = getUpgradeTarget(tier);
   const planLabel = getPlanLabel(tier);
+  const hasLockedAssets = assets.some((asset) => asset.tier !== "free" && asset.tier !== tier);
 
   return (
       <AppLayout>
@@ -124,7 +125,7 @@ export default function MarketplacePage() {
           )}
         </div>
 
-        <div className="mt-12 p-8 md:p-16 rounded-[3rem] bg-gradient-to-r from-[#0d1117] via-primary/10 to-[#0d1117] border border-primary/20 relative overflow-hidden flex flex-col items-center text-center gap-8 shadow-2xl">
+        {hasLockedAssets && upgradeTarget && <div className="mt-12 p-8 md:p-16 rounded-[3rem] bg-gradient-to-r from-[#0d1117] via-primary/10 to-[#0d1117] border border-primary/20 relative overflow-hidden flex flex-col items-center text-center gap-8 shadow-2xl">
           <div className="absolute top-0 left-0 w-full h-full opacity-5 bg-grid-white/[0.02] bg-repeat" />
           <div className="relative z-10 space-y-4 max-w-2xl">
             <h2 className="text-4xl md:text-6xl font-bold font-headline leading-tight">
@@ -146,7 +147,7 @@ export default function MarketplacePage() {
                <Link href="/#pricing">View Membership Plans</Link>
              </Button>
           </div>
-        </div>
+        </div>}
       </div>
     </AppLayout>
   );

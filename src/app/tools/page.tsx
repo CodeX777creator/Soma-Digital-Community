@@ -110,6 +110,11 @@ const tools: Tool[] = [
 export default function ToolsHubPage() {
   const tier = useUserStore((state) => state.tier);
   const upgradeTarget = getUpgradeTarget(tier);
+  const tierRank = tier === "elite" ? 2 : tier === "pro" ? 1 : 0;
+  const hasLockedTools = tools.some((tool) => {
+    const requiredRank = tool.tier === "elite" ? 2 : tool.tier === "pro" ? 1 : 0;
+    return requiredRank > tierRank;
+  });
 
   return (
     <ProtectedRoute>
@@ -204,8 +209,8 @@ export default function ToolsHubPage() {
             })}
           </div>
 
-          {/* CTA Section */}
-          <div className="text-center py-8">
+          {/* CTA Section: only show when this page actually contains higher-tier tools. */}
+          {hasLockedTools && upgradeTarget && <div className="text-center py-8">
             <p className="text-muted-foreground mb-4">
               Want early access to these tools?
             </p>
@@ -224,7 +229,7 @@ export default function ToolsHubPage() {
             <p className="text-xs text-muted-foreground mt-4">
               Pro & Elite members get priority access when Phase 2 launches
             </p>
-          </div>
+          </div>}
         </div>
       </AppLayout>
     </ProtectedRoute>

@@ -10,7 +10,6 @@ import { getUserCredits, UserCredits } from "@/lib/credits";
 import { cn } from "@/lib/utils";
 import { CreditPurchase } from "./CreditPurchase";
 import Link from "next/link";
-import { getUpgradeLabel, getUpgradeTarget } from "@/lib/plan-ui";
 import { app } from "@/lib/firebase";
 import { getFunctions, httpsCallable } from "firebase/functions";
 import type { CreatorCreditBundle } from "@/lib/creator-credit-config";
@@ -55,7 +54,6 @@ export function UsageTracker() {
   if (!credits) return null;
 
   const tier = credits.tier;
-  const upgradeTarget = getUpgradeTarget(tier);
   const hasIncludedCredits = credits.monthlyQuota > 0;
   const aiProgress = hasIncludedCredits ? Math.min(100, (credits.usedThisMonth / credits.monthlyQuota) * 100) : 0;
   const isLowCredits = credits.remainingFree < 3 && credits.purchasedCredits < 1;
@@ -88,15 +86,9 @@ export function UsageTracker() {
                 Buy Creator Credits
               </Button>
             )}
-            {upgradeTarget ? (
-              <Button size="sm" asChild className="h-7 text-[10px] bg-cyan-500 hover:bg-cyan-600 text-black">
-                <Link href={`/dashboard?upgrade=${upgradeTarget}`}>{getUpgradeLabel(tier)}</Link>
-              </Button>
-            ) : (
-              <Button size="sm" asChild className="h-7 text-[10px] bg-white/[0.06] hover:bg-white/[0.1] text-white">
-                <Link href="/settings/credits">View Credits</Link>
-              </Button>
-            )}
+            <Button size="sm" asChild className="h-7 text-[10px] bg-white/[0.06] hover:bg-white/[0.1] text-white">
+              <Link href="/settings/credits">View Credits</Link>
+            </Button>
           </div>
         </div>
 
