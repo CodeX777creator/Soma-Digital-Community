@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { useParams, useSearchParams } from "next/navigation";
 import { getFunctions, httpsCallable } from "firebase/functions";
 import { CheckCircle2, Copy, ExternalLink, Loader2, ShieldCheck, ShoppingBag } from "lucide-react";
@@ -183,8 +184,7 @@ export default function MarketplaceAssetDetailPage() {
           <section className="space-y-6">
             <div className="overflow-hidden rounded-lg border border-white/10 bg-white/[0.035]">
               {asset.thumbnailUrl ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={asset.thumbnailUrl} alt="" className="aspect-[16/8] w-full object-cover" />
+                <Image src={asset.thumbnailUrl} alt={`${asset.title} product thumbnail`} width={1200} height={600} sizes="(max-width: 1024px) 100vw, 65vw" className="aspect-[16/8] w-full object-cover" />
               ) : (
                 <div className="aspect-[16/8] bg-white/5" />
               )}

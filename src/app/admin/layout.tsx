@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { ReactNode, useEffect, useMemo, useState } from "react";
-import { Auth, onAuthStateChanged, signOut, User } from "firebase/auth";
+import { Auth, onAuthStateChanged, User } from "firebase/auth";
 import { doc, Firestore, getDoc } from "firebase/firestore";
 import {
   BarChart3,
@@ -11,6 +11,8 @@ import {
   CreditCard,
   HandCoins,
   FileText,
+  FileEdit,
+  LifeBuoy,
   GraduationCap,
   LayoutDashboard,
   LogOut,
@@ -31,6 +33,7 @@ import {
   ArrowLeft,
 } from "lucide-react";
 import { auth, db } from "@/lib/firebase";
+import { signOutWithCleanup } from "@/lib/sign-out";
 
 const navItems = [
   { group: "Operations", label: "Dashboard", href: "/admin/dashboard", icon: LayoutDashboard },
@@ -42,9 +45,11 @@ const navItems = [
   { group: "Business", label: "Purchases", href: "/admin/purchases", icon: GraduationCap },
   { group: "Business", label: "Payouts", href: "/admin/payouts", icon: HandCoins },
   { group: "Business", label: "Promos", href: "/admin/promos", icon: TicketPercent },
+  { group: "Business", label: "Support", href: "/admin/support", icon: LifeBuoy },
   { group: "Products", label: "Academy", href: "/admin/academy", icon: BookOpen },
   { group: "Products", label: "Marketplace", href: "/admin/marketplace", icon: Boxes },
   { group: "Products", label: "Content", href: "/admin/content", icon: FileText },
+  { group: "Products", label: "Website Content", href: "/admin/site-content", icon: FileEdit },
   { group: "Platform", label: "AI Gateway", href: "/admin/ai", icon: Bot },
   { group: "Platform", label: "Onboarding", href: "/admin/onboarding", icon: Route },
   { group: "Platform", label: "Notifications", href: "/admin/system-notifications", icon: Bell },
@@ -57,6 +62,7 @@ const quickCreateItems = [
   { label: "Marketplace product", href: "/admin/marketplace" },
   { label: "Promo", href: "/admin/promos" },
   { label: "Notification", href: "/admin/system-notifications" },
+  { label: "Website content", href: "/admin/site-content" },
 ];
 
 function getInitials(user: User | null) {
@@ -132,7 +138,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
 
         if (!hasAdminAccess(profile)) {
           setAdminUser(null);
-          await signOut(auth as Auth);
+          await signOutWithCleanup(auth as Auth);
           router.replace("/admin/login");
           return;
         }
@@ -154,7 +160,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
   }, [pathname]);
 
   const handleLogout = async () => {
-    await signOut(auth as Auth);
+    await signOutWithCleanup(auth as Auth);
     router.replace("/admin/login");
   };
 

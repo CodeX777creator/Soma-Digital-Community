@@ -1,10 +1,9 @@
-"use client";
-
 import { AppLayout } from "@/components/layout/AppLayout";
 import { GlassCard } from "@/components/ui/glass-card";
 import { Shield, Scale, ScrollText } from "lucide-react";
+import { getSiteContent } from "@/lib/site-content";
 
-const updatedAt = "July 13, 2026";
+const updatedAt = "July 28, 2026";
 
 const sections = [
   {
@@ -53,6 +52,7 @@ const sections = [
     body: [
       "The Services may include AI Mentor, AI Chat, AI Studio, content generation, image generation, video generation, audio or voice generation, translation, business planning, sales coaching, funnel generation, social media generation, and related AI workflows.",
       "AI outputs may be incomplete, inaccurate, outdated, offensive, non-compliant, or unsuitable for your specific business, audience, jurisdiction, brand, or platform. You are responsible for reviewing, editing, fact-checking, testing, and approving all AI outputs before relying on them or publishing them.",
+      "Before sharing or publishing an AI output, you are responsible for checking factual claims, confidential or personal information, permissions, intellectual property, required disclosures, audience suitability, and any professional advice or regulatory obligations that may apply.",
       "SDC does not guarantee revenue, business growth, ad performance, legal compliance, tax treatment, financial outcomes, medical outcomes, investment returns, or platform approval. AI-generated guidance is informational and educational only and is not professional legal, tax, medical, financial, investment, or accounting advice.",
     ],
   },
@@ -72,6 +72,7 @@ const sections = [
     body: [
       "If you connect TikTok, Instagram, Facebook, LinkedIn, X, YouTube, or other social accounts, you authorize SDC to store encrypted OAuth tokens and use them for the features you enable, such as account management, scheduling, publishing, analytics, token refresh, and related workflow automation.",
       "You are responsible for ensuring that all content you generate, schedule, upload, reuse, or publish complies with each social platform's rules, advertising policies, intellectual property rules, and applicable law. SDC does not guarantee that scheduled posts will publish successfully or that social platforms will accept, rank, display, monetize, or maintain your content.",
+      "Where the Scheduler presents platform settings such as AI-generated-content labels, branded-content or promotion disclosures, privacy, comments, destination, audience, format, or publish mode, you are responsible for selecting accurate settings and reviewing the final preview before scheduling or publishing. Provider capabilities and app-review restrictions may limit which settings are available.",
     ],
   },
   {
@@ -81,6 +82,8 @@ const sections = [
     body: [
       "The SDC Academy offers courses, certifications, exams, certificates, and course-specific reseller rights where enabled. The SDC Marketplace offers non-course products such as templates, resources, digital products, tools, bundles, MRR products, resale-enabled products, and related assets. Your right to access or resell an item depends on the specific license, tier, purchase terms, and product rules shown at the time of access or purchase.",
       "You may not copy, resell, sublicense, distribute, or commercialize marketplace assets unless the applicable product license expressly allows it. Where MRR or resale rights are offered, you must comply with all license terms, pricing restrictions, branding rules, platform policies, and applicable laws.",
+      "Course access, certification, and course-specific Master Resell Rights are separate entitlements. A course purchase, plan inclusion, or promo code does not automatically grant MRR unless the applicable offer says so. Where a course requires completion or certification before MRR eligibility, you must satisfy that gate before an MRR checkout or reseller license can be created.",
+      "External courses or programs may be offered in the Marketplace only when their listing clearly states the delivery method, external platform, access instructions, license, pricing, and support responsibilities. External access is subject to the third party's terms and availability.",
     ],
   },
   {
@@ -119,9 +122,24 @@ const sections = [
       "These Terms are intended to be clear and practical, but they are not a substitute for legal advice. You should consult qualified counsel for your own legal obligations.",
     ],
   },
+  {
+    icon: Scale,
+    iconClass: "text-purple-400",
+    title: "13. Privacy and Data Requests",
+    body: [
+      "Our Privacy Policy explains how we collect, use, share, retain, and protect information used with the Services. By using the Services, you acknowledge that information may be processed by the infrastructure, payment, AI, notification, and social providers needed to operate the features you choose to use.",
+      "Depending on your location, applicable law may give you rights to access, correct, delete, restrict, object to, or export certain personal information, withdraw consent, or request information about automated processing. Submit a request to support@somatoday.com or through /support. We may verify your identity and apply lawful exceptions or retention requirements.",
+      "Support tickets may include private account and service information. Do not include passwords, API keys, OAuth codes, payment card numbers, or other secrets in a ticket. You are responsible for keeping any support reference and account credentials secure.",
+    ],
+  },
 ];
 
-export default function TermsOfService() {
+export const dynamic = "force-dynamic";
+
+export default async function TermsOfService() {
+  const cms = await getSiteContent("terms", "terms").catch(() => null);
+  const displayedSections = cms?.body ? [{ icon: ScrollText, iconClass: "text-primary", title: cms.title || "Terms of Service", body: [cms.body] }] : sections;
+  const displayedDate = cms?.updatedAt ? new Intl.DateTimeFormat("en-US", { dateStyle: "long" }).format(new Date(cms.updatedAt)) : updatedAt;
   return (
     <AppLayout>
       <div className="max-w-4xl mx-auto flex flex-col gap-10 py-12 animate-in fade-in duration-700">
@@ -130,11 +148,11 @@ export default function TermsOfService() {
             <Scale className="text-primary w-8 h-8" />
           </div>
           <h1 className="text-4xl md:text-5xl font-bold font-headline tracking-tighter">Terms of Service</h1>
-          <p className="text-muted-foreground text-sm uppercase tracking-widest font-mono">Last Updated: {updatedAt}</p>
+          <p className="text-muted-foreground text-sm uppercase tracking-widest font-mono">Last Updated: {displayedDate}</p>
         </header>
 
         <GlassCard className="p-8 md:p-12 border-primary/20 space-y-8 leading-relaxed">
-          {sections.map(({ icon: Icon, iconClass, title, body }) => (
+          {displayedSections.map(({ icon: Icon, iconClass, title, body }) => (
             <section key={title} className="space-y-4">
               <h2 className="text-2xl font-bold font-headline text-white flex items-center gap-2">
                 <Icon className={`w-5 h-5 ${iconClass}`} />

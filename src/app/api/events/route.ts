@@ -20,7 +20,20 @@ function parseLimit(req: NextRequest): number {
 }
 
 const handler = createAPIHandler(async (req) => {
-  const entitlements = await requireUserEntitlements(req as any);
+  let viewer: { tier: ReturnType<typeof getSubscriptionPlan>; isAdmin: boolean; userId?: string } = {
+    tier: 'explorer' as ReturnType<typeof getSubscriptionPlan>,
+    isAdmin: false,
+  };
+  try {
+    const entitlements = await requireUserEntitlements(req as any);
+    viewer = {
+      tier: getSubscriptionPlan(entitlements.subscription.subscriptionPlan),
+      isAdmin: entitlements.isAdmin,
+      userId: entitlements.uid,
+    };
+  } catch {
+    // Public event listings use the Explorer visibility boundary. RSVP still requires auth.
+  }
   let month: string | undefined;
   try {
     month = parseMonth(req.nextUrl.searchParams.get('month'));
@@ -32,9 +45,9 @@ const handler = createAPIHandler(async (req) => {
   const rawType = req.nextUrl.searchParams.get('type') || 'all';
   const events = await listEvents(
     {
-      tier: getSubscriptionPlan(entitlements.subscription.subscriptionPlan),
-      isAdmin: entitlements.isAdmin,
-      userId: entitlements.uid,
+      tier: viewer.tier,
+      isAdmin: viewer.isAdmin,
+      userId: viewer.userId,
     },
     {
       month,

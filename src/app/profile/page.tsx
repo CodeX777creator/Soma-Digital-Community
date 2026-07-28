@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { sendPasswordResetEmail, signOut, updateProfile } from "firebase/auth";
+import { sendPasswordResetEmail, updateProfile } from "firebase/auth";
 import { auth } from "@/lib/firebase";
 import { getAuthActionCodeSettings } from "@/lib/firebase-auth-actions";
 import { dbService } from "@/lib/db";
@@ -18,6 +18,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Edit2, Check, LogOut, Key } from "lucide-react";
 import { processAvatarForUpload } from "@/lib/avatar-optimization";
 import { uploadAvatar } from "@/lib/storage";
+import { signOutWithCleanup } from "@/lib/sign-out";
 
 const PROFILE_FIELDS = [
   "displayName",
@@ -219,7 +220,7 @@ export default function ProfilePage() {
 
   const handleLogout = async () => {
     if (!auth) return;
-    await signOut(auth);
+    await signOutWithCleanup(auth);
     router.push("/");
   };
 

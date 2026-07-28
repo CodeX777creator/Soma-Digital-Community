@@ -32,6 +32,7 @@ import { useAuth } from "@/providers/AuthProvider";
 import { getPlanLabel, getUpgradeTarget } from "@/lib/plan-ui";
 import { cn } from "@/lib/utils";
 import { useUserStore } from "@/store/useUserStore";
+import { faqJsonLd, JsonLd } from "@/lib/seo/structured-data";
 
 const ecosystem = [
   {
@@ -477,6 +478,45 @@ export default function Home() {
           </div>
         </div>
       </section>
+
+      <section id="answers" className="relative z-10 border-y border-white/[0.06] bg-[#111827]/35 py-20">
+        <div className="mx-auto max-w-5xl px-5 sm:px-8">
+          <div className="max-w-3xl">
+            <p className="text-sm font-semibold uppercase tracking-[0.24em] text-[#8B5CF6]">Straight answers</p>
+            <h2 className="mt-4 text-3xl font-semibold tracking-tight text-white sm:text-5xl">Everything you need to know before you start.</h2>
+            <p className="mt-4 text-base leading-7 text-[#BFC6D4]">Clear answers about the SDC operating system, its tools, and how each part supports your next business move.</p>
+          </div>
+          <div className="mt-10 divide-y divide-white/[0.08] rounded-[22px] border border-white/[0.08] bg-[#151A2E]/72 px-6">
+            {[
+              ["What is Soma Digital Community?", "Soma Digital Community is an AI operating system for digital entrepreneurs. It brings content creation, business planning, publishing, learning, community, and monetization into one connected workspace."],
+              ["Who is SDC for?", "SDC is for entrepreneurs, creators, freelancers, business owners, and beginners who want practical structure for building and growing a digital business without needing to be technical."],
+              ["What can AI Studio create?", "AI Studio helps you create business content such as social posts, scripts, blogs, emails, images, videos, voiceovers, and campaigns from guided workflows."],
+              ["How does AI Mentor work?", "AI Mentor turns your goals, business context, and audience into practical guidance, roadmaps, action plans, and next steps that help you keep moving."],
+              ["What are Creator Credits?", "Creator Credits are SDC's usage balance for AI generations. Explorer members can buy credits when needed, while Pro and Elite plans include monthly credits and optional top-ups."],
+              ["What is the difference between Academy and Marketplace?", "Academy is for structured courses, lessons, certifications, and course-related reseller rights. Marketplace is for digital products such as templates, tools, downloads, and external resources."],
+              ["How does the Scheduler publish content?", "Scheduler sends prepared content to connected social accounts using platform-specific settings for captions, media, privacy, disclosure, timing, and publishing permissions."],
+            ].map(([question, answer]) => (
+              <details key={question} className="group py-5">
+                <summary className="flex cursor-pointer list-none items-center justify-between gap-6 text-base font-semibold text-white marker:hidden">
+                  {question}
+                  <ChevronRight className="h-4 w-4 shrink-0 text-[#7E8799] transition group-open:rotate-90" />
+                </summary>
+                <p className="max-w-3xl pt-3 text-sm leading-7 text-[#BFC6D4]">{answer}</p>
+              </details>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <JsonLd data={faqJsonLd([
+        { question: "What is Soma Digital Community?", answer: "Soma Digital Community is an AI operating system for digital entrepreneurs. It brings content creation, business planning, publishing, learning, community, and monetization into one connected workspace." },
+        { question: "Who is SDC for?", answer: "SDC is for entrepreneurs, creators, freelancers, business owners, and beginners who want practical structure for building and growing a digital business without needing to be technical." },
+        { question: "What can AI Studio create?", answer: "AI Studio helps you create business content such as social posts, scripts, blogs, emails, images, videos, voiceovers, and campaigns from guided workflows." },
+        { question: "How does AI Mentor work?", answer: "AI Mentor turns your goals, business context, and audience into practical guidance, roadmaps, action plans, and next steps that help you keep moving." },
+        { question: "What are Creator Credits?", answer: "Creator Credits are SDC's usage balance for AI generations. Explorer members can buy credits when needed, while Pro and Elite plans include monthly credits and optional top-ups." },
+        { question: "What is the difference between Academy and Marketplace?", answer: "Academy is for structured courses, lessons, certifications, and course-related reseller rights. Marketplace is for digital products such as templates, tools, downloads, and external resources." },
+        { question: "How does the Scheduler publish content?", answer: "Scheduler sends prepared content to connected social accounts using platform-specific settings for captions, media, privacy, disclosure, timing, and publishing permissions." },
+      ])} />
 
       <section className="relative z-10 px-5 pb-20 sm:px-8">
         <div className="mx-auto max-w-7xl rounded-[28px] border border-white/[0.08] bg-[radial-gradient(circle_at_15%_20%,rgba(79,157,255,0.2),transparent_32%),radial-gradient(circle_at_80%_30%,rgba(139,92,246,0.22),transparent_36%),#151A2E] p-8 shadow-[0_32px_120px_rgba(0,0,0,0.42)] sm:p-10">

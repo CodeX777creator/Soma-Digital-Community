@@ -1,12 +1,12 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { useEffect, useMemo, useState } from "react";
 import { useParams, useSearchParams } from "next/navigation";
 import { onAuthStateChanged } from "firebase/auth";
 import { ArrowRight, BookOpen, CalendarDays, CheckCircle2, Clock3, Copy, CreditCard, Download, ExternalLink, GraduationCap, Loader2, Lock, PlayCircle, Share2, Sparkles, Store, Video } from "lucide-react";
 import { AppLayout } from "@/components/layout/AppLayout";
-import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import { PromoRedeemCard } from "@/components/promos/PromoRedeemCard";
 import { auth } from "@/lib/firebase";
 import type { AcademyCertificateDoc, AcademyCourseDoc, AcademyDripScheduleDoc, AcademyEnrollmentDoc, AcademyLessonDoc, AcademyLiveSessionDoc, AcademyProgressDoc, AcademyQuizAttemptDoc, AcademySessionAttendanceDoc, AcademyTopicDoc } from "@/academy";
@@ -260,11 +260,11 @@ export default function AcademyCoursePage() {
   };
 
   if (loading) {
-    return <ProtectedRoute><AppLayout><div className="flex min-h-[60vh] items-center justify-center text-[#BFC6D4]"><Loader2 className="mr-2 h-5 w-5 animate-spin" /> Loading course</div></AppLayout></ProtectedRoute>;
+    return <AppLayout><div className="flex min-h-[60vh] items-center justify-center text-[#BFC6D4]"><Loader2 className="mr-2 h-5 w-5 animate-spin" /> Loading course</div></AppLayout>;
   }
 
   if (!bundle) {
-    return <ProtectedRoute><AppLayout><div className="rounded-[18px] border border-red-400/20 bg-red-400/10 p-4 text-red-100">{error || "Course not found."}</div></AppLayout></ProtectedRoute>;
+    return <AppLayout><div className="rounded-[18px] border border-red-400/20 bg-red-400/10 p-4 text-red-100">{error || "Course not found."}</div></AppLayout>;
   }
 
   const { course, topics, enrollment } = bundle;
@@ -295,7 +295,6 @@ export default function AcademyCoursePage() {
   const dripByTopic = new Map((bundle.dripSchedules || []).filter((schedule) => schedule.topicId).map((schedule) => [schedule.topicId as string, schedule]));
 
   return (
-    <ProtectedRoute>
       <AppLayout>
         <div className="space-y-8">
           {verifyingPayment ? <div className="rounded-[18px] border border-cyan-400/20 bg-cyan-400/10 p-4 text-sm text-cyan-50"><Loader2 className="mr-2 inline h-4 w-4 animate-spin" />Confirming your Academy payment...</div> : null}
@@ -305,11 +304,13 @@ export default function AcademyCoursePage() {
             <div className="grid items-stretch lg:grid-cols-[minmax(0,clamp(320px,38vw,540px))_minmax(0,1fr)]">
               <div className="border-b border-white/[0.08] bg-gradient-to-br from-[#4F9DFF]/18 to-[#8B5CF6]/14 p-4 sm:p-5 lg:border-b-0 lg:border-r">
                 {course.thumbnailUrl ? (
-                  // eslint-disable-next-line @next/next/no-img-element
                   <div className="flex min-h-[220px] items-center justify-center overflow-hidden rounded-[20px] border border-white/10 bg-[#090B13]/70 p-3 shadow-[0_24px_70px_rgba(0,0,0,.28)]">
-                    <img
+                    <Image
                       src={course.thumbnailUrl}
                       alt={`${course.title} course thumbnail`}
+                      width={1200}
+                      height={675}
+                      sizes="(max-width: 1024px) 100vw, 42vw"
                       className="h-auto w-auto max-h-[440px] max-w-full rounded-[14px] object-contain"
                     />
                   </div>
@@ -562,7 +563,6 @@ export default function AcademyCoursePage() {
           ) : null}
         </div>
       </AppLayout>
-    </ProtectedRoute>
   );
 }
 

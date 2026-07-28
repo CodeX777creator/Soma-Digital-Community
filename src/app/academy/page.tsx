@@ -1,10 +1,10 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { useEffect, useMemo, useState } from "react";
 import { ArrowRight, BookOpen, Clock3, GraduationCap, Loader2, Search, Sparkles } from "lucide-react";
 import { AppLayout } from "@/components/layout/AppLayout";
-import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import type { AcademyCourseDoc } from "@/academy";
 
 export default function AcademyPage() {
@@ -39,7 +39,6 @@ export default function AcademyPage() {
   }, [courses, query]);
 
   return (
-    <ProtectedRoute>
       <AppLayout>
         <div className="space-y-8">
           <section className="overflow-hidden rounded-[22px] border border-white/[0.08] bg-[#151A2E]/75 shadow-[0_30px_90px_rgba(0,0,0,0.36)]">
@@ -84,17 +83,15 @@ export default function AcademyPage() {
           </div>
         </div>
       </AppLayout>
-    </ProtectedRoute>
   );
 }
 
 function CourseCard({ course }: { course: AcademyCourseDoc }) {
   return (
     <Link href={`/academy/${course.slug}`} className="group overflow-hidden rounded-[22px] border border-white/[0.08] bg-[#151A2E]/72 shadow-[0_18px_60px_rgba(0,0,0,0.24)] transition-all duration-200 hover:-translate-y-1 hover:border-[#8B5CF6]/35 hover:bg-[#1A2140]/85">
-      <div className="aspect-[16/9] bg-gradient-to-br from-[#4F9DFF]/20 via-[#5B5FFF]/20 to-[#8B5CF6]/20">
+      <div className="relative aspect-[16/9] bg-gradient-to-br from-[#4F9DFF]/20 via-[#5B5FFF]/20 to-[#8B5CF6]/20">
         {course.thumbnailUrl ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={course.thumbnailUrl} alt="" className="h-full w-full object-cover transition duration-500 group-hover:scale-105" />
+          <Image src={course.thumbnailUrl} alt={`${course.title} course thumbnail`} fill sizes="(max-width: 768px) 100vw, (max-width: 1280px) 50vw, 33vw" className="object-cover transition duration-500 group-hover:scale-105" />
         ) : (
           <div className="flex h-full items-center justify-center"><BookOpen className="h-10 w-10 text-white/35" /></div>
         )}

@@ -15,6 +15,8 @@ const GLOBAL_ROUTES = [
   '/partners',
   '/blog',
   '/case-studies',
+  '/about',
+  '/contact',
 ];
 
 function isGlobalRoute(pathname: string): boolean {
@@ -75,6 +77,18 @@ export function middleware(request: NextRequest) {
     url.pathname.includes('.')
   ) {
     return NextResponse.next();
+  }
+
+  // Preserve old query-based Marketplace links while making the clean product
+  // URL the canonical destination. Referral attribution stays in the query.
+  if (url.pathname === '/marketplace' && url.searchParams.has('asset')) {
+    const asset = url.searchParams.get('asset');
+    if (asset) {
+      const destination = new URL(`/marketplace/${encodeURIComponent(asset)}`, request.url);
+      const referral = url.searchParams.get('ref');
+      if (referral) destination.searchParams.set('ref', referral);
+      return NextResponse.redirect(destination, 308);
+    }
   }
 
   // Skip global routes — these should always resolve from the root regardless

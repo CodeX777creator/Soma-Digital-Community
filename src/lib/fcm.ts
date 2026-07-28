@@ -78,7 +78,10 @@ export async function getFCMToken(): Promise<string | null> {
       }
     }
 
-    const registration = await navigator.serviceWorker.register('/sw.js', { scope: '/' });
+    let registration = await navigator.serviceWorker.getRegistration('/');
+    if (!registration) {
+      registration = await navigator.serviceWorker.register('/sw.js', { scope: '/' });
+    }
     
     const token = await getToken(messagingInstance, {
       vapidKey: VAPID_KEY,

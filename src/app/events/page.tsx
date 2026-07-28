@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import {
   CalendarDays,
   ChevronLeft,
@@ -17,13 +18,13 @@ import {
   Video,
 } from "lucide-react";
 
-import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
 import { GlassCard } from "@/components/ui/glass-card";
 import { authFetch } from "@/lib/clientApi";
 import { normalizeDate } from "@/lib/date-utils";
 import { cn } from "@/lib/utils";
+import { useAuth } from "@/providers/AuthProvider";
 import type { EventRecord, EventStatus, EventType } from "@/events/types";
 
 type EventTab = "upcoming" | "live" | "replays" | "mine" | "all";
@@ -157,16 +158,18 @@ function EventCard({
   busy,
   onRsvp,
   onCancelRsvp,
+  allowRsvp,
 }: {
   event: EventRecord;
   featured?: boolean;
   busy?: boolean;
   onRsvp: (eventId: string) => void;
   onCancelRsvp: (eventId: string) => void;
+  allowRsvp: boolean;
 }) {
   const canJoin = Boolean(event.meetingUrl && (event.status === "scheduled" || event.status === "live"));
   const canReplay = Boolean(event.replayUrl && event.status === "completed");
-  const canRsvp = event.status === "scheduled" || event.status === "live";
+  const canRsvp = allowRsvp && (event.status === "scheduled" || event.status === "live");
   const isGoing = event.viewerRsvp === "going";
   const isFull = event.capacity !== null && event.capacity !== undefined && event.rsvpCount >= event.capacity && !isGoing;
 
@@ -179,8 +182,7 @@ function EventCard({
     >
       <div className="relative min-h-[160px] overflow-hidden border-b border-white/[0.06] bg-[#111827]">
         {event.coverImageUrl ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={event.coverImageUrl} alt="" className="h-full min-h-[160px] w-full object-cover opacity-80 transition duration-300 group-hover:scale-[1.03]" />
+          <Image src={event.coverImageUrl} alt={`${event.title} event cover`} fill sizes="(max-width: 768px) 100vw, (max-width: 1280px) 50vw, 33vw" className="object-cover opacity-80 transition duration-300 group-hover:scale-[1.03]" />
         ) : (
           <div className="absolute inset-0 bg-[radial-gradient(circle_at_22%_18%,rgba(91,95,255,.44),transparent_30%),radial-gradient(circle_at_78%_30%,rgba(79,157,255,.32),transparent_28%),linear-gradient(135deg,rgba(139,92,246,.28),rgba(9,11,19,.82))]" />
         )}
@@ -270,6 +272,7 @@ function EventCard({
 }
 
 function EventsPageContent() {
+  const { user } = useAuth();
   const [events, setEvents] = useState<EventRecord[]>([]);
   const [month, setMonth] = useState(getMonthKey());
   const [tab, setTab] = useState<EventTab>("upcoming");
@@ -285,7 +288,7 @@ function EventsPageContent() {
     try {
       const params = new URLSearchParams({ month, limit: "200", status: "all" });
       if (type !== "all") params.set("type", type);
-      const response = await authFetch(`/api/events?${params.toString()}`);
+      const response = await fetch(`/api/events?${params.toString()}`, { cache: "no-store" });
       const payload = (await response.json()) as { events?: EventRecord[]; error?: { message?: string } };
       if (!response.ok) {
         throw new Error(payload.error?.message || "Unable to load events.");
@@ -498,6 +501,7 @@ function EventsPageContent() {
                   busy={busyEventId === event.eventId}
                   onRsvp={(id) => void handleRsvp(id)}
                   onCancelRsvp={(id) => void handleCancelRsvp(id)}
+                  allowRsvp={Boolean(user)}
                 />
               ))}
             </div>
@@ -519,9 +523,5 @@ function EventsPageContent() {
 }
 
 export default function EventsPage() {
-  return (
-    <ProtectedRoute>
-      <EventsPageContent />
-    </ProtectedRoute>
-  );
+  return <EventsPageContent />;
 }

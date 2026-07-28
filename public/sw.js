@@ -4,30 +4,41 @@
  */
 
 // Update this version string when deploying breaking changes
-const APP_VERSION = '1.1.3';
+const APP_VERSION = '1.1.4';
 
 // Cache name includes version to force fresh cache on updates
 const CACHE_NAME = 'soma-cache-' + APP_VERSION;
 const STATIC_ASSETS = [
-  '/',
-  '/dashboard',
-  '/community',
   '/manifest.json',
-  '/favicon.ico',
+  '/offline.html',
+  '/icon-72x72.png',
+  '/icon-192x192.png',
+  '/icon-512x512.png',
 ];
 
 // Install event - cache static assets
 self.addEventListener('install', (event) => {
-  self.skipWaiting();
-  
-  event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => {
-      return cache.addAll(STATIC_ASSETS);
-    }).catch((error) => {
-      // Silently fail cache installation
+  // Stay waiting until the user confirms an update.
+  event.waitUntil(precacheStaticAssets());
+});
+
+async function precacheStaticAssets() {
+  const cache = await caches.open(CACHE_NAME);
+
+  await Promise.all(
+    STATIC_ASSETS.map(async (asset) => {
+      try {
+        const response = await fetch(asset, { cache: 'no-cache' });
+        if (response.ok) {
+          await cache.put(asset, response);
+        }
+      } catch (error) {
+        // One unavailable asset must not prevent the worker from installing.
+        console.warn('Precache skipped:', asset);
+      }
     })
   );
-});
+}
 
 // Activate event - clean up old caches
 self.addEventListener('activate', (event) => {
@@ -60,18 +71,6 @@ self.addEventListener('message', (event) => {
   }
 });
 
-// Notify clients when a new controller is active
-self.addEventListener('controllerchange', () => {
-  self.clients.matchAll({ type: 'window' }).then((clients) => {
-    clients.forEach((client) => {
-      client.postMessage({
-        type: 'UPDATE_AVAILABLE',
-        version: APP_VERSION
-      });
-    });
-  });
-});
-
 // Fetch event - implement caching strategies
 self.addEventListener('fetch', (event) => {
   const { request } = event;
@@ -88,23 +87,30 @@ self.addEventListener('fetch', (event) => {
   }
 
   // Skip Firebase and other external requests
-  if (!url.origin.includes(self.location.origin)) {
+  if (url.origin !== self.location.origin) {
     return;
   }
 
-  // Skip navigation requests so the app always loads the latest HTML
+  // Never cache documents or personalized Next.js payloads.
   if (request.mode === 'navigate') {
+    event.respondWith(networkFirstNavigation(request));
     return;
   }
 
-  // Cache-first strategy for static assets
-  if (isStaticAsset(request)) {
+  if (
+    request.destination === 'document' ||
+    url.pathname.startsWith('/api/') ||
+    url.pathname.startsWith('/_next/data/') ||
+    url.searchParams.has('_rsc') ||
+    url.searchParams.has('__nextDefaultLocale')
+  ) {
+    return;
+  }
+
+  // Cache only static, publicly shareable assets.
+  if (isStaticAsset(request) || url.pathname.startsWith('/_next/static/')) {
     event.respondWith(cacheFirst(request));
-    return;
   }
-
-  // Stale-while-revalidate for other requests
-  event.respondWith(staleWhileRevalidate(request));
 });
 
 function isStaticAsset(request) {
@@ -114,9 +120,17 @@ function isStaticAsset(request) {
          request.destination === 'font';
 }
 
-function isPage(request) {
-  return request.mode === 'navigate' ||
-         (request.destination === 'document' && request.url.includes(self.location.origin));
+async function networkFirstNavigation(request) {
+  try {
+    return await fetch(request);
+  } catch (error) {
+    const cache = await caches.open(CACHE_NAME);
+    const offlinePage = await cache.match('/offline.html');
+    if (offlinePage) {
+      return offlinePage;
+    }
+    throw error;
+  }
 }
 
 // Cache-first strategy
@@ -150,45 +164,6 @@ async function cacheFirst(request) {
     }
     throw error;
   }
-}
-
-// Network-first strategy
-async function networkFirst(request) {
-  const cache = await caches.open(CACHE_NAME);
-  
-  try {
-    const networkResponse = await fetch(request);
-    if (networkResponse.ok) {
-      cache.put(request, networkResponse.clone());
-    }
-    return networkResponse;
-  } catch (error) {
-    const cached = await cache.match(request);
-    if (cached) {
-      return cached;
-    }
-    // Return offline page if available
-    const offlinePage = await cache.match('/offline.html');
-    if (offlinePage) {
-      return offlinePage;
-    }
-    throw error;
-  }
-}
-
-// Stale-while-revalidate strategy
-async function staleWhileRevalidate(request) {
-  const cache = await caches.open(CACHE_NAME);
-  const cached = await cache.match(request);
-  
-  const fetchPromise = fetch(request).then((response) => {
-    if (response.ok) {
-      cache.put(request, response.clone());
-    }
-    return response;
-  }).catch(() => cached);
-
-  return cached || fetchPromise;
 }
 
 // Background sync for offline operations
@@ -233,7 +208,7 @@ self.addEventListener('notificationclick', (event) => {
   event.notification.close();
   
   const notificationData = event.notification.data;
-  const urlToOpen = notificationData?.url || '/';
+  const urlToOpen = getSafeNotificationUrl(notificationData?.url);
 
   event.waitUntil(
     self.clients.matchAll({ type: 'window' }).then((clientList) => {
@@ -250,3 +225,15 @@ self.addEventListener('notificationclick', (event) => {
     })
   );
 });
+
+function getSafeNotificationUrl(rawUrl) {
+  try {
+    const parsed = new URL(typeof rawUrl === 'string' ? rawUrl : '/', self.location.origin);
+    if (parsed.origin !== self.location.origin || !parsed.pathname.startsWith('/')) {
+      return '/';
+    }
+    return `${parsed.pathname}${parsed.search}${parsed.hash}`;
+  } catch (error) {
+    return '/';
+  }
+}

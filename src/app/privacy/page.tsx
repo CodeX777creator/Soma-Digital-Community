@@ -1,10 +1,9 @@
-"use client";
-
 import { AppLayout } from "@/components/layout/AppLayout";
 import { GlassCard } from "@/components/ui/glass-card";
 import { Eye, Shield, Lock } from "lucide-react";
+import { getSiteContent } from "@/lib/site-content";
 
-const updatedAt = "July 13, 2026";
+const updatedAt = "July 28, 2026";
 
 const sections = [
   {
@@ -15,6 +14,7 @@ const sections = [
       "We collect information you provide when you create an account, complete onboarding, set business goals, join the community, subscribe, buy Creator Credits, connect providers, connect social accounts, generate content, upload media, publish or schedule content, purchase marketplace items, or contact support.",
       "This may include your name, email address, profile photo, business identity, goals, skill level, preferences, plan, subscription status, payment metadata, Creator Credit activity, AI prompts, AI chat history, generated text, images, videos, audio, translations, documents, uploaded files, saved assets, social account metadata, scheduling records, publish logs, notifications, and marketplace purchase records.",
       "We also collect technical information such as device/browser data, log data, authentication events, usage telemetry, error events, rate-limit signals, provider routing decisions, model usage, estimated credit usage, and security/audit logs.",
+      "If you contact support, we collect the ticket subject, category, priority, messages, attachments or references you provide, status history, replies, and support identifiers needed to investigate and resolve your request.",
     ],
   },
   {
@@ -43,6 +43,7 @@ const sections = [
       "When you use AI features, the prompts, uploaded context, conversation history, selected settings, and relevant account context may be sent to AI providers, model gateways, or infrastructure vendors as needed to complete your request.",
       "Different AI tasks may use different providers or models. We use provider routing, logging, rate limits, credits, and telemetry to manage quality, performance, security, abuse prevention, and cost. We do not show users raw provider token pricing inside the product.",
       "Generated outputs and metadata may be stored so you can view history, reuse assets, regenerate outputs, analyze usage, and maintain persistent AI context.",
+      "Public content published through the site, including articles, case studies, About content, and legal content, may be managed through our administrator content system. Drafts, revisions, publication records, and administrator audit records are restricted to authorized personnel and are not public until published.",
     ],
   },
   {
@@ -62,6 +63,7 @@ const sections = [
     body: [
       "Payments are processed by third-party processors such as Paystack and PayPal. We do not store full payment card numbers. We may store transaction references, plan IDs, subscription status, checkout status, payment provider metadata, Creator Credit bundle purchases, webhook events, and audit records needed to operate billing and access control.",
       "Creator Credit ledgers may include user ID, feature, provider or model metadata, billing source, credits reserved, credits charged, credits refunded, request status, duration, timestamps, and related diagnostics.",
+      "Creator Credits are an internal usage unit for eligible SDC features. Displayed bundle pricing, included allowances, expiration or refund rules, and supported uses are shown at purchase or in the applicable plan terms and may change prospectively with notice where required.",
     ],
   },
   {
@@ -107,7 +109,7 @@ const sections = [
     title: "11. Your Rights and Choices",
     body: [
       "Depending on your location, you may have rights to access, correct, delete, export, restrict, or object to certain processing of your personal information. You may also have rights to opt out of certain analytics, marketing, or notification uses.",
-      "You can update many account settings directly in the product. For requests that are not available in the UI, contact support. We may need to verify your identity before processing privacy requests.",
+      "You can update many account settings directly in the product. For requests that are not available in the UI, email support@somatoday.com or submit a ticket at /support. We may need to verify your identity before processing a request, and we may retain the request and verification record as needed to demonstrate how it was handled.",
     ],
   },
   {
@@ -120,9 +122,24 @@ const sections = [
       "This policy is intended to explain our data practices in plain language. It should be reviewed by qualified legal counsel before production launch or broad commercial rollout.",
     ],
   },
+  {
+    icon: Shield,
+    iconClass: "text-accent",
+    title: "13. Privacy Contact and Applicable Rights",
+    body: [
+      "Depending on the law that applies to you, you may have rights to be informed about processing, access your personal information, correct inaccurate information, request deletion, restrict or object to certain processing, receive portable information, withdraw consent where processing relies on consent, and receive safeguards regarding solely automated decisions that produce legal or similarly significant effects.",
+      "We do not sell personal information. Where applicable law gives you additional choices about targeted advertising, sharing, sensitive information, or marketing communications, you may exercise those choices through available product controls or by contacting support. We will not discriminate against you for making a lawful privacy request.",
+      "Send privacy requests to support@somatoday.com or submit a support ticket at /support. Please describe the request and the account email involved. We may ask for reasonable verification, will respond within the time required by applicable law, and may explain any lawful limitation or retention requirement.",
+    ],
+  },
 ];
 
-export default function PrivacyPolicy() {
+export const dynamic = "force-dynamic";
+
+export default async function PrivacyPolicy() {
+  const cms = await getSiteContent("privacy", "privacy").catch(() => null);
+  const displayedSections = cms?.body ? [{ icon: Eye, iconClass: "text-accent", title: cms.title || "Privacy Policy", body: [cms.body] }] : sections;
+  const displayedDate = cms?.updatedAt ? new Intl.DateTimeFormat("en-US", { dateStyle: "long" }).format(new Date(cms.updatedAt)) : updatedAt;
   return (
     <AppLayout>
       <div className="max-w-4xl mx-auto flex flex-col gap-10 py-12 animate-in fade-in duration-700">
@@ -131,11 +148,11 @@ export default function PrivacyPolicy() {
             <Eye className="text-accent w-8 h-8" />
           </div>
           <h1 className="text-4xl md:text-5xl font-bold font-headline tracking-tighter">Privacy Policy</h1>
-          <p className="text-muted-foreground text-sm uppercase tracking-widest font-mono">Last Updated: {updatedAt}</p>
+          <p className="text-muted-foreground text-sm uppercase tracking-widest font-mono">Last Updated: {displayedDate}</p>
         </header>
 
         <GlassCard className="p-8 md:p-12 border-accent/20 space-y-8 leading-relaxed">
-          {sections.map(({ icon: Icon, iconClass, title, body }) => (
+          {displayedSections.map(({ icon: Icon, iconClass, title, body }) => (
             <section key={title} className="space-y-4">
               <h2 className="text-2xl font-bold font-headline text-white flex items-center gap-2">
                 <Icon className={`w-5 h-5 ${iconClass}`} />

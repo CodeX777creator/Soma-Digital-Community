@@ -3,8 +3,27 @@
 import { useState, useEffect, useCallback } from "react";
 
 interface UpdateInfo {
-  version: string;
+  version?: string;
   waitingWorker?: ServiceWorker;
+}
+
+async function readWorkerVersion(worker: ServiceWorker | null): Promise<string | undefined> {
+  if (!worker) return undefined;
+
+  return new Promise((resolve) => {
+    const channel = new MessageChannel();
+    const timeout = window.setTimeout(() => resolve(undefined), 1500);
+    channel.port1.onmessage = (event) => {
+      window.clearTimeout(timeout);
+      resolve(typeof event.data?.version === "string" ? event.data.version : undefined);
+    };
+    try {
+      worker.postMessage({ type: "VERSION_CHECK" }, [channel.port2]);
+    } catch {
+      window.clearTimeout(timeout);
+      resolve(undefined);
+    }
+  });
 }
 
 export function useServiceWorkerUpdate() {
@@ -20,31 +39,20 @@ export function useServiceWorkerUpdate() {
     
     if (!registration) return;
 
-    // Check if there's a waiting worker
-    if (registration.waiting) {
-      setHasUpdate(true);
-      setUpdateInfo({
-        version: "1.1.0", // This would ideally come from the SW message
-        waitingWorker: registration.waiting,
-      });
+    try {
+      await registration.update();
+    } catch {
+      // The active worker can continue serving the current app if an update check fails.
       return;
     }
 
-    // Check for new updates by registering a fresh SW
-    try {
-      const newRegistration = await navigator.serviceWorker.register("/sw.js", {
-        updateViaCache: "none",
+    if (registration.waiting) {
+      setHasUpdate(true);
+      setUpdateInfo({
+        version: await readWorkerVersion(registration.waiting),
+        waitingWorker: registration.waiting,
       });
-
-      if (newRegistration.waiting) {
-        setHasUpdate(true);
-        setUpdateInfo({
-          version: "1.1.0",
-          waitingWorker: newRegistration.waiting,
-        });
-      }
-    } catch (error) {
-      console.error("Failed to check for updates:", error);
+      return;
     }
   }, []);
 
@@ -55,29 +63,29 @@ export function useServiceWorkerUpdate() {
       // Skip waiting forces the new SW to take control immediately
       updateInfo.waitingWorker.postMessage({ type: "SKIP_WAITING" });
       
-      // Listen for the controller change
       return new Promise<void>((resolve) => {
+        let settled = false;
+        const cleanup = () => {
+          navigator.serviceWorker.removeEventListener("controllerchange", onControllerChange);
+          window.clearTimeout(timeout);
+        };
         const onControllerChange = () => {
+          if (settled) return;
+          settled = true;
+          cleanup();
           window.location.reload();
           resolve();
         };
-
-        // Set up a listener for when the SW takes control
-        window.addEventListener("beforeunload", onControllerChange);
-        
-        // Also try to skip waiting via the API
-        if (navigator.serviceWorker.controller) {
-           navigator.serviceWorker.addEventListener("controllerchange", () => {
-             window.location.reload();
-             resolve();
-           });
-        }
-
-        // Timeout fallback
-        setTimeout(() => {
+        const timeout = window.setTimeout(() => {
+          if (settled) return;
+          settled = true;
+          cleanup();
           window.location.reload();
           resolve();
         }, 2000);
+
+        navigator.serviceWorker.addEventListener("controllerchange", onControllerChange);
+        updateInfo.waitingWorker?.postMessage({ type: "SKIP_WAITING" });
       });
     } catch (error) {
       console.error("Failed to update app:", error);
@@ -85,11 +93,7 @@ export function useServiceWorkerUpdate() {
   }, [updateInfo]);
 
   const dismissUpdate = useCallback(() => {
-    // Tell the waiting worker to skip waiting (activate immediately without reload)
-    // This prevents the prompt from showing again until the next deployment
-    if (updateInfo?.waitingWorker) {
-      updateInfo.waitingWorker.postMessage({ type: "SKIP_WAITING" });
-    }
+    // Keep the current worker active until the user explicitly updates.
     setHasUpdate(false);
     setUpdateInfo(null);
   }, [updateInfo]);

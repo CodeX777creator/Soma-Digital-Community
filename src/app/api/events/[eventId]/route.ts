@@ -4,7 +4,20 @@ import { getSubscriptionPlan } from '@/lib/entitlements';
 import { getEventById } from '@/events';
 
 const handler = createAPIHandler(async (req, context) => {
-  const entitlements = await requireUserEntitlements(req as any);
+  let viewer: { tier: ReturnType<typeof getSubscriptionPlan>; isAdmin: boolean; userId?: string } = {
+    tier: 'explorer' as ReturnType<typeof getSubscriptionPlan>,
+    isAdmin: false,
+  };
+  try {
+    const entitlements = await requireUserEntitlements(req as any);
+    viewer = {
+      tier: getSubscriptionPlan(entitlements.subscription.subscriptionPlan),
+      isAdmin: entitlements.isAdmin,
+      userId: entitlements.uid,
+    };
+  } catch {
+    // Public event details are limited to the Explorer visibility boundary.
+  }
   const params = await context.params;
   const eventId = params.eventId;
 
@@ -12,11 +25,7 @@ const handler = createAPIHandler(async (req, context) => {
     return apiError('Invalid event.', { status: 400, code: 'INVALID_EVENT_ID' });
   }
 
-  const event = await getEventById(eventId, {
-    tier: getSubscriptionPlan(entitlements.subscription.subscriptionPlan),
-    isAdmin: entitlements.isAdmin,
-    userId: entitlements.uid,
-  });
+  const event = await getEventById(eventId, viewer);
 
   if (!event) {
     return apiError('Event not found.', { status: 404, code: 'EVENT_NOT_FOUND' });

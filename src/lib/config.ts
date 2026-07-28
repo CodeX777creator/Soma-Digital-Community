@@ -1,6 +1,6 @@
 export const SITE_CONFIG = {
   brandName: "Soma Digital",
-  supportEmail: "support@somadigital.com",
+  supportEmail: "support@somatoday.com",
   socials: {
     twitter: "https://x.com/somadigital",
     discord: "https://discord.gg/somadigital",

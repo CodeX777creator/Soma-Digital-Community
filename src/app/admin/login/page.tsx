@@ -21,10 +21,10 @@ import {
   signInWithEmailAndPassword,
   signInWithRedirect,
   getRedirectResult,
-  signOut,
 } from "firebase/auth";
 import { doc, Firestore, getDoc } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
+import { signOutWithCleanup } from "@/lib/sign-out";
 
 type AuthStatus = "checking" | "idle" | "submitting" | "unauthorized";
 
@@ -88,7 +88,7 @@ export default function AdminLoginPage() {
       const profile = userSnap.exists() ? userSnap.data() : undefined;
 
       if (!hasAdminAccess(profile)) {
-        await signOut(auth as Auth);
+        await signOutWithCleanup(auth as Auth);
         setStatus("unauthorized");
         setError("Unauthorized. This account does not have admin access.");
         return;
@@ -97,7 +97,7 @@ export default function AdminLoginPage() {
       redirectingRef.current = true;
       router.replace(ADMIN_DASHBOARD_PATH);
     } catch {
-      await signOut(auth as Auth);
+      await signOutWithCleanup(auth as Auth);
       setStatus("idle");
       setError("Unable to verify admin access. Please try again.");
     } finally {

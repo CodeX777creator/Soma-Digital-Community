@@ -1,14 +1,11 @@
 import type { Metadata } from "next";
+import { buildPageMetadata } from "@/lib/seo/site";
 
-export const metadata: Metadata = {
+export const metadata: Metadata = buildPageMetadata({
   title: "Global Community | Soma Digital",
   description: "Connect with successful owners, share wins, and grow your business with the community.",
-  openGraph: {
-    title: "Global Community | Soma Digital",
-    description: "The central hub for business growth and networking.",
-    type: "website",
-  },
-};
+  path: "/community",
+});
 
 export default function CommunityLayout({
   children,

@@ -14,7 +14,9 @@
     "seed:marketplace": "tsx -r dotenv/config scripts/seedMarketplace.ts",
     "test:ai-pricing": "tsx scripts/validateAIPricing.ts",
     "test:academy-commerce": "tsx scripts/validateAcademyCommerce.ts",
-    "test:social-platform-settings": "tsx scripts/validateSocialPlatformSettings.ts"
+    "test:social-platform-settings": "tsx scripts/validateSocialPlatformSettings.ts",
+    "test:pwa": "tsx scripts/validatePwa.ts",
+    "test:seo": "tsx scripts/validateSeo.ts"
   },
   "dependencies": {
     "@genkit-ai/google-genai": "^1.28.0",

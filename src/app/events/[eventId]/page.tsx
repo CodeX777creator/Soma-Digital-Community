@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { useParams } from "next/navigation";
 import {
   ArrowLeft,
@@ -15,13 +16,13 @@ import {
   Video,
 } from "lucide-react";
 
-import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
 import { GlassCard } from "@/components/ui/glass-card";
 import { authFetch } from "@/lib/clientApi";
 import { normalizeDate } from "@/lib/date-utils";
 import { cn } from "@/lib/utils";
+import { useAuth } from "@/providers/AuthProvider";
 import type { EventRecord, EventStatus, EventType, EventVisibility } from "@/events/types";
 
 const EVENT_TYPE_LABELS: Record<EventType, string> = {
@@ -110,6 +111,7 @@ function StatusBadge({ status }: { status: EventStatus }) {
 
 function EventsDetailContent() {
   const params = useParams<{ eventId: string }>();
+  const { user } = useAuth();
   const eventId = params?.eventId;
   const [event, setEvent] = useState<EventRecord | null>(null);
   const [loading, setLoading] = useState(true);
@@ -121,7 +123,7 @@ function EventsDetailContent() {
     setLoading(true);
     setError(null);
     try {
-      const response = await authFetch(`/api/events/${eventId}`);
+      const response = await fetch(`/api/events/${eventId}`, { cache: "no-store" });
       const payload = (await response.json()) as { event?: EventRecord; error?: { message?: string } };
       if (!response.ok) {
         throw new Error(payload.error?.message || "Unable to load event.");
@@ -143,7 +145,7 @@ function EventsDetailContent() {
 
   const canJoin = Boolean(event?.meetingUrl && (event.status === "scheduled" || event.status === "live"));
   const canReplay = Boolean(event?.replayUrl && event.status === "completed");
-  const canRsvp = Boolean(event && (event.status === "scheduled" || event.status === "live"));
+  const canRsvp = Boolean(user && event && (event.status === "scheduled" || event.status === "live"));
   const isGoing = event?.viewerRsvp === "going";
   const isFull = Boolean(event && event.capacity !== null && event.capacity !== undefined && event.rsvpCount >= event.capacity && !isGoing);
 
@@ -212,8 +214,7 @@ function EventsDetailContent() {
                 <div className="absolute inset-0 bg-[radial-gradient(circle_at_18%_12%,rgba(91,95,255,.35),transparent_30%),radial-gradient(circle_at_78%_18%,rgba(79,157,255,.25),transparent_32%),linear-gradient(135deg,rgba(139,92,246,.16),transparent_55%)]" />
                 {event.coverImageUrl && (
                   <>
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={event.coverImageUrl} alt="" className="absolute inset-0 h-full w-full object-cover opacity-25" />
+                    <Image src={event.coverImageUrl} alt={`${event.title} event cover`} fill sizes="100vw" className="object-cover opacity-25" />
                     <div className="absolute inset-0 bg-[#090B13]/60" />
                   </>
                 )}
@@ -365,9 +366,5 @@ function EventsDetailContent() {
 }
 
 export default function EventDetailPage() {
-  return (
-    <ProtectedRoute>
-      <EventsDetailContent />
-    </ProtectedRoute>
-  );
+  return <EventsDetailContent />;
 }
