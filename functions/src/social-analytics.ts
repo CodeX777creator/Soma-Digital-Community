@@ -3,6 +3,9 @@ import crypto from 'crypto';
 import axios from 'axios';
 import { onSchedule } from 'firebase-functions/v2/scheduler';
 import { defineBoolean, defineInt, defineSecret, defineString } from 'firebase-functions/params';
+import { createInternalServiceToken } from './internal-auth';
+import { readRuntimeSecret } from './runtime-config';
+import { runScheduledJob } from './job-telemetry';
 
 const db = admin.firestore();
 
@@ -10,6 +13,7 @@ const socialCredentialsMasterKey = defineSecret('SOCIAL_CREDENTIALS_MASTER_KEY')
 const socialAnalyticsEnabled = defineBoolean('SOCIAL_ANALYTICS_SYNC_ENABLED', { default: false });
 const socialAnalyticsBatchSize = defineInt('SOCIAL_ANALYTICS_BATCH_SIZE', { default: 25 });
 const socialAnalyticsLookbackDays = defineInt('SOCIAL_ANALYTICS_LOOKBACK_DAYS', { default: 30 });
+const socialAnalyticsMinIntervalMinutes = defineInt('SOCIAL_ANALYTICS_MIN_INTERVAL_MINUTES', { default: 360 });
 const socialAnalyticsEndpoint = defineString('SOCIAL_ANALYTICS_ENDPOINT', { default: '' });
 const socialAnalyticsEndpointTikTok = defineString('SOCIAL_ANALYTICS_ENDPOINT_TIKTOK', { default: '' });
 const socialAnalyticsEndpointInstagram = defineString('SOCIAL_ANALYTICS_ENDPOINT_INSTAGRAM', { default: '' });
@@ -114,12 +118,21 @@ function decodeMasterKey(rawKey: string): Buffer {
 }
 
 function getMasterKey(): Buffer {
-  const rawKey = socialCredentialsMasterKey.value();
+  const rawKey = readRuntimeSecret('SOCIAL_CREDENTIALS_MASTER_KEY', socialCredentialsMasterKey);
   if (!rawKey || !rawKey.trim()) {
     throw new Error('Missing SOCIAL_CREDENTIALS_MASTER_KEY secret');
   }
 
   return decodeMasterKey(rawKey);
+}
+
+function getAnalyticsAdapterHeaders(): Record<string, string> {
+  if (socialAnalyticsAdapterSecret.value()) {
+    return { 'X-SDC-Analytics-Secret': socialAnalyticsAdapterSecret.value() };
+  }
+
+  const rawKey = readRuntimeSecret('SOCIAL_CREDENTIALS_MASTER_KEY', socialCredentialsMasterKey);
+  return { 'X-SDC-Analytics-Token': createInternalServiceToken(rawKey) };
 }
 
 function decryptCredentials(envelope?: EncryptedPayload | null): DecryptedCredentials | null {
@@ -376,7 +389,7 @@ async function fetchProviderAnalytics(
         'Content-Type': 'application/json',
         'X-SDC-Social-Provider': account.providerId,
         'X-SDC-Social-Account-Id': account.socialAccountId,
-        ...(socialAnalyticsAdapterSecret.value() ? { 'X-SDC-Analytics-Secret': socialAnalyticsAdapterSecret.value() } : {}),
+        ...getAnalyticsAdapterHeaders(),
       },
       validateStatus: (status) => status >= 200 && status < 500,
     }
@@ -427,7 +440,7 @@ async function fetchProviderPostAnalytics(
         'X-SDC-Social-Provider': account.providerId,
         'X-SDC-Social-Account-Id': account.socialAccountId,
         'X-SDC-Social-Post-Id': post.scheduledPostId,
-        ...(socialAnalyticsAdapterSecret.value() ? { 'X-SDC-Analytics-Secret': socialAnalyticsAdapterSecret.value() } : {}),
+        ...getAnalyticsAdapterHeaders(),
       },
       validateStatus: (status) => status >= 200 && status < 500,
     }
@@ -446,7 +459,8 @@ async function writeAnalyticsSnapshot(
   rawPayload: unknown,
   syncedAt: admin.firestore.Timestamp
 ) {
-  const snapshotRef = db.collection('socialAnalyticsSnapshots').doc();
+  const dayKey = syncedAt.toDate().toISOString().slice(0, 10);
+  const snapshotRef = db.collection('socialAnalyticsSnapshots').doc(`account_${account.socialAccountId}_${dayKey}`);
   const period = getPeriod(socialAnalyticsLookbackDays.value());
   await snapshotRef.set({
     socialAnalyticsSnapshotId: snapshotRef.id,
@@ -501,7 +515,8 @@ async function writePostAnalytics(
     createdAt: admin.firestore.FieldValue.serverTimestamp(),
   }, { merge: true });
 
-  const snapshotRef = db.collection('socialAnalyticsSnapshots').doc();
+  const dayKey = syncedAt.toDate().toISOString().slice(0, 10);
+  const snapshotRef = db.collection('socialAnalyticsSnapshots').doc(`post_${post.scheduledPostId}_${dayKey}`);
   await snapshotRef.set({
     socialAnalyticsSnapshotId: snapshotRef.id,
     ownerId: post.ownerId,
@@ -526,6 +541,10 @@ async function syncAccountAnalytics(doc: admin.firestore.QueryDocumentSnapshot):
   const accountId = account.socialAccountId || doc.id;
   const endpoint = getProviderEndpoint(account.providerId);
   const syncedAt = admin.firestore.Timestamp.now();
+  const lastSyncedAt = account.lastSyncedAt?.toMillis?.() || 0;
+  if (lastSyncedAt && syncedAt.toMillis() - lastSyncedAt < socialAnalyticsMinIntervalMinutes.value() * 60 * 1000) {
+    return 'skipped';
+  }
 
   if (!endpoint) {
     await doc.ref.set({
@@ -688,11 +707,19 @@ async function syncPostAnalytics(doc: admin.firestore.QueryDocumentSnapshot): Pr
 
 async function syncPostAnalyticsBatch() {
   const limit = Math.max(1, Math.min(100, socialAnalyticsBatchSize.value()));
-  const snapshot = await db
+  const cursorRef = db.collection('system').doc('social_analytics_post_cursor');
+  const cursorSnap = await cursorRef.get();
+  const cursorId = cursorSnap.exists ? cursorSnap.data()?.lastScheduledPostId as string | undefined : undefined;
+  let postsQuery = db
     .collection('scheduledPosts')
     .where('status', '==', 'published')
-    .limit(limit)
-    .get();
+    .orderBy('__name__')
+    .limit(limit);
+  if (cursorId) {
+    const cursorDoc = await db.collection('scheduledPosts').doc(cursorId).get();
+    if (cursorDoc.exists) postsQuery = postsQuery.startAfter(cursorDoc);
+  }
+  const snapshot = await postsQuery.get();
 
   let synced = 0;
   let skipped = 0;
@@ -705,6 +732,11 @@ async function syncPostAnalyticsBatch() {
     if (result === 'failed') failed += 1;
   }
 
+  await cursorRef.set({
+    lastScheduledPostId: snapshot.size === limit ? snapshot.docs[snapshot.docs.length - 1].id : null,
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  }, { merge: true });
+
   return { processed: snapshot.size, synced, skipped, failed };
 }
 
@@ -714,11 +746,20 @@ export async function syncSocialAnalyticsBatch() {
   }
 
   const limit = Math.max(1, Math.min(100, socialAnalyticsBatchSize.value()));
-  const snapshot = await db
+  const cursorRef = db.collection('system').doc('social_analytics_account_cursor');
+  const cursorSnap = await cursorRef.get();
+  const cursorId = cursorSnap.exists ? cursorSnap.data()?.lastSocialAccountId as string | undefined : undefined;
+  let accountsQuery = db
     .collection('socialAccounts')
     .where('connectionType', '==', 'oauth')
-    .limit(limit)
-    .get();
+    .where('status', '==', 'connected')
+    .orderBy('__name__')
+    .limit(limit);
+  if (cursorId) {
+    const cursorDoc = await db.collection('socialAccounts').doc(cursorId).get();
+    if (cursorDoc.exists) accountsQuery = accountsQuery.startAfter(cursorDoc);
+  }
+  const snapshot = await accountsQuery.get();
 
   let synced = 0;
   let skipped = 0;
@@ -736,6 +777,11 @@ export async function syncSocialAnalyticsBatch() {
     if (result === 'failed') failed += 1;
   }
 
+  await cursorRef.set({
+    lastSocialAccountId: snapshot.size === limit ? snapshot.docs[snapshot.docs.length - 1].id : null,
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  }, { merge: true });
+
   const posts = await syncPostAnalyticsBatch();
 
   return { processed: snapshot.size, synced, skipped, failed, postAnalytics: posts, enabled: true };
@@ -748,7 +794,6 @@ export const syncSocialAccountAnalytics = onSchedule(
     secrets: [socialCredentialsMasterKey],
   },
   async () => {
-    const summary = await syncSocialAnalyticsBatch();
-    console.log('[SocialAnalytics] syncSocialAccountAnalytics', summary);
+    await runScheduledJob('syncSocialAccountAnalytics', async () => syncSocialAnalyticsBatch());
   }
 );

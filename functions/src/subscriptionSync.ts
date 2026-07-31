@@ -1,6 +1,7 @@
 import * as admin from 'firebase-admin';
 import { onSchedule } from 'firebase-functions/v2/scheduler';
 import { defineSecret, defineString } from 'firebase-functions/params';
+import { readRuntimeSecret } from './runtime-config';
 import axios from 'axios';
 import { 
   normalizePlanId, 
@@ -11,6 +12,7 @@ import {
   createAuditLog 
 } from './billing-helpers';
 import type { PayPalAccessTokenResponse } from './paypal-types';
+import { runScheduledJob } from './job-telemetry';
 
 const db = admin.firestore();
 const auth = admin.auth();
@@ -35,8 +37,8 @@ function getPayPalApiBaseUrl(): string {
 }
 
 async function getPayPalAccessToken(): Promise<string> {
-  const clientId = paypalClientId.value();
-  const clientSecret = paypalClientSecret.value();
+  const clientId = readRuntimeSecret('PAYPAL_CLIENT_ID', paypalClientId);
+  const clientSecret = readRuntimeSecret('PAYPAL_CLIENT_SECRET', paypalClientSecret);
 
   const response = await axios.post<PayPalAccessTokenResponse>(
     `${getPayPalApiBaseUrl()}/v1/oauth2/token`,
@@ -119,7 +121,7 @@ async function syncPayPalSubscription(subscriptionId: string, userId: string): P
 
 async function syncPaystackSubscription(subscriptionId: string, userId: string, paystackRef: string): Promise<boolean> {
   try {
-    const secretKey = paystackSecretKey.value();
+    const secretKey = readRuntimeSecret('PAYSTACK_SECRET_KEY', paystackSecretKey);
     
     // Try to fetch subscription details from Paystack
     const response = await axios.get(
@@ -195,6 +197,7 @@ async function handleExpiredSubscriptions(): Promise<number> {
     .collection('subscriptions')
     .where('subscriptionStatus', '==', 'active')
     .where('currentPeriodEnd', '<', now)
+    .limit(200)
     .get();
 
   let expiredCount = 0;
@@ -242,6 +245,7 @@ async function handlePastDueSubscriptions(): Promise<number> {
     .collection('subscriptions')
     .where('subscriptionStatus', '==', 'past_due')
     .where('updatedAt', '<', threeDaysAgo)
+    .limit(200)
     .get();
 
   let suspendedCount = 0;
@@ -288,6 +292,7 @@ export const syncSubscriptions = onSchedule(
     secrets: [paypalClientId, paypalClientSecret, paystackSecretKey],
   },
   async (event) => {
+    await runScheduledJob('syncSubscriptions', async () => {
     const startTime = Date.now();
     const result: SyncResult = {
       checked: 0,
@@ -314,10 +319,19 @@ export const syncSubscriptions = onSchedule(
       }
 
       // Get active subscriptions to sync with providers
-      const activeSnapshot = await db
+      const cursorRef = db.collection('system').doc('subscription_sync');
+      const cursorSnap = await cursorRef.get();
+      const cursorId = cursorSnap.exists ? cursorSnap.data()?.lastSubscriptionId as string | undefined : undefined;
+      let activeQuery = db
         .collection('subscriptions')
         .where('subscriptionStatus', 'in', ['active', 'past_due'])
-        .get();
+        .orderBy('__name__')
+        .limit(100);
+      if (cursorId) {
+        const cursorDoc = await db.collection('subscriptions').doc(cursorId).get();
+        if (cursorDoc.exists) activeQuery = activeQuery.startAfter(cursorDoc);
+      }
+      const activeSnapshot = await activeQuery.get();
 
       result.checked = activeSnapshot.size;
 
@@ -365,12 +379,14 @@ export const syncSubscriptions = onSchedule(
         lastRun: admin.firestore.FieldValue.serverTimestamp(),
         duration,
         result,
+        lastSubscriptionId: activeSnapshot.size === 100 ? activeSnapshot.docs[activeSnapshot.docs.length - 1].id : null,
       });
 
     } catch (error) {
       console.error('Subscription sync job failed:', error);
       throw error;
     }
+    });
   }
 );
 

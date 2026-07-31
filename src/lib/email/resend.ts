@@ -90,6 +90,25 @@ export function renderCampaignText(input: {
   return `${input.preheader ? `${input.preheader}\n\n` : ""}${input.body.trim()}${input.ctaLabel && input.ctaUrl ? `\n\n${input.ctaLabel}: ${resolveEmailUrl(input.ctaUrl)}` : ""}\n\nUnsubscribe: ${unsubscribeUrl}`;
 }
 
+export function renderTransactionalEmail(input: {
+  preheader: string;
+  paragraphs: string[];
+  ctaLabel?: string;
+  ctaUrl?: string;
+}) {
+  const paragraphs = input.paragraphs
+    .map((paragraph) => `<p style="margin:0 0 18px;line-height:1.65;color:#cbd5e1;">${escapeHtml(paragraph).replace(/\r?\n/g, "<br />")}</p>`)
+    .join("");
+  const cta = input.ctaLabel && input.ctaUrl
+    ? `<p style="margin:28px 0;"><a href="${escapeHtml(resolveEmailUrl(input.ctaUrl))}" style="display:inline-block;background:#22d3ee;color:#071018;text-decoration:none;font-weight:700;padding:12px 18px;border-radius:8px;">${escapeHtml(input.ctaLabel)}</a></p>`
+    : "";
+
+  return {
+    html: `<!doctype html><html><body style="margin:0;background:#090b13;color:#fff;font-family:Arial,sans-serif;"><span style="display:none;max-height:0;overflow:hidden;opacity:0;">${escapeHtml(input.preheader)}</span><div style="max-width:640px;margin:0 auto;padding:32px 20px;"><div style="border:1px solid rgba(255,255,255,.12);border-radius:16px;background:#111827;padding:28px;"><p style="margin:0 0 24px;color:#67e8f9;font-weight:700;letter-spacing:.12em;text-transform:uppercase;font-size:12px;">Soma Digital Community</p>${paragraphs}${cta}</div></div></body></html>`,
+    text: `${input.preheader}\n\n${input.paragraphs.join("\n\n")}${input.ctaLabel && input.ctaUrl ? `\n\n${input.ctaLabel}: ${resolveEmailUrl(input.ctaUrl)}` : ""}`,
+  };
+}
+
 export async function sendResendEmail(input: {
   to: string;
   subject: string;

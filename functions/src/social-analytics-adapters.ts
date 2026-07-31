@@ -1,6 +1,8 @@
 import axios from 'axios';
 import { onRequest } from 'firebase-functions/v2/https';
-import { defineString } from 'firebase-functions/params';
+import { defineSecret, defineString } from 'firebase-functions/params';
+import { isValidInternalServiceToken } from './internal-auth';
+import { readRuntimeSecret } from './runtime-config';
 
 type SocialPlatform = 'tiktok' | 'instagram' | 'facebook' | 'linkedin' | 'x' | 'youtube';
 
@@ -47,6 +49,7 @@ type AdapterMetrics = {
 };
 
 const socialAnalyticsAdapterSecret = defineString('SOCIAL_ANALYTICS_ADAPTER_SECRET', { default: '' });
+const socialCredentialsMasterKey = defineSecret('SOCIAL_CREDENTIALS_MASTER_KEY');
 const tiktokApiBaseUrl = defineString('SOCIAL_ANALYTICS_TIKTOK_API_BASE_URL', { default: 'https://open.tiktokapis.com/v2' });
 const metaGraphBaseUrl = defineString('SOCIAL_ANALYTICS_META_GRAPH_BASE_URL', { default: 'https://graph.facebook.com/v20.0' });
 const youtubeApiBaseUrl = defineString('SOCIAL_ANALYTICS_YOUTUBE_API_BASE_URL', { default: 'https://www.googleapis.com/youtube/v3' });
@@ -61,10 +64,14 @@ function getBearerToken(authorization?: string): string {
 
 function requireAdapterSecret(headers: Record<string, string | string[] | undefined>) {
   const expected = socialAnalyticsAdapterSecret.value();
-  if (!expected) return;
-  const received = headers['x-sdc-analytics-secret'];
-  const value = Array.isArray(received) ? received[0] : received;
-  if (value !== expected) {
+  const configuredHeader = headers['x-sdc-analytics-secret'];
+  const configuredValue = Array.isArray(configuredHeader) ? configuredHeader[0] : configuredHeader;
+  const internalHeader = headers['x-sdc-analytics-token'];
+  const internalValue = Array.isArray(internalHeader) ? internalHeader[0] : internalHeader;
+  const valid = expected
+    ? configuredValue === expected
+    : isValidInternalServiceToken(readRuntimeSecret('SOCIAL_CREDENTIALS_MASTER_KEY', socialCredentialsMasterKey), internalValue);
+  if (!valid) {
     const error = new Error('Invalid analytics adapter secret.');
     (error as Error & { status?: number }).status = 401;
     throw error;
@@ -528,7 +535,7 @@ async function fetchProviderAnalytics(provider: SocialPlatform, token: string, b
 }
 
 function createAnalyticsAdapter(provider: SocialPlatform) {
-  return onRequest({ cors: false }, async (req, res) => {
+  return onRequest({ cors: false, secrets: [socialCredentialsMasterKey] }, async (req, res) => {
     try {
       if (req.method !== 'POST') {
         res.status(405).json({ error: 'Method not allowed' });

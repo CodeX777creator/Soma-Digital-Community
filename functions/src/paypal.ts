@@ -2,7 +2,9 @@ import * as admin from 'firebase-admin';
 import axios, { AxiosError } from 'axios';
 import { onCall, onRequest, HttpsError } from 'firebase-functions/v2/https';
 import { defineSecret, defineString } from 'firebase-functions/params';
+import { readRuntimeSecret } from './runtime-config';
 import { createNotification } from './notifications';
+import { resendApiKey, sendPaymentIssueEmail, sendPurchaseReceiptEmail } from './transactional-email';
 import {
   deriveSubscriptionTransition,
   persistSubscriptionState,
@@ -288,8 +290,8 @@ function parsePayPalWebhookEvent(body: unknown): PayPalWebhookEvent {
 }
 
 async function getPayPalAccessToken(): Promise<string> {
-  const clientId = paypalClientId.value();
-  const clientSecret = paypalClientSecret.value();
+  const clientId = readRuntimeSecret('PAYPAL_CLIENT_ID', paypalClientId);
+  const clientSecret = readRuntimeSecret('PAYPAL_CLIENT_SECRET', paypalClientSecret);
 
   if (!clientId || !clientSecret) {
     throw new HttpsError('failed-precondition', 'PayPal credentials are not configured');
@@ -458,11 +460,11 @@ export const createPayPalSubscription = onCall<CreateSubscriptionRequest>(
 
 export const paypalWebhook = onRequest(
   {
-    secrets: [paypalClientId, paypalClientSecret, paypalWebhookId],
+    secrets: [paypalClientId, paypalClientSecret, paypalWebhookId, resendApiKey],
   },
   async (req, res): Promise<void> => {
     try {
-      const webhookId = paypalWebhookId.value();
+      const webhookId = readRuntimeSecret('PAYPAL_WEBHOOK_ID', paypalWebhookId);
       const token = await getPayPalAccessToken();
       const event = parsePayPalWebhookEvent(req.body);
 
@@ -577,6 +579,14 @@ export const paypalWebhook = onRequest(
           'Your plan is now active. Enjoy premium access.',
           '/settings/billing'
         );
+        await sendPurchaseReceiptEmail({
+          userId,
+          purchaseId: subscriptionId,
+          kind: 'subscription',
+          title: `${planId} subscription`,
+          accessUrl: '/settings/billing',
+          metadata: { provider: 'paypal', planId, eventId: event.id },
+        });
 
         console.log(`Activated subscription ${subscriptionId} for user ${userId}`);
       } else if (eventType === 'BILLING.SUBSCRIPTION.PAYMENT.FAILED') {
@@ -602,6 +612,14 @@ export const paypalWebhook = onRequest(
           "We couldn't process your payment. Please update your payment method to keep your subscription active.",
           '/settings/billing'
         );
+        await sendPaymentIssueEmail({
+          userId,
+          subject: 'Action needed: SDC payment failed',
+          title: `${planId} subscription`,
+          body: "We couldn't process your subscription payment. Please review your billing details to keep your access active.",
+          idempotencyKey: `payment-failed-paypal-${event.id}`,
+          accessUrl: '/settings/billing',
+        });
 
         console.log(`Payment failed for subscription ${subscriptionId}, attempt ${failedPaymentsCount}`);
       } else if (eventType === 'BILLING.SUBSCRIPTION.SUSPENDED') {

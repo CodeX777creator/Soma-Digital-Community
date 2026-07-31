@@ -2,8 +2,10 @@ import * as admin from 'firebase-admin';
 import crypto from 'crypto';
 import { onSchedule } from 'firebase-functions/v2/scheduler';
 import { defineBoolean, defineInt, defineSecret, defineString } from 'firebase-functions/params';
+import { readRuntimeSecret } from './runtime-config';
 import { sendNotificationWithPush } from './push-notifications';
 import { mapPlatformSettingsToProvider, normalizePlatformSettings } from './social-platform-settings';
+import { runScheduledJob } from './job-telemetry';
 
 const db = admin.firestore();
 
@@ -255,7 +257,7 @@ function decodeMasterKey(rawKey: string): Buffer {
 }
 
 function getMasterKey(): Buffer {
-  const rawKey = socialCredentialsMasterKey.value();
+  const rawKey = readRuntimeSecret('SOCIAL_CREDENTIALS_MASTER_KEY', socialCredentialsMasterKey);
   if (!rawKey || !rawKey.trim()) {
     throw new Error('Missing SOCIAL_CREDENTIALS_MASTER_KEY secret');
   }
@@ -1684,6 +1686,10 @@ function isEligibleForProcessing(post: ScheduledPostDoc, now: Date): boolean {
     return false;
   }
 
+  if (post.status === 'failed' && typeof post.attemptCount === 'number' && post.attemptCount >= socialPublishMaxAttempts.value()) {
+    return false;
+  }
+
   if (post.publishLeaseExpiresAt && post.publishLeaseExpiresAt.toDate().getTime() > now.getTime()) {
     return false;
   }
@@ -1692,13 +1698,19 @@ function isEligibleForProcessing(post: ScheduledPostDoc, now: Date): boolean {
 }
 
 async function pickSocialAccount(ownerId: string, platform: SocialPlatform, preferredAccountId?: string): Promise<SocialAccountDoc | null> {
-  const snapshot = await db.collection('socialAccounts').where('ownerId', '==', ownerId).get();
+  const snapshot = await db
+    .collection('socialAccounts')
+    .where('ownerId', '==', ownerId)
+    .where('providerId', '==', platform)
+    .where('status', '==', 'connected')
+    .limit(20)
+    .get();
   const candidates = snapshot.docs.map((doc) => ({
     ...(doc.data() as SocialAccountDoc),
     socialAccountId: typeof doc.data().socialAccountId === 'string' ? doc.data().socialAccountId : doc.id,
   }));
 
-  const connected = candidates.filter((account) => account.providerId === platform && account.status === 'connected' && account.hasCredentials);
+  const connected = candidates.filter((account) => account.hasCredentials);
 
   if (preferredAccountId) {
     const preferred = connected.find((account) => account.socialAccountId === preferredAccountId);
@@ -1742,8 +1754,10 @@ async function claimScheduledPost(postRef: admin.firestore.DocumentReference<adm
     const nextAttemptCount = currentAttemptCount + 1;
     if (nextAttemptCount > socialPublishMaxAttempts.value()) {
       transaction.set(postRef, {
+        status: 'failed',
         failedAt: now,
         lastError: 'Maximum publish attempts reached',
+        failureCode: 'MAX_ATTEMPTS_REACHED',
         publishLeaseId: null,
         publishLeaseExpiresAt: null,
         updatedAt: now,
@@ -1824,6 +1838,7 @@ async function markPublishPendingConfirmation(
       ...(post.metadata || {}),
       publishConfirmationStatus: 'pending',
       publishConfirmationStartedAt: new Date().toISOString(),
+      publishConfirmationNextCheckAt: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
     },
     updatedAt: admin.firestore.FieldValue.serverTimestamp(),
   }, { merge: true });
@@ -2321,6 +2336,7 @@ async function processScheduledPosts(): Promise<{
   const now = new Date();
   const snapshot = await db
     .collection('scheduledPosts')
+    .where('status', 'in', ['scheduled', 'failed'])
     .where('scheduledTime', '<=', admin.firestore.Timestamp.fromDate(now))
     .orderBy('scheduledTime', 'asc')
     .limit(socialPublishBatchSize.value())
@@ -2622,6 +2638,12 @@ async function reconcilePublishingStatuses(): Promise<{
   let skipped = 0;
 
   for (const doc of snapshot.docs) {
+    const data = doc.data() as ScheduledPostDoc & { metadata?: Record<string, unknown> };
+    const nextCheck = data.metadata?.publishConfirmationNextCheckAt;
+    if (typeof nextCheck === 'string' && Date.parse(nextCheck) > Date.now()) {
+      skipped += 1;
+      continue;
+    }
     checked += 1;
     try {
       const result = await reconcilePublishingPost(doc);
@@ -2721,8 +2743,7 @@ export const publishScheduledSocialPosts = onSchedule(
     secrets: [socialCredentialsMasterKey],
   },
   async () => {
-    const summary = await processScheduledPosts();
-    console.log('[SocialPublishing] publishScheduledSocialPosts', summary);
+    await runScheduledJob('publishScheduledSocialPosts', async () => processScheduledPosts());
   }
 );
 
@@ -2733,8 +2754,7 @@ export const reconcileSocialPublishStatuses = onSchedule(
     secrets: [socialCredentialsMasterKey],
   },
   async () => {
-    const summary = await reconcilePublishingStatuses();
-    console.log('[SocialPublishing] reconcileSocialPublishStatuses', summary);
+    await runScheduledJob('reconcileSocialPublishStatuses', async () => reconcilePublishingStatuses());
   }
 );
 
@@ -2744,7 +2764,6 @@ export const scanSocialConnectionReliabilityAlerts = onSchedule(
     timeZone: 'UTC',
   },
   async () => {
-    const summary = await scanSocialConnectionReliability();
-    console.log('[SocialPublishing] scanSocialConnectionReliabilityAlerts', summary);
+    await runScheduledJob('scanSocialConnectionReliabilityAlerts', async () => scanSocialConnectionReliability());
   }
 );

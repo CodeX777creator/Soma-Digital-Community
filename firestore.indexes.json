@@ -242,6 +242,53 @@
       ]
     },
     {
+      "__comment": "Social publisher: supports due scheduled and retryable posts ordered by scheduled time.",
+      "collectionGroup": "scheduledPosts",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "scheduledTime", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "__comment": "Social account selection: supports connected provider accounts for a post owner.",
+      "collectionGroup": "socialAccounts",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "ownerId", "order": "ASCENDING" },
+        { "fieldPath": "providerId", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "__comment": "Social jobs: supports active OAuth accounts eligible for token refresh and analytics.",
+      "collectionGroup": "socialAccounts",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "connectionType", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "__comment": "Social account analytics cursor: supports connected OAuth accounts ordered by document ID.",
+      "collectionGroup": "socialAccounts",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "connectionType", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "__name__", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "__comment": "Social post analytics cursor: supports published posts ordered by document ID.",
+      "collectionGroup": "scheduledPosts",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "__name__", "order": "ASCENDING" }
+      ]
+    },
+    {
       "__comment": "Credit ledger: supports per-user credit history ordered newest first.",
       "collectionGroup": "creatorCreditLedger",
       "queryScope": "COLLECTION",

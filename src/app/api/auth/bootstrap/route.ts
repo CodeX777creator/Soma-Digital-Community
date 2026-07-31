@@ -4,6 +4,7 @@ import { adminAuth, adminDb } from "@/lib/firebaseAdmin";
 import { requireAuth } from "@/lib/serverAuth";
 import { getSubscriptionPlan, normalizeSubscription, type SubscriptionPlan } from "@/lib/entitlements";
 import { sanitizeString } from "@/lib/security";
+import { renderTransactionalEmail, sendResendEmail } from "@/lib/email/resend";
 
 type BootstrapBody = {
   displayName?: unknown;
@@ -206,6 +207,39 @@ export const POST = createAPIHandler(
       });
     }
     await batch.commit();
+
+    if (!userSnap.exists && firebaseUser.email) {
+      const welcomeEmail = renderTransactionalEmail({
+        preheader: "Welcome to Soma Digital Community.",
+        paragraphs: [
+          `Hi ${displayName},`,
+          "Welcome to Soma Digital Community. Your workspace is ready for learning, creating, and building with SDC.",
+          "Start with your dashboard, explore Academy, or create your first AI asset when you are ready.",
+        ],
+        ctaLabel: "Open SDC",
+        ctaUrl: "/dashboard",
+      });
+      try {
+        const resendId = await sendResendEmail({
+          to: firebaseUser.email,
+          subject: "Welcome to Soma Digital Community",
+          ...welcomeEmail,
+          idempotencyKey: `welcome-${uid}`,
+        });
+        await adminDb.collection("emailDeliveries").doc(`welcome_${uid}`).set({
+          type: "welcome",
+          recipientEmail: firebaseUser.email,
+          recipientUid: uid,
+          subject: "Welcome to Soma Digital Community",
+          resendId,
+          status: "sent",
+          sentAt: FieldValue.serverTimestamp(),
+          updatedAt: FieldValue.serverTimestamp(),
+        }, { merge: true });
+      } catch (error) {
+        console.error("[Email] Welcome email failed", { uid, error: error instanceof Error ? error.message : String(error) });
+      }
+    }
 
     const updatedSnap = await userRef.get();
     const profile = updatedSnap.data();

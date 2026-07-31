@@ -1,6 +1,7 @@
 import * as admin from 'firebase-admin';
 import { onSchedule } from 'firebase-functions/v2/scheduler';
 import { sendNotificationWithPush } from './push-notifications';
+import { runScheduledJob } from './job-telemetry';
 
 const db = admin.firestore();
 
@@ -189,32 +190,37 @@ async function processEventSnapshot(doc: admin.firestore.QueryDocumentSnapshot, 
 export const processEventRemindersAndLifecycle = onSchedule(
   { schedule: 'every 15 minutes', timeZone: 'UTC', memory: '512MiB', timeoutSeconds: 300 },
   async () => {
-    const now = new Date();
-    const windowStart = admin.firestore.Timestamp.fromDate(new Date(now.getTime() - 6 * HOUR_MS));
-    const windowEnd = admin.firestore.Timestamp.fromDate(new Date(now.getTime() + DAY_MS));
+    await runScheduledJob('processEventRemindersAndLifecycle', async () => {
+      const now = new Date();
+      const windowStart = admin.firestore.Timestamp.fromDate(new Date(now.getTime() - 6 * HOUR_MS));
+      const windowEnd = admin.firestore.Timestamp.fromDate(new Date(now.getTime() + DAY_MS));
 
-    const snap = await db
-      .collection('events')
-      .where('startsAt', '>=', windowStart)
-      .where('startsAt', '<=', windowEnd)
-      .orderBy('startsAt', 'asc')
-      .limit(200)
-      .get();
+      const snap = await db
+        .collection('events')
+        .where('startsAt', '>=', windowStart)
+        .where('startsAt', '<=', windowEnd)
+        .orderBy('startsAt', 'asc')
+        .limit(200)
+        .get();
 
-    const candidates = snap.docs.filter((doc) => {
-      const status = (doc.data() as EventDoc).status;
-      return status === 'scheduled' || status === 'live';
-    });
+      const candidates = snap.docs.filter((doc) => {
+        const status = (doc.data() as EventDoc).status;
+        return status === 'scheduled' || status === 'live';
+      });
 
-    for (const doc of candidates) {
-      try {
-        await processEventSnapshot(doc, now);
-      } catch (error) {
-        console.error('processEventRemindersAndLifecycle event failed', {
-          eventId: doc.id,
-          error: error instanceof Error ? error.message : String(error),
-        });
+      let failed = 0;
+      for (const doc of candidates) {
+        try {
+          await processEventSnapshot(doc, now);
+        } catch (error) {
+          failed += 1;
+          console.error('processEventRemindersAndLifecycle event failed', {
+            eventId: doc.id,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
       }
-    }
+      return { checked: candidates.length, failed };
+    });
   }
 );

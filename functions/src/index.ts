@@ -4,6 +4,8 @@ import { onRequest } from 'firebase-functions/v2/https';
 import { onSchedule } from 'firebase-functions/v2/scheduler';
 import { onDocumentCreated } from 'firebase-functions/v2/firestore';
 import { logXPEvent } from './xp';
+import { requireAdminHttpRequest } from './http-auth';
+import { runScheduledJob } from './job-telemetry';
 
 initializeApp();
 const db = getFirestore();
@@ -67,42 +69,43 @@ async function createMissionsForUser(uid: string, dateString: string, batch?: Wr
 }
 
 async function createDailyMissionsForAllUsers(dateString: string) {
-  const usersSnapshot = await db.collection('users').get();
-  const users = usersSnapshot.docs.map((doc) => doc.id);
+  const userPageSize = Math.max(1, Math.floor(450 / MISSION_TEMPLATES.length));
+  let lastDoc: FirebaseFirestore.QueryDocumentSnapshot | undefined;
 
-  const batchSize = 250;
-  const batches: WriteBatch[] = [];
+  while (true) {
+    let query = db.collection('users').orderBy('__name__').limit(userPageSize);
+    if (lastDoc) query = query.startAfter(lastDoc);
+    const usersSnapshot = await query.get();
+    if (usersSnapshot.empty) break;
 
-  for (let index = 0; index < users.length; index += batchSize) {
-    batches.push(db.batch());
-  }
+    const batch = db.batch();
+    const now = Timestamp.now();
 
-  for (let i = 0; i < users.length; i += 1) {
-    const batchIndex = Math.floor(i / batchSize);
-    const uid = users[i];
-    const batch = batches[batchIndex];
-    const missionsRef = db.collection('users').doc(uid).collection('missions');
-    const missionQuery = await missionsRef.where('dateString', '==', dateString).limit(1).get();
+    for (const userDoc of usersSnapshot.docs) {
+      const missionsRef = db.collection('users').doc(userDoc.id).collection('missions');
+      const missionQuery = await missionsRef.where('dateString', '==', dateString).limit(1).get();
 
-    if (missionQuery.empty) {
-      MISSION_TEMPLATES.forEach((template) => {
-        const missionDoc = missionsRef.doc();
-        batch.set(missionDoc, {
-          title: template.title,
-          xp: template.xp,
-          completed: false,
-          completedAt: null,
-          lockedForTier: template.lockedForTier,
-          dateString,
-          createdAt: Timestamp.now(),
-          updatedAt: Timestamp.now(),
+      if (missionQuery.empty) {
+        MISSION_TEMPLATES.forEach((template) => {
+          const missionDoc = missionsRef.doc();
+          batch.set(missionDoc, {
+            title: template.title,
+            xp: template.xp,
+            completed: false,
+            completedAt: null,
+            lockedForTier: template.lockedForTier,
+            dateString,
+            createdAt: now,
+            updatedAt: now,
+          });
         });
-      });
+      }
     }
-  }
 
-  const commits = batches.map((batch) => batch.commit());
-  await Promise.all(commits);
+    await batch.commit();
+    lastDoc = usersSnapshot.docs[usersSnapshot.docs.length - 1];
+    if (usersSnapshot.size < userPageSize) break;
+  }
 }
 
 export const assignDailyMissions = onSchedule(
@@ -110,7 +113,10 @@ export const assignDailyMissions = onSchedule(
   async (event) => {
     const dateString = getYMDString(new Date());
     try {
-      await createDailyMissionsForAllUsers(dateString);
+      await runScheduledJob('assignDailyMissions', async () => {
+        await createDailyMissionsForAllUsers(dateString);
+        return { dateString };
+      });
     } catch (error) {
       console.error('assignDailyMissions failed:', error);
     }
@@ -133,6 +139,8 @@ export const assignMissionsOnUserSignup = onDocumentCreated('users/{uid}', async
 });
 
 export const runDailyMissionsManually = onRequest(async (req, res) => {
+  if (!(await requireAdminHttpRequest(req, res))) return;
+
   const dateString = getYMDString(new Date());
 
   try {
@@ -265,10 +273,7 @@ import { broadcastToAllUsers } from './push-notifications';
  * Body: { userId, type, title, body, linkUrl }
  */
 export const sendUserNotification = onRequest(async (req, res) => {
-  if (req.method !== 'POST') {
-    res.status(405).json({ error: 'Method not allowed' });
-    return;
-  }
+  if (!(await requireAdminHttpRequest(req, res))) return;
 
   const { userId, type, title, body, linkUrl } = req.body;
 
@@ -299,10 +304,7 @@ export const sendUserNotification = onRequest(async (req, res) => {
  * Body: { title, body, url }
  */
 export const broadcastNotification = onRequest(async (req, res) => {
-  if (req.method !== 'POST') {
-    res.status(405).json({ error: 'Method not allowed' });
-    return;
-  }
+  if (!(await requireAdminHttpRequest(req, res))) return;
 
   const { title, body, url } = req.body;
 

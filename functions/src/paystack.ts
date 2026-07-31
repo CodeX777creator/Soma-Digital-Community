@@ -1,6 +1,7 @@
 import * as admin from 'firebase-admin';
 import { onCall, HttpsError, onRequest } from 'firebase-functions/v2/https';
 import { defineSecret, defineString, defineInt } from 'firebase-functions/params';
+import { readRuntimeSecret } from './runtime-config';
 import axios from 'axios';
 import crypto from 'crypto';
 import { createNotification } from './notifications';
@@ -14,6 +15,7 @@ import {
   checkIdempotencyKey,
 } from './billing-helpers';
 import type { Request } from 'express';
+import { resendApiKey, sendPaymentIssueEmail, sendPurchaseReceiptEmail } from './transactional-email';
 
 const db = admin.firestore();
 const auth = admin.auth();
@@ -552,6 +554,16 @@ async function processCreditPurchaseWebhook(eventId: string, eventType: string, 
     `${credits} Creator Credits have been added to your account.`,
     '/settings/credits'
   );
+  await sendPurchaseReceiptEmail({
+    userId,
+    purchaseId,
+    kind: 'creator_credits',
+    title: `${credits} Creator Credits`,
+    amountCents: typeof purchase.priceCents === 'number' ? purchase.priceCents : null,
+    currency: purchase.currency || data.currency || 'USD',
+    accessUrl: '/settings/credits',
+    metadata: { bundleId: purchase.bundleId || data.metadata.bundleId || null },
+  });
 
   return { handled: true, response: { success: true, flow: 'creator_credit_purchase' } };
 }
@@ -695,6 +707,16 @@ async function processAcademyCoursePurchaseWebhook(eventId: string, eventType: s
   await ensureInitialAcademyProgress(userId, courseId);
   await createAuditLog('academy_course_purchase_verified', userId, purchaseId, { eventId, courseId, paystackReference: data.reference || null, priceCents: paidCents, currency });
   await createNotification(userId, 'success', 'Academy course unlocked', `Your access to ${course.title || 'this Academy course'} is active.`, `/academy/${course.slug || courseId}`);
+  await sendPurchaseReceiptEmail({
+    userId,
+    purchaseId,
+    kind: 'academy_course',
+    title: String(course.title || 'Academy course'),
+    amountCents: paidCents,
+    currency,
+    accessUrl: `/academy/${course.slug || courseId}`,
+    metadata: { courseId },
+  });
   return { handled: true, response: { success: true, flow: 'academy_course_purchase' } };
 }
 
@@ -780,6 +802,16 @@ async function processAcademyMrrPurchaseWebhook(eventId: string, eventType: stri
     'Your reseller-rights license is active. Your reseller package is ready.',
     `/academy/certificates`
   );
+  await sendPurchaseReceiptEmail({
+    userId,
+    purchaseId,
+    kind: 'academy_mrr',
+    title: 'Master Resell Rights',
+    amountCents: typeof purchase.priceCents === 'number' ? purchase.priceCents : Math.round((Number(data.amount) || 0) / 100),
+    currency: data.currency || purchase.currency || 'USD',
+    accessUrl: '/reseller',
+    metadata: { courseId },
+  });
 
   return { handled: true, response: { success: true, flow: 'academy_mrr_purchase' } };
 }
@@ -911,6 +943,16 @@ async function processAssetPurchaseWebhook(
     'Your marketplace course is now available in your account.',
     '/marketplace'
   );
+  await sendPurchaseReceiptEmail({
+    userId,
+    purchaseId,
+    kind: 'marketplace',
+    title: 'Marketplace product',
+    amountCents: receivedAmount,
+    currency: receivedCurrency || expectedCurrency || paystackCurrency.value(),
+    accessUrl: '/marketplace/library',
+    metadata: { assetId, licenseType: purchase.licenseType || 'standard' },
+  });
   await archiveWebhookEvent(eventId, eventType, String(data?.reference || purchaseId), data, true);
 
   return { handled: true, response: { success: true } };
@@ -1007,7 +1049,7 @@ export const initializePaystackTransaction = onCall<InitializeTransactionRequest
   },
   async (request): Promise<InitializeTransactionResponse> => {
     const { email, amount, plan, metadata } = request.data;
-    const secretKey = paystackSecretKey.value();
+    const secretKey = readRuntimeSecret('PAYSTACK_SECRET_KEY', paystackSecretKey);
 
     if (typeof email !== 'string' || !isValidEmail(email)) {
       throw new HttpsError('invalid-argument', 'A valid email address is required');
@@ -1056,7 +1098,7 @@ export const createPaystackSubscription = onCall(
   async (request) => {
     const data = request.data;
     const context = request.auth;
-    const secretKey = paystackSecretKey.value();
+    const secretKey = readRuntimeSecret('PAYSTACK_SECRET_KEY', paystackSecretKey);
     const callbackUrl = `${frontendUrl.value()}/dashboard?subscription=success`;
 
     if (!context?.uid) {
@@ -1261,7 +1303,7 @@ export const createPaystackAssetPurchase = onCall(
   async (request): Promise<CreateAssetPurchaseResponse> => {
     const data = request.data as Partial<CreateAssetPurchaseRequest>;
     const context = request.auth;
-    const secretKey = paystackSecretKey.value();
+    const secretKey = readRuntimeSecret('PAYSTACK_SECRET_KEY', paystackSecretKey);
     const callbackUrl = `${frontendUrl.value()}/marketplace/success?assetId=${encodeURIComponent(String(data.assetId || ''))}`;
 
     if (!context?.uid) {
@@ -1521,7 +1563,7 @@ export const createPaystackCreditPurchase = onCall(
   async (request): Promise<CreateCreditPurchaseResponse> => {
     const data = request.data as Partial<CreateCreditPurchaseRequest>;
     const context = request.auth;
-    const secretKey = paystackSecretKey.value();
+    const secretKey = readRuntimeSecret('PAYSTACK_SECRET_KEY', paystackSecretKey);
 
     if (!context?.uid) {
       throw new HttpsError('unauthenticated', 'User not authenticated');
@@ -1651,11 +1693,11 @@ export const createPaystackCreditPurchase = onCall(
  */
 export const paystackWebhook = onRequest(
   {
-    secrets: [paystackSecretKey],
+    secrets: [paystackSecretKey, resendApiKey],
     cors: false,
   },
   async (req, res) => {
-    const secretKey = paystackSecretKey.value();
+    const secretKey = readRuntimeSecret('PAYSTACK_SECRET_KEY', paystackSecretKey);
     let eventId = 'unknown';
     let subscriptionId = 'unknown';
 
@@ -1836,6 +1878,16 @@ export const paystackWebhook = onRequest(
               'Your plan is now active. Welcome to premium access.',
               '/settings/billing'
             );
+            await sendPurchaseReceiptEmail({
+              userId,
+              purchaseId: subscriptionId,
+              kind: 'subscription',
+              title: `${planId} subscription`,
+              amountCents: typeof subscriptionData?.priceCents === 'number' ? subscriptionData.priceCents : null,
+              currency: subscriptionData?.currency || 'USD',
+              accessUrl: '/settings/billing',
+              metadata: { provider: 'paystack', planId, eventId },
+            });
           } else if (targetStatus === 'cancelled') {
             await createNotification(
               userId,
@@ -1852,6 +1904,14 @@ export const paystackWebhook = onRequest(
               "We couldn't process your payment. Please update your payment method to keep your subscription active.",
               '/settings/billing'
             );
+            await sendPaymentIssueEmail({
+              userId,
+              subject: 'Action needed: SDC payment failed',
+              title: `${planId} subscription`,
+              body: "We couldn't process your subscription payment. Please review your billing details to keep your access active.",
+              idempotencyKey: `payment-failed-paystack-${eventId}`,
+              accessUrl: '/settings/billing',
+            });
           }
         }
 
@@ -1895,7 +1955,7 @@ export const cancelPaystackSubscription = onCall(
   async (request) => {
     const data = request.data;
     const context = request.auth;
-    const secretKey = paystackSecretKey.value();
+    const secretKey = readRuntimeSecret('PAYSTACK_SECRET_KEY', paystackSecretKey);
 
     if (!context?.uid) {
       throw new HttpsError('unauthenticated', 'User not authenticated');
