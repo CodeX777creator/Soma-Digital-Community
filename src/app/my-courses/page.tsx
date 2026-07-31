@@ -106,6 +106,10 @@ export default function MyCoursesPage() {
         body: JSON.stringify({ assetId: item.purchase.assetId }),
       });
       const payload = await response.json();
+      if (response.status === 202 && payload?.fulfillmentPending) {
+        toast({ title: "Access is being prepared", description: payload.message || "Your payment is confirmed. Login details will be sent after setup is complete." });
+        return;
+      }
       if (!response.ok) throw new Error(payload?.error || "Unable to open course");
 
       const instructions = [payload.asset?.accessInstructions, payload.asset?.websiteOnboardingInstructions]

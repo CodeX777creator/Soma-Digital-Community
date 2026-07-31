@@ -262,7 +262,7 @@ export default function MarketplaceAssetDetailPage() {
                 <p className="mt-3 rounded-md bg-white/5 p-3 text-sm text-white/70">Includes website setup/onboarding as part of the bundle.</p>
               )}
               {asset.externalPlatform && (
-                <p className="mt-3 text-sm text-muted-foreground">Access is fulfilled after SDC payment verification via {asset.externalPlatform}.</p>
+                <p className="mt-3 text-sm text-muted-foreground">After verified payment, SDC prepares your {asset.externalPlatform} access and sends your login details. The external login page is not exposed before fulfillment.</p>
               )}
 
               {isMrr && (

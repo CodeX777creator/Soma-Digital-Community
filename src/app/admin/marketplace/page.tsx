@@ -18,11 +18,14 @@ import {
 import { auth, db } from "@/lib/firebase";
 import { AdminMediaPicker } from "@/components/admin/AdminMediaPicker";
 
-type AssetType = "pdf" | "video" | "template" | "notion" | "link" | "code";
+type AssetType = "pdf" | "video" | "template" | "notion" | "link" | "code" | "external_course";
 type AssetTier = "free" | "pro" | "elite";
 type LicenseType = "standard" | "mrr";
 type CommissionType = "fixed" | "percentage";
 type CommissionBase = "full_price" | "course_price";
+type DeliveryType = "download" | "external_access" | "hybrid";
+type PricingType = "free" | "paid" | "included_with_plan" | "promo_only";
+type ExternalAccessType = "manual_fulfillment" | "registration" | "existing_account";
 type PublishedFilter = "all" | "published" | "draft";
 
 type MarketplaceAsset = {
@@ -30,20 +33,27 @@ type MarketplaceAsset = {
   title: string;
   description: string;
   type: AssetType;
+  deliveryType: DeliveryType;
+  pricingType: PricingType;
+  slug: string;
   category: string;
   tags: string[];
   thumbnailUrl: string;
   assetUrl: string;
   tier: AssetTier;
+  currency: string;
   price: number;
   licenseType: LicenseType;
   resaleEnabled: boolean;
   resalePrice: number;
+  mrrPrice: number | null;
+  mrrLicenseVersion: string | null;
   resellerCommissionType: CommissionType;
   resellerCommissionValue: number;
   commissionBase: CommissionBase;
   courseValue: number;
   externalPlatform: string;
+  externalAccessType: ExternalAccessType;
   externalAccessUrl: string;
   accessInstructions: string;
   websiteOnboardingInstructions: string;
@@ -56,31 +66,41 @@ type AssetFormState = {
   title: string;
   description: string;
   type: AssetType;
+  deliveryType: DeliveryType;
+  pricingType: PricingType;
+  slug: string;
   category: string;
   tags: string;
   thumbnailUrl: string;
   assetUrl: string;
   tier: AssetTier;
+  currency: string;
   price: string;
   licenseType: LicenseType;
   resaleEnabled: boolean;
   resalePrice: string;
+  mrrPrice: string;
+  mrrLicenseVersion: string;
   resellerCommissionType: CommissionType;
   resellerCommissionValue: string;
   commissionBase: CommissionBase;
   courseValue: string;
   externalPlatform: string;
+  externalAccessType: ExternalAccessType;
   externalAccessUrl: string;
   accessInstructions: string;
   websiteOnboardingInstructions: string;
   published: boolean;
 };
 
-const ASSET_TYPES: AssetType[] = ["pdf", "video", "template", "notion", "link", "code"];
+const ASSET_TYPES: AssetType[] = ["pdf", "video", "template", "notion", "link", "code", "external_course"];
 const ASSET_TIERS: AssetTier[] = ["free", "pro", "elite"];
 const LICENSE_TYPES: LicenseType[] = ["standard", "mrr"];
 const COMMISSION_TYPES: CommissionType[] = ["percentage", "fixed"];
-const COMMISSION_BASES: CommissionBase[] = ["full_price"];
+const COMMISSION_BASES: CommissionBase[] = ["full_price", "course_price"];
+const DELIVERY_TYPES: DeliveryType[] = ["download", "external_access", "hybrid"];
+const PRICING_TYPES: PricingType[] = ["free", "paid", "included_with_plan", "promo_only"];
+const EXTERNAL_ACCESS_TYPES: ExternalAccessType[] = ["manual_fulfillment", "registration", "existing_account"];
 
 async function adminMarketplaceFetch(path: string, options: RequestInit = {}) {
   const token = await auth?.currentUser?.getIdToken();
@@ -103,20 +123,27 @@ const emptyForm: AssetFormState = {
   title: "",
   description: "",
   type: "pdf",
+  deliveryType: "download",
+  pricingType: "free",
+  slug: "",
   category: "",
   tags: "",
   thumbnailUrl: "",
   assetUrl: "",
   tier: "free",
+  currency: "USD",
   price: "0",
   licenseType: "standard",
   resaleEnabled: false,
   resalePrice: "0",
+  mrrPrice: "0",
+  mrrLicenseVersion: "sdc-mrr-v1",
   resellerCommissionType: "percentage",
   resellerCommissionValue: "0",
   commissionBase: "full_price",
   courseValue: "0",
   externalPlatform: "",
+  externalAccessType: "manual_fulfillment",
   externalAccessUrl: "",
   accessInstructions: "",
   websiteOnboardingInstructions: "",
@@ -129,20 +156,27 @@ function normalizeAsset(id: string, data: Record<string, any>): MarketplaceAsset
     title: data.title || "Untitled asset",
     description: data.description || "",
     type: ASSET_TYPES.includes(data.type) ? data.type : "template",
+    deliveryType: DELIVERY_TYPES.includes(data.deliveryType) ? data.deliveryType : data.type === "external_course" ? "external_access" : "download",
+    pricingType: PRICING_TYPES.includes(data.pricingType) ? data.pricingType : data.price > 0 ? "paid" : "free",
+    slug: typeof data.slug === "string" ? data.slug : "",
     category: data.category || "General",
     tags: Array.isArray(data.tags) ? data.tags : [],
     thumbnailUrl: data.thumbnailUrl || "",
     assetUrl: data.assetUrl || "",
     tier: data.tier === "enterprise" ? "elite" : ASSET_TIERS.includes(data.tier) ? data.tier : "free",
+    currency: typeof data.currency === "string" ? data.currency : "USD",
     price: typeof data.price === "number" ? data.price : 0,
     licenseType: data.licenseType === "mrr" ? "mrr" : "standard",
     resaleEnabled: data.resaleEnabled === true,
     resalePrice: typeof data.resalePrice === "number" ? data.resalePrice : typeof data.price === "number" ? data.price : 0,
+    mrrPrice: typeof data.mrrPrice === "number" ? data.mrrPrice : null,
+    mrrLicenseVersion: typeof data.mrrLicenseVersion === "string" ? data.mrrLicenseVersion : null,
     resellerCommissionType: data.resellerCommissionType === "fixed" ? "fixed" : "percentage",
     resellerCommissionValue: typeof data.resellerCommissionValue === "number" ? data.resellerCommissionValue : 0,
     commissionBase: data.commissionBase === "course_price" ? "course_price" : "full_price",
     courseValue: typeof data.courseValue === "number" ? data.courseValue : typeof data.price === "number" ? data.price : 0,
     externalPlatform: typeof data.externalPlatform === "string" ? data.externalPlatform : "",
+    externalAccessType: EXTERNAL_ACCESS_TYPES.includes(data.externalAccessType) ? data.externalAccessType : "manual_fulfillment",
     externalAccessUrl: typeof data.externalAccessUrl === "string" ? data.externalAccessUrl : "",
     accessInstructions: typeof data.accessInstructions === "string" ? data.accessInstructions : "",
     websiteOnboardingInstructions: typeof data.websiteOnboardingInstructions === "string" ? data.websiteOnboardingInstructions : "",
@@ -157,20 +191,27 @@ function formFromAsset(asset: MarketplaceAsset): AssetFormState {
     title: asset.title,
     description: asset.description,
     type: asset.type,
+    deliveryType: asset.deliveryType,
+    pricingType: asset.pricingType,
+    slug: asset.slug,
     category: asset.category,
     tags: asset.tags.join(", "),
     thumbnailUrl: asset.thumbnailUrl,
     assetUrl: asset.assetUrl,
     tier: asset.tier,
+    currency: asset.currency,
     price: String(asset.price || 0),
     licenseType: asset.licenseType,
     resaleEnabled: asset.resaleEnabled,
     resalePrice: String(asset.resalePrice || asset.price || 0),
+    mrrPrice: String(asset.mrrPrice || 0),
+    mrrLicenseVersion: asset.mrrLicenseVersion || "sdc-mrr-v1",
     resellerCommissionType: asset.resellerCommissionType,
     resellerCommissionValue: String(asset.resellerCommissionValue || 0),
     commissionBase: asset.commissionBase,
     courseValue: String(asset.courseValue || asset.price || 0),
     externalPlatform: asset.externalPlatform,
+    externalAccessType: asset.externalAccessType,
     externalAccessUrl: asset.externalAccessUrl,
     accessInstructions: asset.accessInstructions,
     websiteOnboardingInstructions: asset.websiteOnboardingInstructions,
@@ -195,6 +236,15 @@ function parseTags(tags: string) {
     .map((tag) => tag.trim())
     .filter(Boolean)
     .slice(0, 20);
+}
+
+function createProductSlug(value: string) {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 120);
 }
 
 function formatPrice(price: number, tier: AssetTier) {
@@ -296,7 +346,16 @@ export default function AdminMarketplacePage() {
       if (!form.title.trim()) throw new Error("Title is required.");
       if (!form.description.trim()) throw new Error("Description is required.");
       if (!form.category.trim()) throw new Error("Category is required.");
-      if (!form.assetUrl.trim()) throw new Error("Add an asset file or external URL.");
+      const slug = createProductSlug(form.slug || form.title);
+      if (!slug) throw new Error("A product URL slug is required.");
+      const requiresExternalAccess = form.deliveryType === "external_access" || form.type === "external_course";
+      const requiresDownload = form.deliveryType === "download" || form.deliveryType === "hybrid";
+      if (requiresDownload && !form.assetUrl.trim()) throw new Error("Add a product file or external resource URL.");
+      if (requiresExternalAccess && !form.externalPlatform.trim()) throw new Error("External platform is required for external access products.");
+      if (requiresExternalAccess && !/^https:\/\//i.test(form.externalAccessUrl.trim())) throw new Error("External access URL must use HTTPS.");
+      if (form.type === "external_course" && form.externalAccessType !== "manual_fulfillment") {
+        throw new Error("External programs must use manual fulfillment so access is released only after setup is complete.");
+      }
 
       const price = Number(form.price);
       if (Number.isNaN(price) || price < 0) throw new Error("Price must be 0 or higher.");
@@ -317,25 +376,34 @@ export default function AdminMarketplacePage() {
       if (form.commissionBase === "course_price" && courseValue <= 0) {
         throw new Error("Product value is required when commission uses a value override.");
       }
+      const mrrPrice = Number(form.mrrPrice || 0);
+      if (form.licenseType === "mrr" && (Number.isNaN(mrrPrice) || mrrPrice < 0)) throw new Error("MRR license price must be 0 or higher.");
 
       const payload = {
         title: form.title.trim(),
         description: form.description.trim(),
         type: form.type,
+        slug,
+        deliveryType: form.type === "external_course" ? "external_access" : form.deliveryType,
+        pricingType: form.pricingType,
         category: form.category.trim(),
         tags: parseTags(form.tags),
         thumbnailUrl: form.thumbnailUrl.trim(),
         assetUrl: form.assetUrl.trim(),
         tier: form.tier,
+        currency: form.currency,
         price,
         licenseType: form.licenseType,
         resaleEnabled: form.licenseType === "mrr" && form.resaleEnabled,
         resalePrice,
+        mrrPrice: form.licenseType === "mrr" ? mrrPrice : null,
+        mrrLicenseVersion: form.licenseType === "mrr" ? form.mrrLicenseVersion.trim() || "sdc-mrr-v1" : null,
         resellerCommissionType: form.resellerCommissionType,
         resellerCommissionValue: commissionValue,
         commissionBase: form.commissionBase,
         courseValue,
         externalPlatform: form.externalPlatform.trim(),
+        externalAccessType: requiresExternalAccess ? form.externalAccessType : null,
         externalAccessUrl: form.externalAccessUrl.trim(),
         accessInstructions: form.accessInstructions.trim(),
         websiteOnboardingInstructions: form.websiteOnboardingInstructions.trim(),
@@ -606,6 +674,17 @@ export default function AdminMarketplacePage() {
                 />
               </Field>
 
+              <Field label="Public URL slug">
+                <input
+                  value={form.slug}
+                  onChange={(event) => setForm({ ...form, slug: event.target.value })}
+                  className="admin-input"
+                  placeholder="launch-pad-2"
+                  aria-label="Public URL slug"
+                />
+                <span className="text-xs leading-5 text-white/40">Used for the public product URL. Leave it blank to generate one from the title.</span>
+              </Field>
+
               <Field label="Description" className="md:col-span-2">
                 <textarea
                   required
@@ -619,14 +698,30 @@ export default function AdminMarketplacePage() {
               <Field label="Type">
                 <select
                   value={form.type}
-                  onChange={(event) => setForm({ ...form, type: event.target.value as AssetType })}
+                  onChange={(event) => {
+                    const type = event.target.value as AssetType;
+                    setForm({ ...form, type, deliveryType: type === "external_course" ? "external_access" : form.deliveryType });
+                  }}
                   className="admin-input"
                   aria-label="Type"
                 >
                   {ASSET_TYPES.map((type) => (
-                    <option key={type} value={type}>{type}</option>
+                    <option key={type} value={type}>{type === "external_course" ? "External course / program" : type}</option>
                   ))}
                 </select>
+              </Field>
+
+              <Field label="Delivery method">
+                <select
+                  value={form.type === "external_course" ? "external_access" : form.deliveryType}
+                  onChange={(event) => setForm({ ...form, deliveryType: event.target.value as DeliveryType })}
+                  className="admin-input"
+                  aria-label="Delivery method"
+                  disabled={form.type === "external_course"}
+                >
+                  {DELIVERY_TYPES.map((deliveryType) => <option key={deliveryType} value={deliveryType}>{deliveryType === "download" ? "Downloadable file" : deliveryType === "external_access" ? "External access" : "Hybrid: file + external access"}</option>)}
+                </select>
+                <span className="text-xs leading-5 text-white/40">External access keeps the login URL hidden until payment is verified and an admin marks access as sent.</span>
               </Field>
 
               <Field label="Tier">
@@ -664,6 +759,18 @@ export default function AdminMarketplacePage() {
                 />
               </Field>
 
+              <Field label="Pricing mode">
+                <select value={form.pricingType} onChange={(event) => setForm({ ...form, pricingType: event.target.value as PricingType })} className="admin-input" aria-label="Pricing mode">
+                  {PRICING_TYPES.map((pricingType) => <option key={pricingType} value={pricingType}>{pricingType === "included_with_plan" ? "Included with plan" : pricingType === "promo_only" ? "Promo only" : pricingType[0].toUpperCase() + pricingType.slice(1)}</option>)}
+                </select>
+              </Field>
+
+              <Field label="Currency">
+                <select value={form.currency} onChange={(event) => setForm({ ...form, currency: event.target.value })} className="admin-input" aria-label="Currency">
+                  <option value="USD">USD ($) · current checkout currency</option>
+                </select>
+              </Field>
+
               <Field label="License">
                 <select
                   value={form.licenseType}
@@ -697,6 +804,15 @@ export default function AdminMarketplacePage() {
                   aria-label="Resale Price"
                   disabled={form.licenseType !== "mrr"}
                 />
+              </Field>
+
+              <Field label="MRR License Price">
+                <input type="number" min="0" step="1" value={form.mrrPrice} onChange={(event) => setForm({ ...form, mrrPrice: event.target.value })} className="admin-input" aria-label="MRR License Price" disabled={form.licenseType !== "mrr"} />
+                <span className="text-xs leading-5 text-white/40">The price to unlock resale rights, separate from the standard product price.</span>
+              </Field>
+
+              <Field label="MRR License Version">
+                <input value={form.mrrLicenseVersion} onChange={(event) => setForm({ ...form, mrrLicenseVersion: event.target.value })} className="admin-input" aria-label="MRR License Version" disabled={form.licenseType !== "mrr"} placeholder="sdc-mrr-v1" />
               </Field>
 
               <Field label="Commission Type">
@@ -772,7 +888,7 @@ export default function AdminMarketplacePage() {
                 </span>
               </label>
 
-              <Field label="External Platform">
+              <Field label="External platform" className={form.deliveryType === "download" && form.type !== "external_course" ? "hidden" : ""}>
                 <input
                   value={form.externalPlatform}
                   onChange={(event) => setForm({ ...form, externalPlatform: event.target.value })}
@@ -782,7 +898,23 @@ export default function AdminMarketplacePage() {
                 />
               </Field>
 
-              <Field label="External Access URL">
+              <Field label="External access type" className={form.deliveryType === "download" && form.type !== "external_course" ? "hidden" : ""}>
+                <select
+                  value={form.externalAccessType}
+                  onChange={(event) => setForm({ ...form, externalAccessType: event.target.value as ExternalAccessType })}
+                  className="admin-input"
+                  aria-label="External access type"
+                >
+                  {EXTERNAL_ACCESS_TYPES.map((accessType) => (
+                    <option key={accessType} value={accessType}>
+                      {accessType === "manual_fulfillment" ? "Manual setup · send login details" : accessType === "registration" ? "Registration after fulfillment" : "Existing external account"}
+                    </option>
+                  ))}
+                </select>
+                <span className="text-xs leading-5 text-white/40">All external links stay hidden until payment is confirmed and access is fulfilled.</span>
+              </Field>
+
+              <Field label="External Access URL" className={form.deliveryType === "download" && form.type !== "external_course" ? "hidden" : ""}>
                 <input
                   value={form.externalAccessUrl}
                   onChange={(event) => setForm({ ...form, externalAccessUrl: event.target.value })}
@@ -790,14 +922,15 @@ export default function AdminMarketplacePage() {
                   placeholder="https://..."
                   aria-label="External Access URL"
                 />
+                <span className="text-xs leading-5 text-white/40">Stored privately. Buyers receive it only after verified payment and manual access fulfillment.</span>
               </Field>
 
-              <Field label="Product Access Instructions" className="md:col-span-2">
+              <Field label="Product Access Instructions" className={`md:col-span-2 ${form.deliveryType === "download" && form.type !== "external_course" ? "hidden" : ""}`}>
                 <textarea
                   value={form.accessInstructions}
                   onChange={(event) => setForm({ ...form, accessInstructions: event.target.value })}
                   className="admin-input min-h-24 resize-y"
-                  placeholder="Shown only after SDC confirms purchase."
+                  placeholder="Shown after payment and after login details have been sent. Do not store passwords here."
                   aria-label="Product Access Instructions"
                 />
               </Field>
@@ -835,7 +968,7 @@ export default function AdminMarketplacePage() {
                   usageContext="marketplace"
                   linkedEntityType="marketplaceAsset"
                   linkedEntityId={editingAsset?.id || undefined}
-                  helperText="Upload the product file or paste the external delivery URL."
+                  helperText={form.deliveryType === "external_access" || form.type === "external_course" ? "Optional supporting file. The external login URL is configured above and released only after fulfillment." : form.deliveryType === "hybrid" ? "Upload the product file and configure the external access details above." : "Upload the product file or paste the external delivery URL."}
                   onChange={(url) => setForm({ ...form, assetUrl: url })}
                 />
               </div>

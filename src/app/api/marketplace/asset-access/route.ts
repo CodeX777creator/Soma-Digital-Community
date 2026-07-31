@@ -193,7 +193,23 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     const requiredTier = normalizeAssetTier(asset.tier);
     const assetUrl = typeof asset.assetUrl === 'string' ? asset.assetUrl : '';
     const storagePath = typeof asset.storagePath === 'string' ? asset.storagePath : '';
-    if (!assetUrl && !storagePath && !asset.externalAccessUrl) {
+    const externalAccessUrl = typeof asset.externalAccessUrl === 'string' && asset.externalAccessUrl
+      ? asset.externalAccessUrl
+      : '';
+    const deliveryType = asset.type === 'external_course'
+      ? 'external_access'
+      : asset.deliveryType === 'external_access' || asset.deliveryType === 'hybrid'
+        ? asset.deliveryType
+        : 'download';
+    const externalDelivery = deliveryType === 'external_access' || deliveryType === 'hybrid';
+    const requiresExternalFulfillment = externalDelivery;
+    if (externalDelivery && !externalAccessUrl) {
+      return NextResponse.json(
+        { error: 'External access is not configured yet', accessGranted: false },
+        { status: 409 }
+      );
+    }
+    if (!assetUrl && !storagePath && !externalAccessUrl) {
       return NextResponse.json(
         { error: 'Asset file is not configured yet', accessGranted: false },
         { status: 409 }
@@ -243,8 +259,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     const purchase = await getPaidAssetPurchase(user.uid, assetId);
     const hasPurchaseAccess = Boolean(purchase);
     const price = typeof asset.price === 'number' ? asset.price : 0;
-    const requiresPurchase = price > 0;
-    const hasAccess = hasPurchaseAccess || (!requiresPurchase && validateTierAccess(userTier, requiredTier));
+    const requiresPurchase = price > 0 || requiresExternalFulfillment;
+    const hasAccess = hasPurchaseAccess || (!requiresPurchase && !requiresExternalFulfillment && validateTierAccess(userTier, requiredTier));
     
     if (!hasAccess) {
       console.info(`[${requestId}] Access denied: user ${user.uid} (tier: ${userTier}) attempted to access ${assetId} (requires: ${requiredTier})`);
@@ -262,6 +278,21 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       );
     }
     
+    if (requiresExternalFulfillment && (!purchase || !['access_sent', 'registration_completed'].includes(String(purchase.provisioningStatus || 'access_pending')))) {
+      console.info(`[${requestId}] External access pending fulfillment for user ${user.uid} and asset ${assetId}`);
+      return NextResponse.json(
+        {
+          error: 'Payment confirmed. Your external access is being prepared.',
+          message: 'SDC will send your login details after your access has been set up.',
+          accessGranted: false,
+          fulfillmentPending: true,
+          provisioningStatus: purchase?.provisioningStatus || 'access_pending',
+          assetId,
+        },
+        { status: 202 }
+      );
+    }
+
     // 5. Access granted - return asset URL
     console.info(`[${requestId}] Access granted: user ${user.uid} (tier: ${userTier}) accessing ${assetId}`);
     const licenseType = asset.licenseType === 'mrr' ? 'mrr' : 'standard';
@@ -269,9 +300,6 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     const resellerLink = licenseType === 'mrr' && resaleEnabled
       ? await getResellerLink(user.uid, assetId)
       : null;
-    const externalAccessUrl = typeof asset.externalAccessUrl === 'string' && asset.externalAccessUrl
-      ? asset.externalAccessUrl
-      : '';
     let finalAssetUrl = externalAccessUrl || assetUrl;
     if (!externalAccessUrl && storagePath) {
       const [signedUrl] = await adminStorage.bucket().file(storagePath).getSignedUrl({

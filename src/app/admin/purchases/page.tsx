@@ -33,6 +33,13 @@ type UserSummary = { name: string; email: string };
 
 const STATUSES: ProvisioningStatus[] = ["not_required", "access_pending", "access_sent", "registration_completed"];
 
+const STATUS_LABELS: Record<ProvisioningStatus, string> = {
+  not_required: "Not required",
+  access_pending: "Payment confirmed · access pending",
+  access_sent: "Login details sent",
+  registration_completed: "Registration completed",
+};
+
 async function adminPurchaseFetch(path: string, options: RequestInit = {}) {
   const token = await auth?.currentUser?.getIdToken();
   if (!token) throw new Error("Admin session expired.");
@@ -230,7 +237,7 @@ export default function AdminPurchasesPage() {
                       className="h-9 rounded-md border border-white/10 bg-black/20 px-2 text-xs outline-none focus:border-cyan-400/50"
                     >
                       {STATUSES.map((status) => (
-                        <option key={status} value={status}>{status.replace("_", " ")}</option>
+                        <option key={status} value={status}>{STATUS_LABELS[status]}</option>
                       ))}
                     </select>
                   </td>

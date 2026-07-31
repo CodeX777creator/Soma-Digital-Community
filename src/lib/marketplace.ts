@@ -13,6 +13,7 @@ import type { SubscriptionPlan } from "@/lib/entitlements";
 
 export type MarketplaceAssetType = "pdf" | "video" | "template" | "notion" | "link" | "code" | "external_course" | "course";
 export type MarketplaceDeliveryType = "download" | "external_access" | "hybrid";
+export type MarketplaceExternalAccessType = "manual_fulfillment" | "registration" | "existing_account";
 export type MarketplaceAssetTier = "free" | "pro" | "elite";
 export type MarketplaceLicenseType = "standard" | "mrr";
 export type MarketplaceCommissionBase = "full_price" | "course_price";
@@ -36,6 +37,7 @@ export interface MarketplaceAsset {
   commissionBase: MarketplaceCommissionBase;
   courseValue: number;
   externalPlatform: string;
+  externalAccessType: MarketplaceExternalAccessType;
   externalAccessUrl: string;
   accessInstructions: string;
   websiteOnboardingInstructions: string;
@@ -93,12 +95,17 @@ function normalizeAsset(id: string, data: Record<string, any>): MarketplaceAsset
     commissionBase: data.commissionBase === "course_price" ? "course_price" : "full_price",
     courseValue: typeof data.courseValue === "number" ? data.courseValue : typeof data.price === "number" ? data.price : 0,
     externalPlatform: typeof data.externalPlatform === "string" ? data.externalPlatform : "",
+    externalAccessType: data.externalAccessType === "registration" || data.externalAccessType === "existing_account"
+      ? data.externalAccessType
+      : "manual_fulfillment",
     externalAccessUrl: typeof data.externalAccessUrl === "string" ? data.externalAccessUrl : "",
     accessInstructions: typeof data.accessInstructions === "string" ? data.accessInstructions : "",
     websiteOnboardingInstructions: typeof data.websiteOnboardingInstructions === "string" ? data.websiteOnboardingInstructions : "",
     published: data.published !== false,
     slug: typeof data.slug === "string" ? data.slug : id,
-    deliveryType: data.deliveryType === "external_access" || data.deliveryType === "hybrid" ? data.deliveryType : "download",
+    deliveryType: data.type === "external_course"
+      ? "external_access"
+      : data.deliveryType === "external_access" || data.deliveryType === "hybrid" ? data.deliveryType : "download",
     pricingType: data.pricingType === "included_with_plan" || data.pricingType === "promo_only" ? data.pricingType : data.price > 0 ? "paid" : "free",
     currency: typeof data.currency === "string" ? data.currency : "USD",
     mrrPrice: typeof data.mrrPrice === "number" ? data.mrrPrice : null,
