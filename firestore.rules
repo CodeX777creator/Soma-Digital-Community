@@ -754,6 +754,25 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // Email campaigns, delivery telemetry, suppression records, and webhook
+    // receipts are server-owned. Public unsubscribe links and Resend webhooks
+    // use trusted server routes rather than direct client Firestore access.
+    match /emailCampaigns/{campaignId} {
+      allow read, write: if false;
+    }
+
+    match /emailDeliveries/{deliveryId} {
+      allow read, write: if false;
+    }
+
+    match /emailSuppressions/{suppressionId} {
+      allow read, write: if false;
+    }
+
+    match /resendWebhookEvents/{eventId} {
+      allow read, write: if false;
+    }
+
     match /admin/{document=**} {
       allow read: if isAdmin();
       allow write: if isAdmin();

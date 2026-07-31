@@ -9,10 +9,42 @@ import { Switch } from "@/components/ui/switch";
 import { PushNotificationSettings } from "@/components/settings/PushNotificationSettings";
 import { Bell, BellOff, Mail, Smartphone, Globe, XCircle, CheckCircle2 } from "lucide-react";
 import { useAuth } from "@/providers/AuthProvider";
+import { auth } from "@/lib/firebase";
 import { Separator } from "@/components/ui/separator";
+import { useEffect, useState } from "react";
 
 export default function SettingsNotificationsPage() {
   const { userData } = useAuth();
+  const [emailMarketingOptIn, setEmailMarketingOptIn] = useState(false);
+  const [emailPreferenceSaving, setEmailPreferenceSaving] = useState(false);
+  const [emailPreferenceMessage, setEmailPreferenceMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    setEmailMarketingOptIn(userData?.emailMarketingOptIn === true);
+  }, [userData?.emailMarketingOptIn]);
+
+  async function updateEmailMarketingPreference(value: boolean) {
+    setEmailMarketingOptIn(value);
+    setEmailPreferenceSaving(true);
+    setEmailPreferenceMessage(null);
+    try {
+      const token = await auth?.currentUser?.getIdToken();
+      if (!token) throw new Error("Your session has expired.");
+      const response = await fetch("/api/settings/email-preferences", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ emailMarketingOptIn: value }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload?.error || "Unable to save email preference.");
+      setEmailPreferenceMessage(value ? "You are subscribed to SDC newsletters." : "You are unsubscribed from SDC marketing emails.");
+    } catch (error) {
+      setEmailMarketingOptIn(!value);
+      setEmailPreferenceMessage(error instanceof Error ? error.message : "Unable to save email preference.");
+    } finally {
+      setEmailPreferenceSaving(false);
+    }
+  }
 
   const notificationSettings = [
     {
@@ -83,6 +115,17 @@ export default function SettingsNotificationsPage() {
                 </p>
 
                 <div className="space-y-4">
+                  <div className="flex items-center justify-between gap-4 rounded-xl border border-cyan-300/15 bg-cyan-300/5 p-4">
+                    <div className="flex items-center gap-4">
+                      <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-cyan-300/10 text-cyan-200"><Mail className="h-5 w-5" /></div>
+                      <div>
+                        <p className="font-medium text-white">SDC newsletters and email campaigns</p>
+                        <p className="text-sm text-muted-foreground">Receive product news, learning updates, and useful community campaigns. You can unsubscribe at any time.</p>
+                        {emailPreferenceMessage ? <p role="status" className="mt-1 text-xs text-cyan-200">{emailPreferenceMessage}</p> : null}
+                      </div>
+                    </div>
+                    <Switch checked={emailMarketingOptIn} disabled={emailPreferenceSaving} onCheckedChange={updateEmailMarketingPreference} aria-label="Receive SDC newsletters and marketing emails" />
+                  </div>
                   {notificationSettings.map((setting) => (
                     <div key={setting.id} className="flex items-center justify-between">
                       <div className="flex items-center gap-4 flex-1">

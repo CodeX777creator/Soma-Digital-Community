@@ -12,6 +12,7 @@ import {
   HandCoins,
   FileText,
   FileEdit,
+  Mail,
   LifeBuoy,
   GraduationCap,
   LayoutDashboard,
@@ -46,6 +47,7 @@ const navItems = [
   { group: "Business", label: "Payouts", href: "/admin/payouts", icon: HandCoins },
   { group: "Business", label: "Promos", href: "/admin/promos", icon: TicketPercent },
   { group: "Business", label: "Support", href: "/admin/support", icon: LifeBuoy },
+  { group: "Business", label: "Email Campaigns", href: "/admin/email-campaigns", icon: Mail },
   { group: "Products", label: "Academy", href: "/admin/academy", icon: BookOpen },
   { group: "Products", label: "Marketplace", href: "/admin/marketplace", icon: Boxes },
   { group: "Products", label: "Content", href: "/admin/content", icon: FileText },
@@ -62,6 +64,7 @@ const quickCreateItems = [
   { label: "Marketplace product", href: "/admin/marketplace" },
   { label: "Promo", href: "/admin/promos" },
   { label: "Notification", href: "/admin/system-notifications" },
+  { label: "Email campaign", href: "/admin/email-campaigns" },
   { label: "Website content", href: "/admin/site-content" },
 ];
 

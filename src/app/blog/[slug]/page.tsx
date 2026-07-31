@@ -9,6 +9,7 @@ import { getBlogArticle, BLOG_ARTICLES } from "@/lib/seo/content";
 import { absoluteUrl, buildPageMetadata } from "@/lib/seo/site";
 import { articleJsonLd, breadcrumbJsonLd, JsonLd } from "@/lib/seo/structured-data";
 import { getSiteContent, siteContentToArticle } from "@/lib/site-content";
+import { RichText, stripListMarker } from "@/lib/content/rich-text";
 
 type PageProps = { params: Promise<{ slug: string }> };
 
@@ -43,8 +44,8 @@ export default async function BlogArticlePage({ params }: PageProps) {
           <div className="flex items-center gap-2 text-sm text-muted-foreground"><CalendarDays className="h-4 w-4" />Published {article.publishedAt} · Updated {article.updatedAt}</div>
           {article.image ? <Image src={article.image} alt={article.title} width={1200} height={630} sizes="(max-width: 896px) 100vw, 896px" className="mt-6 max-h-[460px] w-full rounded-2xl border border-white/10 object-cover" /> : null}
         </header>
-        <GlassCard className="border-cyan-400/15 bg-cyan-400/[0.04] p-6"><h2 className="text-lg font-semibold text-white">Key takeaways</h2><ul className="mt-4 space-y-3 text-sm leading-6 text-[#BFC6D4]">{article.takeaways.map((takeaway) => <li key={takeaway} className="flex gap-3"><span className="text-cyan-300">•</span><span>{takeaway}</span></li>)}</ul></GlassCard>
-        <div className="space-y-8">{article.sections.map((section) => <section key={section.heading} className="space-y-3"><h2 className="text-2xl font-semibold text-white">{section.heading}</h2><p className="text-base leading-8 text-[#BFC6D4]">{section.body}</p></section>)}</div>
+        <GlassCard className="border-cyan-400/15 bg-cyan-400/[0.04] p-6"><h2 className="text-lg font-semibold text-white">Key takeaways</h2><ol className="mt-4 list-decimal space-y-3 pl-6 text-sm leading-6 text-[#BFC6D4] marker:font-semibold marker:text-cyan-300">{article.takeaways.map((takeaway) => <li key={takeaway}>{stripListMarker(takeaway)}</li>)}</ol></GlassCard>
+        <div className="space-y-10">{article.sections.map((section) => <section key={section.heading} className="space-y-4"><h2 className="border-b border-white/10 pb-3 text-2xl font-semibold text-white sm:text-3xl">{section.heading}</h2><RichText value={section.body} /></section>)}</div>
         <section className="border-t border-white/[0.08] pt-6"><h2 className="text-sm font-semibold uppercase tracking-[0.18em] text-muted-foreground">Continue exploring</h2><div className="mt-4 flex flex-wrap gap-3">{article.relatedLinks.map((link) => <Link key={link.href} href={link.href} className="inline-flex items-center gap-2 rounded-full border border-white/10 px-4 py-2 text-sm text-white hover:border-cyan-300/40 hover:text-cyan-200">{link.label}<ArrowRight className="h-4 w-4" /></Link>)}</div></section>
       </article>
     </AppLayout>
