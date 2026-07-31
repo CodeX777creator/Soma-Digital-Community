@@ -11,6 +11,7 @@ import { articleJsonLd, breadcrumbJsonLd, JsonLd } from "@/lib/seo/structured-da
 import { getSiteContent, siteContentToArticle } from "@/lib/site-content";
 import { RichText, stripListMarker } from "@/lib/content/rich-text";
 import { ShareArticleButton } from "@/components/content/ShareArticleButton";
+import { formatLongDateSafe } from "@/lib/date-utils";
 
 type PageProps = { params: Promise<{ slug: string }> };
 
@@ -42,7 +43,7 @@ export default async function BlogArticlePage({ params }: PageProps) {
           <p className="text-xs font-semibold uppercase tracking-[0.24em] text-cyan-300">{article.category}</p>
           <h1 className="max-w-3xl text-4xl font-bold font-headline text-white sm:text-6xl">{article.title}</h1>
           <p className="max-w-3xl text-lg leading-8 text-[#BFC6D4]">{article.summary}</p>
-          <div className="flex flex-wrap items-center justify-between gap-3"><div className="flex items-center gap-2 text-sm text-muted-foreground"><CalendarDays className="h-4 w-4" />Published {article.publishedAt} · Updated {article.updatedAt}</div><ShareArticleButton title={article.title} url={url} /></div>
+          <div className="flex flex-wrap items-center justify-between gap-3"><div className="flex items-center gap-2 text-sm text-muted-foreground"><CalendarDays className="h-4 w-4" />Published {formatLongDateSafe(article.publishedAt)} · Updated {formatLongDateSafe(article.updatedAt)}</div><ShareArticleButton title={article.title} url={url} /></div>
           {article.image ? <Image src={article.image} alt={article.title} width={1200} height={630} sizes="(max-width: 896px) 100vw, 896px" className="mt-6 max-h-[460px] w-full rounded-2xl border border-white/10 object-cover" /> : null}
         </header>
         <div className="space-y-10">{article.sections.map((section) => <section key={section.heading} className="space-y-4"><h2 className="border-b border-white/10 pb-3 text-2xl font-semibold text-white sm:text-3xl">{section.heading}</h2><RichText value={section.body} /></section>)}</div>

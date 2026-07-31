@@ -40,3 +40,8 @@ export function formatDateTimeSafe(value: unknown, fallback = "N/A"): string {
   const date = normalizeDate(value);
   return date ? date.toLocaleString() : fallback;
 }
+
+export function formatLongDateSafe(value: unknown, fallback = "N/A"): string {
+  const date = normalizeDate(value);
+  return date ? new Intl.DateTimeFormat("en-US", { year: "numeric", month: "long", day: "numeric", timeZone: "UTC" }).format(date) : fallback;
+}
