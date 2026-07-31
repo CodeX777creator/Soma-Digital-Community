@@ -1305,6 +1305,7 @@ export const createPaystackAssetPurchase = onCall(
     const context = request.auth;
     const secretKey = readRuntimeSecret('PAYSTACK_SECRET_KEY', paystackSecretKey);
     const callbackUrl = `${frontendUrl.value()}/marketplace/success?assetId=${encodeURIComponent(String(data.assetId || ''))}`;
+    const requestId = `marketplace_checkout_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
 
     if (!context?.uid) {
       throw new HttpsError('unauthenticated', 'User not authenticated');
@@ -1532,7 +1533,12 @@ export const createPaystackAssetPurchase = onCall(
 
       return { purchaseId, authorizationUrl, status: 'created' };
     } catch (error) {
-      console.error('Failed to create Paystack asset purchase:', error);
+      console.error('Failed to create Paystack asset purchase:', {
+        requestId,
+        error: axios.isAxiosError(error)
+          ? { status: error.response?.status, data: error.response?.data, message: error.message }
+          : error instanceof Error ? error.message : String(error),
+      });
       const idempotencyRef = db.collection('idempotency_keys').doc(`${userId}_${idempotencyKey}`);
       if (initializedAuthorizationUrl) {
         await idempotencyRef.set({
@@ -1551,7 +1557,7 @@ export const createPaystackAssetPurchase = onCall(
           console.warn('Failed to release Paystack checkout reservation:', releaseError);
         });
       }
-      throw new HttpsError('internal', 'Failed to create asset purchase');
+      throw new HttpsError('internal', 'We could not start marketplace checkout.', { requestId });
     }
   }
 );

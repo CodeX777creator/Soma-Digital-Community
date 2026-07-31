@@ -303,6 +303,30 @@ export async function checkIdempotencyKey(userId: string, key: string): Promise<
     const doc = await transaction.get(idempotencyRef);
 
     if (doc.exists) {
+      const existing = doc.data() || {};
+      const expiresAt = existing.expiresAt;
+      const expiryMs = typeof expiresAt?.toMillis === 'function'
+        ? expiresAt.toMillis()
+        : expiresAt instanceof Date
+          ? expiresAt.getTime()
+          : typeof expiresAt === 'string' || typeof expiresAt === 'number'
+            ? new Date(expiresAt).getTime()
+            : 0;
+
+      // A crashed or timed-out checkout may leave only a reservation behind.
+      // Reclaim it after expiry, but never reclaim a checkout with a provider URL.
+      if (existing.status === 'reserved' && !existing.authorizationUrl && expiryMs > 0 && expiryMs <= Date.now()) {
+        transaction.set(idempotencyRef, {
+          userId,
+          key,
+          status: 'reserved',
+          createdAt: FieldValue.serverTimestamp(),
+          expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+        }, { merge: true });
+        reserved = true;
+        return;
+      }
+
       reserved = false;
       return;
     }

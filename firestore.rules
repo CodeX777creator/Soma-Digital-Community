@@ -76,9 +76,6 @@ service cloud.firestore {
     }
 
     // String validation helpers
-    function isValidString(value, maxLength) {
-      return value is string && value.size() <= maxLength && value.size() > 0;
-    }
     function isValidOptionalString(value, maxLength) {
       return value == null || (value is string && value.size() <= maxLength);
     }

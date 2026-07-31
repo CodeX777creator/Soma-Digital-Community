@@ -270,25 +270,6 @@
       ]
     },
     {
-      "__comment": "Social account analytics cursor: supports connected OAuth accounts ordered by document ID.",
-      "collectionGroup": "socialAccounts",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "connectionType", "order": "ASCENDING" },
-        { "fieldPath": "status", "order": "ASCENDING" },
-        { "fieldPath": "__name__", "order": "ASCENDING" }
-      ]
-    },
-    {
-      "__comment": "Social post analytics cursor: supports published posts ordered by document ID.",
-      "collectionGroup": "scheduledPosts",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "status", "order": "ASCENDING" },
-        { "fieldPath": "__name__", "order": "ASCENDING" }
-      ]
-    },
-    {
       "__comment": "Credit ledger: supports per-user credit history ordered newest first.",
       "collectionGroup": "creatorCreditLedger",
       "queryScope": "COLLECTION",

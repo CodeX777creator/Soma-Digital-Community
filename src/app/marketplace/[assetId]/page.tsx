@@ -137,7 +137,21 @@ export default function MarketplaceAssetDetailPage() {
     } catch (error) {
       const keyName = `sdc:marketplace-checkout:${user.uid}:${asset.id}`;
       window.sessionStorage.removeItem(keyName);
-      toast({ title: "Checkout unavailable", description: "We could not start checkout. Please try again shortly." });
+      const callableError = error as {
+        code?: string;
+        message?: string;
+        details?: { requestId?: string } | null;
+      };
+      const code = callableError.code || "";
+      const requestId = callableError.details?.requestId;
+      const description = code.includes("aborted")
+        ? "A checkout attempt is already being prepared. Please try again in a moment."
+        : code.includes("failed-precondition") || code.includes("not-found")
+          ? callableError.message || "This product is not currently available for checkout."
+          : requestId
+            ? `We could not start checkout. Reference: ${requestId}`
+            : "We could not start checkout. Please try again shortly.";
+      toast({ title: "Checkout unavailable", description });
     } finally {
       setCheckoutLoading(false);
     }
