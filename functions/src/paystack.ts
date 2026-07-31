@@ -506,11 +506,6 @@ async function processCreditPurchaseWebhook(eventId: string, eventType: string, 
     await archiveWebhookEvent(eventId, eventType, String(data?.reference || purchaseId), data, false, 'payment_mismatch');
     return { handled: true, response: { success: false, rejected: true, reason: 'payment_mismatch' } };
   }
-  if (purchase.userId !== userId || purchase.assetId !== assetId) {
-    await archiveWebhookEvent(eventId, eventType, String(data?.reference || purchaseId), data, false, 'purchase_metadata_mismatch');
-    return { handled: true, response: { success: false, rejected: true, reason: 'purchase_metadata_mismatch' } };
-  }
-
   const credits = typeof purchase.credits === 'number' && Number.isFinite(purchase.credits) ? purchase.credits : Number(data.metadata.credits || 0);
   if (credits <= 0) {
     await purchaseRef.set({
@@ -812,6 +807,23 @@ async function processAssetPurchaseWebhook(
   const purchaseRef = db.collection('assetPurchases').doc(purchaseId);
   const purchaseSnap = await purchaseRef.get();
   const purchase = purchaseSnap.data() || {};
+  if (!purchaseSnap.exists) {
+    await archiveWebhookEvent(eventId, eventType, String(data?.reference || purchaseId), data, false, 'asset_purchase_not_found');
+    return { handled: true, response: { success: true, ignored: true, reason: 'asset_purchase_not_found' } };
+  }
+  const receivedAmount = typeof data?.amount === 'number' ? data.amount : null;
+  const expectedAmount = typeof purchase.pricePaid === 'number' ? Math.round(purchase.pricePaid * 100) : null;
+  const receivedCurrency = typeof data?.currency === 'string' ? data.currency : null;
+  const expectedCurrency = typeof purchase.currency === 'string' ? purchase.currency : null;
+  if ((expectedAmount !== null && receivedAmount !== expectedAmount) || (expectedCurrency && receivedCurrency && expectedCurrency !== receivedCurrency)) {
+    await purchaseRef.set({ status: 'failed', failureReason: 'payment_mismatch', updatedAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true });
+    await archiveWebhookEvent(eventId, eventType, String(data?.reference || purchaseId), data, false, 'payment_mismatch');
+    return { handled: true, response: { success: false, rejected: true, reason: 'payment_mismatch' } };
+  }
+  if (purchase.userId !== userId || purchase.assetId !== assetId) {
+    await archiveWebhookEvent(eventId, eventType, String(data?.reference || purchaseId), data, false, 'purchase_metadata_mismatch');
+    return { handled: true, response: { success: false, rejected: true, reason: 'purchase_metadata_mismatch' } };
+  }
   const grossAmount = typeof purchase.pricePaid === 'number'
     ? purchase.pricePaid
     : typeof data?.amount === 'number'
@@ -1397,6 +1409,7 @@ export const createPaystackAssetPurchase = onCall(
       ? resellerLink.userId
       : null;
 
+    let initializedAuthorizationUrl: string | null = null;
     try {
       const response = await axios.post(
         `${PAYSTACK_API_BASE_URL}/transaction/initialize`,
@@ -1424,6 +1437,7 @@ export const createPaystackAssetPurchase = onCall(
       const transaction = response.data.data;
       const authorizationUrl = transaction.authorization_url;
       const paystackReference = transaction.reference;
+      initializedAuthorizationUrl = typeof authorizationUrl === 'string' ? authorizationUrl : null;
 
       if (!authorizationUrl || !paystackReference) {
         throw new Error('Paystack did not return a checkout URL');
@@ -1477,6 +1491,24 @@ export const createPaystackAssetPurchase = onCall(
       return { purchaseId, authorizationUrl, status: 'created' };
     } catch (error) {
       console.error('Failed to create Paystack asset purchase:', error);
+      const idempotencyRef = db.collection('idempotency_keys').doc(`${userId}_${idempotencyKey}`);
+      if (initializedAuthorizationUrl) {
+        await idempotencyRef.set({
+          userId,
+          key: idempotencyKey,
+          provider: 'paystack',
+          purchaseId,
+          assetId,
+          authorizationUrl: initializedAuthorizationUrl,
+          status: 'approval_pending',
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+        }, { merge: true });
+      } else {
+        await idempotencyRef.delete().catch((releaseError) => {
+          console.warn('Failed to release Paystack checkout reservation:', releaseError);
+        });
+      }
       throw new HttpsError('internal', 'Failed to create asset purchase');
     }
   }

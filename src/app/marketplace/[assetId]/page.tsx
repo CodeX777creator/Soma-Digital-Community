@@ -115,7 +115,7 @@ export default function MarketplaceAssetDetailPage() {
 
     setCheckoutLoading(true);
     try {
-      const functions = getFunctions(app);
+      const functions = getFunctions(app, "us-central1");
       const createPurchase = httpsCallable(functions, "createPaystackAssetPurchase");
       const keyName = `sdc:marketplace-checkout:${user.uid}:${asset.id}`;
       const existingKey = window.sessionStorage.getItem(keyName);
@@ -135,6 +135,8 @@ export default function MarketplaceAssetDetailPage() {
       }
       toast({ title: data.status === "already_owned" ? "Already owned" : "Purchase ready", description: data.message || asset.title });
     } catch (error) {
+      const keyName = `sdc:marketplace-checkout:${user.uid}:${asset.id}`;
+      window.sessionStorage.removeItem(keyName);
       toast({ title: "Checkout unavailable", description: "We could not start checkout. Please try again shortly." });
     } finally {
       setCheckoutLoading(false);
@@ -197,7 +199,17 @@ export default function MarketplaceAssetDetailPage() {
                 {asset.externalPlatform && <Badge className="bg-primary/20 text-primary">{asset.externalPlatform}</Badge>}
               </div>
               <h1 className="font-headline text-4xl font-bold tracking-tight md:text-5xl">{asset.title}</h1>
-              <p className="mt-4 text-lg text-muted-foreground">{asset.description}</p>
+              <div className="mt-4 space-y-4 text-lg leading-8 text-muted-foreground">
+                {asset.description
+                  .split(/\r?\n\s*\r?\n/)
+                  .map((paragraph) => paragraph.trim())
+                  .filter(Boolean)
+                  .map((paragraph, index) => (
+                    <p key={`${index}-${paragraph.slice(0, 24)}`} className="whitespace-pre-line">
+                      {paragraph}
+                    </p>
+                  ))}
+              </div>
               {referrerName && (
                 <p className="mt-4 rounded-md border border-cyan-400/20 bg-cyan-400/10 px-4 py-3 text-sm text-cyan-100">
                   Referred by {referrerName}. Commission attribution will be handled by SDC after payment.
@@ -277,7 +289,7 @@ export default function MarketplaceAssetDetailPage() {
                 </label>
               )}
 
-              <Button onClick={startCheckout} disabled={checkoutLoading || (isMrr && !licenseAccepted)} className="mt-5 h-12 w-full text-base font-bold">
+              <Button type="button" onClick={() => void startCheckout()} disabled={checkoutLoading || (isMrr && !licenseAccepted)} className="mt-5 h-12 w-full text-base font-bold">
                 {checkoutLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShoppingBag className="h-4 w-4" />}
                 Buy Now
               </Button>
