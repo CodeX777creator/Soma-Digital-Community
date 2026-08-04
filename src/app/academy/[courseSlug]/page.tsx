@@ -9,7 +9,7 @@ import { ArrowRight, BookOpen, CalendarDays, CheckCircle2, Clock3, Copy, CreditC
 import { AppLayout } from "@/components/layout/AppLayout";
 import { PromoRedeemCard } from "@/components/promos/PromoRedeemCard";
 import { auth } from "@/lib/firebase";
-import type { AcademyCertificateDoc, AcademyCourseDoc, AcademyDripScheduleDoc, AcademyEnrollmentDoc, AcademyLessonDoc, AcademyLiveSessionDoc, AcademyProgressDoc, AcademyQuizAttemptDoc, AcademySessionAttendanceDoc, AcademyTopicDoc } from "@/academy";
+import type { AcademyCertificateDoc, AcademyCourseDoc, AcademyDripScheduleDoc, AcademyEnrollmentDoc, AcademyLessonDoc, AcademyLiveSessionDoc, AcademyProgressDoc, AcademyQuizAttemptDoc, AcademyQuizDoc, AcademySessionAttendanceDoc, AcademyTopicDoc } from "@/academy";
 
 type Bundle = {
   course: AcademyCourseDoc;
@@ -19,6 +19,7 @@ type Bundle = {
   progress?: AcademyProgressDoc[];
   dripSchedules?: AcademyDripScheduleDoc[];
   quizAttempts?: AcademyQuizAttemptDoc[];
+  quizzes?: AcademyQuizDoc[];
   certificates?: AcademyCertificateDoc[];
   liveSessions?: AcademyLiveSessionDoc[];
   sessionAttendance?: AcademySessionAttendanceDoc[];
@@ -290,6 +291,7 @@ export default function AcademyCoursePage() {
   const unlockedTopics = new Set((bundle.progress || []).filter((item) => item.unlocked && item.topicId && !item.lessonId).map((item) => item.topicId as string));
   const completedLessons = new Set((bundle.progress || []).filter((item) => item.lessonId && item.completed).map((item) => item.lessonId as string));
   const completedTopics = new Set((bundle.progress || []).filter((item) => item.topicId && !item.lessonId && item.completed).map((item) => item.topicId as string));
+  const publishedQuizTopicIds = new Set((bundle.quizzes || []).filter((quiz) => quiz.status === "published").map((quiz) => quiz.topicId));
   const attendanceBySession = new Map((bundle.sessionAttendance || []).map((attendance) => [attendance.liveSessionId, attendance]));
   const liveSessions = (bundle.liveSessions || []).filter((session) => session.status !== "cancelled");
   const dripByTopic = new Map((bundle.dripSchedules || []).filter((schedule) => schedule.topicId).map((schedule) => [schedule.topicId as string, schedule]));
@@ -490,9 +492,11 @@ export default function AcademyCoursePage() {
                 const previousTopic = index > 0 ? topics[index - 1] : null;
                 const previousTopicLessons = previousTopic ? (lessonsByTopic.get(previousTopic.topicId) || []).slice().sort((a, b) => a.sortOrder - b.sortOrder) : [];
                 const previousTopicLessonsComplete = !previousTopic || previousTopicLessons.every((lesson) => completedLessons.has(lesson.lessonId));
-                const previousTopicComplete = !previousTopic || completedTopics.has(previousTopic.topicId);
+                const previousTopicNeedsQuiz = Boolean(previousTopic && previousTopic.quizRequired && publishedQuizTopicIds.has(previousTopic.topicId));
+                const previousTopicComplete = !previousTopic || !previousTopicNeedsQuiz || completedTopics.has(previousTopic.topicId);
                 const topicUnlocked = !enrollment || index === 0 || (previousTopicLessonsComplete && previousTopicComplete);
                 const quizPassed = completedTopics.has(topic.topicId);
+                const topicHasQuiz = publishedQuizTopicIds.has(topic.topicId);
                 const drip = dripByTopic.get(topic.topicId);
                 const topicLessons = (lessonsByTopic.get(topic.topicId) || []).slice().sort((a, b) => a.sortOrder - b.sortOrder);
                 const lockCopy = topicUnlocked
@@ -536,7 +540,7 @@ export default function AcademyCoursePage() {
                         </Link>
                       );
                     })}
-                    {enrollment ? (
+                    {enrollment && topicHasQuiz ? (
                       <Link href={topicUnlocked ? `/academy/${course.slug}/quiz/${topic.topicId}` : "#"} className="flex items-center justify-between gap-3 rounded-[14px] border border-cyan-400/20 bg-cyan-400/10 px-3 py-3 text-sm text-cyan-100 transition hover:bg-cyan-400/15">
                         <span>{quizPassed ? "Quiz passed" : "Quiz Yourself"}</span>
                         <ArrowRight className="h-4 w-4" />

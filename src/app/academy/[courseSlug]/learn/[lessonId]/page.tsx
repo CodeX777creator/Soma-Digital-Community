@@ -8,13 +8,14 @@ import { ArrowLeft, BookOpen, Bot, CheckCircle2, Image as ImageIcon, Loader2, Me
 import { AppLayout } from "@/components/layout/AppLayout";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import { auth, storage } from "@/lib/firebase";
-import type { AcademyActivityDoc, AcademyCourseDoc, AcademyDiscussionReplyDoc, AcademyEnrollmentDoc, AcademyLessonDiscussionDoc, AcademyLessonDoc, AcademyProgressDoc, AcademyTopicDoc, AcademyTutorMessageDoc } from "@/academy";
+import type { AcademyActivityDoc, AcademyCourseDoc, AcademyDiscussionReplyDoc, AcademyEnrollmentDoc, AcademyLessonDiscussionDoc, AcademyLessonDoc, AcademyProgressDoc, AcademyQuizDoc, AcademyTopicDoc, AcademyTutorMessageDoc } from "@/academy";
 
 type Bundle = {
   course: AcademyCourseDoc;
   topics: AcademyTopicDoc[];
   lessons: AcademyLessonDoc[];
   activities: AcademyActivityDoc[];
+  quizzes: AcademyQuizDoc[];
   enrollment: AcademyEnrollmentDoc | null;
   progress: AcademyProgressDoc[];
 };
@@ -92,13 +93,15 @@ export default function AcademyLessonPage() {
   const completed = Boolean(bundle?.progress.some((item) => item.lessonId === lessonId && item.completed));
   const topicIndex = bundle?.topics.findIndex((item) => item.topicId === lesson?.topicId) ?? -1;
   const completedTopics = new Set((bundle?.progress || []).filter((item) => item.topicId && !item.lessonId && item.completed).map((item) => item.topicId as string));
+  const publishedQuizTopicIds = new Set((bundle?.quizzes || []).filter((quiz) => quiz.status === "published").map((quiz) => quiz.topicId));
   const currentIndex = topicLessons.findIndex((item) => item.lessonId === lessonId);
   const previousLesson = currentIndex > 0 ? topicLessons[currentIndex - 1] : null;
   const previousLessonComplete = !previousLesson || Boolean(bundle?.progress.some((item) => item.lessonId === previousLesson.lessonId && item.completed));
   const previousTopic = topicIndex > 0 ? bundle?.topics[topicIndex - 1] || null : null;
   const previousTopicLessons = previousTopic ? (bundle?.lessons.filter((item) => item.topicId === previousTopic.topicId && item.status === "published").sort((a, b) => a.sortOrder - b.sortOrder) || []) : [];
   const previousTopicLessonsComplete = !previousTopic || previousTopicLessons.every((item) => bundle?.progress.some((progress) => progress.lessonId === item.lessonId && progress.completed));
-  const previousTopicComplete = !previousTopic || completedTopics.has(previousTopic.topicId);
+  const previousTopicNeedsQuiz = Boolean(previousTopic && previousTopic.quizRequired && publishedQuizTopicIds.has(previousTopic.topicId));
+  const previousTopicComplete = !previousTopic || !previousTopicNeedsQuiz || completedTopics.has(previousTopic.topicId);
   const topicReady = topicIndex <= 0 || (previousTopicLessonsComplete && previousTopicComplete);
   const nextLesson = currentIndex >= 0 ? topicLessons[currentIndex + 1] : null;
 
@@ -330,9 +333,17 @@ export default function AcademyLessonPage() {
                   <div key={activity.activityId} className="mt-4 rounded-[18px] border border-white/[0.08] bg-[#090B13]/55 p-4">
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <h3 className="font-medium text-white">{activity.title}</h3>
-                      <span className="rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1 text-xs text-white/45">{activity.manualReviewRequired ? "Manual review" : "Completion based"}</span>
+                      <div className="flex flex-wrap items-center justify-end gap-2">
+                        <span className="rounded-full border border-cyan-400/20 bg-cyan-400/10 px-2.5 py-1 text-xs text-cyan-100">{activityTypeLabel(activity.activityType)}</span>
+                        <span className="rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1 text-xs text-white/45">{activity.manualReviewRequired ? "Manual review" : "Completion based"}</span>
+                      </div>
                     </div>
-                    {activity.activityType === "q_and_a" ? (
+                    {activity.activityType === "reflection" ? (
+                      <>
+                        <ReflectionPrompt prompt={activity.prompt} />
+                        <ReflectionInput value={activityResponses[activity.activityId] || ""} onChange={(value) => updateActivityResponse(activity.activityId, value)} />
+                      </>
+                    ) : activity.activityType === "q_and_a" ? (
                       <QuestionAndAnswerFlow
                         activity={activity}
                         value={activityResponses[activity.activityId]}
@@ -369,7 +380,13 @@ export default function AcademyLessonPage() {
               </div>
               <div className="flex flex-wrap gap-2">
                 {!completed ? <button onClick={completeLesson} disabled={saving} className="inline-flex h-11 items-center gap-2 rounded-[16px] bg-gradient-to-r from-[#4F9DFF] via-[#5B5FFF] to-[#8B5CF6] px-5 text-sm font-semibold text-white disabled:opacity-60">{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}Complete</button> : null}
-                {nextLesson ? <Link href={`/academy/${courseSlug}/learn/${nextLesson.lessonId}`} className="inline-flex h-11 items-center rounded-[16px] border border-white/[0.08] bg-white/[0.04] px-5 text-sm text-white/75 hover:bg-white/[0.08]">Next lesson</Link> : <Link href={`/academy/${courseSlug}/quiz/${lesson.topicId}`} className="inline-flex h-11 items-center rounded-[16px] border border-white/[0.08] bg-white/[0.04] px-5 text-sm text-white/75 hover:bg-white/[0.08]">Take quiz</Link>}
+                {nextLesson ? (
+                  <Link href={`/academy/${courseSlug}/learn/${nextLesson.lessonId}`} className="inline-flex h-11 items-center rounded-[16px] border border-white/[0.08] bg-white/[0.04] px-5 text-sm text-white/75 hover:bg-white/[0.08]">Next lesson</Link>
+                ) : publishedQuizTopicIds.has(lesson.topicId) ? (
+                  <Link href={`/academy/${courseSlug}/quiz/${lesson.topicId}`} className="inline-flex h-11 items-center rounded-[16px] border border-white/[0.08] bg-white/[0.04] px-5 text-sm text-white/75 hover:bg-white/[0.08]">Take quiz</Link>
+                ) : (
+                  <Link href={`/academy/${courseSlug}`} className="inline-flex h-11 items-center rounded-[16px] border border-white/[0.08] bg-white/[0.04] px-5 text-sm text-white/75 hover:bg-white/[0.08]">Back to curriculum</Link>
+                )}
               </div>
             </section>
           </main>
@@ -560,6 +577,30 @@ function ActivityPrompt({ prompt }: { prompt: string }) {
           </div>
         );
       })}
+    </div>
+  );
+}
+
+function ReflectionPrompt({ prompt }: { prompt: string }) {
+  return (
+    <div className="mt-3 rounded-[16px] border border-violet-400/20 bg-violet-400/10 p-4 text-sm leading-6 text-[#D8DEEA]">
+      <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-violet-200">Reflection prompt</p>
+      <p className="whitespace-pre-wrap">{prompt}</p>
+    </div>
+  );
+}
+
+function ReflectionInput({ value, onChange }: { value: ActivityResponse; onChange: (value: ActivityResponse) => void }) {
+  return (
+    <div className="mt-4">
+      <label className="mb-2 block text-xs font-medium uppercase tracking-[0.16em] text-white/45">Your reflection</label>
+      <textarea
+        value={String(value || "")}
+        onChange={(event) => onChange(event.target.value)}
+        rows={6}
+        placeholder="Write your reflection..."
+        className="w-full rounded-[16px] border border-white/[0.08] bg-black/20 p-4 text-sm leading-6 text-white outline-none focus:border-[#8B5CF6]/60"
+      />
     </div>
   );
 }
@@ -845,6 +886,21 @@ function canSubmitActivity(activity: AcademyActivityDoc, response: ActivityRespo
     }
   }
   return Boolean(String(response || "").trim());
+}
+
+function activityTypeLabel(activityType: AcademyActivityDoc["activityType"]) {
+  const labels: Record<AcademyActivityDoc["activityType"], string> = {
+    reflection: "Reflection",
+    short_text: "Short answer",
+    long_text: "Long answer",
+    q_and_a: "Q&A",
+    multiple_choice: "Multiple choice",
+    checkboxes: "Checkboxes",
+    file_upload: "File upload",
+    link_submission: "Link submission",
+    project_submission: "Project submission",
+  };
+  return labels[activityType] || "Activity";
 }
 
 function ToolCard({ icon: Icon, title, description, action }: { icon: typeof Bot; title: string; description: string; action: string }) {
