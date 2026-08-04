@@ -32,8 +32,8 @@ const plans = [
     desc: "Perfect for growing your business.",
     icon: <Zap className="w-6 h-6 text-primary" />,
     features: [
-      "Talk to our AI Coach",
-      "Resource Library",
+      "AI Mentor with included credits",
+      "Pro Resource Library",
       "Private Member Feed",
       "Weekly Live Calls",
       "Business Templates"
@@ -53,10 +53,10 @@ const plans = [
     icon: <Trophy className="w-6 h-6 text-accent" />,
     features: [
       "Everything in Pro",
-      "Custom AI Help",
-      "Special Events",
-      "Unlimited Resources",
-      "Talk to the Founders"
+      "Premium AI assistance",
+      "Elite events",
+      "Pro and Elite resource access",
+      "Talk to the founders"
     ],
     color: "accent",
     cta: "Join Elite",

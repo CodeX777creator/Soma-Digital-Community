@@ -9,6 +9,7 @@ import {
 } from '@/social/service';
 import { sanitizeString } from '@/lib/security';
 import { SOCIAL_PLATFORMS, type SocialPlatform, SOCIAL_CAMPAIGN_STATUSES, type SocialCampaignStatus } from '@/social/types';
+import { getTierPrivileges } from '@/lib/tier-privileges';
 
 function isAllowedPlatform(value: unknown): value is SocialPlatform {
   return typeof value === 'string' && (SOCIAL_PLATFORMS as readonly string[]).includes(value);
@@ -30,6 +31,10 @@ const handler = createAPIHandler(
     const entitlements = await requireSubscription(req as any, 'explorer');
 
     if (req.method === 'GET') {
+      const plan = getTierPrivileges(entitlements.subscription.plan);
+      if (!plan.scheduler.campaigns) {
+        return apiError('Campaign planning is available on Pro and Elite plans.', { status: 403, code: 'SCHEDULER_CAMPAIGNS_RESTRICTED' });
+      }
       const limit = parseLimit(req);
       const campaigns = await listSocialCampaigns(entitlements.uid);
       const summary = await getContentCalendarCampaignSummary(entitlements.uid);
@@ -44,6 +49,11 @@ const handler = createAPIHandler(
           private: true,
         },
       });
+    }
+
+    const plan = getTierPrivileges(entitlements.subscription.plan);
+    if (!plan.scheduler.campaigns) {
+      return apiError('Campaign planning is available on Pro and Elite plans.', { status: 403, code: 'SCHEDULER_CAMPAIGNS_RESTRICTED' });
     }
 
     const body = await req.json();

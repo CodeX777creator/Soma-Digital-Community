@@ -184,6 +184,9 @@ function pricingMetadata(pricingQuote?: UsagePricingQuote): Record<string, unkno
     durationSeconds: pricingQuote.durationSeconds,
     characters: pricingQuote.characters,
     modelPricingSnapshot: pricingQuote.modelPricingSnapshot,
+    modelClass: typeof pricingQuote.modelPricingSnapshot?.creditClass === "string"
+      ? pricingQuote.modelPricingSnapshot.creditClass
+      : "standard",
     pricingExplanation: pricingQuote.explanation,
     retailValueUsd: pricingQuote.retailValueUsd,
   };
@@ -269,6 +272,7 @@ export async function executeMonetizedTextRequest(
         source: lease.billingSource,
         creditsReserved: lease.creditsReserved,
         creditsCharged,
+        pricing: pricingMetadata(actualPricingQuote),
         requestId: lease.requestId,
       },
     };
@@ -391,6 +395,7 @@ export async function* executeMonetizedTextStream(
       metadata: {
         model: modelId,
         finishReason: finishReason || "stop",
+        pricing: pricingMetadata(pricingQuote),
       },
     };
   } catch (error) {

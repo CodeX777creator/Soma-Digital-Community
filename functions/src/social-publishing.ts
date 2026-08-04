@@ -17,11 +17,15 @@ const socialPublishEndpointFacebook = defineString('SOCIAL_PUBLISH_ENDPOINT_FACE
 const socialPublishEndpointLinkedIn = defineString('SOCIAL_PUBLISH_ENDPOINT_LINKEDIN', { default: '' });
 const socialPublishEndpointX = defineString('SOCIAL_PUBLISH_ENDPOINT_X', { default: '' });
 const socialPublishEndpointYouTube = defineString('SOCIAL_PUBLISH_ENDPOINT_YOUTUBE', { default: '' });
-const socialNativePublishingEnabled = defineBoolean('SOCIAL_NATIVE_PUBLISHING_ENABLED', { default: false });
+const socialNativePublishingEnabled = defineBoolean('SOCIAL_NATIVE_PUBLISHING_ENABLED', { default: true });
 const socialMetaGraphBaseUrl = defineString('SOCIAL_META_GRAPH_BASE_URL', { default: 'https://graph.facebook.com/v20.0' });
+const socialInstagramGraphBaseUrl = defineString('SOCIAL_INSTAGRAM_GRAPH_BASE_URL', { default: 'https://graph.instagram.com/v23.0' });
 const socialTikTokApiBaseUrl = defineString('SOCIAL_TIKTOK_API_BASE_URL', { default: 'https://open.tiktokapis.com' });
+const socialTikTokVerifiedUrlPrefixes = defineString('SOCIAL_TIKTOK_VERIFIED_URL_PREFIXES', { default: '' });
 const socialLinkedInApiBaseUrl = defineString('SOCIAL_LINKEDIN_API_BASE_URL', { default: 'https://api.linkedin.com/v2' });
-const socialXApiBaseUrl = defineString('SOCIAL_X_API_BASE_URL', { default: 'https://api.twitter.com/2' });
+const socialLinkedInRestBaseUrl = defineString('SOCIAL_LINKEDIN_REST_BASE_URL', { default: 'https://api.linkedin.com/rest' });
+const socialLinkedInVersion = defineString('SOCIAL_LINKEDIN_VERSION', { default: '202606' });
+const socialXApiBaseUrl = defineString('SOCIAL_X_API_BASE_URL', { default: 'https://api.x.com/2' });
 const socialYouTubeApiBaseUrl = defineString('SOCIAL_YOUTUBE_API_BASE_URL', { default: 'https://www.googleapis.com/youtube/v3' });
 const socialYouTubeUploadBaseUrl = defineString('SOCIAL_YOUTUBE_UPLOAD_BASE_URL', { default: 'https://www.googleapis.com/upload/youtube/v3' });
 const socialPublishBatchSize = defineInt('SOCIAL_PUBLISH_BATCH_SIZE', { default: 20 });
@@ -381,6 +385,7 @@ function hasCompatibleMedia(payload: NativePublishPayload): boolean {
   const items = payload.content.mediaItems || [];
   switch (payload.platform) {
     case 'tiktok':
+      return items.some((item) => ['image', 'video'].includes(item.type) && Boolean(item.downloadUrl || item.storagePath));
     case 'youtube':
       return items.some((item) => item.type === 'video' && Boolean(item.downloadUrl || item.storagePath));
     case 'instagram':
@@ -546,13 +551,13 @@ async function postJsonToProvider(input: {
     };
   }
 
-  const externalPostId = typeof parsed.id === 'string'
+  const externalPostId = response.headers.get('x-restli-id') || (typeof parsed.id === 'string'
     ? parsed.id
     : typeof parsed.post_id === 'string'
       ? parsed.post_id
       : typeof parsed.video_id === 'string'
         ? parsed.video_id
-        : undefined;
+        : undefined);
 
   return {
     success: true,
@@ -618,6 +623,25 @@ async function resolveMetaPageAccessToken(context: NativePublisherContext): Prom
   return typeof page?.access_token === 'string' && page.access_token ? page.access_token : userToken;
 }
 
+function resolveInstagramLoginType(account: SocialAccountDoc): string {
+  const identity = (account.metadata?.providerIdentity || {}) as Record<string, unknown>;
+  return typeof identity.loginType === 'string' ? identity.loginType : 'facebook_login';
+}
+
+async function resolveInstagramApi(context: NativePublisherContext): Promise<{ baseUrl: string; accessToken: string }> {
+  if (resolveInstagramLoginType(context.account) === 'instagram_business_login') {
+    return {
+      baseUrl: socialInstagramGraphBaseUrl.value().replace(/\/$/, ''),
+      accessToken: context.credentials?.accessToken || '',
+    };
+  }
+
+  return {
+    baseUrl: socialMetaGraphBaseUrl.value().replace(/\/$/, ''),
+    accessToken: await resolveMetaPageAccessToken(context),
+  };
+}
+
 function buildFinalSocialText(caption: string, hashtags: string[], cta?: string): string {
   const parts = [caption.trim()];
   if (cta?.trim()) {
@@ -662,13 +686,39 @@ class TikTokNativePublisher implements NativePublisher {
   canPublish(context: NativePublisherContext) {
     const base = baseNativeValidation(context);
     if (!base.ok) return base;
-    const hasVideo = context.payload.content.mediaItems.some((item) => item.type === 'video' && Boolean(item.downloadUrl));
-    if (!hasVideo) {
+    const mediaItems = context.payload.content.mediaItems.filter((item) => ['image', 'video'].includes(item.type) && item.downloadUrl);
+    const hasVideo = mediaItems.some((item) => item.type === 'video');
+    const hasPhoto = mediaItems.some((item) => item.type === 'image');
+    if (!hasVideo && !hasPhoto) {
       return {
         ok: false,
-        reason: 'TikTok native publishing requires a video asset with a public HTTPS URL.',
+        reason: 'TikTok native publishing requires a public HTTPS video or photo URL.',
         retryable: false,
-        failureCode: 'TIKTOK_VIDEO_URL_REQUIRED',
+        failureCode: 'TIKTOK_MEDIA_URL_REQUIRED',
+      };
+    }
+    if (hasPhoto && mediaItems.some((item) => item.type !== 'image')) {
+      return {
+        ok: false,
+        reason: 'TikTok photo posts cannot mix photo and video assets.',
+        retryable: false,
+        failureCode: 'TIKTOK_MEDIA_TYPE_MIXED',
+      };
+    }
+    if (hasPhoto && mediaItems.length > 35) {
+      return {
+        ok: false,
+        reason: 'TikTok photo posts support up to 35 images.',
+        retryable: false,
+        failureCode: 'TIKTOK_PHOTO_LIMIT_EXCEEDED',
+      };
+    }
+    if (!this.hasVerifiedPhotoUrls(mediaItems.map((item) => item.downloadUrl || ''))) {
+      return {
+        ok: false,
+        reason: 'TikTok PULL_FROM_URL publishing requires a verified URL prefix configured for the media host.',
+        retryable: false,
+        failureCode: 'TIKTOK_URL_OWNERSHIP_UNVERIFIED',
       };
     }
 
@@ -695,18 +745,34 @@ class TikTokNativePublisher implements NativePublisher {
 
   async publish(context: NativePublisherContext): Promise<PublishOutcome> {
     const mode = this.resolveMode(context);
-    const video = context.payload.content.mediaItems.find((item) => item.type === 'video' && item.downloadUrl);
-    if (!video?.downloadUrl) {
+    const mediaItems = context.payload.content.mediaItems
+      .filter((item) => ['image', 'video'].includes(item.type) && item.downloadUrl)
+      .sort((left, right) => left.order - right.order);
+    const video = mediaItems.find((item) => item.type === 'video');
+    if (!video?.downloadUrl && mediaItems.length === 0) {
       return {
         success: false,
-        errorMessage: 'TikTok native publishing requires a video URL.',
+        errorMessage: 'TikTok native publishing requires a video or photo URL.',
         retryable: false,
-        failureCode: 'TIKTOK_VIDEO_URL_REQUIRED',
+        failureCode: 'TIKTOK_MEDIA_URL_REQUIRED',
         deliveryMode: 'native',
       };
     }
 
     const baseUrl = socialTikTokApiBaseUrl.value().replace(/\/$/, '');
+    if (!video) {
+      const response = await this.postTikTok(`${baseUrl}/v2/post/publish/content/init/`, context.credentials?.accessToken || '', {
+        media_type: 'PHOTO',
+        post_mode: mode === 'direct' ? 'DIRECT_POST' : 'MEDIA_UPLOAD',
+        post_info: await this.buildPhotoPostInfo(context),
+        source_info: {
+          source: 'PULL_FROM_URL',
+          photo_images: mediaItems.map((item) => item.downloadUrl),
+          photo_cover_index: 0,
+        },
+      });
+      return response.success ? { ...response, confirmationRequired: mode === 'direct', providerPublishStatus: 'submitted' } : response;
+    }
     const postInfo = await this.buildPostInfo(context);
     const endpoint = mode === 'draft'
       ? `${baseUrl}/v2/post/publish/inbox/video/init/`
@@ -833,7 +899,7 @@ class TikTokNativePublisher implements NativePublisher {
         : privacyOptions[0] || 'SELF_ONLY';
 
     const postInfo: Record<string, unknown> = {
-      title: context.payload.content.finalText.slice(0, 2200),
+      title: context.payload.content.finalText.slice(0, 4000),
       privacy_level: privacyLevel,
       disable_duet: sanitizeBoolean(settings.disable_duet, false),
       disable_comment: sanitizeBoolean(settings.disable_comment, false),
@@ -856,6 +922,29 @@ class TikTokNativePublisher implements NativePublisher {
     }
 
     return postInfo;
+  }
+
+  private async buildPhotoPostInfo(context: NativePublisherContext): Promise<Record<string, unknown>> {
+    const postInfo = await this.buildPostInfo(context);
+    const settings = mapPlatformSettingsToProvider('tiktok', context.payload.platformSettings || {});
+    return {
+      title: context.payload.content.finalText.slice(0, 90),
+      description: context.payload.content.finalText.slice(0, 4000),
+      privacy_level: postInfo.privacy_level,
+      disable_comment: postInfo.disable_comment,
+      auto_add_music: sanitizeBoolean(settings.auto_add_music, false),
+      ...(typeof settings.is_aigc === 'boolean' ? { is_aigc: settings.is_aigc } : {}),
+      ...(typeof settings.brand_content_toggle === 'boolean' ? { brand_content_toggle: settings.brand_content_toggle } : {}),
+      ...(typeof settings.brand_organic_toggle === 'boolean' ? { brand_organic_toggle: settings.brand_organic_toggle } : {}),
+    };
+  }
+
+  private hasVerifiedPhotoUrls(urls: string[]): boolean {
+    const prefixes = socialTikTokVerifiedUrlPrefixes.value()
+      .split(',')
+      .map((prefix) => prefix.trim())
+      .filter(Boolean);
+    return prefixes.length > 0 && urls.every((url) => prefixes.some((prefix) => url.startsWith(prefix)));
   }
 
   private async fetchCreatorInfo(accessToken: string): Promise<{ privacyLevelOptions: string[] }> {
@@ -1032,9 +1121,10 @@ class InstagramNativePublisher implements NativePublisher {
   }
 
   async publish(context: NativePublisherContext): Promise<PublishOutcome> {
-    const accessToken = await resolveMetaPageAccessToken(context);
+    const instagramApi = await resolveInstagramApi(context);
+    const accessToken = instagramApi.accessToken;
     const igUserId = context.account.providerAccountId || context.credentials?.externalAccountId || '';
-    const baseUrl = `${socialMetaGraphBaseUrl.value().replace(/\/$/, '')}/${igUserId}`;
+    const baseUrl = `${instagramApi.baseUrl}/${igUserId}`;
     const mediaItems = context.payload.content.mediaItems
       .filter((item) => ['image', 'video'].includes(item.type) && item.downloadUrl)
       .sort((left, right) => left.order - right.order);
@@ -1049,6 +1139,10 @@ class InstagramNativePublisher implements NativePublisher {
           body: this.buildContainerBody(item, context, true),
         });
         if (!child.success || !child.externalPostId) return child;
+        if (item.type === 'video') {
+          const ready = await this.waitForContainer(instagramApi.baseUrl, accessToken, child.externalPostId);
+          if (!ready.success) return ready;
+        }
         childIds.push(child.externalPostId);
       }
 
@@ -1074,6 +1168,10 @@ class InstagramNativePublisher implements NativePublisher {
       body: this.buildContainerBody(item, context, false),
     });
     if (!container.success || !container.externalPostId) return container;
+    if (item.type === 'video') {
+      const ready = await this.waitForContainer(instagramApi.baseUrl, accessToken, container.externalPostId);
+      if (!ready.success) return ready;
+    }
     return this.publishContainer(baseUrl, accessToken, container.externalPostId);
   }
 
@@ -1090,9 +1188,18 @@ class InstagramNativePublisher implements NativePublisher {
     }
     if (item.type === 'video') {
       const providerSettings = mapPlatformSettingsToProvider('instagram', context.payload.platformSettings || {});
-      body.media_type = providerSettings.media_type === 'VIDEO' ? 'VIDEO' : 'REELS';
+      const requestedType = providerSettings.media_type;
+      body.media_type = isCarouselItem
+        ? 'VIDEO'
+        : requestedType === 'STORIES'
+          ? 'STORIES'
+          : requestedType === 'VIDEO'
+            ? 'VIDEO'
+            : 'REELS';
       body.video_url = item.downloadUrl;
-      body.share_to_feed = sanitizeBoolean(providerSettings.share_to_feed, true);
+      if (body.media_type === 'REELS') {
+        body.share_to_feed = sanitizeBoolean(providerSettings.share_to_feed, true);
+      }
       return body;
     }
     body.image_url = item.downloadUrl;
@@ -1155,6 +1262,46 @@ class InstagramNativePublisher implements NativePublisher {
       }).slice(0, 2000),
     };
   }
+
+  private async waitForContainer(baseUrl: string, accessToken: string, creationId: string): Promise<PublishOutcome> {
+    for (let attempt = 0; attempt < 10; attempt += 1) {
+      const status = await getJsonFromProvider({
+        url: `${baseUrl}/${creationId}`,
+        accessToken,
+        params: { fields: 'status_code,status' },
+      });
+      if (!status.ok) {
+        return {
+          success: false,
+          errorMessage: status.errorMessage || 'Instagram media processing status could not be read.',
+          failureCode: 'INSTAGRAM_CONTAINER_STATUS_FAILED',
+          providerResponse: status.providerResponse,
+          retryable: status.retryable ?? true,
+          deliveryMode: 'native',
+        };
+      }
+      const statusCode = typeof status.data.status_code === 'string' ? status.data.status_code : '';
+      if (statusCode === 'FINISHED') return { success: true, externalPostId: creationId, deliveryMode: 'native' };
+      if (['ERROR', 'EXPIRED'].includes(statusCode)) {
+        return {
+          success: false,
+          errorMessage: `Instagram media container is ${statusCode.toLowerCase()}.`,
+          failureCode: 'INSTAGRAM_CONTAINER_PROCESSING_FAILED',
+          providerResponse: status.providerResponse,
+          retryable: false,
+          deliveryMode: 'native',
+        };
+      }
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+    }
+    return {
+      success: false,
+      errorMessage: 'Instagram media is still processing after the provider wait window.',
+      failureCode: 'INSTAGRAM_CONTAINER_PROCESSING_TIMEOUT',
+      retryable: true,
+      deliveryMode: 'native',
+    };
+  }
 }
 
 class LinkedInNativePublisher implements NativePublisher {
@@ -1176,9 +1323,21 @@ class LinkedInNativePublisher implements NativePublisher {
   }
 
   async publish(context: NativePublisherContext): Promise<PublishOutcome> {
-    const author = context.account.providerAccountId?.startsWith('urn:')
-      ? context.account.providerAccountId
-      : `urn:li:person:${context.account.providerAccountId}`;
+    const providerSettings = mapPlatformSettingsToProvider('linkedin', context.payload.platformSettings || {});
+    const author = providerSettings.author_type === 'organization'
+      ? sanitizeStringSetting(providerSettings.organization, 200)
+      : context.account.providerAccountId?.startsWith('urn:')
+        ? context.account.providerAccountId
+        : `urn:li:person:${context.account.providerAccountId}`;
+    if (!author) {
+      return {
+        success: false,
+        errorMessage: 'LinkedIn organization publishing requires an organization URN.',
+        failureCode: 'LINKEDIN_ORGANIZATION_URN_REQUIRED',
+        retryable: false,
+        deliveryMode: 'native',
+      };
+    }
     const image = context.payload.content.mediaItems.find((item) => item.type === 'image' && item.downloadUrl);
     if (image?.downloadUrl) {
       const mediaUrn = await this.uploadImage(context, author, image.downloadUrl);
@@ -1197,7 +1356,10 @@ class LinkedInNativePublisher implements NativePublisher {
     const register = await postJsonToProvider({
       url: `${baseUrl}/assets?action=registerUpload`,
       accessToken: context.credentials?.accessToken || '',
-      headers: { 'X-Restli-Protocol-Version': '2.0.0' },
+      headers: {
+        'X-Restli-Protocol-Version': '2.0.0',
+        'Linkedin-Version': socialLinkedInVersion.value(),
+      },
       body: {
         registerUploadRequest: {
           recipes: ['urn:li:digitalmediaRecipe:feedshare-image'],
@@ -1254,26 +1416,26 @@ class LinkedInNativePublisher implements NativePublisher {
     shareMediaCategory: 'NONE' | 'IMAGE',
     media?: Array<Record<string, unknown>>
   ): Promise<PublishOutcome> {
-    const baseUrl = socialLinkedInApiBaseUrl.value().replace(/\/$/, '');
+    const baseUrl = socialLinkedInRestBaseUrl.value().replace(/\/$/, '');
     return postJsonToProvider({
-      url: `${baseUrl}/ugcPosts`,
+      url: `${baseUrl}/posts`,
       accessToken: context.credentials?.accessToken || '',
-      headers: { 'X-Restli-Protocol-Version': '2.0.0' },
+      headers: {
+        'X-Restli-Protocol-Version': '2.0.0',
+        'Linkedin-Version': socialLinkedInVersion.value(),
+      },
       body: {
         author,
+        commentary: context.payload.content.finalText,
+        visibility: 'PUBLIC',
+        distribution: {
+          feedDistribution: 'MAIN_FEED',
+          targetEntities: [],
+          thirdPartyDistributionChannels: [],
+        },
         lifecycleState: 'PUBLISHED',
-        specificContent: {
-          'com.linkedin.ugc.ShareContent': {
-            shareCommentary: {
-              text: context.payload.content.finalText,
-            },
-            shareMediaCategory,
-            ...(media ? { media } : {}),
-          },
-        },
-        visibility: {
-          'com.linkedin.ugc.MemberNetworkVisibility': 'PUBLIC',
-        },
+        isReshareDisabledByAuthor: false,
+        ...(media?.[0]?.media ? { content: { media: { id: media[0].media } } } : {}),
       },
     });
   }
@@ -2315,7 +2477,14 @@ async function attemptPublish(post: ScheduledPostDoc, account: SocialAccountDoc)
   }
 
   if (!externalPostId) {
-    externalPostId = `${post.platform}-${post.scheduledPostId}`;
+    return {
+      success: false,
+      errorMessage: 'Publish endpoint returned success without a provider post ID. The post was not marked as published.',
+      failureCode: 'PROVIDER_POST_ID_MISSING',
+      providerResponse,
+      retryable: true,
+      deliveryMode: 'external_endpoint',
+    };
   }
 
   return {

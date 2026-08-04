@@ -10,6 +10,7 @@ import {
 } from '@/social';
 import { sanitizeString } from '@/lib/security';
 import { SOCIAL_PLATFORMS, type SocialPlatform, type SocialCredentialPayload } from '@/social/types';
+import { getTierPrivileges } from '@/lib/tier-privileges';
 
 function isAllowedPlatform(value: unknown): value is SocialPlatform {
   return typeof value === 'string' && (SOCIAL_PLATFORMS as readonly string[]).includes(value);
@@ -59,6 +60,7 @@ const handler = createAPIHandler(
         providers: listSocialProviders(),
         summary: overview.summary,
         accounts: overview.accounts.slice(0, limit),
+        schedulerLimits: getTierPrivileges(entitlements.subscription.plan).scheduler,
       }, {
         cache: {
           maxAge: 30,
@@ -76,6 +78,15 @@ const handler = createAPIHandler(
 
     if (typeof body.accountName !== 'string' || !body.accountName.trim()) {
       return apiError('accountName is required', { status: 400, code: 'INVALID_INPUT' });
+    }
+
+    const accountLimit = getTierPrivileges(entitlements.subscription.plan).scheduler.connectedAccounts;
+    const existingAccounts = (await getSocialHubOverview(entitlements.uid)).accounts;
+    if (existingAccounts.length >= accountLimit) {
+      return apiError(`Your ${getTierPrivileges(entitlements.subscription.plan).label} plan allows ${accountLimit} connected account${accountLimit === 1 ? '' : 's'}.`, {
+        status: 403,
+        code: 'SOCIAL_ACCOUNT_LIMIT_REACHED',
+      });
     }
 
     const socialAccount = await createSocialAccount({

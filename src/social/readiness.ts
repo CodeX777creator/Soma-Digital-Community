@@ -25,12 +25,14 @@ type ReadinessInput = {
 
 const PROVIDER_REQUIREMENTS: Record<SocialPlatform, {
   publishScopes: string[];
+  publishScopeSets?: string[][];
   analyticsScopes: string[];
   requiresProviderAccountId: boolean;
   refreshRecommended: boolean;
 }> = {
   tiktok: {
     publishScopes: ['video.publish'],
+    publishScopeSets: [['video.publish'], ['video.upload']],
     analyticsScopes: ['user.info.stats', 'video.list'],
     requiresProviderAccountId: true,
     refreshRecommended: true,
@@ -49,9 +51,10 @@ const PROVIDER_REQUIREMENTS: Record<SocialPlatform, {
   },
   linkedin: {
     publishScopes: ['w_member_social'],
+    publishScopeSets: [['w_member_social'], ['w_organization_social']],
     analyticsScopes: [],
-    requiresProviderAccountId: false,
-    refreshRecommended: false,
+    requiresProviderAccountId: true,
+    refreshRecommended: true,
   },
   x: {
     publishScopes: ['tweet.write', 'offline.access'],
@@ -73,6 +76,12 @@ function normalizeScopes(scopes: string[]): Set<string> {
 
 function missingScopes(scopes: Set<string>, required: string[]): string[] {
   return required.filter((scope) => !scopes.has(scope));
+}
+
+function missingFromScopeSets(scopes: Set<string>, scopeSets: string[][] | undefined, fallback: string[]): string[] {
+  if (!scopeSets || scopeSets.length === 0) return missingScopes(scopes, fallback);
+  if (scopeSets.some((set) => set.every((scope) => scopes.has(scope)))) return [];
+  return missingScopes(scopes, scopeSets[0]);
 }
 
 function cleanText(value: unknown, maxLength = 160): string | undefined {
@@ -188,7 +197,7 @@ async function resolveLinkedInIdentity(accessToken: string): Promise<ProviderIde
 
 async function resolveXIdentity(accessToken: string): Promise<ProviderIdentity> {
   const payload = await fetchJson(
-    'https://api.twitter.com/2/users/me?user.fields=username,name,public_metrics,verified,profile_image_url',
+    'https://api.x.com/2/users/me?user.fields=username,name,public_metrics,verified,profile_image_url',
     accessToken
   );
   const user = (payload.data || {}) as Record<string, unknown>;
@@ -275,7 +284,7 @@ export async function syncSocialConnectionReadiness(input: ReadinessInput): Prom
   const providerAccountId = identity.providerAccountId || input.providerAccountId;
   const handle = identity.handle || input.handle;
   const accountName = identity.accountName || input.accountName;
-  const missingPublishScopes = missingScopes(scopes, requirements.publishScopes);
+  const missingPublishScopes = missingFromScopeSets(scopes, requirements.publishScopeSets, requirements.publishScopes);
   const missingAnalyticsScopes = missingScopes(scopes, requirements.analyticsScopes);
   const missing = Array.from(new Set([...missingPublishScopes, ...missingAnalyticsScopes]));
 

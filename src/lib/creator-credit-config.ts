@@ -1,4 +1,5 @@
 export type CreatorCreditTier = "explorer" | "pro" | "elite" | "enterprise";
+import { DEFAULT_TIER_PRIVILEGES } from "./tier-privileges";
 
 export type PlatformFeatureKey =
   | "chat"
@@ -75,10 +76,10 @@ export const CREATOR_CREDIT_RETAIL_VALUE_USD = 0.2;
 export const CREATOR_CREDIT_RETAIL_VALUE_CENTS = CREATOR_CREDIT_RETAIL_VALUE_USD * 100;
 
 export const DEFAULT_CREATOR_CREDIT_ALLOCATIONS: Record<CreatorCreditTier, number> = {
-  explorer: 0,
-  pro: 220,
-  elite: 700,
-  enterprise: 2000,
+  explorer: DEFAULT_TIER_PRIVILEGES.explorer.includedCreatorCredits,
+  pro: DEFAULT_TIER_PRIVILEGES.pro.includedCreatorCredits,
+  elite: DEFAULT_TIER_PRIVILEGES.elite.includedCreatorCredits,
+  enterprise: DEFAULT_TIER_PRIVILEGES.enterprise.includedCreatorCredits,
 };
 
 export const DEFAULT_CREATOR_CREDIT_BUNDLES: CreatorCreditBundle[] = [
@@ -90,11 +91,11 @@ export const DEFAULT_CREATOR_CREDIT_BUNDLES: CreatorCreditBundle[] = [
 ];
 
 export const DEFAULT_PLATFORM_FEATURE_PRICING: Record<PlatformFeatureKey, PlatformFeaturePricing> = {
-  chat: { unit: "token", baseCost: 0, inputCost: 0.005, outputCost: 0.015 },
+  chat: { unit: "token", baseCost: 0, inputCost: 0.25, outputCost: 1 },
   image_generation: { unit: "image", baseCost: 10 },
-  video_generation: { unit: "second", baseCost: 5 },
-  audio_generation: { unit: "character", baseCost: 0.1 },
-  document_analysis: { unit: "token", baseCost: 0, inputCost: 0.005, outputCost: 0.015 },
+  video_generation: { unit: "second", baseCost: 10 },
+  audio_generation: { unit: "second", baseCost: 2 },
+  document_analysis: { unit: "token", baseCost: 0, inputCost: 0.25, outputCost: 1 },
   translation: { unit: "character", baseCost: 0.05 },
   vision: { unit: "image", baseCost: 5, inputCost: 0.005, outputCost: 0.015 },
   speech_to_text: { unit: "second", baseCost: 0.2 },

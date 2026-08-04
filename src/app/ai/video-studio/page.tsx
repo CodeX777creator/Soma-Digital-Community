@@ -36,6 +36,7 @@ import { useAuth } from "@/providers/AuthProvider";
 import { parseApiError } from "@/lib/clientApi";
 import { showErrorToast } from "@/lib/error-toast";
 import { cn } from "@/lib/utils";
+import { ModelAccessNotice } from "@/components/ai/ModelAccessNotice";
 import { estimateVideoCreatorCredits, formatCreatorCreditEstimate } from "@/lib/ai-credit-estimates";
 import type {
   BrandTemplate,
@@ -591,6 +592,7 @@ export default function VideoStudioPage() {
                       <p className="text-sm leading-6 text-[#BFC6D4]">
                         {formatCreditExplanation(state.outputMode, state.durationSeconds)}
                       </p>
+                      <ModelAccessNotice />
               <div className="grid gap-2">
                 <button
                           type="button"

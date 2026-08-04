@@ -10,7 +10,7 @@ import { runScheduledJob } from './job-telemetry';
 const db = admin.firestore();
 
 const socialCredentialsMasterKey = defineSecret('SOCIAL_CREDENTIALS_MASTER_KEY');
-const socialAnalyticsEnabled = defineBoolean('SOCIAL_ANALYTICS_SYNC_ENABLED', { default: false });
+const socialAnalyticsEnabled = defineBoolean('SOCIAL_ANALYTICS_SYNC_ENABLED', { default: true });
 const socialAnalyticsBatchSize = defineInt('SOCIAL_ANALYTICS_BATCH_SIZE', { default: 25 });
 const socialAnalyticsLookbackDays = defineInt('SOCIAL_ANALYTICS_LOOKBACK_DAYS', { default: 30 });
 const socialAnalyticsMinIntervalMinutes = defineInt('SOCIAL_ANALYTICS_MIN_INTERVAL_MINUTES', { default: 360 });
@@ -380,6 +380,7 @@ async function fetchProviderAnalytics(
       handle: account.handle,
       accountName: account.accountName,
       scopes: account.scopes || [],
+      metadata: account.metadata || {},
       period,
     },
     {
@@ -421,6 +422,7 @@ async function fetchProviderPostAnalytics(
       handle: account.handle,
       accountName: account.accountName,
       scopes: account.scopes || [],
+      metadata: account.metadata || {},
       period,
       post: {
         scheduledPostId: post.scheduledPostId,

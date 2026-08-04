@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { getEffectiveUserTier } from '@/lib/tier';
+import { getTierPrivileges } from '@/lib/tier-privileges';
 
 export type UserTier = 'explorer' | 'pro' | 'elite';
 
@@ -164,7 +165,12 @@ export const useUserStore = create<UserState>()(
 
 function getFeaturesForTier(tier: UserTier): string[] {
   const base = ['feed', 'profile', 'marketplace_view'];
-  if (tier === 'pro') return [...base, 'ai_mentor_basic', 'resource_vault', 'live_calls'];
-  if (tier === 'elite') return [...base, 'ai_mentor_unlimited', 'founder_direct', 'venture_network', 'advanced_analytics'];
-  return base;
+  const privileges = getTierPrivileges(tier);
+  const features = [...base];
+  if (privileges.resources !== 'public') features.push('resource_vault');
+  if (privileges.liveCalls !== 'none') features.push('live_calls');
+  if (privileges.founderAccess) features.push('founder_direct', 'venture_network');
+  if (privileges.advancedAnalytics) features.push('advanced_analytics');
+  if (privileges.aiModelClasses.length > 1) features.push('ai_mentor_basic');
+  return features;
 }

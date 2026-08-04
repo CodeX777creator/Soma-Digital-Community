@@ -161,7 +161,13 @@ export async function aiMentorChatEnhanced(
     // 1. Check budget constraints
     const budgetCheck = await checkBudget(input.userId);
     if (budgetCheck.exceeded) {
-      throw new Error('Budget exceeded. Please try again later or upgrade your plan.');
+      // The Creator Credit gateway is now the authoritative hard guardrail.
+      // Keep this legacy telemetry check as a warning so old budget records do
+      // not block users while the central reservation enforces the cap.
+      logger.warn('[ChatFlow] Legacy budget threshold reached', {
+        userId: input.userId,
+        alerts: budgetCheck.alerts,
+      });
     }
 
     // 2. Advanced security assessment with behavioral analysis

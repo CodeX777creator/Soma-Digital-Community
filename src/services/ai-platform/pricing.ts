@@ -1,5 +1,8 @@
 import { estimateTokenCount } from "@/ai/core/tokenizer";
-import { CREATOR_CREDIT_RETAIL_VALUE_USD as CREATOR_CREDIT_RETAIL_VALUE_USD_FROM_CONFIG } from "@/lib/creator-credit-config";
+import {
+  CREATOR_CREDIT_RETAIL_VALUE_USD as CREATOR_CREDIT_RETAIL_VALUE_USD_FROM_CONFIG,
+  DEFAULT_PLATFORM_FEATURE_PRICING,
+} from "@/lib/creator-credit-config";
 import type { AIModelRegistryDoc } from "./model-registry";
 import type { MonetizedFeature } from "./types";
 
@@ -42,14 +45,14 @@ export interface UsagePricingQuote {
 
 export const CREATOR_CREDIT_RETAIL_VALUE_USD = CREATOR_CREDIT_RETAIL_VALUE_USD_FROM_CONFIG;
 
-const DEFAULT_TEXT_INPUT_CREDITS_PER_1K = 0.25;
-const DEFAULT_TEXT_OUTPUT_CREDITS_PER_1K = 1;
+const DEFAULT_TEXT_INPUT_CREDITS_PER_1K = DEFAULT_PLATFORM_FEATURE_PRICING.chat.inputCost || 0.25;
+const DEFAULT_TEXT_OUTPUT_CREDITS_PER_1K = DEFAULT_PLATFORM_FEATURE_PRICING.chat.outputCost || 1;
 const DEFAULT_REASONING_OUTPUT_CREDITS_PER_1K = 3;
-const DEFAULT_IMAGE_CREDITS = 10;
-const DEFAULT_PREMIUM_IMAGE_CREDITS = 20;
+const DEFAULT_IMAGE_CREDITS = DEFAULT_PLATFORM_FEATURE_PRICING.image_generation.baseCost || 10;
+const DEFAULT_PREMIUM_IMAGE_CREDITS = DEFAULT_IMAGE_CREDITS * 2;
 const DEFAULT_VIDEO_DRAFT_CREDITS = 20;
-const DEFAULT_VIDEO_RENDER_CREDITS_PER_SECOND = 10;
-const DEFAULT_AUDIO_CREDITS_PER_SECOND = 2;
+const DEFAULT_VIDEO_RENDER_CREDITS_PER_SECOND = DEFAULT_PLATFORM_FEATURE_PRICING.video_generation.baseCost || 10;
+const DEFAULT_AUDIO_CREDITS_PER_SECOND = DEFAULT_PLATFORM_FEATURE_PRICING.audio_generation.baseCost || 2;
 const DEFAULT_AUDIO_CREDITS_PER_1K_CHARS = 4;
 
 function roundCredits(value: number): number {
@@ -90,6 +93,40 @@ function quote(input: Omit<UsagePricingQuote, "retailValueUsd">): UsagePricingQu
     credits: roundCredits(input.credits),
     retailValueUsd: roundCredits(input.credits) * CREATOR_CREDIT_RETAIL_VALUE_USD,
   };
+}
+
+function estimateFeatureSpecificCredits(input: UsagePricingInput): UsagePricingQuote | null {
+  if (input.feature === "translation" && input.modality === "text") {
+    const characters = Math.max(1, Math.floor(input.characters || (input.prompt || "").length));
+    const unitRate = (DEFAULT_PLATFORM_FEATURE_PRICING.translation.baseCost || 0.05) * modelMultiplier(input.model);
+    return quote({
+      credits: characters * unitRate,
+      pricingUnit: "character",
+      estimatedUnits: characters,
+      unitRateCredits: unitRate,
+      estimatedCostUsd: 0,
+      characters,
+      modelPricingSnapshot: modelPricingSnapshot(input.model),
+      explanation: `${characters.toLocaleString()} characters translated at ${roundCredits(unitRate)} credits per character.`,
+    });
+  }
+
+  if (input.feature === "speech_to_text") {
+    const durationSeconds = Math.max(1, Math.floor(input.durationSeconds || 30));
+    const unitRate = (DEFAULT_PLATFORM_FEATURE_PRICING.speech_to_text.baseCost || 0.2) * modelMultiplier(input.model);
+    return quote({
+      credits: durationSeconds * unitRate,
+      pricingUnit: "second",
+      estimatedUnits: durationSeconds,
+      unitRateCredits: unitRate,
+      estimatedCostUsd: 0,
+      durationSeconds,
+      modelPricingSnapshot: modelPricingSnapshot(input.model),
+      explanation: `${durationSeconds}s speech transcription at ${roundCredits(unitRate)} credits/sec.`,
+    });
+  }
+
+  return null;
 }
 
 export function estimateTextCredits(input: UsagePricingInput): UsagePricingQuote {
@@ -207,6 +244,8 @@ export function estimateAudioCredits(input: UsagePricingInput): UsagePricingQuot
 }
 
 export function estimateUsageCredits(input: UsagePricingInput): UsagePricingQuote {
+  const featureSpecificQuote = estimateFeatureSpecificCredits(input);
+  if (featureSpecificQuote) return featureSpecificQuote;
   switch (input.modality) {
     case "image":
       return estimateImageCredits(input);

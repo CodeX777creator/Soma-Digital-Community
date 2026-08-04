@@ -1,10 +1,11 @@
 import { requireSubscription } from '@/lib/serverAuth';
 import { apiError, apiResponse, createAPIHandler } from '@/lib/api-middleware';
 import { logger } from '@/lib/logger';
-import { deleteScheduledPost, moveScheduledPost, updateScheduledPost } from '@/social';
+import { deleteScheduledPost, listScheduledPosts, moveScheduledPost, updateScheduledPost } from '@/social';
 import { sanitizeString } from '@/lib/security';
 import { SOCIAL_PLATFORMS, type SocialPlatform, SCHEDULED_POST_STATUSES, type ScheduledPostStatus } from '@/social/types';
 import { isScheduledPostContentType } from '@/social/capabilities';
+import { getTierPrivileges } from '@/lib/tier-privileges';
 
 function isAllowedPlatform(value: unknown): value is SocialPlatform {
   return typeof value === 'string' && (SOCIAL_PLATFORMS as readonly string[]).includes(value);
@@ -46,8 +47,27 @@ const handler = createAPIHandler(
     }
 
     if (typeof body.scheduledTime === 'string' && body.scheduledTime.trim() && body.moveOnly === true) {
+      const plan = getTierPrivileges(entitlements.subscription.plan);
+      const date = new Date(body.scheduledTime);
+      const month = Number.isNaN(date.getTime()) ? new Date().toISOString().slice(0, 7) : date.toISOString().slice(0, 7);
+      const posts = await listScheduledPosts(entitlements.uid, { month, limit: 250 });
+      const countedPosts = posts.filter((post) => post.scheduledPostId !== postId && !['draft', 'cancelled'].includes(post.status)).length;
+      if (countedPosts >= plan.scheduler.scheduledPostsPerMonth) {
+        return apiError(`Your ${plan.label} plan has reached its monthly scheduled-post limit.`, { status: 403, code: 'SCHEDULED_POST_LIMIT_REACHED' });
+      }
       const moved = await moveScheduledPost(entitlements.uid, postId, body.scheduledTime);
       return apiResponse({ post: moved });
+    }
+
+    if (typeof body.scheduledTime === 'string' && body.scheduledTime.trim() && body.status !== 'draft' && body.status !== 'cancelled') {
+      const plan = getTierPrivileges(entitlements.subscription.plan);
+      const date = new Date(body.scheduledTime);
+      const month = Number.isNaN(date.getTime()) ? new Date().toISOString().slice(0, 7) : date.toISOString().slice(0, 7);
+      const posts = await listScheduledPosts(entitlements.uid, { month, limit: 250 });
+      const countedPosts = posts.filter((post) => post.scheduledPostId !== postId && !['draft', 'cancelled'].includes(post.status)).length;
+      if (countedPosts >= plan.scheduler.scheduledPostsPerMonth) {
+        return apiError(`Your ${plan.label} plan has reached its monthly scheduled-post limit.`, { status: 403, code: 'SCHEDULED_POST_LIMIT_REACHED' });
+      }
     }
 
     const post = await updateScheduledPost(entitlements.uid, postId, {

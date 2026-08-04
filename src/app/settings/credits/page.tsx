@@ -68,6 +68,9 @@ type CreditDashboard = {
     monthlyCap: number;
     dailyCap: number;
     concurrentJobs: number;
+    dailySpent: number;
+    monthlySpent: number;
+    modelClasses: string[];
   };
   subscription?: {
     plan: string;
@@ -323,11 +326,16 @@ export default function CreditsPage() {
                   <ShieldCheck className="h-4 w-4 text-cyan-400" />
                   <h2 className="text-lg font-semibold">Budget guardrails</h2>
                 </div>
-                <div className="grid gap-3 md:grid-cols-3">
+                <div className="grid gap-3 md:grid-cols-5">
                   <BalanceTile label="Daily cap" value={dashboard.budgetSummary.dailyCap} />
+                  <BalanceTile label="Daily used" value={dashboard.budgetSummary.dailySpent} />
                   <BalanceTile label="Monthly cap" value={dashboard.budgetSummary.monthlyCap} />
+                  <BalanceTile label="Monthly used" value={dashboard.budgetSummary.monthlySpent} />
                   <BalanceTile label="Concurrent jobs" value={dashboard.budgetSummary.concurrentJobs} />
                 </div>
+                <p className="mt-4 text-sm text-muted-foreground">
+                  Model access: <span className="font-medium capitalize text-white">{dashboard.budgetSummary.modelClasses.join(", ")}</span>.
+                </p>
               </GlassCard>
             </>
           )}

@@ -3,6 +3,8 @@ import type { AIQualityMode } from "@/ai/platform/orchestrator";
 
 export type CreatorPlan = "explorer" | "pro" | "elite" | "enterprise";
 export type LegacyCreatorTier = CreatorPlan | "free";
+// Enterprise inherits Elite routing access; billing and budget accounting
+// remain distinct in CreatorPlan.
 export type RoutingCreatorPlan = "explorer" | "pro" | "elite";
 export type BillingSource = "sdc_credits" | "byok" | "onboarding_allowance";
 export type CreditStatus = "reserved" | "charged" | "refunded" | "failed" | "skipped";
@@ -121,6 +123,9 @@ export interface CreditLedgerEntry {
   durationSeconds?: number;
   characters?: number;
   modelPricingSnapshot?: Record<string, unknown>;
+  budgetReservedUsd?: number;
+  budgetChargedUsd?: number;
+  budgetRefundedUsd?: number;
   metadata?: Record<string, unknown>;
 }
 
@@ -160,6 +165,9 @@ export interface AIExecutionLease {
   periodId: string;
   fallbackCount?: number;
   reason?: string;
+  budgetReservedUsd?: number;
+  budgetDailyPeriodId?: string;
+  budgetMonthlyPeriodId?: string;
 }
 
 export function normalizeBillingPlan(tier?: LegacyCreatorTier): CreatorPlan {
@@ -168,7 +176,7 @@ export function normalizeBillingPlan(tier?: LegacyCreatorTier): CreatorPlan {
 }
 
 export function normalizeRoutingPlan(tier?: LegacyCreatorTier): RoutingCreatorPlan {
-  if (tier === "elite") return "elite";
+  if (tier === "elite" || tier === "enterprise") return "elite";
   if (tier === "pro") return "pro";
   return "explorer";
 }

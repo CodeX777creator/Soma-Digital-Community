@@ -12,6 +12,7 @@ export interface SocialOAuthProviderRule {
   requiresPkce: boolean;
   callbackPath: string;
   defaultScopes: string[];
+  optionalScopes?: string[];
   authorizationUrl?: string | null;
   tokenUrl?: string | null;
   clientId?: string | null;
@@ -68,9 +69,9 @@ const SOCIAL_OAUTH_PROVIDER_RULES: SocialOAuthProviderRule[] = [
   },
   {
     providerId: 'instagram',
-    flowMode: 'pkce-oauth2',
+    flowMode: 'oauth2',
     supportsRefreshToken: true,
-    requiresPkce: true,
+    requiresPkce: false,
     callbackPath: '/api/social/oauth/instagram/callback',
     defaultScopes: [
       'instagram_business_basic',
@@ -87,9 +88,9 @@ const SOCIAL_OAUTH_PROVIDER_RULES: SocialOAuthProviderRule[] = [
   },
   {
     providerId: 'facebook',
-    flowMode: 'pkce-oauth2',
-    supportsRefreshToken: true,
-    requiresPkce: true,
+    flowMode: 'oauth2',
+    supportsRefreshToken: false,
+    requiresPkce: false,
     callbackPath: '/api/social/oauth/facebook/callback',
     defaultScopes: ['pages_show_list', 'pages_read_engagement', 'pages_manage_posts'],
     authorizationUrl: process.env.SOCIAL_OAUTH_AUTH_URL_FACEBOOK || null,
@@ -104,7 +105,8 @@ const SOCIAL_OAUTH_PROVIDER_RULES: SocialOAuthProviderRule[] = [
     supportsRefreshToken: true,
     requiresPkce: true,
     callbackPath: '/api/social/oauth/linkedin/callback',
-    defaultScopes: ['openid', 'profile', 'w_member_social'],
+    defaultScopes: ['openid', 'profile', 'email', 'w_member_social'],
+    optionalScopes: ['w_organization_social'],
     authorizationUrl: process.env.SOCIAL_OAUTH_AUTH_URL_LINKEDIN || null,
     tokenUrl: process.env.SOCIAL_OAUTH_TOKEN_URL_LINKEDIN || null,
     clientId: process.env.SOCIAL_OAUTH_CLIENT_ID_LINKEDIN || null,
@@ -114,10 +116,10 @@ const SOCIAL_OAUTH_PROVIDER_RULES: SocialOAuthProviderRule[] = [
   {
     providerId: 'x',
     flowMode: 'pkce-oauth2',
-    supportsRefreshToken: false,
+    supportsRefreshToken: true,
     requiresPkce: true,
     callbackPath: '/api/social/oauth/x/callback',
-    defaultScopes: ['tweet.read', 'tweet.write', 'users.read'],
+    defaultScopes: ['tweet.read', 'tweet.write', 'users.read', 'offline.access'],
     authorizationUrl: process.env.SOCIAL_OAUTH_AUTH_URL_X || null,
     tokenUrl: process.env.SOCIAL_OAUTH_TOKEN_URL_X || null,
     clientId: process.env.SOCIAL_OAUTH_CLIENT_ID_X || null,

@@ -34,6 +34,7 @@ import { useAuth } from "@/providers/AuthProvider";
 import { parseApiError } from "@/lib/clientApi";
 import { showErrorToast } from "@/lib/error-toast";
 import { cn } from "@/lib/utils";
+import { ModelAccessNotice } from "@/components/ai/ModelAccessNotice";
 import { estimateAudioCreatorCredits, formatCreatorCreditEstimate } from "@/lib/ai-credit-estimates";
 import {
   AUDIO_LANGUAGES,
@@ -825,7 +826,8 @@ export default function AudioStudioPage() {
                     className="min-h-[130px]"
                   />
                 </div>
-                <div className="rounded-2xl border border-white/[0.08] bg-[#090B13]/60 p-4">
+                  <div className="rounded-2xl border border-white/[0.08] bg-[#090B13]/60 p-4">
+                    <ModelAccessNotice />
                   <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#7E8799]">Soma AI ideas</p>
                   <div className="mt-3 flex flex-wrap gap-2">
                     <Button type="button" variant="outline" size="sm" onClick={() => applyIdeaAction("ideas")}>Generate audio ideas</Button>

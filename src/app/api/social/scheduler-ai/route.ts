@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server';
 import { requireSubscription } from '@/lib/serverAuth';
+import { getTierPrivileges } from '@/lib/tier-privileges';
 import { apiError, apiResponse, createAPIHandler } from '@/lib/api-middleware';
 import { adminDb } from '@/lib/firebaseAdmin';
 import { normalizeDate } from '@/lib/date-utils';
@@ -219,6 +220,11 @@ const handler = createAPIHandler(
 
     if (!isAction(body.action)) {
       return apiError('Unsupported scheduler AI action', { status: 400, code: 'INVALID_ACTION' });
+    }
+
+    const schedulerPrivileges = getTierPrivileges(entitlements.subscription.plan).scheduler;
+    if (body.action === 'create_7_day_campaign' && !schedulerPrivileges.campaigns) {
+      return apiError('Campaign planning is available on Pro and Elite plans.', { status: 403, code: 'SCHEDULER_CAMPAIGNS_RESTRICTED' });
     }
 
     const month = parseMonth(body.month);

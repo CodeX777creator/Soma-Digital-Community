@@ -10,6 +10,7 @@ import {
 import { sanitizeString } from '@/lib/security';
 import { SOCIAL_PLATFORMS, type SocialPlatform, SCHEDULED_POST_STATUSES, type ScheduledPostStatus } from '@/social/types';
 import { isScheduledPostContentType } from '@/social/capabilities';
+import { getTierPrivileges } from '@/lib/tier-privileges';
 
 function isAllowedPlatform(value: unknown): value is SocialPlatform {
   return typeof value === 'string' && (SOCIAL_PLATFORMS as readonly string[]).includes(value);
@@ -63,6 +64,7 @@ const handler = createAPIHandler(
         month: month || new Date().toISOString().slice(0, 7),
         summary,
         posts,
+        schedulerLimits: getTierPrivileges(entitlements.subscription.plan).scheduler,
       }, {
         cache: {
           maxAge: 30,
@@ -90,6 +92,23 @@ const handler = createAPIHandler(
       return apiError('caption is required', { status: 400, code: 'INVALID_INPUT' });
     }
 
+    const status = isAllowedStatus(body.status) ? body.status : 'draft';
+    if (status !== 'draft' && status !== 'cancelled') {
+      const plan = getTierPrivileges(entitlements.subscription.plan);
+      const scheduledDate = new Date(body.scheduledTime);
+      const month = Number.isNaN(scheduledDate.getTime())
+        ? new Date().toISOString().slice(0, 7)
+        : scheduledDate.toISOString().slice(0, 7);
+      const postsThisMonth = await listScheduledPosts(entitlements.uid, { month, limit: 250 });
+      const countedPosts = postsThisMonth.filter((post) => !['draft', 'cancelled'].includes(post.status)).length;
+      if (countedPosts >= plan.scheduler.scheduledPostsPerMonth) {
+        return apiError(`Your ${plan.label} plan has reached its monthly scheduled-post limit.`, {
+          status: 403,
+          code: 'SCHEDULED_POST_LIMIT_REACHED',
+        });
+      }
+    }
+
     const post = await createScheduledPost({
       platform: body.platform,
       socialAccountId: typeof body.socialAccountId === 'string' ? sanitizeString(body.socialAccountId, 160) : undefined,
@@ -105,7 +124,7 @@ const handler = createAPIHandler(
       campaignId: typeof body.campaignId === 'string' ? sanitizeString(body.campaignId, 120) : undefined,
       notes: typeof body.notes === 'string' ? sanitizeString(body.notes, 1000) : undefined,
       timezone: typeof body.timezone === 'string' ? sanitizeString(body.timezone, 80) : undefined,
-      status: isAllowedStatus(body.status) ? body.status : 'draft',
+      status,
       platformSettings: body.platformSettings && typeof body.platformSettings === 'object' ? body.platformSettings as Record<string, unknown> : undefined,
       userId: entitlements.uid,
       metadata: body.metadata && typeof body.metadata === 'object' ? body.metadata as Record<string, unknown> : undefined,

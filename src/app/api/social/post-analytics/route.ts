@@ -3,6 +3,7 @@ import { requireSubscription } from '@/lib/serverAuth';
 import { apiResponse, createAPIHandler } from '@/lib/api-middleware';
 import { listSocialPostAnalytics } from '@/social';
 import { sanitizeString } from '@/lib/security';
+import { getTierPrivileges } from '@/lib/tier-privileges';
 
 function parseLimit(req: NextRequest): number {
   const value = Number(req.nextUrl.searchParams.get('limit') || '100');
@@ -13,6 +14,9 @@ function parseLimit(req: NextRequest): number {
 const handler = createAPIHandler(
   async (req) => {
     const entitlements = await requireSubscription(req as any, 'explorer');
+    if (!getTierPrivileges(entitlements.subscription.plan).scheduler.advancedAnalytics && entitlements.subscription.plan === 'explorer') {
+      return apiResponse({ analytics: [], restricted: true, message: 'Analytics are available on Pro and Elite plans.' });
+    }
     const scheduledPostId = req.nextUrl.searchParams.get('scheduledPostId');
     const analytics = await listSocialPostAnalytics(entitlements.uid, {
       scheduledPostId: scheduledPostId ? sanitizeString(scheduledPostId, 160) : undefined,

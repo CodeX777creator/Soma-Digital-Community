@@ -76,8 +76,8 @@ export const UpgradeModal = ({ open, onOpenChange, onSuccess, initialPlan = null
              </p>
              <div className="space-y-4">
                {[
-                 { icon: <Sparkles className="text-primary" />, text: "Full AI Coach Access" },
-                 { icon: <Rocket className="text-accent" />, text: "Unlimited Resource Downloads" },
+                 { icon: <Sparkles className="text-primary" />, text: "AI Mentor with included credits" },
+                 { icon: <Rocket className="text-accent" />, text: "Premium resource access" },
                  { icon: <Target className="text-purple-400" />, text: "Priority Support Sessions" },
                  { icon: <ShieldCheck className="text-green-400" />, text: "Private Group Access" }
                ].map((item, i) => (

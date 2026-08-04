@@ -62,7 +62,7 @@ export const PLATFORM_SETTINGS_SCHEMAS: Record<SocialPlatform, PlatformSettingsS
             inputType: 'select',
             defaultValue: 'draft',
             required: true,
-            appliesTo: ['video'],
+            appliesTo: ['video', 'image', 'carousel'],
             providerField: 'publish_mode',
             options: [
               { label: 'Draft inbox', value: 'draft', description: 'Safer while app review is pending.' },
@@ -76,7 +76,7 @@ export const PLATFORM_SETTINGS_SCHEMAS: Record<SocialPlatform, PlatformSettingsS
             inputType: 'select',
             defaultValue: 'SELF_ONLY',
             required: true,
-            appliesTo: ['video'],
+            appliesTo: ['video', 'image', 'carousel'],
             providerField: 'privacy_level',
             options: [
               { label: 'Everyone', value: 'PUBLIC_TO_EVERYONE' },
@@ -97,7 +97,7 @@ export const PLATFORM_SETTINGS_SCHEMAS: Record<SocialPlatform, PlatformSettingsS
             description: 'Disclose if the video was created or materially edited with AI.',
             inputType: 'boolean',
             defaultValue: false,
-            appliesTo: ['video'],
+            appliesTo: ['video', 'image', 'carousel'],
             providerField: 'is_aigc',
           },
           {
@@ -125,7 +125,7 @@ export const PLATFORM_SETTINGS_SCHEMAS: Record<SocialPlatform, PlatformSettingsS
         label: 'Interactions',
         description: 'Control viewer interactions where TikTok allows it.',
         fields: [
-          { key: 'tiktokAllowComments', label: 'Allow comments', description: 'Let viewers comment.', inputType: 'boolean', defaultValue: true, appliesTo: ['video'], providerField: 'disable_comment' },
+          { key: 'tiktokAllowComments', label: 'Allow comments', description: 'Let viewers comment where TikTok supports the selected format.', inputType: 'boolean', defaultValue: true, appliesTo: ['video', 'image', 'carousel'], providerField: 'disable_comment' },
           { key: 'tiktokAllowDuet', label: 'Allow duet', description: 'Let viewers duet this video.', inputType: 'boolean', defaultValue: true, appliesTo: ['video'], providerField: 'disable_duet' },
           { key: 'tiktokAllowStitch', label: 'Allow stitch', description: 'Let viewers stitch this video.', inputType: 'boolean', defaultValue: true, appliesTo: ['video'], providerField: 'disable_stitch' },
           { key: 'tiktokCoverTimestampMs', label: 'Cover timestamp', description: 'Optional cover frame position in milliseconds.', inputType: 'number', defaultValue: 0, min: 0, appliesTo: ['video'], providerField: 'video_cover_timestamp_ms', helpText: '1000 ms = 1 second.' },

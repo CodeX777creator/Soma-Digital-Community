@@ -6,42 +6,42 @@ export const SOCIAL_PROVIDER_REGISTRY: SocialProviderDefinition[] = [
     label: "TikTok",
     description: "Short-form video publishing and account metadata.",
     connectLabel: "Connect TikTok",
-    notes: "Publishing and scheduling are added in later phases.",
+    notes: "Video Direct Post, Draft Inbox, and photo publishing require approved TikTok Content Posting API access.",
   },
   {
     id: "instagram",
     label: "Instagram",
     description: "Instagram creator and business account connections.",
     connectLabel: "Connect Instagram",
-    notes: "Supports future post and reel workflows.",
+    notes: "Instagram Professional accounts can publish feed media, Reels, Stories, and carousels through the selected Meta login path.",
   },
   {
     id: "facebook",
     label: "Facebook",
     description: "Facebook page and business account connections.",
     connectLabel: "Connect Facebook",
-    notes: "Useful for later page publishing and analytics.",
+    notes: "Facebook Page publishing uses a Page access token and the selected Page destination.",
   },
   {
     id: "linkedin",
     label: "LinkedIn",
     description: "Professional brand account connections.",
     connectLabel: "Connect LinkedIn",
-    notes: "Strong fit for thought-leadership publishing.",
+    notes: "Supports member posts by default; organization publishing requires the organization scope and an eligible Page role.",
   },
   {
     id: "x",
     label: "X",
     description: "Fast social distribution and public commentary.",
     connectLabel: "Connect X",
-    notes: "Publishing support comes in the scheduling phase.",
+    notes: "Text publishing uses X API v2 user-context OAuth; media requires separately uploaded X media IDs.",
   },
   {
     id: "youtube",
     label: "YouTube",
     description: "Long-form video channel connections.",
     connectLabel: "Connect YouTube",
-    notes: "Will support future content publishing and analytics.",
+    notes: "Uploads use YouTube Data API resumable upload sessions and remain processing until YouTube confirms availability.",
   },
 ];
 
@@ -53,4 +53,3 @@ export function getSocialProvider(providerId: SocialPlatform): SocialProviderDef
 
   return provider;
 }
-

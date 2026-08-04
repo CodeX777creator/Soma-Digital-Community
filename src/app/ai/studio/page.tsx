@@ -15,6 +15,7 @@ import { useAuth } from "@/providers/AuthProvider";
 import { authFetch, parseApiError } from "@/lib/clientApi";
 import { showErrorToast } from "@/lib/error-toast";
 import { cn } from "@/lib/utils";
+import { estimateTextCreatorCredits } from "@/lib/ai-credit-estimates";
 import { PLATFORM_CAPABILITIES } from "@/social/capabilities";
 import { SOCIAL_PLATFORMS, type SocialAccountRecord, type SocialPlatform } from "@/social/types";
 import {
@@ -76,6 +77,9 @@ type CreditDashboard = {
     providerMode: string;
     nextResetAt: string;
   };
+  budgetSummary?: {
+    modelClasses?: string[];
+  };
 };
 
 type SocialAccountsResponse = {
@@ -104,24 +108,25 @@ function platformRuleSummary(platform: SocialPlatform): string {
 }
 
 function estimateStudioCredits(contentType: StudioContentType): number {
+  const longOutput = contentType === "marketing_planner" || contentType === "sales_funnel";
   switch (contentType) {
     case "caption":
     case "prompt_library":
-      return 5;
+      return estimateTextCreatorCredits({ inputTokens: 700, outputTokens: 600 });
     case "ad_copy":
     case "email":
     case "marketing_planner":
-      return contentType === "marketing_planner" ? 15 : 10;
+      return estimateTextCreatorCredits({ inputTokens: 1000, outputTokens: longOutput ? 2200 : 1600 });
     case "carousel":
-      return 15;
+      return estimateTextCreatorCredits({ inputTokens: 1000, outputTokens: 1800 });
     case "script":
     case "blog":
     case "sales_funnel":
-      return 20;
+      return estimateTextCreatorCredits({ inputTokens: 1200, outputTokens: longOutput ? 2200 : 1600 });
     case "thumbnail":
       return 10;
     default:
-      return 10;
+      return estimateTextCreatorCredits({ inputTokens: 1000, outputTokens: 1600 });
   }
 }
 
@@ -1146,6 +1151,9 @@ export default function AIStudioPage() {
                       )}>
                         <div className="min-w-0">
                           <span className="font-medium text-white">This will use {estimatedCredits} Creator Credits.</span>{" "}
+                          {creditDashboard?.budgetSummary?.modelClasses?.length ? (
+                            <span className="text-xs text-[#8DEBFF]">Available model classes: {creditDashboard.budgetSummary.modelClasses.join(", ")}.</span>
+                          ) : null}{" "}
                           {isCreditBlocked
                             ? "Buy Creator Credits, upgrade for monthly credits, or use your own provider key if BYOK is enabled."
                             : latestGenerationWasCached

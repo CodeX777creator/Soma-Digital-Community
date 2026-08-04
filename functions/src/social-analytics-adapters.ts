@@ -15,6 +15,7 @@ type AdapterBody = {
   handle?: string;
   accountName?: string;
   scopes?: string[];
+  metadata?: Record<string, unknown>;
   period?: {
     since?: string;
     until?: string;
@@ -54,7 +55,8 @@ const tiktokApiBaseUrl = defineString('SOCIAL_ANALYTICS_TIKTOK_API_BASE_URL', { 
 const metaGraphBaseUrl = defineString('SOCIAL_ANALYTICS_META_GRAPH_BASE_URL', { default: 'https://graph.facebook.com/v20.0' });
 const youtubeApiBaseUrl = defineString('SOCIAL_ANALYTICS_YOUTUBE_API_BASE_URL', { default: 'https://www.googleapis.com/youtube/v3' });
 const linkedinApiBaseUrl = defineString('SOCIAL_ANALYTICS_LINKEDIN_API_BASE_URL', { default: 'https://api.linkedin.com/v2' });
-const xApiBaseUrl = defineString('SOCIAL_ANALYTICS_X_API_BASE_URL', { default: 'https://api.twitter.com/2' });
+const instagramGraphBaseUrl = defineString('SOCIAL_ANALYTICS_INSTAGRAM_GRAPH_BASE_URL', { default: 'https://graph.instagram.com/v23.0' });
+const xApiBaseUrl = defineString('SOCIAL_ANALYTICS_X_API_BASE_URL', { default: 'https://api.x.com/2' });
 
 function getBearerToken(authorization?: string): string {
   const value = authorization || '';
@@ -203,7 +205,10 @@ async function fetchInstagramAnalytics(token: string, body: AdapterBody): Promis
   const accountId = body.providerAccountId || body.externalAccountId;
   if (!accountId) throw new Error('Instagram analytics requires providerAccountId or externalAccountId.');
 
-  const baseUrl = metaGraphBaseUrl.value().replace(/\/$/, '');
+  const identity = (body.metadata?.providerIdentity || {}) as Record<string, unknown>;
+  const baseUrl = (identity.loginType === 'instagram_business_login'
+    ? instagramGraphBaseUrl.value()
+    : metaGraphBaseUrl.value()).replace(/\/$/, '');
   const since = toUnixSeconds(body.period?.since);
   const until = toUnixSeconds(body.period?.until);
   const profileResponse = await axios.get(`${baseUrl}/${accountId}`, {

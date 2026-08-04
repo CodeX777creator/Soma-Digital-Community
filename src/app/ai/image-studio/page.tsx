@@ -33,6 +33,7 @@ import { useAuth } from "@/providers/AuthProvider";
 import { parseApiError } from "@/lib/clientApi";
 import { showErrorToast } from "@/lib/error-toast";
 import { cn } from "@/lib/utils";
+import { ModelAccessNotice } from "@/components/ai/ModelAccessNotice";
 import { estimateImageCreatorCredits, formatCreatorCreditEstimate } from "@/lib/ai-credit-estimates";
 import type {
   BrandTemplate,
@@ -700,6 +701,7 @@ export default function ImageStudioPage() {
                     <StatusRow label="Format" value={visualPreset.formatLabel} />
                     <StatusRow label="Style" value={brandStyle.label} />
                     <StatusRow label="Estimated use" value={`${estimatedImageCredits} credits per image`} />
+                    <ModelAccessNotice compact />
                   </div>
                 </GlassCard>
 

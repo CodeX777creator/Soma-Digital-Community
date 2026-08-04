@@ -9,6 +9,7 @@ import {
   DEFAULT_CREATOR_CREDIT_BUNDLES,
   normalizeCreatorCreditConfig,
 } from "./creator-credit-config";
+import { getTierPrivileges } from "./tier-privileges";
 
 export type UserTier = 'explorer' | 'pro' | 'elite';
 
@@ -213,19 +214,20 @@ export async function canDownloadResource(
   if (!credits) return { allowed: false, reason: "User not found" };
   
   const userTier = credits.tier;
+  const privileges = getTierPrivileges(userTier);
   
   // Free resources for everyone
   if (resourceTier === 'free') return { allowed: true };
   
   // Pro resources need Pro or Elite
   if (resourceTier === 'pro') {
-    if (userTier === 'pro' || userTier === 'elite') return { allowed: true };
+    if (privileges.resources === 'pro' || privileges.resources === 'pro_and_elite') return { allowed: true };
     return { allowed: false, reason: "Upgrade to Pro to download this resource" };
   }
   
   // Elite resources need Elite
   if (resourceTier === 'elite') {
-    if (userTier === 'elite') return { allowed: true };
+    if (privileges.resources === 'pro_and_elite') return { allowed: true };
     return { allowed: false, reason: "This is exclusive Elite content" };
   }
   
@@ -243,21 +245,18 @@ export async function canJoinLiveCall(userId: string): Promise<{
   const credits = await getUserCredits(userId);
   if (!credits) return { allowed: false, reason: "User not found", callsRemaining: 0 };
   
-  const userTier = credits.tier;
-  const callsThisMonth = credits.usedThisMonth; // Simplified - you'd track separately
-  
-  if (userTier === 'explorer') {
+  const privileges = getTierPrivileges(credits.tier);
+  if (privileges.liveCalls === 'none') {
     return { allowed: false, reason: "Live calls are Pro/Elite only", callsRemaining: 0 };
   }
-  
-  if (userTier === 'elite') {
+
+  if (privileges.liveCalls === 'unlimited') {
     return { allowed: true, callsRemaining: Infinity };
   }
-  
-  // Pro: 1 call/month
-  const proCallsUsed = credits.usedThisMonth; // You'd track this separately
-  const proCallsLimit = 1;
-  const remaining = proCallsLimit - proCallsUsed;
+
+  // The activity ledger should eventually provide this count independently.
+  // Keep the existing counter until the live-call ledger is introduced.
+  const remaining = 1 - credits.usedThisMonth;
   
   if (remaining <= 0) {
     return { allowed: false, reason: "Monthly call limit reached", callsRemaining: 0 };
@@ -272,8 +271,8 @@ export async function canJoinLiveCall(userId: string): Promise<{
 export function getUpgradeMessage(currentTier: UserTier, feature: string): string {
   const messages: Record<UserTier, string> = {
     explorer: `You've reached your free limit. Upgrade to Pro for 10x more ${feature}!`,
-    pro: `Maximize your growth with Elite - unlimited ${feature} + direct founder access.`,
-    elite: `You're enjoying unlimited access!`,
+    pro: `Maximize your growth with Elite - higher limits, premium models, and direct founder access.`,
+    elite: `You're enjoying Elite access with priority routing and premium limits.`,
   };
   
   return messages[currentTier];

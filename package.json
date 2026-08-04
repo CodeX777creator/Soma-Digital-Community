@@ -13,6 +13,7 @@
     "functions:build": "cd functions && npm run build",
     "seed:marketplace": "tsx -r dotenv/config scripts/seedMarketplace.ts",
     "test:ai-pricing": "tsx scripts/validateAIPricing.ts",
+    "test:tier-privileges": "tsx scripts/validateTierPrivileges.ts",
     "test:academy-commerce": "tsx scripts/validateAcademyCommerce.ts",
     "test:social-platform-settings": "tsx scripts/validateSocialPlatformSettings.ts",
     "test:pwa": "tsx scripts/validatePwa.ts",

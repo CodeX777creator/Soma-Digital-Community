@@ -3,7 +3,7 @@ import { requireSubscription } from '@/lib/serverAuth';
 import { apiError, apiResponse, createAPIHandler } from '@/lib/api-middleware';
 import { logger } from '@/lib/logger';
 import { adminDb } from '@/lib/firebaseAdmin';
-import { createSocialAccount, updateSocialAccount } from '@/social/service';
+import { createSocialAccount, getSocialHubOverview, updateSocialAccount } from '@/social/service';
 import { SOCIAL_PLATFORMS, type SocialPlatform } from '@/social/types';
 import {
   buildSocialOAuthState,
@@ -12,6 +12,7 @@ import {
 } from '@/social/oauth';
 import { sanitizeString } from '@/lib/security';
 import { toAppError } from '@/lib/errors';
+import { getTierPrivileges } from '@/lib/tier-privileges';
 
 function isAllowedProvider(value: unknown): value is SocialPlatform {
   return typeof value === 'string' && (SOCIAL_PLATFORMS as readonly string[]).includes(value);
@@ -59,12 +60,20 @@ const handler = createAPIHandler(
       const requestedScopes: string[] = Array.isArray(body.scopes)
         ? body.scopes.filter((item: unknown): item is string => typeof item === 'string')
         : rule.defaultScopes;
-      const allowedScopes = new Set(rule.defaultScopes);
+      const allowedScopes = new Set([...rule.defaultScopes, ...(rule.optionalScopes || [])]);
       const scopes = requestedScopes.filter((scope: string) => allowedScopes.has(scope));
       const stateScopes = scopes.length > 0 ? scopes : rule.defaultScopes;
 
       let socialAccountId = typeof body.socialAccountId === 'string' ? sanitizeString(body.socialAccountId, 160) : '';
       if (!socialAccountId) {
+        const accountLimit = getTierPrivileges(entitlements.subscription.plan).scheduler.connectedAccounts;
+        const existingAccounts = await getSocialHubOverview(entitlements.uid);
+        if (existingAccounts.accounts.length >= accountLimit) {
+          return apiError(`Your ${getTierPrivileges(entitlements.subscription.plan).label} plan has reached its connected account limit.`, {
+            status: 403,
+            code: 'SOCIAL_ACCOUNT_LIMIT_REACHED',
+          });
+        }
         stage = 'create_pending_social_account';
         const socialAccount = await createSocialAccount({
           providerId: provider,

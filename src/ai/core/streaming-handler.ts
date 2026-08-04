@@ -15,6 +15,7 @@ export interface StreamChunk {
     model?: string;
     tokensUsed?: number;
     finishReason?: string;
+    pricing?: Record<string, unknown>;
     securityThreatLevel?: 'none' | 'low' | 'medium' | 'high' | 'critical';
     error?: string;
   };

@@ -5,7 +5,8 @@ import { logger } from "@/lib/logger";
 import { sanitizeString } from "@/lib/security";
 import { hashRequestSignature } from "./crypto";
 import { creatorCreditPolicies, planCreditProfiles } from "./config";
-import { normalizeCreatorCreditConfig } from "@/lib/creator-credit-config";
+import { CREATOR_CREDIT_RETAIL_VALUE_USD, normalizeCreatorCreditConfig } from "@/lib/creator-credit-config";
+import { getTierPrivileges } from "@/lib/tier-privileges";
 import type {
   AIExecutionContext,
   AIExecutionLease,
@@ -33,6 +34,12 @@ type CreditAccountDoc = {
   resetAt: admin.firestore.Timestamp | admin.firestore.FieldValue | null;
   nextResetAt: admin.firestore.Timestamp | admin.firestore.FieldValue | null;
   activeFeatureCounts: Partial<Record<MonetizedFeature, number>>;
+  budgetDailyPeriodId?: string;
+  budgetDailyReservedUsd?: number;
+  budgetDailySpentUsd?: number;
+  budgetMonthlyPeriodId?: string;
+  budgetMonthlyReservedUsd?: number;
+  budgetMonthlySpentUsd?: number;
   lastUpdatedAt?: admin.firestore.Timestamp | admin.firestore.FieldValue;
 };
 
@@ -63,6 +70,16 @@ function normalizeCreatorPlan(plan: CreatorPlan | string | undefined): CreatorPl
 
 function currentPeriod(date = new Date()): string {
   return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}`;
+}
+
+function currentDay(date = new Date()): string {
+  return date.toISOString().slice(0, 10);
+}
+
+function budgetReservationUsd(credits: number, estimatedCostUsd: number): number {
+  // Use the greater of the provider estimate and retail credit value so a
+  // missing provider price cannot bypass the plan safety cap.
+  return Math.max(0, Math.max(Number.isFinite(estimatedCostUsd) ? estimatedCostUsd : 0, credits * CREATOR_CREDIT_RETAIL_VALUE_USD));
 }
 
 function firstDayOfNextMonth(date = new Date()): Date {
@@ -221,6 +238,12 @@ async function getOrCreateAccount(userId: string, plan: CreatorPlan, providerMod
       resetAt: admin.firestore.Timestamp.now(),
       nextResetAt,
       activeFeatureCounts: {},
+      budgetDailyPeriodId: currentDay(),
+      budgetDailyReservedUsd: 0,
+      budgetDailySpentUsd: 0,
+      budgetMonthlyPeriodId: periodId,
+      budgetMonthlyReservedUsd: 0,
+      budgetMonthlySpentUsd: 0,
       lastUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
     };
     await ref.set(doc);
@@ -320,6 +343,7 @@ export async function listCreditLedger(userId: string, limit = 50): Promise<Cred
 
 export async function reserveCredits(context: AIExecutionContext, credits: number, estimatedCostUsd: number, billingSource: BillingSource): Promise<AIExecutionLease> {
   const periodId = currentPeriod();
+  const dayId = currentDay();
   const leaseId = `lease_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
   const requestId = context.requestId || createRequestSignature({
     userId: context.userId,
@@ -329,6 +353,9 @@ export async function reserveCredits(context: AIExecutionContext, credits: numbe
   });
   const providerId = context.providerPreference || "vercel-ai-gateway";
   const modelId = context.metadata?.modelId as string | undefined || "auto";
+  const plan = normalizeCreatorPlan(context.userTier);
+  const budgetUsd = billingSource === "sdc_credits" ? budgetReservationUsd(credits, estimatedCostUsd) : 0;
+  const planProfile = planCreditProfiles[plan];
   const accountRefDoc = accountRef(context.userId);
   let includedCreditsReserved = 0;
   let purchasedCreditsReserved = 0;
@@ -340,6 +367,19 @@ export async function reserveCredits(context: AIExecutionContext, credits: numbe
     }
 
     const data = snap.exists ? snap.data() as CreditAccountDoc : null;
+    const sameDay = data?.budgetDailyPeriodId === dayId;
+    const sameMonth = data?.budgetMonthlyPeriodId === periodId;
+    const dailyReserved = sameDay ? safeCount(data?.budgetDailyReservedUsd) : 0;
+    const dailySpent = sameDay ? safeCount(data?.budgetDailySpentUsd) : 0;
+    const monthlyReserved = sameMonth ? safeCount(data?.budgetMonthlyReservedUsd) : 0;
+    const monthlySpent = sameMonth ? safeCount(data?.budgetMonthlySpentUsd) : 0;
+
+    if (budgetUsd > 0 && dailySpent + dailyReserved + budgetUsd > planProfile.dailySpendingLimit) {
+      throw new Error(`Daily AI spending limit reached for ${plan}.`);
+    }
+    if (budgetUsd > 0 && monthlySpent + monthlyReserved + budgetUsd > planProfile.monthlyEstimatedAIExpenseCap) {
+      throw new Error(`Monthly AI spending limit reached for ${plan}.`);
+    }
     if (billingSource === "sdc_credits") {
       if (!data) throw new Error("Credit account missing");
       const includedAvailable = Math.max(
@@ -353,7 +393,7 @@ export async function reserveCredits(context: AIExecutionContext, credits: numbe
         throw new Error("Creator credits exhausted");
       }
 
-      transaction.set(accountRefDoc, {
+    transaction.set(accountRefDoc, {
         monthlyCreditsReserved: admin.firestore.FieldValue.increment(includedCreditsReserved),
         purchasedCreditsRemaining: admin.firestore.FieldValue.increment(-purchasedCreditsReserved),
         remainingCredits: admin.firestore.FieldValue.increment(-credits),
@@ -364,6 +404,20 @@ export async function reserveCredits(context: AIExecutionContext, credits: numbe
         lastUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
       }, { merge: true });
     }
+
+    transaction.set(accountRefDoc, {
+      budgetDailyPeriodId: dayId,
+      budgetDailyReservedUsd: sameDay
+        ? admin.firestore.FieldValue.increment(budgetUsd)
+        : budgetUsd,
+      budgetDailySpentUsd: sameDay ? dailySpent : 0,
+      budgetMonthlyPeriodId: periodId,
+      budgetMonthlyReservedUsd: sameMonth
+        ? admin.firestore.FieldValue.increment(budgetUsd)
+        : budgetUsd,
+      budgetMonthlySpentUsd: sameMonth ? monthlySpent : 0,
+      lastUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    }, { merge: true });
 
     transaction.set(ledgerRef().doc(leaseId), stripUndefined({
       entryId: leaseId,
@@ -398,6 +452,7 @@ export async function reserveCredits(context: AIExecutionContext, credits: numbe
       modelPricingSnapshot: context.metadata?.modelPricingSnapshot && typeof context.metadata.modelPricingSnapshot === "object"
         ? context.metadata.modelPricingSnapshot as Record<string, unknown>
         : undefined,
+      budgetReservedUsd: budgetUsd,
       metadata: context.metadata,
     } satisfies CreditLedgerEntry));
   });
@@ -427,6 +482,9 @@ export async function reserveCredits(context: AIExecutionContext, credits: numbe
     estimatedCostUsd,
     providerMode: context.providerMode || "hybrid",
     periodId,
+    budgetReservedUsd: budgetUsd,
+    budgetDailyPeriodId: dayId,
+    budgetMonthlyPeriodId: periodId,
   };
 }
 
@@ -457,6 +515,11 @@ export async function finalizeCredits(lease: AIExecutionLease, input: {
     const refunded = Math.max(0, lease.creditsReserved - charged);
     const includedRefunded = Math.max(0, includedReserved - includedCharged);
     const purchasedRefunded = Math.max(0, purchasedReserved - purchasedCharged);
+    const budgetReserved = Math.max(0, lease.budgetReservedUsd || 0);
+    const budgetCharged = lease.billingSource === "sdc_credits"
+      ? Math.min(budgetReserved, charged * CREATOR_CREDIT_RETAIL_VALUE_USD)
+      : 0;
+    const budgetRefunded = Math.max(0, budgetReserved - budgetCharged);
 
     transaction.set(ledgerDoc, stripUndefined({
       ...ledger,
@@ -479,6 +542,9 @@ export async function finalizeCredits(lease: AIExecutionLease, input: {
       modelPricingSnapshot: input.metadata?.modelPricingSnapshot && typeof input.metadata.modelPricingSnapshot === "object"
         ? input.metadata.modelPricingSnapshot as Record<string, unknown>
         : ledger.modelPricingSnapshot,
+      budgetReservedUsd: budgetReserved,
+      budgetChargedUsd: budgetCharged,
+      budgetRefundedUsd: budgetRefunded,
       metadata: {
         ...(ledger.metadata || {}),
         ...(input.metadata || {}),
@@ -495,6 +561,15 @@ export async function finalizeCredits(lease: AIExecutionLease, input: {
       if (refunded > 0) {
         transaction.set(accountDoc, {
           remainingCredits: admin.firestore.FieldValue.increment(refunded),
+          lastUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        }, { merge: true });
+      }
+      if (budgetReserved > 0) {
+        transaction.set(accountDoc, {
+          budgetDailyReservedUsd: admin.firestore.FieldValue.increment(-budgetReserved),
+          budgetDailySpentUsd: admin.firestore.FieldValue.increment(budgetCharged),
+          budgetMonthlyReservedUsd: admin.firestore.FieldValue.increment(-budgetReserved),
+          budgetMonthlySpentUsd: admin.firestore.FieldValue.increment(budgetCharged),
           lastUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
         }, { merge: true });
       }
@@ -532,6 +607,14 @@ export async function refundCredits(lease: AIExecutionLease, reason: string, met
         monthlyCreditsReserved: admin.firestore.FieldValue.increment(-includedReserved),
         purchasedCreditsRemaining: admin.firestore.FieldValue.increment(purchasedReserved),
         remainingCredits: admin.firestore.FieldValue.increment(lease.creditsReserved),
+        lastUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      }, { merge: true });
+    }
+
+    if (lease.billingSource === "sdc_credits" && lease.budgetReservedUsd && lease.budgetReservedUsd > 0) {
+      transaction.set(accountDoc, {
+        budgetDailyReservedUsd: admin.firestore.FieldValue.increment(-lease.budgetReservedUsd),
+        budgetMonthlyReservedUsd: admin.firestore.FieldValue.increment(-lease.budgetReservedUsd),
         lastUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
       }, { merge: true });
     }
@@ -592,6 +675,8 @@ export async function getCreatorCreditDashboard(userId: string, plan: CreatorPla
   const planProfile = await getPlanProfile(plan);
   const configSnap = await adminDb.collection("config").doc("creatorCredits").get();
   const config = normalizeCreatorCreditConfig(configSnap.exists ? configSnap.data() : undefined);
+  const dailySpent = await snapshotAccountBudget(userId, "daily");
+  const monthlySpent = await snapshotAccountBudget(userId, "monthly");
 
   return {
     snapshot,
@@ -607,6 +692,20 @@ export async function getCreatorCreditDashboard(userId: string, plan: CreatorPla
       monthlyCap: planProfile.monthlyEstimatedAIExpenseCap,
       dailyCap: planProfile.dailySpendingLimit,
       concurrentJobs: planProfile.concurrentJobLimit,
+      dailySpent,
+      monthlySpent,
+      modelClasses: getTierPrivileges(plan).aiModelClasses,
     },
-  };
+    };
+}
+
+async function snapshotAccountBudget(userId: string, period: "daily" | "monthly"): Promise<number> {
+  const snap = await accountRef(userId).get();
+  if (!snap.exists) return 0;
+  const data = snap.data() as CreditAccountDoc;
+  const isCurrent = period === "daily"
+    ? data.budgetDailyPeriodId === currentDay()
+    : data.budgetMonthlyPeriodId === currentPeriod();
+  if (!isCurrent) return 0;
+  return period === "daily" ? safeCount(data.budgetDailySpentUsd) : safeCount(data.budgetMonthlySpentUsd);
 }
